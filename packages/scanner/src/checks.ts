@@ -59,17 +59,31 @@ function stringNodes(module: ModuleInfo): SgNode[] {
 const HEX = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![0-9a-zA-Z_-])/g;
 const COLOR_FN = /\b(?:rgba?|hsla?)\(\s*-?[\d.]+[^)]*\)/g;
 
+/** Attributes whose strings are fragments, ids or URLs, never colours (`href="#fade"`). */
+const NON_COLOR_ATTRIBUTES = new Set(["href", "to", "id", "htmlFor", "key", "name", "src", "action", "formAction", "aria-controls", "aria-describedby", "aria-labelledby"]);
+const CSS_VALUE_BEFORE = /(?:\d(?:px|rem|em|%)?|\b(?:solid|dashed|dotted|double|inset|transparent|currentColor))\s+$/;
+
 function hexInContext(text: string, index: number, match: string): boolean {
   if (text.trim().replace(/^["'`]|["'`]$/g, "").trim() === match) return true;
-  const before = text.slice(Math.max(0, index - 3), index);
+  const before = text.slice(Math.max(0, index - 24), index);
   if (before.endsWith("[")) return true;
   if (/[:(,]\s*$/.test(before)) return true;
+  // `1px solid #f00`, `0 1px 2px #000`: a colour after a length or border style.
+  if (CSS_VALUE_BEFORE.test(before)) return true;
   return /[;{]/.test(text) && /\s$/.test(before);
+}
+
+function attributeName(node: SgNode): string | null {
+  const parent = node.parent();
+  const attribute = parent?.kind() === "jsx_attribute" ? parent : parent?.parent()?.kind() === "jsx_attribute" ? parent.parent() : null;
+  return attribute?.children()[0]?.text() ?? null;
 }
 
 function rawColorsInScript(module: ModuleInfo, index: TokenIndex): Finding[] {
   const findings: Finding[] = [];
   for (const node of stringNodes(module)) {
+    const attribute = attributeName(node);
+    if (attribute !== null && (NON_COLOR_ATTRIBUTES.has(attribute) || attribute.startsWith("data-"))) continue;
     const original = node.text();
     const text = original.replace(/\$\{[^}]*\}/g, (s) => " ".repeat(s.length));
     const start = node.range().start;
@@ -222,7 +236,11 @@ function suppressed(module: ModuleInfo, line: number, ruleId: string): boolean {
     lines = module.source.split("\n");
     linesOf.set(module, lines);
   }
-  return [lines[line - 1], lines[line - 2]].some((text) => {
+  // The finding's own line, or the line above only when that line is nothing but a comment:
+  // a trailing comment on unrelated code must not silence the next line.
+  const above = lines[line - 2] ?? "";
+  const candidates = [lines[line - 1], /^\s*(?:\/\/|\/\*|\{\s*\/\*|\*)/.test(above) ? above : undefined];
+  return candidates.some((text) => {
     const match = text ? /youi-ignore(?:\s+([a-z0-9.-]+))?/.exec(text) : null;
     return match !== null && (!match[1] || match[1] === slug);
   });

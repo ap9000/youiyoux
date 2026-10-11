@@ -1,6 +1,6 @@
 /** A consumer project: its youi.project.json, its root, and the design system it uses. */
 import { dirname, isAbsolute, join, resolve } from "node:path";
-import { getSystem, loadDesignRepo, ProjectConfig, readDefinition, type DesignRepo, type LoadedSystem } from "@youiyoux/core";
+import { getSystem, loadDesignRepo, normalizeProjectConfig, ProjectConfig, readDefinition, type DesignRepo, type LoadedSystem } from "@youiyoux/core";
 
 export const PROJECT_FILE = "youi.project.json";
 
@@ -22,7 +22,7 @@ export interface LoadProjectOptions {
 export async function loadProject(root: string, options: LoadProjectOptions = {}): Promise<Project> {
   const absoluteRoot = resolve(root);
   const configFile = resolve(options.configPath ?? join(absoluteRoot, PROJECT_FILE));
-  const config = await readDefinition(configFile, ProjectConfig);
+  const config = normalizeProjectConfig(await readDefinition(configFile, ProjectConfig));
   const designRoot = options.designRoot
     ? resolve(options.designRoot)
     : isAbsolute(config.source.path)

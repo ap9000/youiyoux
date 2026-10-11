@@ -2,11 +2,19 @@
  * The design language's file formats. Every schema here is the single source
  * for both runtime validation and the published JSON Schema (`schema/*.json`).
  */
+import { posix } from "node:path";
 import { z } from "zod";
 import { ElementId } from "./ids.ts";
 
 const SemVer = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, "expected semver x.y.z");
-const RelPath = z.string().min(1).refine((p) => !p.startsWith("/") && !p.split("/").includes(".."), "expected a path relative to its root, without ..");
+/** `./src/ui/` and `src//ui` mean `src/ui`; compared with scanner paths, an unnormalized path would silently match nothing. */
+export function normalizeRelPath(path: string): string {
+  return posix.normalize(path.replace(/\\/g, "/")).replace(/^\.\//, "").replace(/\/+$/, "") || ".";
+}
+const RelPath = z
+  .string()
+  .min(1)
+  .refine((p) => !p.startsWith("/") && !normalizeRelPath(p).split("/").includes(".."), "expected a path relative to its root, without ..");
 const IsoTime = z.string().datetime({ offset: true });
 
 /* ---------------------------------------------------------------- youi.config/v1 */
@@ -319,3 +327,17 @@ export const PUBLISHED_SCHEMAS = {
   "youi.usage.schema.json": ScanReport,
   "youi.lock.schema.json": LockFile,
 } as const;
+
+/** Project config with every path normalized, so comparisons with scanned paths are exact. Loaders call this. */
+export function normalizeProjectConfig(config: ProjectConfig): ProjectConfig {
+  const n = normalizeRelPath;
+  return {
+    ...config,
+    tsconfig: n(config.tsconfig),
+    componentsDir: n(config.componentsDir),
+    tokenSources: config.tokenSources.map(n),
+    routes: { ...config.routes, appDir: n(config.routes.appDir) },
+    outputs: { ...config.outputs, dir: n(config.outputs.dir) },
+    agents: { ...config.agents, agentsMd: n(config.agents.agentsMd), designMd: n(config.agents.designMd), skillDir: n(config.agents.skillDir) },
+  };
+}

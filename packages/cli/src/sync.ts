@@ -116,38 +116,38 @@ class Writer {
     this.record({ file, role, action: current === null ? "created" : "updated", ...(edited ? { detail: "had local edits; generated files are rewritten (change the design language instead)" } : {}) });
   }
 
+  /**
+   * Owned files are compared with the base: the upstream content youi last delivered (kept in
+   * .youi/base). Equal to base means untouched, so upstream may replace it. Anything else holds
+   * local edits, which are merged 3-way and never overwritten. `--adopt` records the project's
+   * file as a fork of the current upstream (to adopt a diverged file or settle a conflict).
+   */
   async owned(file: string, upstream: string, elements: ElementId[], version: string): Promise<void> {
     const local = await readTextOrNull(this.path(file));
     const locked = this.previous?.files[file];
-    const base = await readTextOrNull(this.path(`${BASE_DIR}/${file}`));
-    const entry = (written: string): LockEntry => ({ kind: "vendored", elements, version, sha256: sha256(written), baseSha256: sha256(upstream) });
-    const accept = async (text: string, action: SyncActionKind, detail?: string): Promise<void> => {
+    const recorded = locked?.kind === "vendored" ? await readTextOrNull(this.path(`${BASE_DIR}/${file}`)) : null;
+    const base = recorded !== null && locked?.kind === "vendored" && sha256(recorded) === locked.baseSha256 ? recorded : null;
+    const record = (action: SyncActionKind, detail?: string): void => this.record({ file, role: "component", action, ...(detail ? { detail } : {}) });
+    const settle = async (text: string, action: SyncActionKind, detail?: string): Promise<void> => {
       if (text !== local) await this.write(file, text);
-      await this.write(`${BASE_DIR}/${file}`, upstream);
-      this.files[file] = entry(text);
-      this.record({ file, role: "component", action, ...(detail ? { detail } : {}) });
+      if (upstream !== base) await this.write(`${BASE_DIR}/${file}`, upstream);
+      this.files[file] = { kind: "vendored", elements, version, sha256: sha256(text), baseSha256: sha256(upstream) };
+      record(action, detail);
     };
-    if (local === null) return accept(upstream, "created");
-    if (!locked || locked.kind !== "vendored" || base === null) {
-      if (local === upstream) return accept(upstream, "adopted", "identical to upstream");
-      if (this.options.adopt) {
-        await this.write(`${BASE_DIR}/${file}`, upstream);
-        this.files[file] = entry(local);
-        return this.record({ file, role: "component", action: "kept-local", detail: "adopted as a local fork of upstream; differences are drift" });
-      }
+    if (local === null) return settle(upstream, "created");
+    if (local === upstream) return settle(upstream, base === null ? "adopted" : "unchanged", base === null ? "identical to upstream" : undefined);
+    if (this.options.adopt) return settle(local, "kept-local", "adopted as a fork of the current upstream; differences show as drift and merge on later syncs");
+    if (base === null) {
       await this.write(`${INCOMING_DIR}/${file}`, upstream);
-      return this.record({ file, role: "component", action: "conflict", detail: `differs from upstream with no recorded base; compare with ${INCOMING_DIR}/${file}, or \`youi sync --adopt\` to keep yours` });
+      return record("conflict", `differs from upstream with no recorded base; compare with ${INCOMING_DIR}/${file}, or \`youi sync --adopt\` to keep yours`);
     }
-    if (sha256(local) === locked.sha256) return local === upstream ? accept(upstream, "unchanged") : accept(upstream, "updated", `${locked.version} → ${version}`);
-    if (upstream === base) {
-      this.files[file] = { ...locked, sha256: sha256(local) };
-      return this.record({ file, role: "component", action: "kept-local", detail: "local edits (drift); upstream unchanged" });
-    }
+    if (local === base) return settle(upstream, "updated", `${locked?.kind === "vendored" ? locked.version : "?"} → ${version}`);
+    if (upstream === base) return settle(local, "kept-local", "local edits (drift); upstream unchanged");
     const merged = await mergeThreeWay(local, base, upstream);
-    if (merged.conflicts === 0) return accept(merged.text, "merged", `local edits kept, upstream ${version} applied`);
+    if (merged.conflicts === 0) return settle(merged.text, "merged", `local edits kept, upstream ${version} applied`);
     await this.write(`${CONFLICT_DIR}/${file}`, merged.text);
-    this.files[file] = locked;
-    this.record({ file, role: "component", action: "conflict", detail: `${merged.conflicts} conflict(s); resolve ${CONFLICT_DIR}/${file} into the file, then sync again` });
+    if (locked) this.files[file] = locked;
+    record("conflict", `${merged.conflicts} conflict(s): resolve ${CONFLICT_DIR}/${file} into the file, then \`youi sync --adopt\` to record it`);
   }
 
   async managedBlock(file: string, block: string): Promise<void> {
@@ -163,7 +163,9 @@ class Writer {
     let config: { mcpServers?: Record<string, unknown> } = {};
     if (current !== null) {
       try {
-        config = JSON.parse(current) as typeof config;
+        const parsed: unknown = JSON.parse(current);
+        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error("not an object");
+        config = parsed as typeof config;
       } catch {
         return this.record({ file, role: "config", action: "skipped", detail: "not valid JSON; add the youiyoux server by hand" });
       }
@@ -192,6 +194,9 @@ export async function syncProject(project: Project, options: SyncOptions = {}): 
   const { config, system, repo } = project;
   const previous = await readLock(project.root);
   const writer = new Writer(project, options, previous);
+  for (const { contract } of system.components) {
+    if ((await readTextOrNull(join(repo.root, system.config.components, contract.source.file))) === null) throw new Error(`${system.config.components}/${contract.source.file} is named by ${contract.id} but does not exist; nothing was written`);
+  }
   const build = await buildTokens(repo.root, system.config, config.outputs);
   for (const file of build.files) await writer.generated(`${config.outputs.dir}/${file.path}`, file.content, "tokens");
 
@@ -207,14 +212,16 @@ export async function syncProject(project: Project, options: SyncOptions = {}): 
   const sources = new Map<string, { elements: ElementId[]; version: string }>();
   for (const { contract } of system.components) {
     const entry = sources.get(contract.source.file) ?? { elements: [], version: contract.version };
-    sources.set(contract.source.file, { elements: [...entry.elements, contract.id], version: entry.version > contract.version ? entry.version : contract.version });
+    sources.set(contract.source.file, { elements: [...entry.elements, contract.id], version: newerVersion(entry.version, contract.version) });
   }
   for (const support of system.config.support) if (!sources.has(support)) sources.set(support, { elements: system.components.map((c) => c.contract.id), version: system.config.version });
-  for (const [source, { elements, version }] of sources) {
+  const upstreams = new Map<string, string>();
+  for (const source of sources.keys()) {
     const upstream = await readTextOrNull(join(repo.root, system.config.components, source));
     if (upstream === null) throw new Error(`${system.config.components}/${source} is named by a contract but does not exist`);
-    await writer.owned(vendoredPath(project, source), upstream, elements, version);
+    upstreams.set(source, upstream);
   }
+  for (const [source, { elements, version }] of sources) await writer.owned(vendoredPath(project, source), upstreams.get(source)!, elements, version);
 
   const lock: LockFile = {
     schema: "youi.lock/v1",
@@ -235,6 +242,13 @@ async function uncontractedFiles(project: Project): Promise<string[]> {
   return entries.filter((name) => /\.(tsx|ts)$/.test(name) && !/^index\./.test(name) && !covered.has(name)).sort();
 }
 
+function newerVersion(a: string, b: string): string {
+  const parts = (v: string): number[] => v.split(/[.-]/).slice(0, 3).map(Number);
+  const [x, y] = [parts(a), parts(b)];
+  for (let i = 0; i < 3; i++) if ((x[i] ?? 0) !== (y[i] ?? 0)) return (x[i] ?? 0) > (y[i] ?? 0) ? a : b;
+  return a;
+}
+
 export interface LockIssue {
   readonly file: string;
   readonly severity: "error" | "warn";
@@ -249,10 +263,10 @@ export async function verifyLock(project: Project): Promise<LockIssue[] | null> 
   for (const [file, entry] of Object.entries(lock.files)) {
     const content = await readTextOrNull(join(project.root, file));
     if (content === null) issues.push({ file, severity: "error", message: `${entry.kind} file is missing; run youi sync` });
-    else if (sha256(content) !== entry.sha256) {
-      issues.push(entry.kind === "generated"
-        ? { file, severity: "error", message: "generated file was edited; change the design language and run youi sync" }
-        : { file, severity: "warn", message: `owned ${basename(file)} has local edits (drift from ${entry.version}); sync will 3-way merge them` });
+    else if (entry.kind === "generated" && sha256(content) !== entry.sha256) {
+      issues.push({ file, severity: "error", message: "generated file was edited; change the design language and run youi sync" });
+    } else if (entry.kind === "vendored" && sha256(content) !== entry.baseSha256) {
+      issues.push({ file, severity: "warn", message: `owned ${basename(file)} has local edits (drift from upstream ${entry.version}); sync will 3-way merge them` });
     }
   }
   return issues;

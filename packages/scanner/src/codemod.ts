@@ -13,13 +13,13 @@
  * A codemod that "succeeds" proves nothing; these gates are what make it safe.
  */
 import type { Edit, SgNode } from "@ast-grep/napi";
-import { unifiedDiff, writeFileAtomic, type MigrationSpec } from "@youiyoux/core";
-import { join } from "node:path";
+import { readTextOrNull, unifiedDiff, writeFileAtomic, type MigrationSpec } from "@youiyoux/core";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { countParseErrors, unquote } from "./parse.ts";
 import type { Project } from "./project.ts";
 import { scanProject, type ScanResult } from "./scan.ts";
 
-export type GateName = "parse-errors" | "usage-count" | "unknowns" | "old-api" | "idempotent";
+export type GateName = "coverage" | "parse-errors" | "usage-count" | "unknowns" | "old-api" | "idempotent" | "sources-unchanged";
 
 export interface GateResult {
   readonly name: GateName;
@@ -168,14 +168,41 @@ function count(scan: ScanResult, element: string): number {
   return scan.report.usages.filter((u) => u.element === element).length;
 }
 
-/** Sites (file:line) still using a prop the migration removes, or a value it maps away. */
-function oldApiSites(migration: MigrationSpec, scan: ScanResult): string[] {
+/**
+ * A site's identity across a rewrite: its file and its order among the element's render sites
+ * in that file. Lines and columns move when props are renamed; the order does not (the
+ * usage-count gate holds the count fixed).
+ */
+function siteKeys(scan: ScanResult, element: string): Map<string, string> {
+  const keys = new Map<string, string>();
+  const seen = new Map<string, number>();
+  for (const u of scan.report.usages) {
+    if (u.element !== element || u.kind !== "render") continue;
+    const n = seen.get(u.file) ?? 0;
+    seen.set(u.file, n + 1);
+    keys.set(`${u.file}:${u.line}:${u.column}`, `${u.file}#${n}`);
+  }
+  return keys;
+}
+
+/** Site keys still using a prop the migration removes, or a value it maps away. */
+function oldApiSites(migration: MigrationSpec, scan: ScanResult): Array<{ key: string; at: string }> {
   const removed = migration.changes.flatMap((c) => ("renameProp" in c ? [c.renameProp.from] : []));
   const mapped = migration.changes.flatMap((c) => ("mapValues" in c ? [c.mapValues] : []));
+  const keys = siteKeys(scan, migration.element);
   return scan.report.usages
     .filter((u) => u.element === migration.element && u.kind === "render")
     .filter((u) => removed.some((p) => p in u.props) || mapped.some((m) => { const v = u.props[m.prop]; return v !== undefined && "literal" in v && String(v.literal) in m.map; }))
-    .map((u) => `${u.file}:${u.line}`);
+    .map((u) => ({ key: keys.get(`${u.file}:${u.line}:${u.column}`)!, at: `${u.file}:${u.line}` }));
+}
+
+/** Files the scan could not fully parse that may hold sites of this element: the migration would miss them. */
+function coverageGate(scan: ScanResult, element: string): GateResult {
+  const name = scan.elements.contracts.get(element)?.name ?? element;
+  const risky = scan.report.coverage.failed.filter((f) => !/\.(tsx?|jsx?|css)$/.test(f.file) || (scan.modules.get(f.file)?.source ?? "").includes(name));
+  return risky.length === 0
+    ? { name: "coverage", ok: true, detail: scan.report.status === "complete" ? "every file parsed" : `${scan.report.coverage.failed.length} unparsed file(s), none mentions ${name}` }
+    : { name: "coverage", ok: false, detail: `cannot see every site: ${risky.map((f) => `${f.file} (${f.reason})`).join("; ")}` };
 }
 
 async function parseGate(changes: readonly FileChange[]): Promise<GateResult> {
@@ -197,10 +224,12 @@ export async function verifyRewrite(project: Project, migration: MigrationSpec, 
   const sitesBefore = count(before, migration.element);
   const sitesAfter = count(after, migration.element);
   const expected = sitesBefore + migration.expectedUsageDelta;
-  const residualLines = new Set(residuals.map((r) => `${r.file}:${r.line}`));
-  const leftover = oldApiSites(migration, after).filter((site) => !residualLines.has(site));
+  const beforeKeys = siteKeys(before, migration.element);
+  const residualKeys = new Set(residuals.map((r) => beforeKeys.get(`${r.file}:${r.line}:${r.column}`)));
+  const leftover = oldApiSites(migration, after).filter((site) => !residualKeys.has(site.key)).map((site) => site.at);
   const again = planEdits(migration, after, rewriteValue);
   const gates: GateResult[] = [
+    coverageGate(before, migration.element),
     await parseGate(changes),
     { name: "usage-count", ok: sitesAfter === expected, detail: `${migration.element}: ${sitesBefore} before, ${sitesAfter} after, ${expected} expected` },
     { name: "unknowns", ok: after.report.unknowns.length <= before.report.unknowns.length, detail: `${before.report.unknowns.length} unknown site(s) before, ${after.report.unknowns.length} after` },
@@ -222,7 +251,31 @@ export async function runMigration(project: Project, migration: MigrationSpec, o
   const base = { migration: migration.id, element: migration.element, sitesBefore, edited: planned.edited, residuals: planned.residuals, changes };
   if (changes.length === 0) return { ...base, status: "noop", sitesAfter: sitesBefore, gates: [] };
   const { gates, sitesAfter } = await verifyRewrite(project, migration, before, planned.outputs, planned.residuals, rewriteValue);
+  if (gates.every((g) => g.ok) && options.write) gates.push(await writeChanges(project, changes));
   const passed = gates.every((g) => g.ok);
-  if (passed && options.write) for (const change of changes) await writeFileAtomic(join(project.root, change.file), change.after);
   return { ...base, status: !passed ? "rejected" : options.write ? "applied" : "dry-run", sitesAfter, gates };
+}
+
+/**
+ * Write all rewritten files or none: every target must be inside the project and still hold
+ * exactly the source that was scanned (nobody edited it meanwhile). A failed write restores
+ * the files already written.
+ */
+async function writeChanges(project: Project, changes: readonly FileChange[]): Promise<GateResult> {
+  const outside = changes.filter((c) => isAbsolute(c.file) || relative(project.root, resolve(project.root, c.file)).startsWith(".."));
+  if (outside.length > 0) return { name: "sources-unchanged", ok: false, detail: `refusing to write outside the project: ${outside.map((c) => c.file).join(", ")}` };
+  const moved: string[] = [];
+  for (const change of changes) if ((await readTextOrNull(join(project.root, change.file))) !== change.before) moved.push(change.file);
+  if (moved.length > 0) return { name: "sources-unchanged", ok: false, detail: `changed since the scan, nothing written: ${moved.join(", ")}` };
+  const written: FileChange[] = [];
+  try {
+    for (const change of changes) {
+      await writeFileAtomic(join(project.root, change.file), change.after);
+      written.push(change);
+    }
+  } catch (error: unknown) {
+    for (const change of written) await writeFileAtomic(join(project.root, change.file), change.before);
+    return { name: "sources-unchanged", ok: false, detail: `write failed, ${written.length} file(s) restored: ${error instanceof Error ? error.message : String(error)}` };
+  }
+  return { name: "sources-unchanged", ok: true, detail: `${changes.length} file(s) written, each verified unchanged since the scan` };
 }

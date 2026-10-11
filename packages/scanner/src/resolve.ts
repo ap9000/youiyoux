@@ -33,6 +33,9 @@ export class ModuleResolver {
     this.cache = this.ts.createModuleResolutionCache(root, (f) => f, options);
   }
 
+  /** Why resolution may be degraded (missing or invalid tsconfig); a scan reports these as partial. */
+  problems: string[] = [];
+
   static create(root: string, tsconfig: string): ModuleResolver {
     const ts = typescript();
     const path = join(root, tsconfig);
@@ -43,11 +46,19 @@ export class ModuleResolver {
       allowJs: true,
       baseUrl: root,
     };
-    if (!ts.sys.fileExists(path)) return new ModuleResolver(root, fallback);
+    const degraded = (problem: string): ModuleResolver => {
+      const resolver = new ModuleResolver(root, fallback);
+      resolver.problems.push(problem);
+      return resolver;
+    };
+    if (!ts.sys.fileExists(path)) return degraded(`${tsconfig} not found: path aliases cannot be resolved`);
     const read = ts.readConfigFile(path, ts.sys.readFile);
-    if (read.error) return new ModuleResolver(root, fallback);
+    if (read.error) return degraded(`${tsconfig} cannot be read: ${ts.flattenDiagnosticMessageText(read.error.messageText, " ")}`);
     const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, dirname(path), undefined, path);
-    return new ModuleResolver(root, { ...fallback, ...parsed.options });
+    const resolver = new ModuleResolver(root, { ...fallback, ...parsed.options });
+    const fatal = parsed.errors.filter((e) => e.code !== 18003); // 18003: no inputs matched; irrelevant here
+    if (fatal.length > 0) resolver.problems.push(`${tsconfig}: ${fatal.map((e) => ts.flattenDiagnosticMessageText(e.messageText, " ")).join("; ")}`);
+    return resolver;
   }
 
   resolve(specifier: string, fromFile: string): ModuleResolution {
@@ -56,7 +67,8 @@ export class ModuleResolver {
     if (hit) return hit;
     const result = this.ts.resolveModuleName(specifier, fromFile, this.options, this.ts.sys, this.cache).resolvedModule;
     let resolution: ModuleResolution;
-    if (!result) resolution = /^[./]/.test(specifier) ? { kind: "unresolved", specifier } : { kind: "external", module: specifier };
+    // Relative paths and project aliases (@/x, ~/x, #x) that do not resolve are unknown, never "external".
+    if (!result) resolution = /^(?:[./]|@\/|~\/|#)/.test(specifier) ? { kind: "unresolved", specifier } : { kind: "external", module: specifier };
     else if (result.isExternalLibraryImport || result.resolvedFileName.includes("/node_modules/")) resolution = { kind: "external", module: specifier };
     else resolution = { kind: "file", file: result.resolvedFileName };
     this.memo.set(key, resolution);

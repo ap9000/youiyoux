@@ -111,13 +111,15 @@ function exportsOf(root: SgNode): { exports: ExportEntry[]; starExports: string[
   for (const statement of root.children().filter((c) => c.kind() === "export_statement")) {
     const source = statement.field("source");
     const declaration = statement.field("declaration");
-    if (declaration) {
-      for (const name of declaredNames(declaration)) exports.push({ kind: "local", name, local: name });
+    if (/^export\s+default\b/.test(statement.text())) {
+      // `export default function X` exports X as "default"; the name stays local to the module.
+      const value = statement.field("value") ?? declaration;
+      const named = value ? declaredNames(value)[0] : undefined;
+      exports.push({ kind: "local", name: "default", local: value?.kind() === "identifier" ? value.text() : named ?? "default" });
       continue;
     }
-    if (/^export\s+default\b/.test(statement.text())) {
-      const value = statement.field("value");
-      exports.push({ kind: "local", name: "default", local: value?.kind() === "identifier" ? value.text() : "default" });
+    if (declaration) {
+      for (const name of declaredNames(declaration)) exports.push({ kind: "local", name, local: name });
       continue;
     }
     const clause = statement.find({ rule: { kind: "export_clause" } });

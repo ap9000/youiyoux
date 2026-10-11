@@ -154,3 +154,36 @@ test("mergeThreeWay reports clean merges and counts conflicts", async () => {
   expect(await mergeThreeWay("a\nB\nc\nd\ne\n", "a\nb\nc\nd\ne\n", "a\nb\nc\nd\nE\n")).toEqual({ text: "a\nB\nc\nd\nE\n", conflicts: 0 });
   expect((await mergeThreeWay("a\nX\nc\n", "a\nb\nc\n", "a\nY\nc\n")).conflicts).toBe(1);
 });
+
+describe("review regressions", () => {
+  const upstreamBadge = (): string => join(design, "components/badge/badge.tsx");
+
+  test("local edits survive later syncs: kept as drift, then merged when upstream changes", async () => {
+    await syncProject(await project());
+    await writeFile(join(app, "components/ui/badge.tsx"), `${await read("components/ui/badge.tsx")}// our tweak\n`);
+    expect(actionFor((await syncProject(await project())).actions, "components/ui/badge.tsx")).toBe("kept-local");
+    const upstream = (await readFile(upstreamBadge(), "utf8")).replace("/** shadcn/ui Badge (MIT): status tones from the shared palette. */", "/** Badge: status chips. */");
+    await writeFile(upstreamBadge(), upstream);
+    const { actions } = await syncProject(await project());
+    expect(actionFor(actions, "components/ui/badge.tsx")).toBe("merged");
+    const merged = await read("components/ui/badge.tsx");
+    expect(merged).toContain("// our tweak");
+    expect(merged).toContain("/** Badge: status chips. */");
+    expect((await verifyLock(await project()))?.map((i) => `${i.file} ${i.severity}`)).toEqual(["components/ui/badge.tsx warn"]);
+    // A third sync with nothing new keeps the edit too.
+    expect(actionFor((await syncProject(await project())).actions, "components/ui/badge.tsx")).toBe("kept-local");
+    expect(await read("components/ui/badge.tsx")).toContain("// our tweak");
+  });
+
+  test("a resolved conflict is recorded with --adopt and then merges normally", async () => {
+    await syncProject(await project());
+    const original = await read("components/ui/badge.tsx");
+    const line = "/** shadcn/ui Badge (MIT): status tones from the shared palette. */";
+    await writeFile(join(app, "components/ui/badge.tsx"), original.replace(line, "/** Ours. */"));
+    await writeFile(upstreamBadge(), original.replace(line, "/** Theirs. */"));
+    expect(actionFor((await syncProject(await project())).actions, "components/ui/badge.tsx")).toBe("conflict");
+    expect(actionFor((await syncProject(await project(), { adopt: true })).actions, "components/ui/badge.tsx")).toBe("kept-local");
+    expect(actionFor((await syncProject(await project())).actions, "components/ui/badge.tsx")).toBe("kept-local");
+    expect(await read("components/ui/badge.tsx")).toContain("/** Ours. */");
+  });
+});

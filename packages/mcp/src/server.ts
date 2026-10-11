@@ -8,7 +8,8 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { MigrationSpec } from "@youiyoux/core";
+import { isAbsolute } from "node:path";
+import { MigrationSpec, normalizeRelPath } from "@youiyoux/core";
 import { componentCard, findContract, formatProps, loadProject, planChange, ruleRows, scanProject, screenBom, searchElements, tokenRows, whereUsed, type PlanInput, type Project, type ScanResult } from "@youiyoux/scanner";
 import { z } from "zod";
 
@@ -135,13 +136,19 @@ export function createServer(options: ServerOptions): McpServer {
     guard(async ({ code, path, files }) => {
       const project = await state.loadProject();
       if (code === undefined && !files?.length) throw new Error("pass `code` (with `path`) or `files`");
-      const target = path ?? "__youi_check__.tsx";
-      const result = code !== undefined ? await scanProject(project, { overrides: { [target]: code } }) : (await state.scanned()).scan;
-      const wanted = new Set(code !== undefined ? [target] : files);
+      const target = normalizeRelPath(path ?? "__youi_check__.tsx");
+      if (target.startsWith("..") || isAbsolute(path ?? "")) throw new Error("`path` must be relative to the project root and inside it");
+      // Always a fresh scan: a check right after an edit must not read a cached result.
+      const result = await scanProject(project, code !== undefined ? { overrides: { [target]: code } } : {});
+      const wanted = new Set(code !== undefined ? [target] : files!.map(normalizeRelPath));
+      const checked = new Set(result.modules.keys());
+      const unchecked = [...wanted].filter((f) => !checked.has(f));
       const violations = result.report.violations.filter((v) => wanted.has(v.file)).map(({ rule, severity, line, column, message, suggestion, file }) => ({ at: `${file}:${line}:${column}`, rule: rule.split("/rule/")[1], severity, message, ...(suggestion ? { suggestion } : {}) }));
       const usages = result.report.usages.filter((u) => wanted.has(u.file)).map((u) => `${u.file}:${u.line} ${u.export} ${formatProps(u.props, u.spread)}`.trim());
+      const failed = result.report.coverage.failed.filter((f) => wanted.has(f.file)).map((f) => `${f.file}: ${f.reason}`);
       return {
         errors: violations.filter((v) => v.severity === "error").length,
+        ...(unchecked.length || failed.length ? { incomplete: true, unchecked, failed } : {}),
         violations,
         lookalikes: result.report.lookalikes.filter((l) => wanted.has(l.file)).map((l) => `${l.file}:${l.line} ${l.local} → ${l.resolved}`),
         unknown: result.report.unknowns.filter((u) => wanted.has(u.file)).map((u) => `${u.file}:${u.line} ${u.name} (${u.reason})`),

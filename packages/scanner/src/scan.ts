@@ -77,7 +77,9 @@ export async function scanProject(project: Project, options: ScanOptions = {}): 
     buildTokens(project.repo.root, project.system.config, project.config.outputs),
     headCommit(project.root),
   ]);
-  const graph = new ModuleGraph(project.root, ModuleResolver.create(project.root, project.config.tsconfig), modules, new Map(Object.entries(overrides)));
+  const resolver = ModuleResolver.create(project.root, project.config.tsconfig);
+  for (const problem of resolver.problems) failed.push({ file: project.config.tsconfig, reason: problem });
+  const graph = new ModuleGraph(project.root, resolver, modules, new Map(Object.entries(overrides)));
   const elements = buildElementIndex(project);
   const tokens = buildTokenIndex(build.tokens, project.config.outputs);
   const routes = RouteIndex.build(graph, modules, project.config.routes);

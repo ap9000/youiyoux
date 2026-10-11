@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { MigrationSpec, unifiedDiff } from "@youiyoux/core";
@@ -23,6 +23,8 @@ async function copyOfFixture(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), "youi-codemod-"));
   temps.push(dir);
   await cp(FIXTURE, dir, { recursive: true });
+  // The fixture's deliberately unparseable file mentions Button; the coverage gate would (rightly) refuse.
+  await rm(join(dir, "app/broken.tsx"));
   return dir;
 }
 const load = (root: string) => loadProject(root, { designRoot: REPO });
@@ -37,7 +39,7 @@ describe("runMigration", () => {
     const before = await readFile(join(root, "app/settings/index.tsx"), "utf8");
     const result = await runMigration(await load(root), migration);
     expect(result.status).toBe("dry-run");
-    expect(result.gates.map((g) => [g.name, g.ok])).toEqual([["parse-errors", true], ["usage-count", true], ["unknowns", true], ["old-api", true], ["idempotent", true]]);
+    expect(result.gates.map((g) => [g.name, g.ok])).toEqual([["coverage", true], ["parse-errors", true], ["usage-count", true], ["unknowns", true], ["old-api", true], ["idempotent", true]]);
     expect(result.sitesBefore).toBe(result.sitesAfter);
     expect(result.edited).toBe(5);
     expect(result.residuals.map((r) => `${r.file}:${r.line} ${r.reason}`)).toEqual([
@@ -136,4 +138,30 @@ describe("planChange", () => {
 test("unified diff marks only the changed lines", () => {
   const diff = unifiedDiff("a.tsx", "one\ntwo\nthree\n", "one\nTWO\nthree\n");
   expect(diff).toBe("--- a/a.tsx\n+++ b/a.tsx\n@@ -1,4 +1,4 @@\n one\n-two\n+TWO\n three\n \n");
+});
+
+describe("write safety", () => {
+  test("a scan that cannot see every site refuses to migrate", async () => {
+    const root = await copyOfFixture();
+    await cp(join(FIXTURE, "app/broken.tsx"), join(root, "app/broken.tsx"));
+    const result = await runMigration(await load(root), migration, { write: true });
+    expect(result.status).toBe("rejected");
+    expect(result.gates.find((g) => g.name === "coverage")).toMatchObject({ ok: false, detail: expect.stringContaining("app/broken.tsx") });
+  });
+
+  test("a file edited after the scan is not overwritten", async () => {
+    const root = await copyOfFixture();
+    const project = await load(root);
+    const edited = "// edited by someone else\n";
+    const result = await runMigration(project, migration, {
+      write: true,
+      rewriteValue: (quoted, _from, to) => {
+        void writeFile(join(root, "app/(tabs)/index.tsx"), edited);
+        return `${quoted[0]}${to}${quoted.at(-1)}`;
+      },
+    });
+    expect(result.status).toBe("rejected");
+    expect(result.gates.at(-1)).toMatchObject({ name: "sources-unchanged", ok: false });
+    expect(await readFile(join(root, "app/settings/index.tsx"), "utf8")).toContain("variant=\"ghost\"");
+  });
 });

@@ -3,7 +3,7 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { DefinitionError, readDefinition } from "./files.ts";
 import { parseId } from "./ids.ts";
-import { ComponentContract, DesignConfig, MigrationSpec, RuleSpec, type SystemConfig } from "./schemas.ts";
+import { ComponentContract, DesignConfig, MigrationSpec, normalizeRelPath, RuleSpec, type SystemConfig } from "./schemas.ts";
 
 export interface LoadedComponent {
   readonly contract: ComponentContract;
@@ -37,7 +37,8 @@ async function loadComponent(root: string, dir: string): Promise<LoadedComponent
   const entries = await listDir(dir);
   const contractFile = entries.find((name) => name.endsWith(".contract.json"));
   if (!contractFile) return null;
-  const contract = await readDefinition(join(dir, contractFile), ComponentContract, root);
+  const parsed = await readDefinition(join(dir, contractFile), ComponentContract, root);
+  const contract = { ...parsed, source: { ...parsed.source, file: normalizeRelPath(parsed.source.file) } };
   const migrationDir = join(dir, "migrations");
   const migrations = await Promise.all(
     (await listDir(migrationDir)).filter((name) => /\.ya?ml$/.test(name)).map((name) => readDefinition(join(migrationDir, name), MigrationSpec, root)),
@@ -61,6 +62,14 @@ function validateGraph(system: LoadedSystem): string[] {
   const problems: string[] = [];
   const ids = new Set<string>();
   const ruleIds = new Set(system.rules.map((r) => r.id));
+  // Sources are vendored by file name into one components dir, so two different files may not share a name.
+  const byName = new Map<string, string>();
+  for (const file of [...system.components.map((c) => c.contract.source.file), ...system.config.support]) {
+    const name = file.split("/").at(-1)!;
+    const other = byName.get(name);
+    if (other !== undefined && other !== file) problems.push(`source files ${other} and ${file} would both be vendored as ${name}`);
+    byName.set(name, file);
+  }
   const claim = (id: string, where: string): void => {
     if (ids.has(id)) problems.push(`${where}: duplicate id ${id}`);
     ids.add(id);
@@ -83,7 +92,9 @@ function validateGraph(system: LoadedSystem): string[] {
 
 export async function loadDesignRepo(root: string): Promise<DesignRepo> {
   const config = await readDefinition(join(root, "youi.config.json"), DesignConfig, root);
-  const systems = await Promise.all(config.systems.map((system) => loadSystem(root, system)));
+  const systems = await Promise.all(
+    config.systems.map((system) => loadSystem(root, { ...system, tokens: normalizeRelPath(system.tokens), components: normalizeRelPath(system.components), rules: normalizeRelPath(system.rules), support: system.support.map(normalizeRelPath) })),
+  );
   const problems = systems.flatMap(validateGraph);
   if (problems.length > 0) throw new DefinitionError("design repo", problems);
   return { root, config, systems };

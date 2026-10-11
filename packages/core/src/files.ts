@@ -1,5 +1,6 @@
 /** Filesystem helpers shared by the loader, scanner and sync. */
 import { glob, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
 import { dirname, join, matchesGlob, relative, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
 import type { z } from "zod";
@@ -73,7 +74,7 @@ export async function readDefinition<T extends z.ZodType>(file: string, schema: 
 /** Write via a temp file and rename, so a reader never sees a half-written file. */
 export async function writeFileAtomic(file: string, content: string): Promise<void> {
   await mkdir(dirname(file), { recursive: true });
-  const temp = join(dirname(file), `.${process.pid}.${Date.now()}.tmp`);
+  const temp = join(dirname(file), `.${process.pid}.${randomBytes(6).toString("hex")}.tmp`);
   await writeFile(temp, content, "utf8");
   await rename(temp, file);
 }

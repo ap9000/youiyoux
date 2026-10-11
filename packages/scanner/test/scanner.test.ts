@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { ScanReport } from "@youiyoux/core";
+import { normalizeProjectConfig, ScanReport } from "@youiyoux/core";
 import { beforeAll, describe, expect, test } from "vitest";
 import { expoRoute, loadProject, scanProject, type ScanResult } from "../src/index.ts";
 
@@ -119,5 +119,40 @@ describe("checks", () => {
   test("youi-ignore silences one finding and is counted", () => {
     expect(result.report.violations.some((v) => v.text === "#ff00ff")).toBe(false);
     expect(result.report.suppressed).toBe(1);
+  });
+});
+
+describe("review regressions", () => {
+  test("unnormalized config paths resolve the same as clean ones", async () => {
+    const project = await loadProject(FIXTURE);
+    const messy = { ...project, config: normalizeProjectConfig({ ...project.config, componentsDir: "./components/ui/", routes: { ...project.config.routes, appDir: "./app" } }) };
+    const report = (await scanProject(messy)).report;
+    expect(report.usages.filter((u) => u.element === BUTTON)).toHaveLength(7);
+    expect(report.usages.find((u) => u.file === "app/settings/index.tsx")?.routes).toEqual(["/settings"]);
+  });
+
+  test("a missing tsconfig makes the scan partial and alias imports unknown, not external", async () => {
+    const project = await loadProject(FIXTURE);
+    const report = (await scanProject({ ...project, config: { ...project.config, tsconfig: "tsconfig.base.json" } })).report;
+    expect(report.status).toBe("partial");
+    expect(report.coverage.failed.map((f) => f.file)).toContain("tsconfig.base.json");
+    expect(report.unknowns.some((u) => u.reason === "unresolved-import" && u.candidate === BUTTON)).toBe(true);
+    expect(report.lookalikes.filter((l) => l.resolved.startsWith("@/"))).toEqual([]);
+  });
+
+  test("colour context, fragments, ignore scope and default exports", async () => {
+    const project = await loadProject(FIXTURE);
+    const file = "app/review.tsx";
+    const code = [
+      "import Home from \"./(tabs)/index\";",
+      "export default function Review() {",
+      "  const x = 1; // youi-ignore",
+      "  return <div style={{ border: \"1px solid #ff0000\", boxShadow: \"0 1px 2px #000\" }}><a href=\"#fade\">Top</a><Home /></div>;",
+      "}",
+    ].join("\n");
+    const report = (await scanProject(project, { overrides: { [file]: code } })).report;
+    const colours = report.violations.filter((v) => v.file === file && v.rule.endsWith("no-raw-color")).map((v) => v.text);
+    expect(colours).toEqual(["#ff0000", "#000"]);
+    expect(report.unknowns.filter((u) => u.file === file)).toEqual([]);
   });
 });

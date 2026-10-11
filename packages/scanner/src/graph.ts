@@ -75,7 +75,9 @@ export class ModuleGraph {
     if (memo) return memo;
     const next = new Set(seen).add(key);
     const result = this.resolveExportUncached(file, name, next);
-    this.exportMemo.set(key, result);
+    // Only a search that started here is complete: inside a chain, `export *` cycles are cut
+    // short, and caching that partial answer would make counts depend on traversal order.
+    if (seen.size === 0) this.exportMemo.set(key, result);
     return result;
   }
 

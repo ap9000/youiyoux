@@ -1,9 +1,9 @@
 /** `youi`: the YouIyouX command line. */
 import { readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { join, relative, resolve, sep } from "node:path";
 import { parseArgs, type ParseArgsConfig } from "node:util";
 import { parse as parseYaml } from "yaml";
-import { DefinitionError, loadDesignRepo, MigrationSpec, OutputConfig, renderJsonSchemas, writeFileAtomic } from "@youiyoux/core";
+import { DefinitionError, findFiles, loadDesignRepo, MigrationSpec, OutputConfig, renderJsonSchemas, writeFileAtomic } from "@youiyoux/core";
 import { buildTokens, compareParity } from "@youiyoux/tokens";
 import { componentCard, findContract, loadProject, planChange, runMigration, scanProject, screenBom, whereUsed, type PlanInput, type Project } from "@youiyoux/scanner";
 import { initProject } from "./init.ts";
@@ -81,6 +81,10 @@ async function project(values: Values): Promise<Project> {
   return loadProject(values.project ?? process.cwd(), { ...(values.config ? { configPath: values.config } : {}), ...(values.design ? { designRoot: values.design } : {}) });
 }
 
+async function scannedFiles(p: Project): Promise<string[]> {
+  return findFiles(p.root, p.config.include, p.config.exclude);
+}
+
 async function readJsonOrFile(value: string): Promise<Record<string, unknown>> {
   const text = value.trim().startsWith("{") ? value : await readFile(value, "utf8");
   return JSON.parse(text) as Record<string, unknown>;
@@ -133,14 +137,23 @@ async function cmdBom(values: Values, positionals: string[]): Promise<number> {
 async function cmdCheck(values: Values, positionals: string[]): Promise<number> {
   const p = await project(values);
   const { report } = await scanProject(p);
-  const only = new Set(positionals.map((f) => f.replace(/^\.\//, "")));
+  const only = new Set(positionals.map((f) => relative(p.root, resolve(f)).split(sep).join("/")));
+  const scanned = new Set([...report.usages.map((u) => u.file), ...report.violations.map((v) => v.file), ...(await scannedFiles(p))]);
+  const unmatched = [...only].filter((f) => !scanned.has(f));
+  const failedHere = report.coverage.failed.filter((f) => only.size === 0 || only.has(f.file) || !f.file.match(/\.(tsx?|css)$/));
   const violations = report.violations.filter((v) => (only.size === 0 || only.has(v.file)) && (!values.rule || v.rule.endsWith(`/rule/${values.rule}`)) && (!values.quiet || v.severity === "error"));
   const lock = await verifyLock(p);
   const lockIssues = lock === null ? null : [...lock, ...(await verifyWiring(p))];
   const errors = violations.filter((v) => v.severity === "error").length + (lockIssues ?? []).filter((i) => i.severity === "error").length;
-  if (values.json) json({ errors, violations, lock: lockIssues, suppressed: report.suppressed, coverage: report.coverage, status: report.status });
-  else print(renderCheck(violations, lockIssues, report, report.suppressed));
-  return errors > 0 ? 1 : 0;
+  // A clean result only counts when everything asked about was actually checked.
+  const incomplete = unmatched.length > 0 || failedHere.length > 0;
+  if (values.json) json({ errors, incomplete, unmatched, violations, lock: lockIssues, suppressed: report.suppressed, coverage: report.coverage, status: report.status });
+  else {
+    print(renderCheck(violations, lockIssues, report, report.suppressed));
+    for (const file of unmatched) print(style.error(`✖ ${file} was not checked: it is not in this project's include globs (or does not exist)`));
+    if (failedHere.length > 0) print(style.warn(`! incomplete: ${failedHere.map((f) => f.file).join(", ")} could not be fully analysed, so 0 errors there is not a pass`));
+  }
+  return errors > 0 || incomplete ? 1 : 0;
 }
 
 async function cmdPlan(values: Values, positionals: string[]): Promise<number> {
