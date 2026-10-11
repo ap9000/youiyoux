@@ -1,6 +1,7 @@
-import { cp, mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { sha256 } from "@youiyoux/core";
 import { loadProject, type Project } from "@youiyoux/scanner";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { BLOCK_BEGIN, BLOCK_END, mcpArgs, mergeThreeWay, readLock, syncProject, verifyLock } from "../src/index.ts";
@@ -50,7 +51,24 @@ describe("first sync", () => {
     // The MCP entry runs this tool's CLI, which lives apart from the design repo.
     expect(resolve(app, mcp.args[0]!)).toBe(join(import.meta.dirname, "../bin/youi.js"));
     expect(lock.files["components/ui/utils.ts"]).toMatchObject({ kind: "vendored", elements: ["youi:demo/component/button", "youi:demo/component/card", "youi:demo/component/input"] });
+    // The System vs Library rule is stated plainly, and every tool named is a current one.
+    expect(agents).toMatch(/\*\*Build only with the System\.\*\*.*never import, copy or restyle code from one.*library_request/);
+    const skill = await read(".agents/skills/youiyoux/SKILL.md");
+    expect(skill).toContain("## System and Library");
+    expect(skill).toContain("`library → candidate → adopted → in-use`");
+    for (const text of [agents, skill, await read("DESIGN.md")]) expect(text).not.toMatch(/\byoui_[a-z]/);
     expect(await readLock(app)).toEqual(lock);
+  });
+
+  test("rules that tell agents to call a tool the MCP server does not expose are reported", async () => {
+    expect((await syncProject(await project(), { dryRun: true })).unknownTools).toEqual([]);
+    const file = join(design, "rules/color.no-raw-color.rule.yaml");
+    await writeFile(file, (await readFile(file, "utf8")).replace("look up the role with system_get_tokens", "look up the role with youi_get_tokens or system_get_palette"));
+    const { unknownTools } = await syncProject(await project(), { dryRun: true });
+    expect(unknownTools).toEqual([
+      { rule: "youi:demo/rule/color.no-raw-color", tool: "youi_get_tokens" },
+      { rule: "youi:demo/rule/color.no-raw-color", tool: "system_get_palette" },
+    ]);
   });
 
   test("a second sync changes nothing", async () => {
@@ -204,5 +222,64 @@ describe("review regressions", () => {
     expect(actionFor((await syncProject(await project(), { adopt: true })).actions, "components/ui/card.tsx")).toBe("kept-local");
     expect(actionFor((await syncProject(await project())).actions, "components/ui/card.tsx")).toBe("kept-local");
     expect(await read("components/ui/card.tsx")).toContain("/** Ours. */");
+  });
+});
+
+describe("off is off everywhere", () => {
+  const nativeRule = (): string => join(design, "rules/components.no-native-controls.rule.yaml");
+  const turnOff = async (): Promise<void> => writeFile(nativeRule(), (await readFile(nativeRule(), "utf8")).replace(/^severity: \w+$/m, "severity: off"));
+
+  test("turning a rule off removes its ast-grep file and its agent instruction on the next sync", async () => {
+    await syncProject(await project());
+    const yml = "youi-rules/components.no-native-controls.yml";
+    expect(await read(yml)).toContain("components.no-native-controls");
+    const instruction = (await project()).system.rules.find((r) => r.id.endsWith("components.no-native-controls"))!.agent;
+    expect(await read("AGENTS.md")).toContain(instruction);
+    expect(await read("DESIGN.md")).toContain("Use the owned controls, not native elements");
+    await turnOff();
+    const { actions, lock } = await syncProject(await project());
+    expect(actionFor(actions, yml)).toBe("removed");
+    await expect(read(yml)).rejects.toThrow();
+    expect(lock.files[yml]).toBeUndefined();
+    expect(await read("AGENTS.md")).not.toContain(instruction);
+    expect(await read("DESIGN.md")).not.toContain("Use the owned controls, not native elements");
+  });
+
+  test("a retired file edited by hand is reported and kept", async () => {
+    await syncProject(await project());
+    const yml = "youi-rules/components.no-native-controls.yml";
+    await writeFile(join(app, yml), "# ours now\n");
+    await turnOff();
+    const { actions } = await syncProject(await project());
+    expect(actionFor(actions, yml)).toBe("skipped");
+    expect(await read(yml)).toBe("# ours now\n");
+    const again = await syncProject(await project());
+    expect(actionFor(again.actions, yml)).toBe("skipped");
+    expect(again.lock.files[yml]).toBeDefined();
+  });
+
+  test("a lockfile entry outside youi's generated paths is never deleted", async () => {
+    await syncProject(await project());
+    const outside = join(dir, "outside.txt");
+    await writeFile(outside, "keep me\n");
+    const lock = JSON.parse(await read("youi.lock.json")) as { files: Record<string, unknown> };
+    lock.files["../outside.txt"] = { kind: "generated", sha256: sha256("keep me\n") };
+    lock.files["app/(tabs)/index.tsx"] = { kind: "generated", sha256: sha256(await read("app/(tabs)/index.tsx")) };
+    await writeFile(join(app, "youi.lock.json"), JSON.stringify(lock));
+    await syncProject(await project());
+    expect(await readFile(outside, "utf8")).toBe("keep me\n");
+    expect(await read("app/(tabs)/index.tsx")).toContain("Button");
+  });
+
+  test("a retired file behind a symlinked directory outside the project is left alone", async () => {
+    await syncProject(await project());
+    const elsewhere = join(dir, "elsewhere");
+    await cp(join(app, "youi-rules"), elsewhere, { recursive: true });
+    await rm(join(app, "youi-rules"), { recursive: true });
+    await symlink(elsewhere, join(app, "youi-rules"));
+    await turnOff();
+    const { actions } = await syncProject(await project());
+    expect(actionFor(actions, "youi-rules/components.no-native-controls.yml")).toBe("skipped");
+    expect(await readFile(join(elsewhere, "components.no-native-controls.yml"), "utf8")).toContain("components.no-native-controls");
   });
 });

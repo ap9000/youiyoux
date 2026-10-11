@@ -1,23 +1,30 @@
-/** A component's page: header with the Install verb, then Preview, Contract, Tokens, Rules and Where it lives. */
-import { Box, ChevronDown, Download } from "lucide-react";
-import { useState } from "react";
+/**
+ * A component's page. A quiet header (name, status, one line of facts) with one primary
+ * verb, Propose change; install and copy live in a secondary menu. Then four tabs:
+ * Overview, Usage, Contract & tokens, Rules.
+ */
+import { ClipboardCopy, Download, Ellipsis, GitPullRequestArrow, Hash, PackageOpen } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "wouter";
 import { type ElementTab, elementHref, parseId } from "../../data/ids.ts";
 import type { Model } from "../../data/model.ts";
 import { useUsageState } from "../../data/store.ts";
 import type { ComponentEntry } from "../../data/types.ts";
-import { summarize } from "../../data/usage.ts";
+import { elementIssues } from "../../data/usage.ts";
 import { markNavigation } from "../../lib/perf.ts";
 import { Badge, StatusBadge } from "../../ui/Badge.tsx";
 import { Button } from "../../ui/Button.tsx";
 import { CopyButton } from "../../ui/CopyButton.tsx";
+import { MenuButton } from "../../ui/Menu.tsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../ui/Tabs.tsx";
-import { stageFor } from "../tokens/TokenValue.tsx";
 import { ContractTab } from "./ContractTab.tsx";
-import { PreviewTab } from "./PreviewTab.tsx";
+import { OverviewTab } from "./OverviewTab.tsx";
 import { RulesTab } from "./RulesTab.tsx";
-import { TokensTab } from "./TokensTab.tsx";
-import { WhereTab } from "./WhereTab.tsx";
+import { UsageTab } from "./UsageTab.tsx";
+
+const STATUS_MS = 1600;
+/** Where `youi init` points imports when a project has an `@/` alias; projects can set their own `importFrom`. */
+const DEFAULT_IMPORT_FROM = "@/components/ui";
 
 /** npm packages a component's files import (everything but relative paths and React itself). */
 export function packageDeps(files: ComponentEntry["files"]): string[] {
@@ -32,7 +39,12 @@ export function packageDeps(files: ComponentEntry["files"]): string[] {
   return [...deps].sort();
 }
 
-function InstallPanel({ entry }: { entry: ComponentEntry }) {
+export function importLine(entry: ComponentEntry): string {
+  const { source } = entry.contract;
+  return `import { ${[source.export, ...source.also].join(", ")} } from "${DEFAULT_IMPORT_FROM}";`;
+}
+
+function InstallPanel({ entry, onClose }: { entry: ComponentEntry; onClose: () => void }) {
   const name = parseId(entry.contract.id)?.name ?? entry.contract.name.toLowerCase();
   const command = `youi add ${name}`;
   const deps = packageDeps(entry.files);
@@ -46,28 +58,53 @@ function InstallPanel({ entry }: { entry: ComponentEntry }) {
       <p className="text-small text-muted">
         Vendors <span className="font-mono text-ink-2">{entry.files.map((f) => f.path).join(", ")}</span> into the project's components folder as owned code, pins it in <span className="font-mono text-ink-2">youi.lock</span>, and keeps it updatable from the design language.
       </p>
-      {deps.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 text-small text-muted">
-          Adds
-          {deps.map((dep) => (
-            <Badge key={dep} tone="outline" className="font-mono">
-              {dep}
-            </Badge>
-          ))}
-        </div>
-      )}
+      <div className="flex flex-wrap items-center gap-1.5 text-small text-muted">
+        {deps.length > 0 && (
+          <>
+            Adds
+            {deps.map((dep) => (
+              <Badge key={dep} tone="outline" className="font-mono">
+                {dep}
+              </Badge>
+            ))}
+          </>
+        )}
+        <button type="button" onClick={onClose} className="ml-auto text-small text-muted hover:text-ink">
+          Close
+        </button>
+      </div>
     </div>
   );
+}
+
+/** Copy to the clipboard and say so in a polite live region. */
+function useCopyStatus(): { status: string; copy: (value: string, what: string) => void } {
+  const [status, setStatus] = useState("");
+  useEffect(() => {
+    if (!status) return;
+    const timer = setTimeout(() => setStatus(""), STATUS_MS);
+    return () => clearTimeout(timer);
+  }, [status]);
+  const copy = (value: string, what: string): void => {
+    navigator.clipboard.writeText(value).then(
+      () => setStatus(`Copied ${what}`),
+      () => setStatus("The browser blocked the clipboard"),
+    );
+  };
+  return { status, copy };
 }
 
 export function ComponentPage({ model, entry, tab }: { model: Model; entry: ComponentEntry; tab: ElementTab }) {
   const { contract } = entry;
   const [, navigate] = useLocation();
   const [installing, setInstalling] = useState(false);
+  const { status, copy } = useCopyStatus();
   const usage = useUsageState();
-  const sites = usage.status === "ready" ? (usage.value.sitesByElement.get(contract.id) ?? []) : null;
-  const summary = sites ? summarize(sites) : null;
+  const sites = usage.status === "ready" ? (usage.value.sitesByElement.get(contract.id)?.length ?? 0) : undefined;
+  const issues = usage.status === "ready" ? elementIssues(usage.value, contract).total : 0;
   const name = parseId(contract.id)?.name ?? contract.name.toLowerCase();
+  const install = `youi add ${name}`;
+  const owners = contract.owners.map((o) => o.replace(/^group:/, ""));
 
   const selectTab = (next: string): void => {
     const href = elementHref(contract.id, next as ElementTab);
@@ -77,87 +114,80 @@ export function ComponentPage({ model, entry, tab }: { model: Model; entry: Comp
 
   return (
     <article className="flex min-h-0 flex-1 flex-col animate-enter">
-      <header className="shrink-0 px-6 pt-5 pb-4">
+      <header className="shrink-0 px-6 pt-5 pb-4 max-sm:px-4">
         <div className="flex items-start gap-3">
-          <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-line bg-raised text-ink-2">
-            <Box className="size-4" />
-          </span>
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1 space-y-1">
             <div className="flex flex-wrap items-center gap-2">
               <h2 data-detail-heading tabIndex={-1} className="truncate text-title outline-none">
                 {contract.name}
               </h2>
               <StatusBadge status={contract.status} />
-              <Badge tone="outline" className="tabular">
-                v{contract.version}
-              </Badge>
             </div>
-            <div className="flex min-w-0 items-center gap-0.5 font-mono text-mono-sm text-muted">
-              <span className="truncate">{contract.id}</span>
-              <CopyButton value={contract.id} label="Copy element id" />
-            </div>
+            <p className="max-w-2xl text-reading text-ink-2">{contract.summary}</p>
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
-            <Button variant="ghost" asChild className="max-sm:hidden">
-              <Link href="/changes">Propose change</Link>
+            <span role="status" aria-live="polite" className="text-small text-muted max-md:sr-only">
+              {status}
+            </span>
+            <Button variant="primary" asChild>
+              <Link href="/changes">
+                <GitPullRequestArrow /> <span className="max-sm:hidden">Propose change</span>
+              </Link>
             </Button>
-            <Button variant="primary" aria-expanded={installing} onClick={() => setInstalling((open) => !open)}>
-              <Download /> Install <ChevronDown className={installing ? "rotate-180 transition-transform" : "transition-transform"} />
-            </Button>
+            <MenuButton
+              label={`More for ${contract.name}`}
+              items={[
+                { label: "Copy install command", detail: install, icon: Download, onSelect: () => copy(install, "the install command") },
+                { label: "Copy import", detail: importLine(entry), icon: ClipboardCopy, onSelect: () => copy(importLine(entry), "the import") },
+                { label: "Copy element id", detail: contract.id, icon: Hash, onSelect: () => copy(contract.id, "the element id") },
+                { label: "What install does", detail: "Files, lockfile and dependencies", icon: PackageOpen, onSelect: () => setInstalling(true) },
+              ]}
+            >
+              <Ellipsis />
+            </MenuButton>
           </div>
         </div>
-        <p className="mt-3 max-w-2xl text-reading text-ink-2">{contract.summary}</p>
-        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-1 text-small text-muted">
-          <span>
-            Platforms <span className="text-ink-2">{contract.platforms.join(", ")}</span>
-          </span>
-          {contract.owners.length > 0 && (
-            <span>
-              Owners <span className="text-ink-2">{contract.owners.map((o) => o.replace(/^group:/, "")).join(", ")}</span>
-            </span>
+        <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-small text-muted">
+          <span className="tabular">v{contract.version}</span>
+          <span aria-hidden className="text-faint">·</span>
+          <span>{contract.platforms.join(", ")}</span>
+          {owners.length > 0 && (
+            <>
+              <span aria-hidden className="text-faint">·</span>
+              <span>{owners.join(", ")}</span>
+            </>
           )}
-          <Link href={elementHref(contract.id, "where")} className="hover:text-ink">
-            {summary ? (
-              <span className="tabular">
-                <span className="text-ink-2">{summary.sites}</span> sites · <span className="text-ink-2">{summary.screens}</span> screens · <span className="text-ink-2">{summary.projects}</span> {summary.projects === 1 ? "project" : "projects"}
-              </span>
-            ) : (
-              "Usage loading…"
-            )}
-          </Link>
-        </div>
-        {installing && <InstallPanel entry={entry} />}
+          <span aria-hidden className="text-faint">·</span>
+          <span className="inline-flex min-w-0 items-center font-mono text-mono-sm text-faint">
+            <span className="truncate">{contract.id}</span>
+            <CopyButton value={contract.id} label="Copy element id" className="size-5" />
+          </span>
+        </p>
+        {installing && <InstallPanel entry={entry} onClose={() => setInstalling(false)} />}
       </header>
       <Tabs value={tab} onValueChange={selectTab} className="flex min-h-0 flex-1 flex-col">
-        <TabsList aria-label={`${contract.name} sections`}>
-          <TabsTrigger value="preview">Preview</TabsTrigger>
-          <TabsTrigger value="contract" count={Object.keys(contract.props).length}>
-            Contract
+        <TabsList aria-label={`${contract.name} sections`} className="max-sm:px-4">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="usage" count={sites}>
+            Usage
+            {issues > 0 && <span aria-label={`${issues} to look at`} className="size-1.5 rounded-full bg-warning" />}
           </TabsTrigger>
-          <TabsTrigger value="tokens" count={Object.keys(contract.tokens).length}>
-            Tokens
-          </TabsTrigger>
+          <TabsTrigger value="contract">Contract & tokens</TabsTrigger>
           <TabsTrigger value="rules" count={contract.rules.length}>
             Rules
           </TabsTrigger>
-          <TabsTrigger value="where" count={summary?.sites}>
-            Where it lives
-          </TabsTrigger>
         </TabsList>
-        <TabsContent value="preview" className="min-h-0 flex-1 overflow-y-auto outline-none">
-          <PreviewTab name={name} contract={contract} paper={{ light: stageFor(model, "light").background, dark: stageFor(model, "dark").background }} />
+        <TabsContent value="overview" className="min-h-0 flex-1 overflow-y-auto outline-none">
+          <OverviewTab model={model} name={name} contract={contract} usage={usage} />
+        </TabsContent>
+        <TabsContent value="usage" className="flex min-h-0 flex-1 flex-col outline-none">
+          <UsageTab model={model} contract={contract} usage={usage} />
         </TabsContent>
         <TabsContent value="contract" className="min-h-0 flex-1 overflow-y-auto outline-none">
-          <ContractTab entry={entry} />
-        </TabsContent>
-        <TabsContent value="tokens" className="min-h-0 flex-1 overflow-y-auto outline-none">
-          <TokensTab model={model} contract={contract} />
+          <ContractTab model={model} entry={entry} />
         </TabsContent>
         <TabsContent value="rules" className="min-h-0 flex-1 overflow-y-auto outline-none">
           <RulesTab model={model} contract={contract} />
-        </TabsContent>
-        <TabsContent value="where" className="flex min-h-0 flex-1 flex-col outline-none">
-          <WhereTab contract={contract} usage={usage} />
         </TabsContent>
       </Tabs>
     </article>

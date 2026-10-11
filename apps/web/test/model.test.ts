@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { elementHref, formatId, parseId, shortName, tokenHref } from "../src/data/ids.ts";
+import { elementHref, formatId, parseId, shortName, tabOf, tokenHref } from "../src/data/ids.ts";
 import { buildModel, countByKind } from "../src/data/model.ts";
 import type { Catalog, Manifest } from "../src/data/types.ts";
 import { readSelection } from "../src/screens/catalog/CatalogScreen.tsx";
@@ -24,19 +24,28 @@ describe("ids", () => {
     expect(parseId("dl:core/button")).toBeNull();
   });
 
-  test("hub URLs keep the preview tab implicit", () => {
+  test("hub URLs keep the overview tab implicit", () => {
     expect(elementHref("youi:demo/component/button")).toBe("/elements/demo/component/button");
-    expect(elementHref("youi:demo/component/button", "where")).toBe("/elements/demo/component/button/where");
+    expect(elementHref("youi:demo/component/button", "overview")).toBe("/elements/demo/component/button");
+    expect(elementHref("youi:demo/component/button", "usage")).toBe("/elements/demo/component/button/usage");
     expect(elementHref("nonsense")).toBe("/elements");
     expect(tokenHref("color.ink")).toBe("/tokens/color.ink");
     expect(shortName("youi:demo/rule/color.no-raw-color")).toBe("color.no-raw-color");
   });
 
-  test("readSelection reads the element and tab from the route, defaulting bad tabs to preview", () => {
-    expect(readSelection("demo/component/button/where")).toEqual({ id: "youi:demo/component/button", tab: "where" });
-    expect(readSelection("demo/component/button/bogus").tab).toBe("preview");
+  test("readSelection reads the element and tab from the route, defaulting bad tabs to overview", () => {
+    expect(readSelection("demo/component/button/usage")).toEqual({ id: "youi:demo/component/button", tab: "usage" });
+    expect(readSelection("demo/component/button/bogus").tab).toBe("overview");
     expect(readSelection("demo/widget/button").id).toBeNull();
     expect(readSelection("").id).toBeNull();
+  });
+
+  test("links from before the tabs merged land on the tab that now holds their content", () => {
+    expect(tabOf("preview")).toBe("overview");
+    expect(tabOf("where")).toBe("usage");
+    expect(tabOf("tokens")).toBe("contract");
+    expect(tabOf("rules")).toBe("rules");
+    expect(tabOf(undefined)).toBe("overview");
   });
 });
 

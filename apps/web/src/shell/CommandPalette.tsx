@@ -4,7 +4,7 @@ import { Command } from "cmdk";
 import { ArrowRight, Moon, Search, Sun, SunMoon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
-import { NAV } from "../app/routes.tsx";
+import { NAV, NAV_SECTIONS } from "../app/routes.tsx";
 import { setTheme, type ThemeChoice, useTheme } from "../app/theme.tsx";
 import { elementHref } from "../data/ids.ts";
 import type { ElementSummary } from "../data/model.ts";
@@ -88,6 +88,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
                     <Command.Item key={item.href} value={`go ${item.href}`} onSelect={() => go(item.href)} className={ITEM}>
                       <item.icon className="size-4 text-muted" />
                       <span>{item.label}</span>
+                      {item.section && NAV_SECTIONS[item.section].label !== item.label && <span className="text-caption text-muted">{NAV_SECTIONS[item.section].label}</span>}
                       <Keys keys={["g", item.key]} className="ml-auto" />
                     </Command.Item>
                   ))}

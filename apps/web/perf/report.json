@@ -1,18 +1,23 @@
 {
   "budgets": {
-    "initialKbGzip": 150,
-    "searchMs": 50
+    "initialKb": 150,
+    "searchMs": 50,
+    "navigationMs": 100,
+    "navigationNote": "navigation is measured in the browser (Home → Speed), not by this script"
   },
   "initial": {
-    "jsKbGzip": 82.4,
-    "cssKbGzip": 8.3,
-    "totalKbGzip": 90.7,
-    "withSnapshotKbGzip": 97.2,
+    "boundary": "first route: index.html + entry JS/CSS + modulepreloads + manifest + catalog + Latin font files (woff2 as is, the rest gzip -9)",
+    "htmlKbGzip": 0.6,
+    "jsKbGzip": 84,
+    "cssKbGzip": 9.3,
+    "snapshotKbGzip": 6.6,
+    "fontsKb": 29.2,
+    "totalKb": 129.8,
     "withinBudget": true,
     "assets": [
       {
-        "file": "assets/main-BTZEWxOn.js",
-        "kbGzip": 11.9
+        "file": "assets/main-C17-pHnI.js",
+        "kbGzip": 14.2
       },
       {
         "file": "assets/react-yIOJJ3r4.js",
@@ -27,42 +32,41 @@
         "kbGzip": 1.4
       },
       {
+        "file": "assets/boxes-nQEd6IMU.js",
+        "kbGzip": 0.4
+      },
+      {
+        "file": "assets/git-pull-request-arrow-B1lNRDdw.js",
+        "kbGzip": 0.3
+      },
+      {
         "file": "assets/clsx-DB0hHKMi.js",
         "kbGzip": 0.2
-      },
-      {
-        "file": "assets/Kbd-CowQYnn0.js",
-        "kbGzip": 0.8
-      },
-      {
-        "file": "assets/monitor-BgfZwRa_.js",
-        "kbGzip": 0.5
       },
       {
         "file": "assets/dist-BogNzeK9.js",
         "kbGzip": 0.4
       },
       {
-        "file": "assets/main-CcT74QFJ.css",
-        "kbGzip": 8.3
+        "file": "assets/main-CTvJbHC8.css",
+        "kbGzip": 9.3
+      }
+    ],
+    "fonts": [
+      {
+        "file": "assets/geist-latin-core-vkBVTr4s.woff2",
+        "kb": 16.5
+      },
+      {
+        "file": "assets/geist-mono-latin-core-DccGGzmg.woff2",
+        "kb": 12.7
       }
     ]
   },
-  "snapshot": {
-    "catalogAndManifestKbGzip": 6.5,
-    "usageMapsKbGzip": 1.4,
-    "note": "Usage maps load after first paint (idle) or when a usage view opens."
+  "later": {
+    "usageMapsKbGzip": 1.6,
+    "note": "Usage maps load after first paint (idle) or when a usage view opens; route chunks preload on hover, focus and idle."
   },
-  "fontsLatinKb": [
-    {
-      "file": "assets/geist-latin-wght-normal-BgDaEnEv.woff2",
-      "kb": 28.7
-    },
-    {
-      "file": "assets/geist-mono-latin-wght-normal-XN7g48iV.woff2",
-      "kb": 22.6
-    }
-  ],
   "chunks": [
     {
       "file": "assets/jsx-runtime-4pWJuFt2.js",
@@ -70,22 +74,27 @@
       "kbGzip": 64
     },
     {
-      "file": "assets/CatalogScreen-C36inniO.js",
-      "kbRaw": 47.8,
-      "kbGzip": 14.6
+      "file": "assets/CatalogScreen-BlXUz7iq.js",
+      "kbRaw": 52.9,
+      "kbGzip": 16.8
     },
     {
-      "file": "assets/SearchField-4TqjqYdn.js",
-      "kbRaw": 38.9,
-      "kbGzip": 12.3
+      "file": "assets/main-C17-pHnI.js",
+      "kbRaw": 38.2,
+      "kbGzip": 14.2
     },
     {
-      "file": "assets/main-BTZEWxOn.js",
-      "kbRaw": 31.1,
-      "kbGzip": 11.9
+      "file": "assets/SearchField-zuXEhslC.js",
+      "kbRaw": 37.2,
+      "kbGzip": 11.7
     },
     {
-      "file": "assets/dist-Dp8YVo7T.js",
+      "file": "assets/main-CTvJbHC8.css",
+      "kbRaw": 48.6,
+      "kbGzip": 9.3
+    },
+    {
+      "file": "assets/dist-CTze4iJT.js",
       "kbRaw": 26.1,
       "kbGzip": 9
     },
@@ -95,13 +104,13 @@
       "kbGzip": 8.3
     },
     {
-      "file": "assets/main-CcT74QFJ.css",
-      "kbRaw": 42.9,
-      "kbGzip": 8.3
+      "file": "assets/ServiceDown-pY2jj06S.js",
+      "kbRaw": 24,
+      "kbGzip": 7.5
     },
     {
-      "file": "assets/CommandPalette-BB_6-qPF.js",
-      "kbRaw": 18.3,
+      "file": "assets/CommandPalette-BgKchY6J.js",
+      "kbRaw": 18.4,
       "kbGzip": 7
     },
     {
@@ -115,9 +124,24 @@
       "kbGzip": 5.7
     },
     {
-      "file": "assets/preview-bE-jQj5_.css",
-      "kbRaw": 14.6,
+      "file": "assets/ScreensScreen-C3blSJI1.js",
+      "kbRaw": 13.4,
+      "kbGzip": 4.4
+    },
+    {
+      "file": "assets/preview-CYW7OJxl.css",
+      "kbRaw": 14.7,
       "kbGzip": 3.8
+    },
+    {
+      "file": "assets/RulesScreen-BeVnhdhS.js",
+      "kbRaw": 10.2,
+      "kbGzip": 3.6
+    },
+    {
+      "file": "assets/ScreenImage-3OX7c3Oc.js",
+      "kbRaw": 8.6,
+      "kbGzip": 3.4
     },
     {
       "file": "assets/react-yIOJJ3r4.js",
@@ -125,24 +149,34 @@
       "kbGzip": 3.2
     },
     {
-      "file": "assets/dist-VbmW8YbA.js",
+      "file": "assets/dist-8FfsyS-O.js",
       "kbRaw": 7.9,
       "kbGzip": 3
     },
     {
-      "file": "assets/StubScreens-Bkq9skYu.js",
-      "kbRaw": 5.7,
-      "kbGzip": 2.4
+      "file": "assets/RuleDetail-4YQ_7Zy4.js",
+      "kbRaw": 7.6,
+      "kbGzip": 2.8
     },
     {
-      "file": "assets/TokensScreen-BVN2PpOl.js",
-      "kbRaw": 5,
+      "file": "assets/TokensScreen-CqGT6WXH.js",
+      "kbRaw": 5.1,
       "kbGzip": 2.3
     },
     {
-      "file": "assets/HomeScreen-Co_GkXNP.js",
+      "file": "assets/HomeScreen-YI7xfsZw.js",
       "kbRaw": 6.4,
       "kbGzip": 2.2
+    },
+    {
+      "file": "assets/LibraryScreen-DFRE3mMP.js",
+      "kbRaw": 5.3,
+      "kbGzip": 1.9
+    },
+    {
+      "file": "assets/StubScreens-DJWBZdd9.js",
+      "kbRaw": 4,
+      "kbGzip": 1.8
     },
     {
       "file": "assets/createLucideIcon-B35133ZF.js",
@@ -150,33 +184,43 @@
       "kbGzip": 1.4
     },
     {
-      "file": "assets/KindIcon-ChGXiKZQ.js",
-      "kbRaw": 3.1,
+      "file": "assets/workflow-Bb-ZCyYH.js",
+      "kbRaw": 2.9,
       "kbGzip": 1.4
     },
     {
-      "file": "assets/preview-CZ8_YKh1.js",
+      "file": "assets/ChangesScreen-Dhe0NcCL.js",
+      "kbRaw": 2.5,
+      "kbGzip": 1.2
+    },
+    {
+      "file": "assets/preview-BXbQ8iYz.js",
       "kbRaw": 2.6,
       "kbGzip": 1.2
     },
     {
-      "file": "assets/client-DYPvuOga.js",
+      "file": "assets/KindIcon-BRm2-I-8.js",
+      "kbRaw": 2.5,
+      "kbGzip": 1.2
+    },
+    {
+      "file": "assets/client-D43N4KU3.js",
       "kbRaw": 2.1,
       "kbGzip": 1.1
     },
     {
-      "file": "assets/Kbd-CowQYnn0.js",
-      "kbRaw": 1.8,
-      "kbGzip": 0.8
+      "file": "assets/CopyButton-DCtkAPO3.js",
+      "kbRaw": 1.3,
+      "kbGzip": 0.7
     },
     {
-      "file": "assets/button.demo-B1YAOVWh.js",
-      "kbRaw": 2,
-      "kbGzip": 0.8
-    },
-    {
-      "file": "assets/CheatSheet-DhN5hkGV.js",
+      "file": "assets/CheatSheet-CE-EUVu-.js",
       "kbRaw": 1.5,
+      "kbGzip": 0.7
+    },
+    {
+      "file": "assets/button.demo-B05trEI9.js",
+      "kbRaw": 1.7,
       "kbGzip": 0.7
     },
     {
@@ -187,6 +231,11 @@
     {
       "file": "assets/Section-DmMl8Wzp.js",
       "kbRaw": 1.4,
+      "kbGzip": 0.6
+    },
+    {
+      "file": "assets/Segmented-DKu3bkjO.js",
+      "kbRaw": 1,
       "kbGzip": 0.6
     },
     {
@@ -205,14 +254,39 @@
       "kbGzip": 0.5
     },
     {
-      "file": "assets/monitor-BgfZwRa_.js",
+      "file": "assets/boxes-nQEd6IMU.js",
       "kbRaw": 0.9,
-      "kbGzip": 0.5
+      "kbGzip": 0.4
     },
     {
       "file": "assets/dist-BogNzeK9.js",
       "kbRaw": 0.6,
       "kbGzip": 0.4
+    },
+    {
+      "file": "assets/layers-DTjFCJ44.js",
+      "kbRaw": 0.5,
+      "kbGzip": 0.3
+    },
+    {
+      "file": "assets/shield-check-1dTRuFT-.js",
+      "kbRaw": 0.4,
+      "kbGzip": 0.3
+    },
+    {
+      "file": "assets/git-pull-request-arrow-B1lNRDdw.js",
+      "kbRaw": 0.4,
+      "kbGzip": 0.3
+    },
+    {
+      "file": "assets/trash-jSpzflmi.js",
+      "kbRaw": 0.4,
+      "kbGzip": 0.2
+    },
+    {
+      "file": "assets/triangle-alert-yWmCq19f.js",
+      "kbRaw": 0.3,
+      "kbGzip": 0.2
     },
     {
       "file": "assets/clsx-DB0hHKMi.js",
@@ -233,18 +307,18 @@
   "search": {
     "system": {
       "docs": 28,
-      "indexMs": 1.9,
+      "indexMs": 1.7,
       "p50": 0.015,
-      "p95": 0.024,
-      "max": 0.361
+      "p95": 0.037,
+      "max": 0.403
     },
     "scaled": {
       "factor": 50,
       "docs": 1400,
-      "indexMs": 22.3,
-      "p50": 0.115,
-      "p95": 0.263,
-      "max": 0.507
+      "indexMs": 30.4,
+      "p50": 0.121,
+      "p95": 0.259,
+      "max": 0.668
     }
   }
 }

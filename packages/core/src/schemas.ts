@@ -4,6 +4,7 @@
  */
 import { posix } from "node:path";
 import { z } from "zod";
+import { LibraryEntry } from "./hierarchy.ts";
 import { ElementId } from "./ids.ts";
 
 const SemVer = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, "expected semver x.y.z");
@@ -177,12 +178,25 @@ export const RuleCheck = z.discriminatedUnion("engine", [
   z.object({ engine: z.literal("advisory") }),
 ]);
 
+/**
+ * A planned tightening: the rule ships as a warning now and becomes an error later. The
+ * severity never changes by itself; a person approves the tightening as its own change.
+ */
+export const RuleRollout = z.object({
+  to: z.literal("error"),
+  /** The date the team intends to tighten it (YYYY-MM-DD). */
+  after: z.iso.date().optional(),
+  note: z.string().optional(),
+});
+export type RuleRollout = z.infer<typeof RuleRollout>;
+
 export const RuleSpec = z.object({
   $schema: z.string().optional(),
   schema: z.literal("youi.rule/v1"),
   id: ElementId,
   title: z.string().min(1),
   severity: z.enum(["error", "warn", "off"]),
+  rollout: RuleRollout.optional(),
   statement: z.string().min(1),
   rationale: z.string().default(""),
   /** One imperative line for agent instructions (AGENTS.md, SKILL.md). */
@@ -267,13 +281,39 @@ export const Violation = Position.extend({
 });
 export type Violation = z.infer<typeof Violation>;
 
+export const RuleRun = z.object({
+  rule: ElementId,
+  /**
+   * ran: checked every file its globs match. off / advisory: not checked, by design.
+   * unsupported / error: it should have been checked but was not, so the scan is partial.
+   */
+  state: z.enum(["ran", "off", "advisory", "unsupported", "error"]),
+  reason: z.string().optional(),
+  findings: z.number().int().optional(),
+});
+export type RuleRun = z.infer<typeof RuleRun>;
+
 export const ScanReport = z.object({
   schema: z.literal("youi.usage/v1"),
   project: z.string(),
   system: z.string(),
+  /** HEAD of the project when scanned; `content` says whether the scanned files differ from it. */
   commit: z.string().nullable(),
   scanner: z.string(),
+  /** Digest of everything that decides the findings: project config, full contracts and rules, resolved tokens, scanner version. */
   configDigest: z.string(),
+  /** Exactly what was scanned: a digest of every file's path and content, and which files differ from `commit`. */
+  content: z
+    .object({
+      digest: z.string(),
+      /** Scanned files that differ from `commit` (modified, staged or untracked) or were overridden: the first 50. */
+      dirty: z.array(z.string()),
+      /** null when there is no commit to compare with. */
+      dirtyCount: z.number().int().nullable(),
+      /** Files checked from supplied text (unsaved edits, candidate code) rather than disk. */
+      overrides: z.array(z.string()),
+    })
+    .optional(),
   generatedAt: IsoTime,
   durationMs: z.number(),
   status: z.enum(["complete", "partial"]),
@@ -288,8 +328,49 @@ export const ScanReport = z.object({
   suppressed: z.number().int().default(0),
   lookalikes: z.array(Lookalike),
   violations: z.array(Violation),
+  /** How each rule was executed in this scan. Empty in scans made before rules reported it. */
+  checks: z.array(RuleRun).default([]),
 });
 export type ScanReport = z.infer<typeof ScanReport>;
+
+/* -------------------------------------------------------------- youi.baseline/v1 */
+
+/** Where a check result came from: tool, exact definitions and both repos' revisions. */
+export const CheckIdentity = z.object({
+  /** Scanner version that produced the findings. */
+  tool: z.string(),
+  system: z.object({ id: z.string(), version: SemVer }),
+  /** Digest of everything that decides findings: project config, contracts, rules and resolved token values. */
+  definitions: z.string(),
+  /** The design repo's revision; `dirty` means its working tree differs from the commit. */
+  design: z.object({ commit: z.string().nullable(), dirty: z.boolean() }),
+  project: z.object({ commit: z.string().nullable(), dirty: z.boolean() }),
+});
+export type CheckIdentity = z.infer<typeof CheckIdentity>;
+
+export const BaselineEntry = z.object({
+  rule: ElementId,
+  file: z.string(),
+  /** The flagged source text; with rule and file it identifies a finding across line moves. */
+  text: z.string(),
+  severity: z.enum(["error", "warn"]),
+  count: z.number().int().min(1),
+  /** Lines when recorded: a hint for which occurrence is the new one, never part of the match. */
+  lines: z.array(z.number().int()),
+});
+export type BaselineEntry = z.infer<typeof BaselineEntry>;
+
+/** Accepted existing violations: `youi check --baseline` fails only on findings beyond these. */
+export const Baseline = z.object({
+  $schema: z.string().optional(),
+  schema: z.literal("youi.baseline/v1"),
+  project: z.string(),
+  recordedAt: IsoTime,
+  identity: CheckIdentity,
+  totals: z.object({ errors: z.number().int(), warnings: z.number().int() }),
+  entries: z.array(BaselineEntry),
+});
+export type Baseline = z.infer<typeof Baseline>;
 
 /* ------------------------------------------------------------------ youi.lock/v1 */
 
@@ -326,6 +407,8 @@ export const PUBLISHED_SCHEMAS = {
   "youi.migration.schema.json": MigrationSpec,
   "youi.usage.schema.json": ScanReport,
   "youi.lock.schema.json": LockFile,
+  "youi.library.schema.json": LibraryEntry,
+  "youi.baseline.schema.json": Baseline,
 } as const;
 
 /** Project config with every path normalized, so comparisons with scanned paths are exact. Loaders call this. */

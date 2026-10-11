@@ -1,24 +1,31 @@
 /** `youi scan`: discover → parse (ast-grep, in parallel) → resolve identity → attribute routes → check. */
-import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { promisify } from "node:util";
-import { findFiles, shortHash, stableStringify, type ScanReport, type UnknownSite, type UsageSite, type Lookalike, type Violation } from "@youiyoux/core";
+import { findFiles, readTextOrNull, sha256, shortHash, type CheckIdentity, type ScanReport, type UnknownSite, type UsageSite, type Lookalike, type Violation } from "@youiyoux/core";
 import { buildTokens } from "@youiyoux/tokens";
-import { buildTokenIndex, runChecks, type TokenIndex } from "./checks.ts";
+import type { ScanCache } from "./cache.ts";
+import { checkInputFor } from "./capabilities.ts";
+import { buildTokenIndex, failedChecks, runChecks, type TokenIndex } from "./checks.ts";
 import { buildElementIndex, type ElementIndex } from "./elements.ts";
-import { ModuleGraph } from "./graph.ts";
+import { ModuleGraph, type ModuleParser } from "./graph.ts";
+import { changedFiles, checkIdentity, definitionsDigest, gitState, SCANNER_VERSION } from "./identity.ts";
 import { langOf, parseModule, type ModuleInfo } from "./parse.ts";
 import type { Project } from "./project.ts";
 import { ModuleResolver } from "./resolve.ts";
 import { RouteIndex } from "./routes.ts";
 import { analyzeModule, type ModuleAnalysis } from "./usage.ts";
 
-export const SCANNER_VERSION = "youi-scanner/0.1.0";
-
 export interface ScanOptions {
-  /** Source overrides by project-relative path: unsaved edits, codemod candidates, or virtual files to check. */
+  /** Source overrides by project-relative path: unsaved edits, staged content, codemod candidates, or virtual files to check. */
   readonly overrides?: Readonly<Record<string, string>>;
+  /**
+   * Analyse and check only these project-relative files (their imports are still followed).
+   * A focused report has no route attribution and no other files' sites: it answers
+   * "what is wrong in these files", not "where is X used".
+   */
+  readonly focus?: readonly string[];
+  /** Reuse parses, resolution and per-file analyses across scans (watch mode, the MCP server). */
+  readonly cache?: ScanCache;
 }
 
 export interface ScanResult {
@@ -27,35 +34,43 @@ export interface ScanResult {
   readonly analyses: ReadonlyMap<string, ModuleAnalysis>;
   readonly elements: ElementIndex;
   readonly tokens: TokenIndex;
+  /** Which screens each file reaches, for impact on files that hold no usage site (stylesheets, token users). Empty for a focused scan. */
+  readonly routes: RouteIndex;
+  /** Tool, definitions digest and both repos' revisions this result is bound to. */
+  readonly identity: CheckIdentity;
+  /** Digest of every source the scan read (including overrides); the same as `report.content.digest`. */
+  readonly contentDigest: string;
+  /** The files this scan analysed and checked (all matched files, or the focus). */
+  readonly files: readonly string[];
 }
 
-const run = promisify(execFile);
+const MAX_DIRTY_LISTED = 50;
 
-async function headCommit(root: string): Promise<string | null> {
-  try {
-    const { stdout } = await run("git", ["rev-parse", "HEAD"], { cwd: root });
-    return stdout.trim() || null;
-  } catch {
-    return null;
-  }
+/** One digest of every scanned file's content (unreadable files marked), reusing the cache's hashes when it has them. */
+function contentDigestOf(files: readonly string[], sources: ReadonlyMap<string, string>, cache: ScanCache | undefined): string {
+  const entries = files.map((file) => `${file}:${sources.has(file) ? (cache?.hashOf(file) ?? sha256(sources.get(file)!)) : "unreadable"}`);
+  return shortHash(entries.sort().join("\n"));
 }
 
-function configDigest(project: Project): string {
-  const contracts = project.system.components.map((c) => `${c.contract.id}@${c.contract.version}`);
-  const rules = project.system.rules.map((r) => `${r.id}:${r.severity}`);
-  return shortHash(stableStringify({ config: project.config, contracts, rules, scanner: SCANNER_VERSION }));
+/** What exactly was scanned: the content digest, and which scanned files differ from HEAD or were overridden. */
+function contentIdentity(files: readonly string[], digest: string, overrides: Readonly<Record<string, string>>, changed: Set<string> | null, commit: string | null): NonNullable<ScanReport["content"]> {
+  const overridden = files.filter((f) => f in overrides);
+  const dirty = commit && changed ? [...new Set([...files.filter((f) => changed.has(f)), ...overridden])].sort() : overridden;
+  return { digest, dirty: dirty.slice(0, MAX_DIRTY_LISTED), dirtyCount: commit && changed ? dirty.length : null, overrides: overridden };
 }
 
 const byPosition = <T extends { file: string; line: number; column: number }>(a: T, b: T): number => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column;
 
-async function parseAll(project: Project, files: readonly string[], overrides: Readonly<Record<string, string>>): Promise<{ modules: Map<string, ModuleInfo | null>; failed: Array<{ file: string; reason: string }> }> {
+async function parseAll(project: Project, files: readonly string[], overrides: Readonly<Record<string, string>>, parse: ModuleParser): Promise<{ modules: Map<string, ModuleInfo | null>; sources: Map<string, string>; failed: Array<{ file: string; reason: string }> }> {
   const modules = new Map<string, ModuleInfo | null>();
+  const sources = new Map<string, string>();
   const failed: Array<{ file: string; reason: string }> = [];
   await Promise.all(
     files.map(async (file) => {
       try {
         const source = overrides[file] ?? (await readFile(join(project.root, file), "utf8"));
-        const module = await parseModule(file, source);
+        sources.set(file, source);
+        const module = await parse(file, source);
         modules.set(file, module);
         if (module && module.parseErrors > 0) failed.push({ file, reason: `${module.parseErrors} parse error node(s); sites inside them may be missing` });
       } catch (error: unknown) {
@@ -64,25 +79,35 @@ async function parseAll(project: Project, files: readonly string[], overrides: R
       }
     }),
   );
-  return { modules, failed };
+  return { modules, sources, failed };
 }
 
 export async function scanProject(project: Project, options: ScanOptions = {}): Promise<ScanResult> {
   const started = performance.now();
   const overrides = options.overrides ?? {};
+  const { cache } = options;
+  cache?.beginScan();
+  const parse = cache?.parse ?? parseModule;
   const discovered = await findFiles(project.root, project.config.include, project.config.exclude);
-  const files = [...new Set([...discovered, ...Object.keys(overrides)])].filter((f) => langOf(f) !== null).sort();
-  const [{ modules, failed }, build, commit] = await Promise.all([
-    parseAll(project, files, overrides),
+  const all = [...new Set([...discovered, ...Object.keys(overrides)])].filter((f) => langOf(f) !== null).sort();
+  const focus = options.focus ? new Set(options.focus) : null;
+  const files = focus ? all.filter((f) => focus.has(f)) : all;
+  const [{ modules, sources, failed }, build, consumerGit, designGit, changed, tsconfigText] = await Promise.all([
+    parseAll(project, files, overrides, parse),
     buildTokens(project.repo.root, project.system.config, project.config.outputs),
-    headCommit(project.root),
+    gitState(project.root),
+    gitState(project.repo.root),
+    changedFiles(project.root),
+    cache ? readTextOrNull(join(project.root, project.config.tsconfig)) : Promise.resolve(null),
   ]);
-  const resolver = ModuleResolver.create(project.root, project.config.tsconfig);
+  const definitions = definitionsDigest(project, build.tokens);
+  cache?.useDefinitions(definitions);
+  const resolver = cache ? cache.resolver(project.root, project.config, tsconfigText, all) : ModuleResolver.create(project.root, project.config.tsconfig);
   for (const problem of resolver.problems) failed.push({ file: project.config.tsconfig, reason: problem });
-  const graph = new ModuleGraph(project.root, resolver, modules, new Map(Object.entries(overrides)));
+  const graph = new ModuleGraph(project.root, resolver, modules, new Map(Object.entries(overrides)), parse);
   const elements = buildElementIndex(project);
   const tokens = buildTokenIndex(build.tokens, project.config.outputs);
-  const routes = RouteIndex.build(graph, modules, project.config.routes);
+  const routes = focus ? new RouteIndex() : RouteIndex.build(graph, modules, project.config.routes);
 
   const scanned = new Map<string, ModuleInfo>();
   for (const file of files) {
@@ -90,7 +115,8 @@ export async function scanProject(project: Project, options: ScanOptions = {}): 
     if (module) scanned.set(file, module);
   }
   const analyses = new Map<string, ModuleAnalysis>();
-  await Promise.all([...scanned.values()].map(async (module) => analyses.set(module.file, await analyzeModule(module, graph, elements))));
+  const analyse = (module: ModuleInfo): Promise<ModuleAnalysis> => (cache ? cache.analysis(module, graph, () => analyzeModule(module, graph, elements)) : analyzeModule(module, graph, elements));
+  await Promise.all([...scanned.values()].map(async (module) => analyses.set(module.file, await analyse(module))));
 
   const usages: UsageSite[] = [];
   const unknowns: UnknownSite[] = [];
@@ -100,33 +126,29 @@ export async function scanProject(project: Project, options: ScanOptions = {}): 
     unknowns.push(...analysis.unknowns);
     lookalikes.push(...analysis.lookalikes);
   }
-  const { violations, suppressed } = runChecks({
-    modules: scanned,
-    analyses,
-    elements,
-    tokens,
-    rules: project.system.rules,
-    componentsDir: project.config.componentsDir,
-    tokenSources: project.config.tokenSources,
-    generatedDir: project.config.outputs.dir,
-  });
+  const { violations, suppressed, checks } = runChecks(checkInputFor(project, { modules: scanned, analyses, elements, tokens }, project.system.rules));
 
+  const contentDigest = contentDigestOf(files, sources, cache);
   const report: ScanReport = {
     schema: "youi.usage/v1",
     project: project.config.id,
     system: project.system.config.id,
-    commit,
+    commit: consumerGit.commit,
     scanner: SCANNER_VERSION,
-    configDigest: configDigest(project),
+    configDigest: definitions,
+    content: contentIdentity(files, contentDigest, overrides, changed, consumerGit.commit),
     generatedAt: new Date().toISOString(),
     durationMs: Math.round(performance.now() - started),
-    status: failed.length > 0 ? "partial" : "complete",
+    // Unparsed files and rules that should have run but could not both leave findings unknown.
+    status: failed.length > 0 || failedChecks(checks).length > 0 ? "partial" : "complete",
     coverage: { filesMatched: files.length, filesScanned: scanned.size, failed: failed.sort((a, b) => a.file.localeCompare(b.file)) },
     usages: usages.sort(byPosition),
     unknowns: unknowns.sort(byPosition),
     lookalikes: lookalikes.sort(byPosition),
     violations: (violations as Violation[]).sort(byPosition),
     suppressed,
+    checks,
   };
-  return { report, modules: scanned, analyses, elements, tokens };
+  const identity = checkIdentity(project, definitions, designGit, consumerGit);
+  return { report, modules: scanned, analyses, elements, tokens, routes, identity, contentDigest, files };
 }

@@ -1,9 +1,11 @@
-/** Contract: the props a component accepts, its accessibility promises, guidance and owned files. */
+/** Contract and tokens: the props a component accepts, the tokens it binds, its accessibility promises, guidance and owned files. */
 import { Check, ChevronRight, X } from "lucide-react";
+import type { Model } from "../../data/model.ts";
 import type { ComponentEntry, PropSpec } from "../../data/types.ts";
 import { Badge } from "../../ui/Badge.tsx";
 import { CodeBlock } from "../../ui/CodeBlock.tsx";
 import { Facts, Section, Table } from "../../ui/Section.tsx";
+import { TokenBindings } from "./TokenBindings.tsx";
 
 function TypeCell({ spec }: { spec: PropSpec }) {
   if (spec.type !== "enum") return <span className="font-mono text-mono-sm text-ink-2">{spec.type}</span>;
@@ -35,11 +37,11 @@ function Guidance({ items, tone }: { items: readonly string[]; tone: "do" | "don
   );
 }
 
-export function ContractTab({ entry }: { entry: ComponentEntry }) {
+export function ContractTab({ model, entry }: { model: Model; entry: ComponentEntry }) {
   const { contract, files } = entry;
   const props = Object.entries(contract.props);
   return (
-    <div className="space-y-8 p-6">
+    <div className="space-y-8 p-6 max-sm:px-4">
       <Section title="Props" count={props.length} aside={contract.passthrough && <span className="text-small text-muted">Other props pass through to <code className="font-mono text-ink-2">&lt;{contract.passthrough}&gt;</code></span>}>
         <Table head={["Prop", "Type", "Default", "Description"]}>
           {props.map(([name, spec]) => (
@@ -60,6 +62,8 @@ export function ContractTab({ entry }: { entry: ComponentEntry }) {
           ))}
         </Table>
       </Section>
+
+      <TokenBindings model={model} contract={contract} />
 
       <div className="grid gap-8 lg:grid-cols-2">
         <Section title="Accessibility">

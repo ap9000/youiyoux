@@ -1,14 +1,24 @@
 /** Human output for each command. Every command also has --json for scripts and agents. */
-import type { ScanReport, Violation } from "@youiyoux/core";
-import type { ChangePlan, MigrationResult, ScreenBom, WhereResult } from "@youiyoux/scanner";
-import type { LockIssue, SyncAction } from "./sync.ts";
+import { executionLabel, type RuleExecution, type RuleSpec, type ScanReport, type Violation } from "@youiyoux/core";
+import { failedChecks, type ChangePlan, type MigrationResult, type RuleEvaluation, type ScreenBom, type WhereResult } from "@youiyoux/scanner";
+import type { LockIssue, SyncAction, SyncResult } from "./sync.ts";
 import { bar, ms, padEnd, padStart, plural, rule, style, truncate } from "./ui.ts";
 
 const SHELL_NOTE = style.dim("app shell: on every screen");
 
-function coverageLine(report: Pick<ScanReport, "coverage" | "commit" | "status" | "durationMs">): string {
-  const status = report.status === "complete" ? style.ok("complete") : style.warn(`partial: ${plural(report.coverage.failed.length, "file")} not fully parsed`);
-  return style.dim(`scanned ${plural(report.coverage.filesScanned, "file")}${report.commit ? ` at ${report.commit.slice(0, 12)}` : ""} in ${ms(report.durationMs)} · `) + status;
+function coverageLine(report: Pick<ScanReport, "coverage" | "commit" | "status" | "durationMs" | "checks" | "content">): string {
+  const problems = [
+    ...(report.coverage.failed.length > 0 ? [`${plural(report.coverage.failed.length, "file")} not fully parsed`] : []),
+    ...(failedChecks(report.checks).length > 0 ? [`${plural(failedChecks(report.checks).length, "rule")} could not run`] : []),
+  ];
+  const status = report.status === "complete" ? style.ok("complete") : style.warn(`partial: ${problems.join(", ") || "incomplete"}`);
+  const dirty = report.content?.dirtyCount ? ` + ${plural(report.content.dirtyCount, "uncommitted file")}` : "";
+  return style.dim(`scanned ${plural(report.coverage.filesScanned, "file")}${report.commit ? ` at ${report.commit.slice(0, 12)}${dirty}` : ""} in ${ms(report.durationMs)} · `) + status;
+}
+
+/** Rules that should have run and did not: their silence is not a pass. */
+function ruleProblemLines(report: Pick<ScanReport, "checks">): string[] {
+  return failedChecks(report.checks).map((c) => style.warn(`  ! rule ${ruleSlug(c.rule)} did not run: ${c.reason ?? c.state}`));
 }
 
 export function renderScan(report: ScanReport, outFile: string | null): string {
@@ -26,6 +36,7 @@ export function renderScan(report: ScanReport, outFile: string | null): string {
     "",
     coverageLine(report),
     ...report.coverage.failed.map((f) => style.warn(`  ! ${f.file}: ${f.reason}`)),
+    ...ruleProblemLines(report),
     ...(outFile ? [style.dim(`usage map → ${outFile}`)] : []),
   ];
   return lines.join("\n");
@@ -88,6 +99,7 @@ export function renderCheck(violations: readonly Violation[], lockIssues: readon
     ...(suppressed > 0 ? [style.dim(`  ${padStart(String(suppressed), 4)}  suppressed by youi-ignore`)] : []),
     ...(lockIssues === null ? [style.dim("  no youi.lock.json yet: generated-file and drift checks start after `youi sync`")] : []),
     coverageLine(report),
+    ...ruleProblemLines(report),
   );
   return lines.join("\n");
 }
@@ -103,21 +115,68 @@ export function renderBom(bom: ScreenBom): string {
   return lines.join("\n");
 }
 
+function planImpactLine(plan: ChangePlan): string {
+  const bound = plan.completeness.exact ? "" : "≥ ";
+  const screens = plan.impact.routes.filter((r) => r.route !== "*").length;
+  const counted = `${style.bold(`${bound}${plural(plan.impact.sites, "site")}`)} in ${bound}${plural(plan.impact.files, "file")} on ${bound}${plural(screens, "screen")}`;
+  const extras = `${plan.impact.unknownCandidates ? style.warn(` · ${plan.impact.unknownCandidates} unknown in scope`) : ""}${plan.impact.lookalikes ? style.warn(` · ${plan.impact.lookalikes} lookalikes outside`) : ""}`;
+  return counted + extras;
+}
+
+function tokenLines(token: NonNullable<ChangePlan["token"]>): string[] {
+  const lines = [
+    `reads it: ${token.contracts.length ? token.contracts.map((c) => `${c.name}${c.via === "implementation" ? style.dim(" (implementation)") : ""}`).join(", ") : style.dim("no contract found")}${token.dependents.length ? style.dim(` · via ${token.dependents.join(", ")}`) : ""}`,
+    `direct uses: ${token.direct.uses ? `${token.direct.uses} in ${plural(token.direct.files, "file")}` : style.warn("none found (not proof of none: see limits)")}`,
+  ];
+  for (const site of token.direct.sites) lines.push(style.dim(`  · ${site.file}:${site.line} ${site.text}${site.uses > 1 ? ` ×${site.uses}` : ""}`));
+  return lines;
+}
+
 export function renderPlan(plan: ChangePlan): string {
-  const tone = plan.class === "api-breaking" ? style.error : plan.class === "deprecation" ? style.warn : style.ok;
+  const tone = plan.class === "api-breaking" ? style.error : plan.class === "deprecation" || plan.class === "behavior" ? style.warn : style.ok;
   const lines = [
     `${style.accent(plan.target)}  ${tone(plan.class)}  ${style.dim("→")} ${plan.semver}${plan.version ? style.dim(`  ${plan.version.current} → ${plan.version.next}`) : ""}`,
     ...plan.reasons.map((r) => style.dim(`  · ${r}`)),
     "",
-    `${style.bold(plural(plan.impact.sites, "site"))} in ${plural(plan.impact.files, "file")} on ${plural(plan.impact.routes.filter((r) => r.route !== "*").length, "screen")}${plan.impact.unknownCandidates ? style.warn(` · ${plan.impact.unknownCandidates} unknown in scope`) : ""}${plan.impact.lookalikes ? style.warn(` · ${plan.impact.lookalikes} lookalikes outside`) : ""}`,
+    planImpactLine(plan),
   ];
+  if (plan.token) lines.push(...tokenLines(plan.token));
   if (plan.callSites) {
-    lines.push(`call sites: ${plan.callSites.affected} affected · ${style.ok(`${plan.callSites.auto} automatic`)} · ${plan.callSites.residual > 0 ? style.warn(`${plan.callSites.residual} need a person`) : "0 need a person"}`);
+    const unresolved = plan.callSites.unresolved > 0 ? style.warn(` (${plan.callSites.unresolved} cannot be decided statically)`) : "";
+    lines.push(`call sites: ${plan.callSites.affected} affected · ${style.ok(`${plan.callSites.auto} automatic`)} · ${plan.callSites.residual > 0 ? style.warn(`${plan.callSites.residual} need a person`) : "0 need a person"}${unresolved}`);
     for (const site of plan.callSites.residualSites) lines.push(style.dim(`  · ${site}`));
   }
-  if (plan.impact.routes.length) lines.push(`visual check: ${plan.impact.routes.map((r) => r.route).join(", ")}`);
+  if (plan.review) {
+    lines.push(`review: ${plural(plan.review.sites, "site")} render differently with no code change${plan.review.unresolved ? style.warn(` (${plan.review.unresolved} spread props: may)`) : ""}`);
+    for (const site of plan.review.listed) lines.push(style.dim(`  · ${site}`));
+  }
+  if (plan.impact.everyScreen) lines.push(`visual check: ${style.warn("every screen")} ${style.dim("(a stylesheet, the app shell or an unrouted file uses it)")}`);
+  else if (plan.impact.routes.length) lines.push(`visual check: ${plan.impact.routes.map((r) => r.route).join(", ")}`);
   if (plan.gates) lines.push(`gates (dry run): ${plan.gates.map((g) => (g.ok ? style.ok(`✓ ${g.name}`) : style.error(`✖ ${g.name}`))).join("  ")}`);
+  if (!plan.completeness.exact) lines.push("", style.warn("not the whole impact: counts are a lower bound"), ...plan.completeness.limits.map((l) => style.dim(`  · ${l}`)));
   lines.push("", style.dim(`recipe: ${plan.recipe}`), style.dim(`scan: ${plan.coverage.status} at ${plan.coverage.commit?.slice(0, 12) ?? "uncommitted"}`));
+  return lines.join("\n");
+}
+
+const EXECUTION_STYLE: Record<RuleExecution["state"], (s: string) => string> = { enforced: style.ok, advisory: style.dim, off: style.dim, unsupported: style.warn };
+
+export function renderRules(rules: ReadonlyArray<{ rule: RuleSpec; execution: RuleExecution }>): string {
+  const width = Math.max(...rules.map(({ rule }) => ruleSlug(rule.id).length), 8);
+  return rules.map(({ rule, execution }) => `${padEnd(ruleSlug(rule.id), width)}  ${padEnd(rule.severity, 5)}  ${EXECUTION_STYLE[execution.state](executionLabel(execution))}`).join("\n");
+}
+
+export function renderRulePreview(evaluation: RuleEvaluation): string {
+  if (!evaluation.ok) return [style.error("✖ not a valid youi.rule/v1"), ...evaluation.errors.map((e) => `  · ${e}`)].join("\n");
+  const lines = [`${style.accent(evaluation.rule)}  ${EXECUTION_STYLE[evaluation.execution.state](executionLabel(evaluation.execution))}`];
+  const { findings, snapshot } = evaluation;
+  if (!findings) lines.push(style.warn("nothing ran, so there are no findings to show (this is not a clean result)"));
+  else {
+    const versus = findings.versusPublished;
+    lines.push(`${style.bold(plural(findings.total, "finding"))} in ${plural(findings.files, "file")}${findings.suppressed ? style.dim(` · ${findings.suppressed} suppressed`) : ""}`);
+    if (versus) lines.push(versus.findings === null ? style.dim(`published rule: ${versus.execution}, not run in this scan`) : `versus published: ${versus.findings} now · ${style.warn(`+${versus.added}`)} · ${style.ok(`-${versus.removed}`)}`);
+    for (const site of findings.sites) lines.push(`  ${padEnd(style.dim(`${site.file}:${site.line}:${site.column}`), 40)} ${truncate(site.text, 60)}`);
+  }
+  lines.push("", style.dim(`snapshot: ${snapshot.status}, ${plural(snapshot.files, "file")} at ${snapshot.commit?.slice(0, 12) ?? "no commit"} · content ${snapshot.content ?? "?"} · config ${snapshot.configDigest}`));
   return lines.join("\n");
 }
 
@@ -131,14 +190,15 @@ export function renderMigration(result: MigrationResult, showDiff: boolean): str
 }
 
 const ACTION_STYLE: Record<SyncAction["action"], (s: string) => string> = {
-  created: style.ok, updated: style.live, unchanged: style.dim, adopted: style.ok, merged: style.live, "kept-local": style.warn, conflict: style.error, skipped: style.warn,
+  created: style.ok, updated: style.live, unchanged: style.dim, adopted: style.ok, merged: style.live, "kept-local": style.warn, conflict: style.error, skipped: style.warn, removed: style.live,
 };
 
-export function renderSync(actions: readonly SyncAction[], dryRun: boolean): string {
+export function renderSync({ actions, unknownTools }: Pick<SyncResult, "actions" | "unknownTools">, dryRun: boolean): string {
   const lines = actions.filter((a) => a.action !== "unchanged").map((a) => `${padEnd(ACTION_STYLE[a.action](a.action), 11)} ${a.file}${a.detail ? style.dim(`  ${a.detail}`) : ""}`);
+  const warnings = unknownTools.map((m) => `${style.warn("warning")}  ${m.rule} tells agents to call ${m.tool}, which the youiyoux MCP server does not expose; update the rule's agent text`);
   const counts = Map.groupBy(actions, (a) => a.action);
   const summary = [...counts].map(([action, list]) => `${list.length} ${action}`).join(" · ");
-  return [...lines, lines.length ? "" : style.dim("everything up to date"), `${dryRun ? style.live("dry run · ") : ""}${summary}`].join("\n");
+  return [...lines, lines.length ? "" : style.dim("everything up to date"), ...(warnings.length ? [...warnings, ""] : []), `${dryRun ? style.live("dry run · ") : ""}${summary}`].join("\n");
 }
 
 export function renderShow(card: Record<string, unknown>): string {

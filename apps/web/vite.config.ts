@@ -23,6 +23,14 @@ function snapshotFiles(): Plugin {
       outDir = resolve(config.root, config.build.outDir);
     },
     configureServer(server) {
+      // `youi ui --watch` rewrites the manifest (atomically) after every re-scan: tell the open hub to load it.
+      const manifest = join(snapshotPublic, "data/manifest.json");
+      server.watcher.add(manifest);
+      const announce = (file: string): void => {
+        if (file === manifest) server.ws.send({ type: "custom", event: "youi:snapshot" });
+      };
+      server.watcher.on("add", announce);
+      server.watcher.on("change", announce);
       server.middlewares.use((req, res, next) => {
         const path = decodeURIComponent((req.url ?? "").split("?")[0]!.replace(server.config.base, "/"));
         const file = join(snapshotPublic, path);
@@ -40,6 +48,8 @@ function snapshotFiles(): Plugin {
 export default defineConfig({
   plugins: [react(), tailwindcss(), snapshotFiles()],
   resolve: { alias: { "@snapshot": snapshot } },
+  // The rule editor's live API: `youi ui --project` starts the service and sets YOUI_API to it.
+  server: { proxy: { "/api": { target: process.env.YOUI_API ?? "http://127.0.0.1:4417", changeOrigin: true } } },
   build: {
     target: "es2022",
     modulePreload: { polyfill: false },

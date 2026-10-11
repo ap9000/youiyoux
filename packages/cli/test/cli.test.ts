@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -27,6 +27,25 @@ describe("youi", () => {
     expect(err).toContain("unknown command");
     expect(await main(["where"])).toBe(2);
     expect(err).toContain("usage: youi where <component>");
+  });
+
+  test("help separates System commands from Library commands", async () => {
+    expect(await main(["--help"])).toBe(0);
+    expect(out).toMatch(/System\b.*build only with these[\s\S]*Library\b.*never build with/);
+  });
+
+  test("System commands refuse Library ids", async () => {
+    expect(await main(["show", "lib:example/component/pill", "--project", FIXTURE])).toBe(1);
+    expect(err).toContain("is a Library item, not a System element");
+  });
+
+  test("youi library browses an empty Library and needs a reason to draft a request", async () => {
+    expect(await main(["library", "search", "date", "picker", "--project", FIXTURE, "--json"])).toBe(0);
+    expect(JSON.parse(out)).toMatchObject({ hits: [], total: 0 });
+    expect(await main(["library", "request", "lib:example/component/pill", "--project", FIXTURE])).toBe(2);
+    expect(err).toContain("--reason");
+    expect(await main(["library", "request", "lib:example/component/pill", "--reason", "status chips", "--project", FIXTURE])).toBe(1);
+    expect(err).toContain("Library is empty");
   });
 
   test("where --json answers from a fresh scan", async () => {
@@ -90,7 +109,7 @@ describe("youi", () => {
       expect(await main(["schema", "--check"])).toBe(0);
       out = "";
       expect(await main(["schema", "--check", "--design", dir, "--json"])).toBe(1);
-      expect((JSON.parse(out) as { stale: string[] }).stale).toHaveLength(7);
+      expect((JSON.parse(out) as { stale: string[] }).stale).toHaveLength(9);
       expect(await main(["schema", "--write", "--design", dir])).toBe(0);
       out = "";
       expect(await main(["schema", "--check", "--design", dir])).toBe(0);
@@ -102,17 +121,54 @@ describe("youi", () => {
 
   test("ui shows the committed demo by default, and snapshots a named system into a gitignored dir", () => {
     const tool = "/opt/youi";
-    expect(hubPlan(tool, {})).toEqual({ web: "/opt/youi/apps/web", snapshot: null, env: {}, vite: ["/opt/youi/apps/web/node_modules/vite/bin/vite.js"] });
+    expect(hubPlan(tool, {})).toEqual({ web: "/opt/youi/apps/web", snapshot: null, env: {}, vite: ["/opt/youi/apps/web/node_modules/vite/bin/vite.js"], watch: null });
     const plan = hubPlan(tool, { design: "/data/acme-design", project: "/src/acme-app", port: "5180" });
     expect(plan.snapshot).toEqual(["/opt/youi/apps/web/scripts/snapshot.ts", "--out", "/opt/youi/apps/web/.hub", "--design", "/data/acme-design", "--project", "/src/acme-app"]);
     expect(plan.env).toEqual({ YOUI_HUB_SNAPSHOT: "/opt/youi/apps/web/.hub" });
     expect(plan.vite.slice(1)).toEqual(["--port", "5180", "--strictPort"]);
+    expect(plan.watch).toBeNull();
+    expect(hubPlan(tool, { project: "/src/acme-app", watch: true }).watch).toEqual(["/opt/youi/apps/web/scripts/snapshot.ts", "--out", "/opt/youi/apps/web/.hub", "--project", "/src/acme-app", "--watch"]);
+    // Watching with nothing named watches the demo project into .hub, never the committed snapshot.
+    expect(hubPlan(tool, { watch: true }).watch).toEqual(["/opt/youi/apps/web/scripts/snapshot.ts", "--out", "/opt/youi/apps/web/.hub", "--project", "/opt/youi/examples/demo-app", "--watch"]);
+    // The rule editor `youi ui --project` starts is what the dev server proxies at /api.
+    expect(hubPlan(tool, { project: "/src/acme-app", api: "http://127.0.0.1:50123" }).env).toEqual({ YOUI_HUB_SNAPSHOT: "/opt/youi/apps/web/.hub", YOUI_API: "http://127.0.0.1:50123" });
   });
 
   test("ui explains missing hub dependencies instead of crashing", async () => {
     const dir = await mkdtemp(join(tmpdir(), "youi-hub-"));
     try {
       await expect(runHub(dir, { design: DEMO })).rejects.toThrowError(/dependencies are not installed: run `pnpm install`/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("rules lists how each rule is checked; plan --token reports a lower bound", async () => {
+    expect(await main(["rules", "--project", FIXTURE, "--json"])).toBe(0);
+    const { rules, capabilities } = JSON.parse(out) as { rules: Array<{ id: string; state: string }>; capabilities: { builtIn: unknown[] } };
+    expect(rules.find((r) => r.id.endsWith("components.one-primary-action"))?.state).toBe("advisory");
+    expect(rules.filter((r) => r.state === "enforced")).toHaveLength(5);
+    expect(capabilities.builtIn).toHaveLength(5);
+    out = "";
+    expect(await main(["plan", "--token", "color.muted", "--project", FIXTURE])).toBe(0);
+    expect(out).toContain("none found (not proof of none: see limits)");
+    expect(out).toContain("counts are a lower bound");
+  });
+
+  test("a rule youi cannot run makes check incomplete, and rules --preview shows no clean result", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "youi-rules-"));
+    try {
+      const design = join(dir, "design");
+      await cp(DEMO, design, { recursive: true });
+      const broken = ["schema: youi.rule/v1", "id: youi:demo/rule/test.broken", "title: Broken", "severity: error", "statement: Never matches", "agent: Nothing", "check:", "  engine: ast-grep", "  language: tsx", "  rule:", "    kind: not_a_kind", ""].join("\n");
+      await writeFile(join(design, "rules/test.broken.rule.yaml"), broken);
+      expect(await main(["check", "--project", FIXTURE, "--design", design, "--json"])).toBe(1);
+      const check = JSON.parse(out) as { incomplete: boolean; notRun: Array<{ rule: string; state: string }> };
+      expect(check.incomplete).toBe(true);
+      expect(check.notRun).toEqual([expect.objectContaining({ rule: "youi:demo/rule/test.broken", state: "unsupported" })]);
+      out = "";
+      expect(await main(["rules", "--project", FIXTURE, "--design", design, "--preview", join(design, "rules/test.broken.rule.yaml")])).toBe(1);
+      expect(out).toContain("this is not a clean result");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

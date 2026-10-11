@@ -6,16 +6,17 @@
  *   owned      vendored components: 3-way merged (base = what we last delivered, ours = the
  *              project's file, theirs = upstream now); conflicts never land in source
  *   lock       youi.lock.json records every file's hash, so edits show up as drift
+ *   retired    a generated file no longer produced (a rule turned off) is removed, unless edited by hand
  */
 import { execFile } from "node:child_process";
-import { lstat, mkdir, mkdtemp, readdir, readlink, rm, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readdir, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
-import { findFiles, LockFile, readDefinition, readTextOrNull, sha256, writeFileAtomic, type ElementId, type LockEntry } from "@youiyoux/core";
+import { findFiles, LockFile, normalizeRelPath, readDefinition, readTextOrNull, sha256, writeFileAtomic, type ElementId, type LockEntry } from "@youiyoux/core";
 import { buildTokens } from "@youiyoux/tokens";
 import { PROJECT_FILE, vendoredPath, type Project } from "@youiyoux/scanner";
-import { agentsBlock, astGrepRules, designMd, GENERATED_MARK, skillMd, upsertBlock } from "./agents.ts";
+import { agentsBlock, astGrepRules, designMd, GENERATED_MARK, skillMd, unknownToolMentions, upsertBlock, type UnknownToolMention } from "./agents.ts";
 
 export const LOCK_FILE = "youi.lock.json";
 const BASE_DIR = ".youi/base";
@@ -24,7 +25,7 @@ const CONFLICT_DIR = ".youi/conflicts";
 /** The youi CLI the project's .mcp.json runs: this tool's checkout, not the design repo. */
 const CLI_BIN = resolve(import.meta.dirname, "../bin/youi.js");
 
-export type SyncActionKind = "created" | "updated" | "unchanged" | "adopted" | "merged" | "kept-local" | "conflict" | "skipped";
+export type SyncActionKind = "created" | "updated" | "unchanged" | "adopted" | "merged" | "kept-local" | "conflict" | "skipped" | "removed";
 
 export interface SyncAction {
   readonly file: string;
@@ -43,6 +44,8 @@ export interface SyncOptions {
 export interface SyncResult {
   readonly actions: readonly SyncAction[];
   readonly lock: LockFile;
+  /** Rules whose agent instructions name an MCP tool the server does not expose. */
+  readonly unknownTools: readonly UnknownToolMention[];
 }
 
 const run = promisify(execFile);
@@ -152,6 +155,48 @@ class Writer {
     record("conflict", `${merged.conflicts} conflict(s): resolve ${CONFLICT_DIR}/${file} into the file, then \`youi sync --adopt\` to record it`);
   }
 
+  /**
+   * Generated files the last sync wrote that this sync no longer produces (e.g. youi-rules/x.yml for a
+   * rule now off): left behind, plain ast-grep would keep enforcing them. Removed when untouched;
+   * an edited one is reported and left for a person.
+   */
+  async retire(): Promise<void> {
+    for (const [file, entry] of Object.entries(this.previous?.files ?? {})) {
+      if (entry.kind !== "generated" || file in this.files || !this.isGeneratedPath(file)) continue;
+      const current = await readTextOrNull(this.path(file));
+      if (current === null) continue;
+      // A retired file left on disk stays in the lock, so every later sync and `youi check` keeps reporting it.
+      if (sha256(current) !== entry.sha256) {
+        this.files[file] = entry;
+        this.record({ file, role: "agents", action: "skipped", detail: "no longer generated, but edited by hand: remove it yourself" });
+        continue;
+      }
+      if (!(await this.insideProject(file))) {
+        this.files[file] = entry;
+        this.record({ file, role: "agents", action: "skipped", detail: "no longer generated, but resolves outside the project: remove it yourself" });
+        continue;
+      }
+      if (!this.options.dryRun) await rm(this.path(file));
+      this.record({ file, role: "agents", action: "removed", detail: "no longer generated" });
+    }
+  }
+
+  /**
+   * Only paths youi itself generates may be retired. The lockfile is project content: a key such as
+   * `../../x` must never make sync delete a file outside them, however its hash was written.
+   */
+  private isGeneratedPath(file: string): boolean {
+    if (isAbsolute(file) || normalizeRelPath(file) !== file || file.split("/").includes("..")) return false;
+    const { outputs, agents } = this.project.config;
+    return file.startsWith("youi-rules/") || file.startsWith(`${outputs.dir}/`) || file === agents.designMd || file === `${agents.skillDir}/SKILL.md`;
+  }
+
+  /** The real location stays inside the project root, even through a symlinked directory. */
+  private async insideProject(file: string): Promise<boolean> {
+    const [root, parent] = await Promise.all([realpath(this.project.root), realpath(dirname(this.path(file))).catch(() => null)]);
+    return parent !== null && (parent === root || parent.startsWith(`${root}${sep}`));
+  }
+
   async managedBlock(file: string, block: string): Promise<void> {
     const current = await readTextOrNull(this.path(file));
     const next = upsertBlock(current, block);
@@ -223,6 +268,7 @@ export async function syncProject(project: Project, options: SyncOptions = {}): 
     upstreams.set(source, upstream);
   }
   for (const [source, { elements, version }] of sources) await writer.owned(vendoredPath(project, source), upstreams.get(source)!, elements, version);
+  await writer.retire();
 
   const lock: LockFile = {
     schema: "youi.lock/v1",
@@ -233,7 +279,7 @@ export async function syncProject(project: Project, options: SyncOptions = {}): 
     files: Object.fromEntries(Object.entries(writer.files).sort(([a], [b]) => a.localeCompare(b))),
   };
   if (!options.dryRun) await writeFileAtomic(join(project.root, LOCK_FILE), `${JSON.stringify(lock, null, 2)}\n`);
-  return { actions: writer.actions, lock };
+  return { actions: writer.actions, lock, unknownTools: unknownToolMentions(project) };
 }
 
 /** How the project's MCP server finds what this sync used: a config kept elsewhere and an overridden design repo are passed explicitly. */

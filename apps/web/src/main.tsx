@@ -1,11 +1,14 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app/App.tsx";
+import { sessionKey } from "./data/session-key.ts";
 import { startModel } from "./data/store.ts";
 import "./styles/app.css";
 
 // Fetch the snapshot while React mounts; on repeat visits it comes from Cache Storage.
 startModel();
+// Keep the rule editor's key from the link `youi ui` printed, whichever page it opens.
+sessionKey();
 
 const root = document.getElementById("root");
 if (!root) throw new Error("index.html is missing #root");

@@ -13,6 +13,9 @@ export type ResolvedSymbol =
   | { readonly kind: "external"; readonly module: string; readonly name: string }
   | { readonly kind: "unknown"; readonly reason: UnknownReason; readonly detail: string };
 
+/** Parses one module's source; a scan cache passes a memoizing one. */
+export type ModuleParser = (file: string, source: string) => Promise<ModuleInfo | null>;
+
 export class ModuleGraph {
   readonly root: string;
   private readonly resolver: ModuleResolver;
@@ -21,12 +24,14 @@ export class ModuleGraph {
   private readonly exportMemo = new Map<string, Promise<ResolvedSymbol>>();
   /** Source overrides (unsaved or virtual files), by project-relative path. */
   private readonly overrides: ReadonlyMap<string, string>;
+  private readonly parse: ModuleParser;
 
-  constructor(root: string, resolver: ModuleResolver, modules: Map<string, ModuleInfo | null>, overrides: ReadonlyMap<string, string> = new Map()) {
+  constructor(root: string, resolver: ModuleResolver, modules: Map<string, ModuleInfo | null>, overrides: ReadonlyMap<string, string> = new Map(), parse: ModuleParser = parseModule) {
     this.root = root;
     this.resolver = resolver;
     this.modules = modules;
     this.overrides = overrides;
+    this.parse = parse;
   }
 
   /** A module by project-relative path, parsing it on demand (files outside the include globs too). */
@@ -37,7 +42,7 @@ export class ModuleGraph {
       loading = (async () => {
         try {
           const source = this.overrides.get(file) ?? (await readFile(join(this.root, file), "utf8"));
-          const info = await parseModule(file, source);
+          const info = await this.parse(file, source);
           this.modules.set(file, info);
           return info;
         } catch {

@@ -1,0 +1,26 @@
+# The hub's preview deploys (apps/web/README.md, "Preview deploys"): on every PR, the exact
+# preview build Railway runs, including the check that the build serves only the committed demo
+# snapshot. It needs no secrets. Railway's own bot comments each PR's preview link.
+name: web preview
+
+on:
+  pull_request:
+    paths: ["apps/web/**", "packages/**", "pnpm-lock.yaml", "package.json", ".railway/**", ".github/workflows/web-preview.yml"]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @youiyoux/web build:preview

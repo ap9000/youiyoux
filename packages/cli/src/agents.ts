@@ -8,9 +8,9 @@
  * agents, and an executable check.
  */
 import { stringify } from "yaml";
-import type { ComponentContract, RuleSpec } from "@youiyoux/core";
+import { executionLabel, MCP_TOOLS, type ComponentContract, type RuleSpec } from "@youiyoux/core";
 import { cssValue, type ResolvedToken, type TokenBuild } from "@youiyoux/tokens";
-import { importLine, type Project } from "@youiyoux/scanner";
+import { importLine, ruleCapability, type Project } from "@youiyoux/scanner";
 
 export const BLOCK_BEGIN = "<!-- youi:begin -->";
 export const BLOCK_END = "<!-- youi:end -->";
@@ -21,7 +21,21 @@ function generatedNote(project: Project): string {
   return `${GENERATED_MARK} from the ${s.name} design language v${s.version}. Do not edit: change the design language and run \`youi sync\`.`;
 }
 
-const enforced = (rules: readonly RuleSpec[]): RuleSpec[] => rules.filter((r) => r.severity !== "off" && r.check.engine !== "advisory");
+/** Rules `youi check` actually runs. */
+const enforced = (rules: readonly RuleSpec[]): RuleSpec[] => rules.filter((r) => ruleCapability(r).state === "enforced");
+/** Rules agents still follow though nothing checks them: advisory prose, and checks this youi cannot run. */
+const unchecked = (rules: readonly RuleSpec[]): RuleSpec[] => rules.filter((r) => ["advisory", "unsupported"].includes(ruleCapability(r).state));
+
+export interface UnknownToolMention {
+  readonly rule: string;
+  readonly tool: string;
+}
+
+/** Tool names in the agent text of rules copied into AGENTS.md and SKILL.md (checked or not) that the MCP server does not expose. */
+export function unknownToolMentions(project: Project): UnknownToolMention[] {
+  const known = new Set<string>(MCP_TOOLS);
+  return [...enforced(project.system.rules), ...unchecked(project.system.rules)].flatMap((r) => [...new Set(r.agent.match(/\b(?:system|library|youi)_[a-z_]+\b/g) ?? [])].filter((tool) => !known.has(tool)).map((tool) => ({ rule: r.id, tool })));
+}
 
 function enumSummary(contract: ComponentContract): string {
   return Object.entries(contract.props)
@@ -43,13 +57,15 @@ export function agentsBlock(project: Project): string {
     "",
     `This project's UI follows ${system.config.name} v${system.config.version}. Exact contracts live in YouIyouX: look them up, never guess.`,
     "",
+    "- **Build only with the System.** System elements are approved: the components, tokens and rules below, looked up with `system_*` tools (MCP server `youiyoux`) or `youi show`. Library items (`lib:` ids, `library_*` tools, `youi library`) are ingested references, not approved: never import, copy or restyle code from one. To use one, draft a request with `library_request` (or `youi library request <id>`), put it in your summary, and keep building with the System.",
     `- Build UI from the owned components, imported from \`${from}\`: ${names}.`,
-    "- Before using a component's props, call `youi_get_component` (MCP server `youiyoux`) or run `youi show <component>`; use only the listed values.",
+    "- Before using a component's props, call `system_get_component` or run `youi show <component>`; use only the listed values.",
     ...enforced(system.rules).map((r) => `- ${r.agent}`),
+    ...unchecked(system.rules).map((r) => `- ${r.agent} (not checked by \`youi check\`: follow it yourself)`),
     `- Never edit files marked \`${GENERATED_MARK}\` (\`${config.outputs.dir}/*\`, ${config.agents.designMd}, the youiyoux skill). Change the design language and run \`youi sync\`.`,
     `- Owned component files in \`${config.componentsDir}\` may be edited; \`youi sync\` 3-way merges upstream changes into them and reports drift.`,
     "- Before you finish, run `youi check`; it must report 0 errors.",
-    "- To change the system itself (a token, a prop, a rule), run `youi plan` and propose it. Agents never approve, publish or merge design changes.",
+    "- To change the System itself (a token, a prop, a rule), run `youi plan` (or `system_plan`) and propose it. Agents never approve, publish or merge design changes.",
     `- More: ${config.agents.designMd} (look and feel), \`${config.agents.skillDir}/SKILL.md\` (procedures), MCP server \`youiyoux\` (exact JSON).`,
     BLOCK_END,
   ];
@@ -127,7 +143,7 @@ function componentsSection(project: Project): string {
 }
 
 function rulesSection(project: Project): string {
-  const rows = project.system.rules.map((r) => `| ${r.title} | ${r.severity} | ${r.check.engine === "advisory" ? "advisory (not checked)" : "checked by `youi check`"} | ${r.statement} |`);
+  const rows = project.system.rules.filter((r) => r.severity !== "off").map((r) => `| ${r.title} | ${r.severity} | ${executionLabel(ruleCapability(r))} | ${r.statement} |`);
   return ["## Rules", "", "| Rule | Severity | Enforcement | Statement |", "| --- | --- | --- | --- |", ...rows].join("\n");
 }
 
@@ -136,8 +152,9 @@ export function designMd(project: Project, build: TokenBuild, narrative: string 
   const lookup = [
     "## Look it up",
     "",
-    "- Exact contracts, tokens and rules: MCP server `youiyoux` (`youi_get_component`, `youi_get_tokens`, `youi_get_rules`) or `youi where <component>`.",
-    "- Where something is used, screen by screen: `youi where <component> [--route <route>]` or `youi_where_used`.",
+    "- Build only with System elements. Exact contracts, tokens and rules: MCP server `youiyoux` (`system_get_component`, `system_get_tokens`, `system_get_rules`) or `youi show <component>`.",
+    "- Where something is used, screen by screen: `youi where <component> [--route <route>]` or `system_where_used`.",
+    "- Library items (`lib:` ids, `library_search`) are unapproved references: never build with them; request adoption with `library_request`.",
     "- Before finishing UI work: `youi check`.",
   ].join("\n");
   const body = (narrative ?? `# Design System: ${project.system.config.name}\n`).replace(/^<!--[\s\S]*?-->\s*/, "").trim();
@@ -149,7 +166,7 @@ export function designMd(project: Project, build: TokenBuild, narrative: string 
 export function skillMd(project: Project, uncontracted: readonly string[] = []): string {
   const { config, system } = project;
   const from = config.importFrom ?? config.componentsDir;
-  const description = `Build and fix UI with the ${system.config.name} design language (YouIyouX): owned components, tokens, rules, where-used lookups and change proposals. Use for any UI, styling, colour or component work in this project.`;
+  const description = `Build and fix UI with the ${system.config.name} design language (YouIyouX): System components, tokens, rules, where-used lookups, change proposals and Library adoption requests. Use for any UI, styling, colour or component work in this project.`;
   const components = system.components.map(({ contract }) => `- **${contract.name}**: ${contract.summary}${enumSummary(contract) ? ` (${enumSummary(contract)})` : ""}`);
   const fixes = enforced(system.rules).map((r) => `| \`${r.id.split("/rule/")[1]}\` | ${r.severity} | ${r.agent} |`);
   return [
@@ -162,12 +179,23 @@ export function skillMd(project: Project, uncontracted: readonly string[] = []):
     "",
     `# ${system.config.name} design language`,
     "",
+    "## System and Library",
+    "",
+    "YouIyouX has two sides, and the tool names say which one you are reading:",
+    "",
+    "| Side | What it holds | Tools | You may |",
+    "| --- | --- | --- | --- |",
+    "| System | Approved components, tokens and rules (`youi:` ids), with live usage | `system_*`, `youi show`, `youi where`, `youi check`, `youi plan` | Build with them |",
+    "| Library | Ingested references from outside sources (`lib:` ids) | `library_search`, `library_request`, `youi library` | Browse and request adoption only |",
+    "",
+    "Elements move `library → candidate → adopted → in-use`. Requesting adoption (library → candidate) is the only move an agent makes; a person approves a candidate into the System, and `in-use` comes from the usage map. Never import, copy or restyle code from a Library item, even when it fits better: draft `library_request {\"item\": \"lib:…\", \"reason\": \"…\"}` (or `youi library request <id> --reason …`), put the draft in your summary, and build with the System element it would swap in for.",
+    "",
     "## Build a screen",
     "",
-    "1. Find what exists: `youi_search` (MCP) or the component list below. Prefer an existing component over new markup.",
-    "2. Read the contract before using props: `youi_get_component {\"name\": \"Button\"}`, or `youi show button` without MCP. Use only the listed values; `guidance` says when to use which.",
+    "1. Find what exists: `system_search` (MCP) or the component list below. Prefer an existing component over new markup.",
+    "2. Read the contract before using props: `system_get_component {\"name\": \"Button\"}`, or `youi show button` without MCP. Use only the listed values; `guidance` says when to use which.",
     `3. Import from \`${from}\`. Never import a component of the same name from anywhere else.`,
-    "4. Colour, type, radius and shadow come from tokens: `youi_get_tokens {\"group\": \"color\"}` gives each token's CSS variable and a Tailwind utility (a colour works with bg-, text- and border-). Never write a hex, rgb() or a `[arbitrary]` value that copies a token.",
+    "4. Colour, type, radius and shadow come from tokens: `system_get_tokens {\"group\": \"color\"}` gives each token's CSS variable and a Tailwind utility (a colour works with bg-, text- and border-). Never write a hex, rgb() or a `[arbitrary]` value that copies a token.",
     "5. Run `youi check` and fix every error; warnings need a reason if left.",
     "",
     "## Fix a violation",
@@ -180,11 +208,11 @@ export function skillMd(project: Project, uncontracted: readonly string[] = []):
     "",
     "## Find where something is used",
     "",
-    "`youi where button` lists sites by screen, with prop usage and anything the scanner could not resolve (unknown is never counted as zero). Filter with `--route /settings`. MCP: `youi_where_used`, and `youi_screen_bom {\"route\": \"/settings\"}` for everything on one screen.",
+    "`youi where button` lists sites by screen, with prop usage and anything the scanner could not resolve (unknown is never counted as zero). Filter with `--route /settings`. MCP: `system_where_used`, and `system_screen_bom {\"route\": \"/settings\"}` for everything on one screen.",
     "",
-    "## Propose a change to the system",
+    "## Propose a change to the System",
     "",
-    "1. Plan it: `youi plan button --patch '{\"status\": \"deprecated\"}'` (or `youi_plan`). The plan computes the change class, semver bump, affected screens and which call sites a codemod can rewrite.",
+    "1. Plan it: `youi plan button --patch '{\"status\": \"deprecated\"}'` (or `system_plan`). The plan computes the change class, semver bump, affected screens and which call sites a codemod can rewrite.",
     "2. Put the plan in your summary or PR description for a person to approve. Agents never approve, publish or merge design changes.",
     `3. Never hand-edit \`${GENERATED_MARK}\` files; they are rewritten on the next sync.`,
     "",
@@ -207,7 +235,8 @@ export function skillMd(project: Project, uncontracted: readonly string[] = []):
 export function astGrepRules(project: Project): Array<{ file: string; content: string }> {
   const out: Array<{ file: string; content: string }> = [];
   const header = `# ${generatedNote(project)}\n# Portable subset: youi check also resolves imports; these run with plain \`ast-grep scan -r <file>\`.\n`;
-  for (const rule of project.system.rules) {
+  // Only rules youi check runs: an off or uncompilable rule must not keep running under plain ast-grep.
+  for (const rule of enforced(project.system.rules)) {
     if (rule.check.engine === "ast-grep") {
       out.push({ file: `${rule.id.split("/rule/")[1]}.yml`, content: header + stringify({ id: rule.id, language: rule.check.language, severity: rule.severity === "error" ? "error" : "warning", message: rule.title, note: rule.agent, rule: rule.check.rule }) });
     }

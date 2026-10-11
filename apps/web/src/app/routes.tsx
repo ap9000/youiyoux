@@ -1,5 +1,5 @@
 /** Route table: every screen is its own chunk, preloaded on hover/focus and on idle after first paint. */
-import { Boxes, House, KeyRound, type LucideIcon, Monitor, Palette, GitPullRequestArrow } from "lucide-react";
+import { Boxes, LayoutGrid, Library, type LucideIcon, Monitor, Palette, PlugZap, Scale, GitPullRequestArrow } from "lucide-react";
 import { type ComponentType, createElement } from "react";
 
 /**
@@ -38,16 +38,22 @@ export function preloadable<M, P extends object>(load: () => Promise<M>, pick: (
 const home = preloadable(() => import("../screens/home/HomeScreen.tsx"), (m) => m.HomeScreen);
 const catalog = preloadable(() => import("../screens/catalog/CatalogScreen.tsx"), (m) => m.CatalogScreen);
 const tokens = preloadable(() => import("../screens/tokens/TokensScreen.tsx"), (m) => m.TokensScreen);
+const rules = preloadable(() => import("../screens/rules/RulesScreen.tsx"), (m) => m.RulesScreen);
+const screens = preloadable(() => import("../screens/screens/ScreensScreen.tsx"), (m) => m.ScreensScreen);
+const library = preloadable(() => import("../screens/library/LibraryScreen.tsx"), (m) => m.LibraryScreen);
+const changes = preloadable(() => import("../screens/changes/ChangesScreen.tsx"), (m) => m.ChangesScreen);
 const loadStubs = () => import("../screens/stubs/StubScreens.tsx");
-const screens = preloadable(loadStubs, (m) => m.ScreensScreen);
-const changes = preloadable(loadStubs, (m) => m.ChangesScreen);
+const sources = preloadable(loadStubs, (m) => m.SourcesScreen);
 const access = preloadable(loadStubs, (m) => m.AccessScreen);
 const notFound = preloadable(loadStubs, (m) => m.NotFoundScreen);
 
 export const HomeScreen = home.Component;
 export const CatalogScreen = catalog.Component;
 export const TokensScreen = tokens.Component;
+export const LibraryScreen = library.Component;
 export const ScreensScreen = screens.Component;
+export const RulesScreen = rules.Component;
+export const SourcesScreen = sources.Component;
 export const ChangesScreen = changes.Component;
 export const AccessScreen = access.Component;
 export const NotFoundScreen = notFound.Component;
@@ -56,8 +62,25 @@ const loaders = {
   home: home.preload,
   catalog: catalog.preload,
   tokens: tokens.preload,
-  stubs: () => Promise.all([screens, changes, access, notFound].map((s) => s.preload())).then(() => undefined),
+  rules: rules.preload,
+  screens: screens.preload,
+  library: library.preload,
+  changes: changes.preload,
+  stubs: () => Promise.all([sources, access, notFound].map((s) => s.preload())).then(() => undefined),
 } as const;
+
+/**
+ * The tool's top level. The System holds approved elements, their rules and live usage: what
+ * products build with. The Library holds what is ingested from outside, to browse, categorize
+ * and propose; nothing in it is built with. Work is changes moving through review.
+ */
+export type NavSection = "system" | "library" | "work";
+
+export const NAV_SECTIONS: Readonly<Record<NavSection, { readonly label: string; readonly hint: string }>> = {
+  system: { label: "System", hint: "Approved elements, rules and live usage: build with these" },
+  library: { label: "Library", hint: "Ingested references: browse and propose, never build with" },
+  work: { label: "Work", hint: "Changes in progress and their review" },
+};
 
 export interface NavItem {
   readonly href: string;
@@ -66,19 +89,45 @@ export interface NavItem {
   /** The `g` chord key that jumps here. */
   readonly key: string;
   readonly loader: keyof typeof loaders;
+  readonly section: NavSection;
 }
 
 export const NAV: readonly NavItem[] = [
-  { href: "/", label: "Home", icon: House, key: "h", loader: "home" },
-  { href: "/elements", label: "Elements", icon: Boxes, key: "e", loader: "catalog" },
-  { href: "/tokens", label: "Tokens", icon: Palette, key: "t", loader: "tokens" },
-  { href: "/screens", label: "Screens", icon: Monitor, key: "s", loader: "stubs" },
-  { href: "/changes", label: "Changes", icon: GitPullRequestArrow, key: "c", loader: "stubs" },
-  { href: "/access", label: "Access", icon: KeyRound, key: "a", loader: "stubs" },
+  { href: "/", label: "Overview", icon: LayoutGrid, key: "o", loader: "home", section: "system" },
+  { href: "/elements", label: "Components", icon: Boxes, key: "c", loader: "catalog", section: "system" },
+  { href: "/tokens", label: "Tokens", icon: Palette, key: "t", loader: "tokens", section: "system" },
+  { href: "/rules", label: "Rules", icon: Scale, key: "r", loader: "rules", section: "system" },
+  { href: "/screens", label: "Screens", icon: Monitor, key: "s", loader: "screens", section: "system" },
+  { href: "/library", label: "Browse", icon: Library, key: "l", loader: "library", section: "library" },
+  { href: "/library/sources", label: "Sources", icon: PlugZap, key: "i", loader: "stubs", section: "library" },
+  { href: "/changes", label: "Changes", icon: GitPullRequestArrow, key: "w", loader: "changes", section: "work" },
 ];
 
+export interface NavGroup {
+  readonly section: NavSection;
+  readonly items: readonly NavItem[];
+}
+
+/** NAV split into runs of the same section, in order, for the rail to label and divide. */
+export function navGroups(items: readonly NavItem[] = NAV): NavGroup[] {
+  const groups: NavGroup[] = [];
+  for (const item of items) {
+    const section = item.section;
+    const last = groups.at(-1);
+    if (last && last.section === section) groups[groups.length - 1] = { section, items: [...last.items, item] };
+    else groups.push({ section, items: [item] });
+  }
+  return groups;
+}
+
+function matches(href: string, path: string): boolean {
+  return href === "/" ? path === "/" : path === href || path.startsWith(`${href}/`);
+}
+
+/** The most specific nav item for a path, so /library/sources lights Sources, not Browse. */
 export function isActive(item: NavItem, path: string): boolean {
-  return item.href === "/" ? path === "/" : path === item.href || path.startsWith(`${item.href}/`);
+  const best = NAV.filter((n) => matches(n.href, path)).sort((a, b) => b.href.length - a.href.length)[0];
+  return best?.href === item.href;
 }
 
 /** Start loading the chunk behind `href` (safe to call repeatedly; imports are cached). */

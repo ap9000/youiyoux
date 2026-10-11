@@ -24,16 +24,16 @@ SYSTEM="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.arg
 SCREENS=(
   "home:/"
   "catalog:/elements"
-  "element-preview:/elements/$SYSTEM/component/button"
+  "element-overview:/elements/$SYSTEM/component/button"
+  "element-usage:/elements/$SYSTEM/component/button/usage"
   "element-contract:/elements/$SYSTEM/component/button/contract"
-  "element-tokens:/elements/$SYSTEM/component/button/tokens"
   "element-rules:/elements/$SYSTEM/component/button/rules"
-  "element-where:/elements/$SYSTEM/component/button/where"
   "rule:/elements/$SYSTEM/rule/color.no-raw-color"
   "tokens-palette:/tokens"
   "token-color:/tokens/color.accent"
   "token-typography:/tokens/typography.label"
   "screens:/screens"
+  "library:/library"
   "changes:/changes"
   "access:/access"
 )
@@ -79,7 +79,7 @@ capture_screens() {
     echo "screen command-palette ($scheme)"
     # Phone width: one pane at a time.
     axi emulate --viewport "390x844x3,mobile,touch" --color-scheme "$scheme"
-    for entry in "phone-catalog:/elements" "phone-element:/elements/$SYSTEM/component/button/where"; do
+    for entry in "phone-catalog:/elements" "phone-element:/elements/$SYSTEM/component/button/usage"; do
       axi open "$BASE${entry#*:}"
       axi wait "$SETTLE_MS"
       axi screenshot "$APP/screenshots/${entry%%:*}.$scheme.webp" --format webp

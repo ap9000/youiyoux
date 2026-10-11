@@ -20,6 +20,8 @@ export interface ResolvedToken {
   readonly dark: unknown;
   /** Token id this one aliases (in the light scheme), if any. */
   readonly aliasOf?: string;
+  /** Every token this one's value reads, in either scheme: whole aliases and parts (a typography's fontFamily). */
+  readonly dependsOn?: readonly string[];
   /** CSS variable name without `--` and prefix. */
   readonly cssName: string;
   readonly description?: string;
@@ -74,6 +76,12 @@ function wrapDark(contents: string, output: OutputConfig): string {
     .join("\n\n");
 }
 
+/** Terrazzo dependency pointers (`#/font/sans/$value`) → token ids (`font.sans`). */
+function dependencyIds(...tokens: Array<TokenNormalized | undefined>): string[] {
+  const ids = tokens.flatMap((token) => [...(token?.dependencies ?? []), ...(token?.aliasOf ? [`#/${token.aliasOf.replace(/\./g, "/")}/$value`] : [])]);
+  return [...new Set(ids.map((pointer) => pointer.replace(/^#\//, "").split("/$value")[0]!.replace(/\//g, ".")))].sort();
+}
+
 function differs(light: TokenNormalized, dark: TokenNormalized | undefined): boolean {
   return dark !== undefined && JSON.stringify(light.$value) !== JSON.stringify(dark.$value) && !light.aliasOf;
 }
@@ -105,15 +113,19 @@ export async function buildTokens(repoRoot: string, system: SystemConfig, output
   if (typeof css !== "string") throw new Error("Terrazzo produced no tokens.css");
 
   const tokens: ResolvedToken[] = Object.values(lightSet)
-    .map((token) => ({
-      id: token.id,
-      type: token.$type,
-      light: token.$value,
-      dark: darkSet[token.id]?.$value ?? token.$value,
-      ...(token.aliasOf ? { aliasOf: token.aliasOf } : {}),
-      cssName: cssNameOf(token),
-      ...(token.$description ? { description: token.$description } : {}),
-    }))
+    .map((token) => {
+      const dependsOn = dependencyIds(token, darkSet[token.id]);
+      return {
+        id: token.id,
+        type: token.$type,
+        light: token.$value,
+        dark: darkSet[token.id]?.$value ?? token.$value,
+        ...(token.aliasOf ? { aliasOf: token.aliasOf } : {}),
+        ...(dependsOn.length > 0 ? { dependsOn } : {}),
+        cssName: cssNameOf(token),
+        ...(token.$description ? { description: token.$description } : {}),
+      };
+    })
     .sort((a, b) => a.id.localeCompare(b.id));
 
   const header = generatedHeader(system, "css");

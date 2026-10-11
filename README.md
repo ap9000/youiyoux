@@ -23,6 +23,7 @@ A design repo is any directory with a `youi.config.json`. A product names it wit
 | `tokens/<system>/` | DTCG 2025.10 tokens: a resolver (base set plus a light/dark `theme` modifier) |
 | `components/<name>/` | `youi.component/v1` contracts, the owned implementations that sync vendors into products, and an optional `<name>.demo.tsx` the hub previews |
 | `rules/` | `youi.rule/v1` rules: prose for people, an instruction for agents, and an executable check |
+| `library/` | `youi.library/v1` Library items (`library/<source>/<name>.library.json`): ingested references, never built with; none yet, sources come later |
 | `systems/<system>/design.md` | The narrative; DESIGN.md is generated from it plus the tokens |
 | `schema/` | Optional copies of this tool's JSON Schemas for editor validation (`youi schema --write --design .`; `--check` verifies them) |
 
@@ -30,11 +31,12 @@ A design repo is any directory with a `youi.config.json`. A product names it wit
 
 | Path | Contents |
 | --- | --- |
-| `packages/` | `core` (schemas, loader), `tokens` (Terrazzo build, import, parity), `scanner` (usage map, checks, migrations, plans), `cli`, `mcp` |
+| `packages/` | `core` (schemas, loader), `tokens` (Terrazzo build, import, parity), `scanner` (usage map, checks, migrations, plans), `cli`, `mcp`, `workflow` (rule-editor service) |
 | `apps/web/` | The hub: find an element, see its contract, tokens and rules, preview it, see where it lives ([README](apps/web/README.md)) |
 | `schema/` | JSON Schemas, emitted from the Zod definitions in `packages/core` (`youi schema --write`) |
 | `examples/demo-design/` | **Demo**, a made-up design system (Button, Input and Card; 19 tokens; 6 rules) used by the tests, these docs and the hub's default data |
 | `examples/demo-app/` | A made-up product that uses Demo, with a few deliberate violations |
+| `.railway/`, `.github/workflows/web-preview.yml` | Per-PR preview deploys of the hub on Railway, demo data only ([how](apps/web/README.md#preview-deploys)) |
 
 ## Use
 
@@ -67,7 +69,11 @@ In a product repo:
 | `youi show <component>` | The contract: import, legal values, guidance |
 | `youi check` | Rules plus lockfile drift; exits 1 on errors |
 | `youi plan` / `youi migrate` | Classify a change and its impact; run a gated codemod (dry run unless `--write`) |
-| `youi mcp` | stdio MCP server: read tools plus `youi_plan`; no publish, approve or merge tools |
+| `youi library search <query>` / `youi library request <id> --reason …` | Browse the Library; draft a request to adopt an item into the System |
+| `youi mcp` | stdio MCP server: `system_*` tools (build with these, plus `system_plan`) and `library_*` tools (browse, draft a request); no publish, approve or merge tools |
+| `youi ui --project <dir>` | The hub on that product, with the local rule editor: drafts, impact preview against the project, approval, and a review branch in the design repo ([guide](packages/workflow/README.md)) |
+
+`show`, `where`, `bom`, `check`, `plan` and `migrate` work on the System.
 
 Every product command takes `--design <dir>` (override the design repo) and `--config <file>` (a project config kept outside the product, for example in the design repo).
 
@@ -90,7 +96,17 @@ Anywhere:
 - **Identity, not names.** A `<Button>` counts only if its import resolves (TypeScript module resolution, through barrels and aliases) to the owned implementation. A same-named component from elsewhere is reported as a lookalike.
 - **Unknown is never zero.** Sites the scanner cannot resolve are listed as unknown, and a scan with files it could not parse is marked `partial`.
 - **Rewrites are gated.** A migration is written only if the rewritten files parse cleanly, the element's usage count is unchanged, no site became unknown, no non-residual site keeps the old API, and a second run changes nothing.
+- **Build with the System, browse the Library.** System elements (`youi:` ids) are approved: products and agents build only with them. Library items (`lib:` ids) are ingested references, kept to browse, categorize and propose as swaps; System lookups refuse them. An element moves `library → candidate → adopted → in-use`: an agent can only request adoption, a person approves it, and `in-use` is read off the usage map.
 - **Agents propose, people approve.** Agents get read tools and a planner; nothing in the agent surface can publish a change.
+
+## Roadmap (not built yet)
+
+- **Library ingestion from links**: GitHub repos, Figma files, component catalogs, Storybook and DESIGN.md files, each categorized and reviewed before it lands in the Library.
+- **Trial**: *Try alternatives* for an element, and *Try on a page* to see a candidate in a real screen before adopting it.
+- **Replace with…**: swap one element for another across all of its uses, as a planned, reviewed change.
+- **Screens, live**: screen snapshots with element positions, a live page view, and click-to-change on an element in place.
+- **Hosted server**: on Railway, with logins, per-scope permissions, the Access page and a GitHub App; per-PR preview links for every change.
+- **Public release prep**.
 
 ## License
 

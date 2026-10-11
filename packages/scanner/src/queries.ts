@@ -3,12 +3,16 @@
  * server so a person and an agent get the same facts. Results are compact and
  * bounded (pagination, top-N) so an agent lookup stays around 2 KB.
  */
-import { matchesQuery, type ComponentContract, type PropValue, type ScanReport, type UsageSite } from "@youiyoux/core";
+import { matchesQuery, systemStage, type ComponentContract, type PropValue, type ScanReport, type UsageSite } from "@youiyoux/core";
 import { cssValue } from "@youiyoux/tokens";
+import { ruleCapability } from "./capabilities.ts";
 import type { TokenIndex } from "./checks.ts";
+import { assertSystemQuery } from "./library.ts";
 import type { Project } from "./project.ts";
 
+/** A System contract by id, name or part name. A Library id (`lib:…`) is refused, never looked up. */
 export function findContract(project: Project, query: string): ComponentContract | null {
+  assertSystemQuery(query);
   const q = query.trim();
   return project.system.components.find(({ contract }) => matchesQuery(contract.id, q) || contract.name.toLowerCase() === q.toLowerCase() || contract.source.also.some((p) => p.toLowerCase() === q.toLowerCase()))?.contract ?? null;
 }
@@ -202,7 +206,7 @@ export function componentCard(project: Project, contract: ComponentContract, rep
     a11y: contract.a11y.notes,
     examples: contract.examples,
     rules: contract.rules,
-    ...(sites ? { usage: { sites: sites.length, screens: new Set(sites.flatMap((s) => s.routes)).size } } : {}),
+    ...(sites ? { ...(report?.status === "complete" ? { stage: systemStage(sites.length) } : {}), usage: { sites: sites.length, screens: new Set(sites.flatMap((s) => s.routes)).size } } : {}),
   };
 }
 
@@ -228,14 +232,27 @@ export function tokenRows(project: Project, tokens: TokenIndex, group?: string, 
   return { columns: ["id", "cssVar", "light", "dark", "utility"], rows: rows.slice(0, limit), total: rows.length, truncated: rows.length > limit };
 }
 
+/**
+ * Rules for agents: what each asks and whether `youi check` actually enforces it. `off` rules are
+ * left out entirely; a check this youi cannot run says so instead of claiming enforcement.
+ */
 export function ruleRows(project: Project): Array<Record<string, unknown>> {
-  return project.system.rules.map((r) => ({
-    id: r.id,
-    title: r.title,
-    severity: r.severity,
-    enforced: r.check.engine !== "advisory",
-    do: r.agent,
-    ...(r.examples.bad.length ? { bad: r.examples.bad[0] } : {}),
-    ...(r.examples.good.length ? { good: r.examples.good[0] } : {}),
-  }));
+  return project.system.rules.flatMap((r) => {
+    const execution = ruleCapability(r);
+    if (execution.state === "off") return [];
+    return [
+      {
+        id: r.id,
+        title: r.title,
+        severity: r.severity,
+        ...(r.rollout ? { becomes: `${r.rollout.to}${r.rollout.after ? ` after ${r.rollout.after}` : " later"}` } : {}),
+        enforced: execution.state === "enforced",
+        execution: execution.state,
+        ...(execution.state === "unsupported" ? { notChecked: execution.reason } : {}),
+        do: r.agent,
+        ...(r.examples.bad.length ? { bad: r.examples.bad[0] } : {}),
+        ...(r.examples.good.length ? { good: r.examples.good[0] } : {}),
+      },
+    ];
+  });
 }

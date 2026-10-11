@@ -5,7 +5,7 @@ title: No raw colours
 severity: error
 statement: Colour comes from tokens. Never write a hex, rgb() or hsl() literal in a component, class name, inline style or stylesheet; only the token source may define colour values.
 rationale: Every colour role has one light and one dark value. A literal colour cannot follow the scheme or a token change, and it hides from every audit.
-agent: "Never hard-code a colour: use token utilities (bg-card, text-muted, border-line) or var(--demo-color-*), and look up the role with youi_get_tokens."
+agent: "Never hard-code a colour: use token utilities (bg-card, text-muted, border-line) or var(--demo-color-*), and look up the role with system_get_tokens."
 check:
   engine: youi
   id: raw-color

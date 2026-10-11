@@ -5,6 +5,7 @@
  * The hub's snapshot shapes follow.
  */
 import type { ComponentContract, ElementId, RuleSpec, UsageSite } from "@youiyoux/core";
+import type { RuleExecution } from "@youiyoux/core/rules";
 
 export type {
   ComponentContract,
@@ -65,11 +66,53 @@ export interface Catalog {
   system: SystemInfo;
   tokens: TokenEntry[];
   components: ComponentEntry[];
-  rules: RuleSpec[];
+  rules: CatalogRule[];
+}
+
+/** A rule with how youi check runs it, compiled when the snapshot was built (older snapshots lack it). */
+export type CatalogRule = RuleSpec & { execution?: RuleExecution };
+
+/** How a live snapshot (`youi ui --watch`) was produced; absent from one-off snapshots. */
+export interface LiveInfo {
+  /** Increases with every re-scan. */
+  generation: number;
+  /** `partial`: some files could not be analysed; `failed`: the latest run failed and older data is shown. */
+  status: "complete" | "partial" | "failed";
+  updatedAt: string;
+  /** The rules the usage map was checked against: system, definitions digest and revisions. */
+  rules?: string;
+  message?: string;
+}
+
+/** A route's screenshot in one scheme: a 2x image for the screen page and a small one for thumbnails. */
+export interface ShotFiles {
+  full: string;
+  thumb: string;
+}
+
+export interface ScreenShot {
+  /** The route as the usage map names it (`/flows`, `*` for the app shell). */
+  route: string;
+  /** The address that was captured. */
+  path: string;
+  /** Why this address stands for the route, when that is not obvious. */
+  note?: string;
+  light?: ShotFiles;
+  dark?: ShotFiles;
+}
+
+/** A project's captured screens (`fixtures/<project>.screens.json` plus its images). */
+export interface ProjectShots {
+  /** Where the pictures came from, e.g. a seeded demo sandbox at a commit. */
+  source: string;
+  capturedAt: string;
+  viewport: { width: number; height: number };
+  screens: ScreenShot[];
 }
 
 export interface Manifest {
   schema: "youiyoux.manifest/v1";
   source: { commit: string | null };
-  systems: Array<{ id: string; catalog: string; usage: Array<{ project: string; file: string }> }>;
+  systems: Array<{ id: string; catalog: string; usage: Array<{ project: string; file: string; screens?: ProjectShots }> }>;
+  live?: LiveInfo;
 }

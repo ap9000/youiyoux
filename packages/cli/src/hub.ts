@@ -2,6 +2,9 @@
  * `youi ui`: start the hub (apps/web) on a design system. With no options it shows the
  * committed demo snapshot. Otherwise it snapshots the given system into apps/web/.hub
  * (gitignored, so the tool's checkout stays clean) and points the dev server at it.
+ * `--watch` keeps that snapshot live: a watcher re-scans on every save and the open
+ * hub loads each new generation (the demo project is watched when nothing is named).
+ * `api` is the rule editor's service, which the dev server proxies at /api.
  */
 import { spawn } from "node:child_process";
 import { access } from "node:fs/promises";
@@ -15,6 +18,10 @@ export interface HubOptions {
   /** Project config, when it lives outside the product repo. */
   readonly config?: string;
   readonly port?: string;
+  /** Keep the snapshot live while the hub runs. */
+  readonly watch?: boolean;
+  /** The rule editor's service (`youi ui --project`), proxied at /api. */
+  readonly api?: string;
 }
 
 export interface HubPlan {
@@ -23,17 +30,24 @@ export interface HubPlan {
   readonly snapshot: readonly string[] | null;
   readonly env: Readonly<Record<string, string>>;
   readonly vite: readonly string[];
+  /** Arguments for the live snapshot watcher (scripts/snapshot.ts --watch), run beside the dev server. */
+  readonly watch: readonly string[] | null;
 }
 
 export const HUB_SNAPSHOT_DIR = ".hub";
+/** Vite's default; `youi ui` pins it when it prints a link into the hub. */
+export const DEFAULT_HUB_PORT = "5173";
 
 export function hubPlan(toolRoot: string, options: HubOptions): HubPlan {
   const web = join(toolRoot, "apps/web");
   const vite = [join(web, "node_modules/vite/bin/vite.js"), ...(options.port ? ["--port", options.port, "--strictPort"] : [])];
-  const flags = (["design", "project", "config"] as const).flatMap((key) => (options[key] ? [`--${key}`, resolve(options[key])] : []));
-  if (flags.length === 0) return { web, snapshot: null, env: {}, vite };
+  const named = (["design", "project", "config"] as const).flatMap((key) => (options[key] ? [`--${key}`, resolve(options[key])] : []));
+  const flags = named.length === 0 && options.watch ? ["--project", join(toolRoot, "examples/demo-app")] : named;
+  const api: Record<string, string> = options.api ? { YOUI_API: options.api } : {};
+  if (flags.length === 0) return { web, snapshot: null, env: api, vite, watch: null };
   const out = join(web, HUB_SNAPSHOT_DIR);
-  return { web, snapshot: [join(web, "scripts/snapshot.ts"), "--out", out, ...flags], env: { YOUI_HUB_SNAPSHOT: out }, vite };
+  const snapshot = [join(web, "scripts/snapshot.ts"), "--out", out, ...flags];
+  return { web, snapshot, env: { YOUI_HUB_SNAPSHOT: out, ...api }, vite, watch: options.watch ? [...snapshot, "--watch"] : null };
 }
 
 function run(args: readonly string[], cwd: string, env: Readonly<Record<string, string>>): Promise<number> {
@@ -44,7 +58,7 @@ function run(args: readonly string[], cwd: string, env: Readonly<Record<string, 
   });
 }
 
-/** Snapshot (when a system is named), then serve until the dev server exits. */
+/** Snapshot (when a system is named), then serve until the dev server exits; with --watch, a watcher runs alongside. */
 export async function runHub(toolRoot: string, options: HubOptions): Promise<number> {
   const plan = hubPlan(toolRoot, options);
   await access(plan.vite[0]!).catch(() => {
@@ -54,5 +68,10 @@ export async function runHub(toolRoot: string, options: HubOptions): Promise<num
     const code = await run(plan.snapshot, process.cwd(), {});
     if (code !== 0) return code;
   }
-  return run(plan.vite, plan.web, plan.env);
+  const watcher = plan.watch ? spawn(process.execPath, plan.watch, { cwd: process.cwd(), stdio: "inherit" }) : null;
+  try {
+    return await run(plan.vite, plan.web, plan.env);
+  } finally {
+    watcher?.kill("SIGTERM");
+  }
 }
