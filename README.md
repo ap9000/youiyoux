@@ -23,6 +23,7 @@ A design repo is any directory with a `youi.config.json`. A product names it wit
 | `tokens/<system>/` | DTCG 2025.10 tokens: a resolver (base set plus a light/dark `theme` modifier) |
 | `components/<name>/` | `youi.component/v1` contracts, the owned implementations that sync vendors into products, and an optional `<name>.demo.tsx` the hub previews |
 | `rules/` | `youi.rule/v1` rules: prose for people, an instruction for agents, and an executable check |
+| `library/` | `youi.library/v1` Library items (`library/<source>/<name>.library.json`): ingested references, never built with; none yet, sources come later |
 | `systems/<system>/design.md` | The narrative; DESIGN.md is generated from it plus the tokens |
 | `schema/` | Optional copies of this tool's JSON Schemas for editor validation (`youi schema --write --design .`; `--check` verifies them) |
 
@@ -67,7 +68,10 @@ In a product repo:
 | `youi show <component>` | The contract: import, legal values, guidance |
 | `youi check` | Rules plus lockfile drift; exits 1 on errors |
 | `youi plan` / `youi migrate` | Classify a change and its impact; run a gated codemod (dry run unless `--write`) |
-| `youi mcp` | stdio MCP server: read tools plus `youi_plan`; no publish, approve or merge tools |
+| `youi library search <query>` / `youi library request <id> --reason …` | Browse the Library; draft a request to adopt an item into the System |
+| `youi mcp` | stdio MCP server: `system_*` tools (build with these, plus `system_plan`) and `library_*` tools (browse, draft a request); no publish, approve or merge tools |
+
+`show`, `where`, `bom`, `check`, `plan` and `migrate` work on the System.
 
 Every product command takes `--design <dir>` (override the design repo) and `--config <file>` (a project config kept outside the product, for example in the design repo).
 
@@ -90,6 +94,7 @@ Anywhere:
 - **Identity, not names.** A `<Button>` counts only if its import resolves (TypeScript module resolution, through barrels and aliases) to the owned implementation. A same-named component from elsewhere is reported as a lookalike.
 - **Unknown is never zero.** Sites the scanner cannot resolve are listed as unknown, and a scan with files it could not parse is marked `partial`.
 - **Rewrites are gated.** A migration is written only if the rewritten files parse cleanly, the element's usage count is unchanged, no site became unknown, no non-residual site keeps the old API, and a second run changes nothing.
+- **Build with the System, browse the Library.** System elements (`youi:` ids) are approved: products and agents build only with them. Library items (`lib:` ids) are ingested references, kept to browse, categorize and propose as swaps; System lookups refuse them. An element moves `library → candidate → adopted → in-use`: an agent can only request adoption, a person approves it, and `in-use` is read off the usage map.
 - **Agents propose, people approve.** Agents get read tools and a planner; nothing in the agent surface can publish a change.
 
 ## License

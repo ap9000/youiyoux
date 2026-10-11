@@ -21,15 +21,18 @@ The hub shows one design system at a time, read from a snapshot directory. The c
 
 ## Screens
 
+The nav rail is split into the tool's two halves, each labelled: **System** (Elements, Tokens, Screens: approved elements, their rules and live usage; what products build with) and **Library** (what is ingested from outside, to browse and propose; never built with).
+
 | Route | What it is |
 | --- | --- |
 | `/` | Home: the system, where it lives, rule health, live speed numbers |
 | `/elements[/<system>/<kind>/<name>[/<tab>]]` | Catalog (search, kind filter) beside the element page: Preview, Contract, Tokens, Rules, Where it lives. Tokens and rules open their own detail. |
 | `/tokens[/<path>]` | Token explorer: palette overview, light and dark values, alias chain, WCAG contrast, consumers |
 | `/screens` | Each project screen and the elements it renders (from the usage map) |
+| `/library` | The Library: ingested candidates. Empty for now: explains the sources to come, the `library → candidate → adopted → in-use` path and what agents may do |
 | `/changes`, `/access` | Planned: change requests (plan, rollout, visual review) and access |
 
-Keyboard: `⌘K` palette, `/` search the list, `j`/`k` or arrows move, `g` then `h e t s c a` to jump, `?` for all shortcuts.
+Keyboard: `⌘K` palette, `/` search the list, `j`/`k` or arrows move, `g` then `h e t s l c a` to jump, `?` for all shortcuts.
 
 ## Data
 
@@ -60,7 +63,7 @@ src/data/          snapshot types (@youiyoux/core types, type-only), loading and
 src/search/        MiniSearch engine, Web Worker, client hook
 src/shell/         nav rail, keyboard layer, command palette, shortcuts sheet
 src/ui/            the hub's owned components
-src/screens/       home, catalog, element tabs, tokens, planned screens
+src/screens/       home, catalog, element tabs, tokens, library, planned screens
 src/preview/       the isolated preview frame (loads the snapshot's demos through the @snapshot alias)
 snapshot/          the committed demo snapshot (data, previews, preview sources)
 test/              unit tests (pnpm test)

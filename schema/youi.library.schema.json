@@ -1,0 +1,89 @@
+{
+  "$id": "https://design-language.local/schema/youi.library.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema": {
+      "type": "string",
+      "const": "youi.library/v1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^lib:([a-z][a-z0-9-]*)\\/(component|token|pattern)\\/([a-z0-9][a-z0-9.\\-]*)$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "component",
+        "token",
+        "pattern"
+      ]
+    },
+    "stage": {
+      "default": "library",
+      "type": "string",
+      "enum": [
+        "library",
+        "candidate"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "url": {
+          "type": "string",
+          "format": "uri"
+        },
+        "ingestedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+        }
+      },
+      "required": [
+        "name",
+        "ingestedAt"
+      ]
+    },
+    "categories": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "swapsWith": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^youi:([a-z][a-z0-9-]*)\\/(token|component|rule|migration)\\/([a-z0-9][a-z0-9.\\-]*)$"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "id",
+    "name",
+    "kind",
+    "summary",
+    "source"
+  ]
+}

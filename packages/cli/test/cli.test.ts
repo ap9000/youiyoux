@@ -29,6 +29,25 @@ describe("youi", () => {
     expect(err).toContain("usage: youi where <component>");
   });
 
+  test("help separates System commands from Library commands", async () => {
+    expect(await main(["--help"])).toBe(0);
+    expect(out).toMatch(/System\b.*build only with these[\s\S]*Library\b.*never build with/);
+  });
+
+  test("System commands refuse Library ids", async () => {
+    expect(await main(["show", "lib:example/component/pill", "--project", FIXTURE])).toBe(1);
+    expect(err).toContain("is a Library item, not a System element");
+  });
+
+  test("youi library browses an empty Library and needs a reason to draft a request", async () => {
+    expect(await main(["library", "search", "date", "picker", "--project", FIXTURE, "--json"])).toBe(0);
+    expect(JSON.parse(out)).toMatchObject({ hits: [], total: 0 });
+    expect(await main(["library", "request", "lib:example/component/pill", "--project", FIXTURE])).toBe(2);
+    expect(err).toContain("--reason");
+    expect(await main(["library", "request", "lib:example/component/pill", "--reason", "status chips", "--project", FIXTURE])).toBe(1);
+    expect(err).toContain("Library is empty");
+  });
+
   test("where --json answers from a fresh scan", async () => {
     expect(await main(["where", "button", "--project", FIXTURE, "--json"])).toBe(0);
     const where = JSON.parse(out) as { total: number; byRoute: Array<{ route: string }>; coverage: { status: string } };

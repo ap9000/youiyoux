@@ -37,7 +37,7 @@ function colorSuggestion(literal: string, index: TokenIndex): string | undefined
   const color = parseCssColor(literal);
   if (!color) return undefined;
   const matches = index.tokens.filter((t) => t.type === "color" && !t.aliasOf && [t.light, t.dark].some((v) => isColor(v) && sameColor(v, color)));
-  if (matches.length === 0) return "no token has this value: pick the role it plays (youi_get_tokens) or propose a token";
+  if (matches.length === 0) return "no token has this value: pick the role it plays (system_get_tokens) or propose a token";
   const listed = matches.slice(0, 3).map((t) => `var(--${index.prefix}-${t.cssName}) (${t.id})`).join(" or ");
   return `${listed}: same value, check it is the right role`;
 }

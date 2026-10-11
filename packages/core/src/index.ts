@@ -1,6 +1,7 @@
 export * from "./diff.ts";
 export * from "./files.ts";
 export * from "./hash.ts";
+export * from "./hierarchy.ts";
 export * from "./ids.ts";
 export * from "./json-schema.ts";
 export * from "./load.ts";
