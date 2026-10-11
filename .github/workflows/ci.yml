@@ -1,0 +1,40 @@
+# Engine and hub checks on every push and pull request: tests, typechecks, the
+# production build, and the download/search budgets (pnpm measure fails on a regression).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: Engine typecheck
+        run: pnpm typecheck
+      - name: Engine tests
+        run: pnpm test
+
+      - name: Web tests
+        run: pnpm --filter @youiyoux/web test
+      - name: Web typecheck and build
+        run: pnpm --filter @youiyoux/web build
+      - name: Budgets (download incl. fonts, search)
+        run: pnpm --filter @youiyoux/web measure
