@@ -163,11 +163,14 @@ class Writer {
       if (entry.kind !== "generated" || file in this.files || !this.isGeneratedPath(file)) continue;
       const current = await readTextOrNull(this.path(file));
       if (current === null) continue;
+      // A retired file left on disk stays in the lock, so every later sync and `youi check` keeps reporting it.
       if (sha256(current) !== entry.sha256) {
+        this.files[file] = entry;
         this.record({ file, role: "agents", action: "skipped", detail: "no longer generated, but edited by hand: remove it yourself" });
         continue;
       }
       if (!(await this.insideProject(file))) {
+        this.files[file] = entry;
         this.record({ file, role: "agents", action: "skipped", detail: "no longer generated, but resolves outside the project: remove it yourself" });
         continue;
       }

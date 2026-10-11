@@ -50,6 +50,12 @@ describe("planner classification", () => {
     expect(plan.callSites).toMatchObject({ affected: 6, auto: 0, residual: 6 });
   });
 
+  test("a rename that keeps the old name exported is additive, not a break", async () => {
+    const plan = await planChange(project, scan, { element: "button", patch: { source: { export: "BaseButton" }, aliases: [...button().aliases, "Button"] } });
+    expect(plan.class).toBe("api-additive");
+    expect(plan.callSites).toBeUndefined();
+  });
+
   test("removing a variants alias breaks the sites that call it", async () => {
     const plan = await planChange(project, scan, { element: "button", patch: { aliases: [] } });
     expect(plan.class).toBe("api-breaking");

@@ -236,6 +236,9 @@ describe("off is off everywhere", () => {
     const { actions } = await syncProject(await project());
     expect(actionFor(actions, yml)).toBe("skipped");
     expect(await read(yml)).toBe("# ours now\n");
+    const again = await syncProject(await project());
+    expect(actionFor(again.actions, yml)).toBe("skipped");
+    expect(again.lock.files[yml]).toBeDefined();
   });
 
   test("a lockfile entry outside youi's generated paths is never deleted", async () => {

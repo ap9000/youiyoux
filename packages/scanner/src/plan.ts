@@ -169,13 +169,18 @@ function classifyProps(current: ComponentContract, next: ComponentContract, out:
 }
 
 function classifyExports(current: ComponentContract, next: ComponentContract, out: Classified): void {
-  if (current.source.export !== next.source.export) {
+  const stillExported = (name: string): boolean => name === next.source.export || next.source.also.includes(name) || next.aliases.includes(name);
+  if (current.source.export !== next.source.export && !stillExported(current.source.export)) {
     out.classes.push("api-breaking");
     out.reasons.push(`export ${current.source.export} renamed to ${next.source.export}: every import of it breaks`);
     out.edits.push({ kind: "export", name: current.source.export, change: "renamed", to: next.source.export });
   }
   const names = (c: ComponentContract): string[] => [...c.source.also, ...c.aliases];
-  for (const name of names(current).filter((n) => !names(next).includes(n) && n !== next.source.export)) {
+  if (current.source.export !== next.source.export && stillExported(current.source.export)) {
+    out.classes.push("api-additive");
+    out.reasons.push(`export ${next.source.export} added; ${current.source.export} stays exported, so its imports keep working`);
+  }
+  for (const name of names(current).filter((n) => !stillExported(n))) {
     out.classes.push("api-breaking");
     out.reasons.push(`export ${name} removed: every import of it breaks`);
     out.edits.push({ kind: "export", name, change: "removed" });
