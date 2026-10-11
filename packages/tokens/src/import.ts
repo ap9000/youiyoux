@@ -11,7 +11,7 @@ import { formatCssColor, parseCssColor, sameColor, type DtcgColor } from "./colo
 import { customProperties, parseCubicBezier, parseDimension, parseFontFamily, parseShadow, type DtcgDimension } from "./css.ts";
 
 /** `$extensions` namespace for design-language metadata on tokens. */
-export const DL_EXT = "dev.designlanguage";
+export const DL_EXT = "dev.youiyoux";
 
 export type TokenTree = { [key: string]: TokenTree | DtcgToken };
 

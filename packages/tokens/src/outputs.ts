@@ -1,5 +1,5 @@
 /** Non-CSS-variable outputs rendered from resolved tokens: Tailwind v4 @theme, TS, React Native. */
-import type { OutputConfig } from "@dl/core";
+import type { OutputConfig } from "@youiyoux/core";
 import { formatCssColor, type DtcgColor } from "./color.ts";
 import type { ResolvedToken } from "./build.ts";
 

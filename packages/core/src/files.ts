@@ -29,7 +29,7 @@ export function matchesAny(path: string, patterns: readonly string[]): boolean {
   return patterns.some((pattern) => path === pattern || matchesGlob(path, pattern));
 }
 
-const ALWAYS_EXCLUDED = ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/.dl/**"];
+const ALWAYS_EXCLUDED = ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/.youi/**"];
 
 /** Files under `root` matching `include` and not `exclude`, sorted, as project-relative POSIX paths. */
 export async function findFiles(root: string, include: readonly string[], exclude: readonly string[] = []): Promise<string[]> {

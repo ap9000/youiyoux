@@ -82,7 +82,7 @@ function validateGraph(system: LoadedSystem): string[] {
 }
 
 export async function loadDesignRepo(root: string): Promise<DesignRepo> {
-  const config = await readDefinition(join(root, "dl.config.json"), DesignConfig, root);
+  const config = await readDefinition(join(root, "youi.config.json"), DesignConfig, root);
   const systems = await Promise.all(config.systems.map((system) => loadSystem(root, system)));
   const problems = systems.flatMap(validateGraph);
   if (problems.length > 0) throw new DefinitionError("design repo", problems);
@@ -91,6 +91,6 @@ export async function loadDesignRepo(root: string): Promise<DesignRepo> {
 
 export function getSystem(repo: DesignRepo, id?: string): LoadedSystem {
   const system = id ? repo.systems.find((s) => s.config.id === id) : repo.systems[0];
-  if (!system) throw new DefinitionError("dl.config.json", [`no system "${id}"; known: ${repo.systems.map((s) => s.config.id).join(", ")}`]);
+  if (!system) throw new DefinitionError("youi.config.json", [`no system "${id}"; known: ${repo.systems.map((s) => s.config.id).join(", ")}`]);
   return system;
 }

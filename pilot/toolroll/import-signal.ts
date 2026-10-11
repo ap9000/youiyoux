@@ -9,8 +9,8 @@
  */
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { writeFileAtomic } from "@dl/core";
-import { importTokens } from "@dl/tokens";
+import { writeFileAtomic } from "@youiyoux/core";
+import { importTokens } from "@youiyoux/tokens";
 
 const repo = resolve(import.meta.dirname, "../..");
 const toolroll = process.argv[2];

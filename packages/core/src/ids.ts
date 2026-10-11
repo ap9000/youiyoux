@@ -1,12 +1,12 @@
-/** Element identity: `dl:<system>/<kind>/<name>`, e.g. `dl:signal/component/button`. */
+/** Element identity: `youi:<system>/<kind>/<name>`, e.g. `youi:signal/component/button`. */
 import { z } from "zod";
 
 export const ELEMENT_KINDS = ["token", "component", "rule", "migration"] as const;
 export type ElementKind = (typeof ELEMENT_KINDS)[number];
 
-const ID_PATTERN = /^dl:([a-z][a-z0-9-]*)\/(token|component|rule|migration)\/([a-z0-9][a-z0-9.\-]*)$/;
+const ID_PATTERN = /^youi:([a-z][a-z0-9-]*)\/(token|component|rule|migration)\/([a-z0-9][a-z0-9.\-]*)$/;
 
-export const ElementId = z.string().regex(ID_PATTERN, "expected dl:<system>/<kind>/<name>");
+export const ElementId = z.string().regex(ID_PATTERN, "expected youi:<system>/<kind>/<name>");
 export type ElementId = z.infer<typeof ElementId>;
 
 export interface ParsedId {
@@ -22,7 +22,7 @@ export function parseId(id: string): ParsedId | null {
 }
 
 export function formatId(system: string, kind: ElementKind, name: string): ElementId {
-  return `dl:${system}/${kind}/${name}`;
+  return `youi:${system}/${kind}/${name}`;
 }
 
 /** True when `query` names this id: the full id, `kind/name`, or the bare name (case-insensitive). */

@@ -1,6 +1,6 @@
 {
-  "$schema": "./schema/dl.config.schema.json",
-  "schema": "dl.config/v1",
+  "$schema": "./schema/youi.config.schema.json",
+  "schema": "youi.config/v1",
   "name": "design-language",
   "systems": [
     {
@@ -11,6 +11,7 @@
       "tokens": "tokens/signal/signal.resolver.json",
       "themeModifier": { "name": "theme", "light": "light", "dark": "dark" },
       "components": "components",
+      "support": ["_shared/utils.ts"],
       "rules": "rules",
       "design": "systems/signal/design.md"
     }

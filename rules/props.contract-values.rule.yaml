@@ -1,0 +1,19 @@
+$schema: ../schema/youi.rule.schema.json
+schema: youi.rule/v1
+id: youi:signal/rule/props.contract-values
+title: Props use the contract's values
+severity: error
+statement: A literal value for an enumerated prop must be one of the values in the component's contract.
+rationale: class-variance-authority silently renders nothing for an unknown variant, so a typo or a value from another system ships as an unstyled control.
+agent: Call dl_get_component before using a component's props; use only the listed values.
+check:
+  engine: youi
+  id: prop-values
+  options: {}
+files:
+  - "**/*.tsx"
+examples:
+  bad:
+    - <Button variant="primary">Save</Button>
+  good:
+    - <Button variant="default">Save</Button>

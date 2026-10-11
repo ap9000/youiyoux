@@ -8,43 +8,46 @@ importers:
 
   .:
     devDependencies:
-      '@dl/cli':
-        specifier: workspace:*
-        version: link:packages/cli
-      '@dl/core':
-        specifier: workspace:*
-        version: link:packages/core
-      '@dl/mcp':
-        specifier: workspace:*
-        version: link:packages/mcp
-      '@dl/scanner':
-        specifier: workspace:*
-        version: link:packages/scanner
-      '@dl/tokens':
-        specifier: workspace:*
-        version: link:packages/tokens
       '@types/node':
         specifier: 26.6.3
         version: 26.6.3
+      '@youiyoux/cli':
+        specifier: workspace:*
+        version: link:packages/cli
+      '@youiyoux/core':
+        specifier: workspace:*
+        version: link:packages/core
+      '@youiyoux/mcp':
+        specifier: workspace:*
+        version: link:packages/mcp
+      '@youiyoux/scanner':
+        specifier: workspace:*
+        version: link:packages/scanner
+      '@youiyoux/tokens':
+        specifier: workspace:*
+        version: link:packages/tokens
       typescript:
         specifier: 6.0.3
         version: 6.0.3
       vitest:
         specifier: 5.0.1
         version: 5.0.1(@types/node@26.6.3)(vite@8.3.4(@types/node@26.6.3)(yaml@2.9.1))
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
 
   packages/cli:
     dependencies:
-      '@dl/core':
+      '@youiyoux/core':
         specifier: workspace:*
         version: link:../core
-      '@dl/mcp':
+      '@youiyoux/mcp':
         specifier: workspace:*
         version: link:../mcp
-      '@dl/scanner':
+      '@youiyoux/scanner':
         specifier: workspace:*
         version: link:../scanner
-      '@dl/tokens':
+      '@youiyoux/tokens':
         specifier: workspace:*
         version: link:../tokens
       yaml:
@@ -62,18 +65,18 @@ importers:
 
   packages/mcp:
     dependencies:
-      '@dl/core':
-        specifier: workspace:*
-        version: link:../core
-      '@dl/scanner':
-        specifier: workspace:*
-        version: link:../scanner
-      '@dl/tokens':
-        specifier: workspace:*
-        version: link:../tokens
       '@modelcontextprotocol/sdk':
         specifier: 1.30.1
         version: 1.30.1(zod@4.6.5)
+      '@youiyoux/core':
+        specifier: workspace:*
+        version: link:../core
+      '@youiyoux/scanner':
+        specifier: workspace:*
+        version: link:../scanner
+      '@youiyoux/tokens':
+        specifier: workspace:*
+        version: link:../tokens
       zod:
         specifier: 4.6.5
         version: 4.6.5
@@ -83,7 +86,7 @@ importers:
       '@ast-grep/napi':
         specifier: 0.45.3
         version: 0.45.3
-      '@dl/core':
+      '@youiyoux/core':
         specifier: workspace:*
         version: link:../core
       typescript:
@@ -95,9 +98,6 @@ importers:
 
   packages/tokens:
     dependencies:
-      '@dl/core':
-        specifier: workspace:*
-        version: link:../core
       '@terrazzo/parser':
         specifier: 2.7.1
         version: 2.7.1(yaml-to-momoa@0.1.0)
@@ -107,6 +107,9 @@ importers:
       '@terrazzo/plugin-js':
         specifier: 2.7.1
         version: 2.7.1(@terrazzo/cli@2.7.1(@types/node@26.6.3))(@terrazzo/parser@2.7.1(yaml-to-momoa@0.1.0))
+      '@youiyoux/core':
+        specifier: workspace:*
+        version: link:../core
       yaml:
         specifier: 2.9.1
         version: 2.9.1

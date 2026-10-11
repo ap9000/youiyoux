@@ -9,7 +9,7 @@ const SemVer = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, "expected
 const RelPath = z.string().min(1).refine((p) => !p.startsWith("/") && !p.split("/").includes(".."), "expected a path relative to its root, without ..");
 const IsoTime = z.string().datetime({ offset: true });
 
-/* ---------------------------------------------------------------- dl.config/v1 */
+/* ---------------------------------------------------------------- youi.config/v1 */
 
 export const SystemConfig = z.object({
   id: z.string().regex(/^[a-z][a-z0-9-]*$/),
@@ -22,6 +22,8 @@ export const SystemConfig = z.object({
   themeModifier: z.object({ name: z.string(), light: z.string(), dark: z.string() }).optional(),
   /** Directory holding `<name>/<name>.contract.json` component folders. */
   components: RelPath.default("components"),
+  /** Files every vendored component needs (e.g. the `cn` helper), relative to the components dir. */
+  support: z.array(RelPath).default([]),
   rules: RelPath.default("rules"),
   /** Narrative Markdown for DESIGN.md (principles, named rules); tokens are generated. */
   design: RelPath.optional(),
@@ -30,13 +32,13 @@ export type SystemConfig = z.infer<typeof SystemConfig>;
 
 export const DesignConfig = z.object({
   $schema: z.string().optional(),
-  schema: z.literal("dl.config/v1"),
+  schema: z.literal("youi.config/v1"),
   name: z.string().min(1),
   systems: z.array(SystemConfig).min(1),
 });
 export type DesignConfig = z.infer<typeof DesignConfig>;
 
-/* --------------------------------------------------------------- dl.project/v1 */
+/* --------------------------------------------------------------- youi.project/v1 */
 
 export const RouteMapEntry = z.object({
   /** Glob (or exact path) of the files that render this route's screen. */
@@ -74,7 +76,7 @@ export const OutputConfig = z.object({
   /** Where generated token files go, relative to the project root. */
   dir: RelPath.default("src/design"),
   /** CSS custom property prefix: `--<prefix>-<name>`. */
-  cssVarPrefix: z.string().regex(/^[a-z][a-z0-9-]*$/).default("dl"),
+  cssVarPrefix: z.string().regex(/^[a-z][a-z0-9-]*$/).default("youi"),
   /** Where the dark values apply: each entry is a selector, optionally inside a media query. */
   dark: z.array(DarkSelector).default(DEFAULT_DARK_SELECTORS),
   targets: z.array(z.enum(["css-vars", "tailwind-v4", "ts", "react-native"])).default(["css-vars", "tailwind-v4", "ts"]),
@@ -92,7 +94,7 @@ export const AgentConfig = z.object({
 
 export const ProjectConfig = z.object({
   $schema: z.string().optional(),
-  schema: z.literal("dl.project/v1"),
+  schema: z.literal("youi.project/v1"),
   id: z.string().regex(/^[a-z][a-z0-9-]*$/),
   system: z.string(),
   /** Path to the design-language definitions repo, relative to the project root or absolute. */
@@ -105,12 +107,12 @@ export const ProjectConfig = z.object({
   /** Files allowed to define raw colour values (the token source of truth or its generated copy). */
   tokenSources: z.array(z.string()).default([]),
   routes: RouteConfig.default({ strategy: "none", appDir: "app", map: [], shell: [] }),
-  outputs: OutputConfig.default({ dir: "src/design", cssVarPrefix: "dl", dark: DEFAULT_DARK_SELECTORS, targets: ["css-vars", "tailwind-v4", "ts"], tailwind: { includeAll: true, map: {} } }),
+  outputs: OutputConfig.default({ dir: "src/design", cssVarPrefix: "youi", dark: DEFAULT_DARK_SELECTORS, targets: ["css-vars", "tailwind-v4", "ts"], tailwind: { includeAll: true, map: {} } }),
   agents: AgentConfig.default({ agentsMd: "AGENTS.md", designMd: "DESIGN.md", skillDir: ".agents/skills/design-language", claudeSkillLink: true }),
 });
 export type ProjectConfig = z.infer<typeof ProjectConfig>;
 
-/* ------------------------------------------------------------- dl.component/v1 */
+/* ------------------------------------------------------------- youi.component/v1 */
 
 const PropBase = { description: z.string().optional(), required: z.boolean().default(false), deprecated: z.string().optional() };
 
@@ -126,13 +128,17 @@ export type PropSpec = z.infer<typeof PropSpec>;
 
 export const ComponentContract = z.object({
   $schema: z.string().optional(),
-  schema: z.literal("dl.component/v1"),
+  schema: z.literal("youi.component/v1"),
   id: ElementId,
   name: z.string().regex(/^[A-Z][A-Za-z0-9]*$/, "expected the exported component name, PascalCase"),
   version: SemVer,
   status: z.enum(["draft", "beta", "stable", "deprecated"]),
   summary: z.string().min(1).max(200),
-  /** The owned implementation, vendored into each project's componentsDir. */
+  /**
+   * The owned implementation, vendored into each project's componentsDir. `file` is relative to
+   * the system's components dir; several contracts may share one file (e.g. form controls).
+   * `also` lists sub-part exports that belong to this element (CardHeader, TabsTrigger, …).
+   */
   source: z.object({ file: RelPath, export: z.string().min(1), also: z.array(z.string()).default([]) }),
   platforms: z.array(z.enum(["web", "ios", "android"])).min(1),
   props: z.record(z.string(), PropSpec),
@@ -150,12 +156,12 @@ export const ComponentContract = z.object({
 });
 export type ComponentContract = z.infer<typeof ComponentContract>;
 
-/* ------------------------------------------------------------------ dl.rule/v1 */
+/* ------------------------------------------------------------------ youi.rule/v1 */
 
 export const RuleCheck = z.discriminatedUnion("engine", [
-  /** A built-in structural check run by the dl scanner (ast-grep + import resolution). */
-  z.object({ engine: z.literal("dl"), id: z.enum(["raw-color", "native-element", "lookalike-component", "arbitrary-value", "prop-values"]), options: z.record(z.string(), z.unknown()).default({}) }),
-  /** A plain ast-grep rule body, emitted as-is to the project's dl-rules/ directory. */
+  /** A built-in structural check run by the youi scanner (ast-grep + import resolution). */
+  z.object({ engine: z.literal("youi"), id: z.enum(["raw-color", "native-element", "lookalike-component", "arbitrary-value", "prop-values"]), options: z.record(z.string(), z.unknown()).default({}) }),
+  /** A plain ast-grep rule body, emitted as-is to the project's youi-rules/ directory. */
   z.object({ engine: z.literal("ast-grep"), language: z.enum(["tsx", "typescript", "css"]), rule: z.record(z.string(), z.unknown()) }),
   /** Prose only: shown to people and agents, never claimed as enforced. */
   z.object({ engine: z.literal("advisory") }),
@@ -163,7 +169,7 @@ export const RuleCheck = z.discriminatedUnion("engine", [
 
 export const RuleSpec = z.object({
   $schema: z.string().optional(),
-  schema: z.literal("dl.rule/v1"),
+  schema: z.literal("youi.rule/v1"),
   id: ElementId,
   title: z.string().min(1),
   severity: z.enum(["error", "warn", "off"]),
@@ -177,7 +183,7 @@ export const RuleSpec = z.object({
 });
 export type RuleSpec = z.infer<typeof RuleSpec>;
 
-/* ------------------------------------------------------------- dl.migration/v1 */
+/* ------------------------------------------------------------- youi.migration/v1 */
 
 export const MigrationChange = z.union([
   z.object({ renameProp: z.object({ from: z.string(), to: z.string() }) }),
@@ -187,7 +193,7 @@ export type MigrationChange = z.infer<typeof MigrationChange>;
 
 export const MigrationSpec = z.object({
   $schema: z.string().optional(),
-  schema: z.literal("dl.migration/v1"),
+  schema: z.literal("youi.migration/v1"),
   id: ElementId,
   element: ElementId,
   from: z.string(),
@@ -198,7 +204,7 @@ export const MigrationSpec = z.object({
 });
 export type MigrationSpec = z.infer<typeof MigrationSpec>;
 
-/* ----------------------------------------------------------------- dl.usage/v1 */
+/* ----------------------------------------------------------------- youi.usage/v1 */
 
 export const PropValue = z.union([
   z.object({ literal: z.union([z.string(), z.number(), z.boolean()]) }),
@@ -250,7 +256,7 @@ export const Violation = Position.extend({
 export type Violation = z.infer<typeof Violation>;
 
 export const ScanReport = z.object({
-  schema: z.literal("dl.usage/v1"),
+  schema: z.literal("youi.usage/v1"),
   project: z.string(),
   system: z.string(),
   commit: z.string().nullable(),
@@ -266,29 +272,31 @@ export const ScanReport = z.object({
   }),
   usages: z.array(UsageSite),
   unknowns: z.array(UnknownSite),
+  /** Violations silenced by a `youi-ignore` comment (counted so silence stays visible). */
+  suppressed: z.number().int().default(0),
   lookalikes: z.array(Lookalike),
   violations: z.array(Violation),
 });
 export type ScanReport = z.infer<typeof ScanReport>;
 
-/* ------------------------------------------------------------------ dl.lock/v1 */
+/* ------------------------------------------------------------------ youi.lock/v1 */
 
 export const LockEntry = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("generated"), sha256: z.string().length(64) }),
   z.object({
     kind: z.literal("vendored"),
-    element: ElementId,
+    elements: z.array(ElementId).min(1),
     version: SemVer,
-    /** Hash of the file as dl last wrote it; a different hash on disk is local drift. */
+    /** Hash of the file as youi last wrote it; a different hash on disk is local drift. */
     sha256: z.string().length(64),
-    /** Hash of the upstream file at `version`; its content is kept in `.dl/base/` for 3-way merges. */
+    /** Hash of the upstream file at `version`; its content is kept in `.youi/base/` for 3-way merges. */
     baseSha256: z.string().length(64),
   }),
 ]);
 export type LockEntry = z.infer<typeof LockEntry>;
 
 export const LockFile = z.object({
-  schema: z.literal("dl.lock/v1"),
+  schema: z.literal("youi.lock/v1"),
   system: z.string(),
   systemVersion: SemVer,
   sourceCommit: z.string().nullable(),
@@ -299,11 +307,11 @@ export type LockFile = z.infer<typeof LockFile>;
 
 /** Every published schema, keyed by its file name under `schema/`. */
 export const PUBLISHED_SCHEMAS = {
-  "dl.config.schema.json": DesignConfig,
-  "dl.project.schema.json": ProjectConfig,
-  "dl.component.schema.json": ComponentContract,
-  "dl.rule.schema.json": RuleSpec,
-  "dl.migration.schema.json": MigrationSpec,
-  "dl.usage.schema.json": ScanReport,
-  "dl.lock.schema.json": LockFile,
+  "youi.config.schema.json": DesignConfig,
+  "youi.project.schema.json": ProjectConfig,
+  "youi.component.schema.json": ComponentContract,
+  "youi.rule.schema.json": RuleSpec,
+  "youi.migration.schema.json": MigrationSpec,
+  "youi.usage.schema.json": ScanReport,
+  "youi.lock.schema.json": LockFile,
 } as const;

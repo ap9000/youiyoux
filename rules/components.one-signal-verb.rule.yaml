@@ -1,0 +1,17 @@
+$schema: ../schema/youi.rule.schema.json
+schema: youi.rule/v1
+id: youi:signal/rule/components.one-signal-verb
+title: At most one attention verb per screen
+severity: warn
+statement: Button variant="attention" marks the one verb that resolves a wait. A screen shows at most one, and only when it waits on the person.
+rationale: The accent means "a person is needed" and nothing else; two attention verbs make neither urgent.
+agent: Use variant="attention" for at most one Button per screen, only when the screen waits on the person.
+check:
+  engine: advisory
+files:
+  - "**/*.tsx"
+examples:
+  bad:
+    - <Button variant="attention">Approve</Button><Button variant="attention">Request changes</Button>
+  good:
+    - <Button variant="attention">Approve</Button><Button variant="outline">Request changes</Button>
