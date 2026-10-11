@@ -6,7 +6,7 @@
  * - Initial download: the gzipped JS and CSS that dist/index.html loads before
  *   anything else (entry script, modulepreloads, stylesheets), and the snapshot
  *   the first screen fetches (manifest + catalog). Fonts are listed separately.
- * - Search: query latency of the same engine the worker runs, on the Signal
+ * - Search: query latency of the same engine the worker runs, on the default
  *   snapshot and on a 50× synthetic catalog to show headroom.
  */
 import { readdirSync, readFileSync, statSync, writeFileSync, mkdirSync } from "node:fs";
@@ -19,11 +19,11 @@ import { createIndex, searchIndex } from "../src/search/engine.ts";
 
 const APP = resolve(import.meta.dirname, "..");
 const DIST = join(APP, "dist");
-const DATA = join(APP, "public/data");
+const DATA = join(APP, "snapshot/public/data");
 const BUDGET = { initialKbGzip: 150, searchMs: 50 } as const;
 const RUNS_PER_QUERY = 200;
 const SCALE = 50;
-const QUERIES = ["button", "butt", "buton", "ink", "attention soft", "c4320a", "radius", "no raw", "typography body", "destructive", "g", "shadow pill"];
+const QUERIES = ["button", "butt", "buton", "foreground", "danger soft", "c62828", "radius", "no raw", "typography body", "destructive", "g", "shadow card"];
 
 const kb = (bytes: number): number => Math.round((bytes / 1024) * 10) / 10;
 const gz = (path: string): number => gzipSync(readFileSync(path), { level: 9 }).length;
@@ -89,7 +89,7 @@ function main(): void {
     snapshot: { catalogAndManifestKbGzip: kb(data), usageMapsKbGzip: kb(usage), note: "Usage maps load after first paint (idle) or when a usage view opens." },
     fontsLatinKb: fonts.map((f) => ({ file: f.file, kb: kb(f.bytes) })),
     chunks: chunks.map((c) => ({ file: c.file, kbRaw: kb(c.raw), kbGzip: kb(c.gzip) })),
-    search: { signal: bench(docs), scaled: { factor: SCALE, ...bench(scaled) } },
+    search: { system: bench(docs), scaled: { factor: SCALE, ...bench(scaled) } },
   };
 
   mkdirSync(join(APP, "perf"), { recursive: true });
@@ -98,7 +98,7 @@ function main(): void {
   process.stdout.write(
     [
       `initial JS ${initial.jsKbGzip} KB + CSS ${initial.cssKbGzip} KB = ${initial.totalKbGzip} KB gz; with snapshot ${initial.withSnapshotKbGzip} KB (budget ${BUDGET.initialKbGzip}) ${initial.withinBudget ? "OK" : "OVER"}`,
-      `search Signal (${search.signal.docs} docs): p50 ${search.signal.p50} ms, p95 ${search.signal.p95} ms, max ${search.signal.max} ms (budget ${BUDGET.searchMs})`,
+      `search ${catalog.system.name} (${search.system.docs} docs): p50 ${search.system.p50} ms, p95 ${search.system.p95} ms, max ${search.system.max} ms (budget ${BUDGET.searchMs})`,
       `search ${SCALE}x (${search.scaled.docs} docs): index ${search.scaled.indexMs} ms, p50 ${search.scaled.p50} ms, p95 ${search.scaled.p95} ms`,
       "wrote perf/report.json",
     ].join("\n") + "\n",

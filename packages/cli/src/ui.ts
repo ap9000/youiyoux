@@ -1,5 +1,5 @@
 /**
- * Terminal styling, Signal-style: monochrome by default, colour only for
+ * Terminal styling: monochrome by default, colour only for
  * status (red fails, amber warns, green passes, blue is live), dim for facts
  * a machine produced. Colour is off when stdout is not a TTY or NO_COLOR is set.
  */

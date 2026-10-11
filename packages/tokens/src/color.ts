@@ -1,4 +1,4 @@
-/** CSS colour strings ⇄ DTCG 2025.10 colour values (sRGB only, which is all Signal uses). */
+/** CSS colour strings ⇄ DTCG 2025.10 colour values (sRGB only). */
 
 export interface DtcgColor {
   readonly colorSpace: "srgb";

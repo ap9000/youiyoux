@@ -1,0 +1,17 @@
+$schema: ../../../schema/youi.rule.schema.json
+schema: youi.rule/v1
+id: youi:demo/rule/components.one-primary-action
+title: One main action per view
+severity: warn
+statement: A view shows at most one default (filled) Button, for the action most people came to take. Everything else is outline, ghost or link.
+rationale: The accent fill means "this is the next step". Two filled buttons make the person choose between equals, and neither reads as the next step.
+agent: Use the default (filled) Button variant for at most one action per view; make the others outline or ghost.
+check:
+  engine: advisory
+files:
+  - "**/*.tsx"
+examples:
+  bad:
+    - <Button>Save</Button><Button>Publish</Button>
+  good:
+    - <Button>Publish</Button><Button variant="outline">Save draft</Button>

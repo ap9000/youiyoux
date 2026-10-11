@@ -1,0 +1,19 @@
+{
+  "$schema": "../../schema/youi.config.schema.json",
+  "schema": "youi.config/v1",
+  "name": "demo-design",
+  "systems": [
+    {
+      "id": "demo",
+      "name": "Demo",
+      "version": "1.0.0",
+      "description": "A made-up system for the youi docs, tests and the hub's default data: a quiet neutral ground, one indigo accent spent only on action, and red kept for danger.",
+      "tokens": "tokens/demo/demo.resolver.json",
+      "themeModifier": { "name": "theme", "light": "light", "dark": "dark" },
+      "components": "components",
+      "support": ["_shared/utils.ts"],
+      "rules": "rules",
+      "design": "systems/demo/design.md"
+    }
+  ]
+}

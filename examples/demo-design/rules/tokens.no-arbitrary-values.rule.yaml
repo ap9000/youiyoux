@@ -1,0 +1,19 @@
+$schema: ../../../schema/youi.rule.schema.json
+schema: youi.rule/v1
+id: youi:demo/rule/tokens.no-arbitrary-values
+title: Use token utilities, not arbitrary values
+severity: warn
+statement: "When a token exists for a value, use its utility instead of a Tailwind arbitrary value: rounded-card, not rounded-[12px]; shadow-card, not shadow-[var(--demo-shadow-card)]."
+rationale: Arbitrary values copy a token's value at one moment. They do not change when the token does, and they make the usage map blind to which token a site meant.
+agent: Prefer token utilities (rounded-card, text-label, shadow-card) over [arbitrary] values; youi check suggests the utility.
+check:
+  engine: youi
+  id: arbitrary-value
+  options: {}
+files:
+  - "**/*.tsx"
+examples:
+  bad:
+    - className="rounded-[12px] text-[13px]"
+  good:
+    - className="rounded-card text-label"

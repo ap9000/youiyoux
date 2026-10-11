@@ -4,8 +4,8 @@ export default function Home() {
     <CardHeader>Start</CardHeader>
     <Button variant="outline" size="sm">Open</Button>
     <Button variant="primary">Save</Button>
-    <div className="bg-[#2563EB] rounded-[10px] p-3">PR #123 shipped</div>
-    <p style={{ color: "#c4320a" }}>Failed</p>
+    <div className="bg-[#2563EB] rounded-[12px] p-3">PR #123 shipped</div>
+    <p style={{ color: "#c62828" }}>Failed</p>
     <button className="rounded bg-black text-white">Raw</button>
     <input type="hidden" name="csrf" />
     {/* youi-ignore color.no-raw-color: brand partner logo colour */}

@@ -14,7 +14,9 @@ import { stageFor, TokenValue } from "./TokenValue.tsx";
 
 const SCHEMES: readonly Scheme[] = ["light", "dark"];
 const SURFACES = ["paper", "ground", "raised"];
-const FALLBACK_SURFACES = ["surface", "canvas", "background"];
+const FALLBACK_SURFACES = ["surface", "canvas", "background", "card"];
+/** Text colours a surface must carry: the first ink-like token, then muted. */
+const TEXT_ON_SURFACE = [["ink", "foreground", "text"], ["muted"]];
 const GRADE_TONE: Record<ContrastGrade, BadgeTone> = { AAA: "success", AA: "success", "AA large": "warning", Fail: "danger" };
 
 export interface ContrastPair {
@@ -37,8 +39,8 @@ export function contrastPairs(model: Model, token: TokenEntry): ContrastPair[] {
   if (base && name.startsWith("on-")) return [{ label: `on ${base.path}`, foreground: token, background: base }];
   if (base) return [{ label: `${base.path} text on it`, foreground: base, background: token }];
   if (backgrounds.some((b) => b.id === token.id)) {
-    return ["ink", "muted"].flatMap((n) => {
-      const fg = color(n);
+    return TEXT_ON_SURFACE.flatMap((names) => {
+      const fg = names.map(color).find(Boolean);
       return fg ? [{ label: `${fg.path} on it`, foreground: fg, background: token }] : [];
     });
   }

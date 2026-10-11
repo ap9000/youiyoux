@@ -1,7 +1,7 @@
 /**
  * A deliberately small CSS reader: enough to lift custom properties out of
  * rule blocks (including blocks nested in @media) and to parse the token value
- * shapes Signal uses. It is not a general CSS parser.
+ * shapes design tokens use. It is not a general CSS parser.
  */
 import { parseCssColor, type DtcgColor } from "./color.ts";
 

@@ -1,0 +1,74 @@
+{
+  "$schema": "../../../../schema/youi.component.schema.json",
+  "schema": "youi.component/v1",
+  "id": "youi:demo/component/input",
+  "name": "Input",
+  "version": "1.0.0",
+  "status": "stable",
+  "summary": "A single-line field: background fill, hairline border, 8px corners, 36px tall. invalid turns the border to danger.",
+  "source": {
+    "file": "input/input.tsx",
+    "export": "Input",
+    "also": []
+  },
+  "platforms": ["web"],
+  "passthrough": "input",
+  "props": {
+    "type": {
+      "type": "string",
+      "default": "text"
+    },
+    "invalid": {
+      "type": "boolean",
+      "default": false,
+      "description": "Marks the value as wrong: sets aria-invalid and a danger border. Say what is wrong in text next to the field."
+    },
+    "placeholder": {
+      "type": "string",
+      "description": "An example value, never the label."
+    },
+    "className": {
+      "type": "string",
+      "description": "Extra classes, merged last with cn(); use token utilities only."
+    }
+  },
+  "tokens": {
+    "bg": "youi:demo/token/color.background",
+    "border": "youi:demo/token/color.line",
+    "border.invalid": "youi:demo/token/color.danger",
+    "radius": "youi:demo/token/radius.control",
+    "text": "youi:demo/token/typography.body"
+  },
+  "a11y": {
+    "notes": [
+      "Pair every Input with a <label> (htmlFor/id).",
+      "Show errors in text next to the field, never with a red border alone."
+    ]
+  },
+  "rules": [
+    "youi:demo/rule/color.no-raw-color",
+    "youi:demo/rule/tokens.no-arbitrary-values",
+    "youi:demo/rule/components.canonical-import",
+    "youi:demo/rule/components.no-native-controls"
+  ],
+  "guidance": {
+    "do": [
+      "Use a placeholder for an example value, and a label for the name."
+    ],
+    "dont": [
+      "Don't signal an error with the border alone."
+    ]
+  },
+  "examples": [
+    {
+      "title": "Labelled field",
+      "code": "<label htmlFor=\"email\">Email</label>\n<Input id=\"email\" type=\"email\" placeholder=\"ada@example.com\" />"
+    },
+    {
+      "title": "Invalid value",
+      "code": "<Input id=\"email\" invalid defaultValue=\"ada@\" aria-describedby=\"email-error\" />"
+    }
+  ],
+  "aliases": [],
+  "owners": ["group:design-system"]
+}

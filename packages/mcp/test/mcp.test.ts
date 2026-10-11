@@ -35,7 +35,7 @@ describe("youiyoux MCP server", () => {
   test("get_component returns the contract an agent needs in about 2 KB", async () => {
     const { data, bytes } = await call("youi_get_component", { name: "Button" });
     expect(data).toMatchObject({ name: "Button", import: "import { Button } from \"@/components/ui\";" });
-    expect((data.props as Record<string, { values?: string[] }>).variant!.values).toContain("attention");
+    expect((data.props as Record<string, { values?: string[] }>).variant!.values).toContain("danger");
     expect(bytes).toBeLessThan(2600);
   });
 
@@ -72,6 +72,9 @@ describe("youiyoux MCP server", () => {
     expect(tokens.data.columns).toEqual(["id", "cssVar", "light", "dark", "utility"]);
     expect((tokens.data.rows as string[][]).find((row) => row[0] === "radius.card")?.[4]).toBe("rounded-card");
     expect((tokens.data.rows as string[][]).map((row) => row[0])).toContain("radius.card");
+    // Tailwind already owns spacing-md, so the token gets no utility rather than a colliding one.
+    const space = await call("youi_get_tokens", { group: "space" });
+    expect((space.data.rows as string[][]).find((row) => row[0] === "space.md")?.[4]).toBe("");
     const rules = await call("youi_get_rules");
     expect((rules.data.rules as Array<{ enforced: boolean }>).filter((r) => r.enforced)).toHaveLength(5);
     const search = await call("youi_search", { query: "destructive" });

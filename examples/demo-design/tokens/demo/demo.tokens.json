@@ -1,0 +1,255 @@
+{
+  "color": {
+    "background": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          1,
+          1,
+          1
+        ],
+        "hex": "#ffffff"
+      },
+      "$description": "Background: the page behind every view."
+    },
+    "foreground": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.1098,
+          0.1098,
+          0.1294
+        ],
+        "hex": "#1c1c21"
+      },
+      "$description": "Foreground: body text and icons."
+    },
+    "muted": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.4078,
+          0.4078,
+          0.4549
+        ],
+        "hex": "#686874"
+      },
+      "$description": "Muted: secondary text, placeholders and meta lines."
+    },
+    "card": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.9686,
+          0.9686,
+          0.9725
+        ],
+        "hex": "#f7f7f8"
+      },
+      "$description": "Card: containers that sit on the background."
+    },
+    "line": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.8902,
+          0.8902,
+          0.9098
+        ],
+        "hex": "#e3e3e8"
+      },
+      "$description": "Line: hairline borders and dividers."
+    },
+    "brand": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.3098,
+          0.2745,
+          0.898
+        ],
+        "hex": "#4f46e5"
+      },
+      "$description": "Brand: the one hue the system spends, on actions and focus."
+    },
+    "on-accent": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          1,
+          1,
+          1
+        ],
+        "hex": "#ffffff"
+      },
+      "$description": "On accent: text and icons on an accent fill."
+    },
+    "danger": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.7765,
+          0.1569,
+          0.1569
+        ],
+        "hex": "#c62828"
+      },
+      "$description": "Danger: destructive actions and errors."
+    },
+    "accent": {
+      "$type": "color",
+      "$value": "{color.brand}",
+      "$description": "Accent: primary actions and focus rings. An alias of brand, so a rebrand changes one value."
+    },
+    "danger-soft": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.7765,
+          0.1569,
+          0.1569
+        ],
+        "alpha": 0.1,
+        "hex": "#c62828"
+      },
+      "$description": "Danger soft: the wash behind danger text."
+    }
+  },
+  "shadow": {
+    "card": {
+      "$type": "shadow",
+      "$value": [
+        {
+          "color": {
+            "colorSpace": "srgb",
+            "components": [
+              0,
+              0,
+              0
+            ],
+            "alpha": 0.06,
+            "hex": "#000000"
+          },
+          "offsetX": {
+            "value": 0,
+            "unit": "px"
+          },
+          "offsetY": {
+            "value": 1,
+            "unit": "px"
+          },
+          "blur": {
+            "value": 2,
+            "unit": "px"
+          },
+          "spread": {
+            "value": 0,
+            "unit": "px"
+          }
+        }
+      ],
+      "$description": "Card: the one soft lift a card may take."
+    }
+  },
+  "easing": {
+    "out": {
+      "$type": "cubicBezier",
+      "$value": [
+        0.2,
+        0.8,
+        0.2,
+        1
+      ],
+      "$description": "Out: every transition that settles."
+    }
+  },
+  "space": {
+    "sm": {
+      "$type": "dimension",
+      "$value": {
+        "value": 8,
+        "unit": "px"
+      },
+      "$description": "Small: gaps inside a control or a row."
+    },
+    "md": {
+      "$type": "dimension",
+      "$value": {
+        "value": 12,
+        "unit": "px"
+      }
+    }
+  },
+  "radius": {
+    "control": {
+      "$type": "dimension",
+      "$value": {
+        "value": 8,
+        "unit": "px"
+      },
+      "$description": "Control: buttons and fields."
+    },
+    "card": {
+      "$type": "dimension",
+      "$value": {
+        "value": 12,
+        "unit": "px"
+      },
+      "$description": "Card: cards and panels."
+    }
+  },
+  "font": {
+    "sans": {
+      "$type": "fontFamily",
+      "$value": [
+        "Geist",
+        "ui-sans-serif",
+        "system-ui",
+        "Helvetica Neue",
+        "sans-serif"
+      ],
+      "$description": "Sans: every word in the interface."
+    }
+  },
+  "typography": {
+    "label": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "{font.sans}",
+        "fontSize": {
+          "value": 13,
+          "unit": "px"
+        },
+        "fontWeight": 500,
+        "lineHeight": 1.25,
+        "letterSpacing": {
+          "value": 0.1,
+          "unit": "px"
+        }
+      },
+      "$description": "Label: buttons, field labels and card titles."
+    },
+    "body": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "{font.sans}",
+        "fontSize": {
+          "value": 14,
+          "unit": "px"
+        },
+        "fontWeight": 400,
+        "lineHeight": 1.5
+      },
+      "$description": "Body: running text and field values."
+    }
+  }
+}

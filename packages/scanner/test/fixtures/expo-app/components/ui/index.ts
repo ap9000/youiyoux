@@ -1,3 +1,3 @@
 export * from "./button";
-export * from "./badge";
+export * from "./input";
 export { Card, CardHeader } from "./card";

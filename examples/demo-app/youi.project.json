@@ -1,0 +1,14 @@
+{
+  "$schema": "../../schema/youi.project.schema.json",
+  "schema": "youi.project/v1",
+  "id": "demo-app",
+  "system": "demo",
+  "source": { "path": "../demo-design" },
+  "tsconfig": "tsconfig.json",
+  "include": ["app/**/*.tsx", "components/**/*.{ts,tsx}"],
+  "exclude": [],
+  "componentsDir": "components/ui",
+  "importFrom": "@/components/ui",
+  "routes": { "strategy": "expo-router", "appDir": "app" },
+  "outputs": { "dir": "src/design", "cssVarPrefix": "demo" }
+}

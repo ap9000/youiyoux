@@ -83,7 +83,7 @@ export function createServer(options: ServerOptions): McpServer {
 
   server.registerTool(
     "youi_get_component",
-    { title: "Get a component contract", description: "The contract for one component: import line, legal prop values, do/don't, a11y notes, examples and usage counts. Call this before using its props.", inputSchema: { name: z.string().min(1).describe("Component name or id, e.g. Button or youi:signal/component/button") }, annotations: READ_ONLY },
+    { title: "Get a component contract", description: "The contract for one component: import line, legal prop values, do/don't, a11y notes, examples and usage counts. Call this before using its props.", inputSchema: { name: z.string().min(1).describe("Component name or id, e.g. Button or youi:demo/component/button") }, annotations: READ_ONLY },
     guard(async ({ name }) => {
       const { project, scan } = await state.scanned();
       const contract = findContract(project, name);

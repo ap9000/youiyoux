@@ -4,10 +4,11 @@ import { describe, expect, test } from "vitest";
 import { ComponentContract, DefinitionError, formatId, loadDesignRepo, matchesQuery, parseDefinition, parseId, ProjectConfig, renderJsonSchemas, RuleSpec } from "../src/index.ts";
 
 const REPO = join(import.meta.dirname, "../../..");
+const DEMO = join(REPO, "examples/demo-design");
 
 const minimalContract = {
   schema: "youi.component/v1",
-  id: "youi:signal/component/chip",
+  id: "youi:demo/component/chip",
   name: "Chip",
   version: "1.0.0",
   status: "beta",
@@ -19,10 +20,10 @@ const minimalContract = {
 
 describe("element ids", () => {
   test("round-trip and match by full id, kind/name or bare name", () => {
-    const id = formatId("signal", "component", "button");
-    expect(id).toBe("youi:signal/component/button");
-    expect(parseId(id)).toEqual({ system: "signal", kind: "component", name: "button" });
-    expect(parseId("dl:signal/component/button")).toBeNull();
+    const id = formatId("demo", "component", "button");
+    expect(id).toBe("youi:demo/component/button");
+    expect(parseId(id)).toEqual({ system: "demo", kind: "component", name: "button" });
+    expect(parseId("dl:demo/component/button")).toBeNull();
     for (const query of [id, "component/button", "Button"]) expect(matchesQuery(id, query)).toBe(true);
     expect(matchesQuery(id, "badge")).toBe(false);
   });
@@ -57,13 +58,13 @@ describe("youi.component/v1", () => {
 
 describe("other formats", () => {
   test("a rule needs an engine; advisory rules carry no check body", () => {
-    const rule = { schema: "youi.rule/v1", id: "youi:signal/rule/x.y", title: "X", severity: "warn", statement: "S", agent: "A", check: { engine: "advisory" } };
+    const rule = { schema: "youi.rule/v1", id: "youi:demo/rule/x.y", title: "X", severity: "warn", statement: "S", agent: "A", check: { engine: "advisory" } };
     expect(RuleSpec.parse(rule).files).toEqual(["**/*.{ts,tsx,css}"]);
     expect(RuleSpec.safeParse({ ...rule, check: { engine: "eslint" } }).success).toBe(false);
   });
 
   test("project config defaults dark selectors, outputs and the youiyoux skill folder", () => {
-    const config = ProjectConfig.parse({ schema: "youi.project/v1", id: "app", system: "signal", source: { path: ".." }, include: ["src/**/*.tsx"], componentsDir: "src/ui" });
+    const config = ProjectConfig.parse({ schema: "youi.project/v1", id: "app", system: "demo", source: { path: ".." }, include: ["src/**/*.tsx"], componentsDir: "src/ui" });
     expect(config.outputs.dark).toHaveLength(2);
     expect(config.agents.skillDir).toBe(".agents/skills/youiyoux");
     expect(config.routes.strategy).toBe("none");
@@ -80,12 +81,17 @@ describe("other formats", () => {
   });
 });
 
-describe("the definitions repo", () => {
-  test("loads Signal with every contract and rule valid and cross-referenced", async () => {
-    const repo = await loadDesignRepo(REPO);
-    const signal = repo.systems[0]!;
-    expect(signal.config.id).toBe("signal");
-    expect(signal.components.map((c) => c.contract.name)).toEqual(["Badge", "Button", "Card", "Input", "Label", "Switch", "Tabs", "Textarea"]);
-    expect(signal.rules.filter((r) => r.check.engine === "youi")).toHaveLength(5);
+describe("design repos", () => {
+  test("loads the demo system with every contract and rule valid and cross-referenced", async () => {
+    const repo = await loadDesignRepo(DEMO);
+    const demo = repo.systems[0]!;
+    expect(demo.config.id).toBe("demo");
+    expect(demo.components.map((c) => c.contract.name)).toEqual(["Button", "Card", "Input"]);
+    expect(demo.rules.filter((r) => r.check.engine === "youi")).toHaveLength(5);
+    expect(demo.rules.filter((r) => r.check.engine === "advisory")).toHaveLength(1);
+  });
+
+  test("the tool's own repo holds no design system: it is not a design repo", async () => {
+    await expect(loadDesignRepo(REPO)).rejects.toThrowError(/not a design repo/);
   });
 });

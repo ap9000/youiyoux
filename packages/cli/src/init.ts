@@ -1,13 +1,16 @@
 /** `youi init`: write youi.project.json from what the project already looks like. */
 import { access, readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
-import { ProjectConfig, writeFileAtomic } from "@youiyoux/core";
+import { getSystem, loadDesignRepo, ProjectConfig, writeFileAtomic } from "@youiyoux/core";
 import { PROJECT_FILE } from "@youiyoux/scanner";
 
 export interface InitOptions {
   readonly root: string;
-  /** The design-language definitions repo. */
-  readonly source: string;
+  /** The design repo checkout (the directory holding youi.config.json). */
+  readonly design: string;
+  /** This tool's published JSON Schemas, for the config's `$schema`. */
+  readonly schemaDir: string;
+  /** Defaults to the design repo's first system. */
   readonly system?: string;
   readonly componentsDir?: string;
   readonly force?: boolean;
@@ -34,7 +37,9 @@ export async function initProject(options: InitOptions): Promise<InitResult> {
   const root = resolve(options.root);
   const file = join(root, PROJECT_FILE);
   if (!options.force && (await exists(file))) throw new Error(`${PROJECT_FILE} already exists; use --force to replace it`);
-  const notes: string[] = [];
+  const design = resolve(options.design);
+  const system = getSystem(await loadDesignRepo(design), options.system).config;
+  const notes: string[] = [`design repo: ${design} (system ${system.id})`];
   const pkg = await readJson(join(root, "package.json"));
   const deps = { ...(pkg?.dependencies as Record<string, string> | undefined), ...(pkg?.devDependencies as Record<string, string> | undefined) };
 
@@ -70,11 +75,11 @@ export async function initProject(options: InitOptions): Promise<InitResult> {
   ).filter((g): g is string => g !== null);
 
   const config = ProjectConfig.parse({
-    $schema: `${relative(root, resolve(options.source))}/schema/youi.project.schema.json`,
+    $schema: `${relative(root, resolve(options.schemaDir))}/youi.project.schema.json`,
     schema: "youi.project/v1",
     id: (String(pkg?.name ?? "app").replace(/^@[^/]+\//, "").toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/^[^a-z]+/, "") || "app"),
-    system: options.system ?? "signal",
-    source: { path: relative(root, resolve(options.source)) || "." },
+    system: system.id,
+    source: { path: relative(root, design) || "." },
     include: include.length > 0 ? include : ["**/*.{ts,tsx,css}"],
     exclude: ["**/*.test.*", "**/*.spec.*", "**/*.d.ts"],
     componentsDir,

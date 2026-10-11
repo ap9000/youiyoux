@@ -1,0 +1,9 @@
+No license has been chosen for YouIyouX.
+
+This repository is private, and all rights are reserved until a license is
+chosen. That decision is deliberately deferred: it will be made before the
+repository is shared publicly, and recorded here and in package.json.
+
+Before a public release, also confirm that no product's design data remains
+in the history: the tool and the data were split apart in 2026-10, and design
+systems now live in their own repositories.

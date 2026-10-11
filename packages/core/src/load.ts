@@ -1,7 +1,7 @@
-/** Load and validate the design-language definitions repo into one in-memory graph. */
+/** Load and validate a design repo (a checkout holding youi.config.json) into one in-memory graph. */
 import { readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { DefinitionError, readDefinition } from "./files.ts";
+import { DefinitionError, readDefinition, readTextOrNull } from "./files.ts";
 import { parseId } from "./ids.ts";
 import { ComponentContract, DesignConfig, MigrationSpec, normalizeRelPath, RuleSpec, type SystemConfig } from "./schemas.ts";
 
@@ -90,8 +90,12 @@ function validateGraph(system: LoadedSystem): string[] {
   return problems;
 }
 
+export const DESIGN_CONFIG_FILE = "youi.config.json";
+
+/** Load a design repo: any checkout holding youi.config.json (the tool never ships one of its own). */
 export async function loadDesignRepo(root: string): Promise<DesignRepo> {
-  const config = await readDefinition(join(root, "youi.config.json"), DesignConfig, root);
+  if ((await readTextOrNull(join(root, DESIGN_CONFIG_FILE))) === null) throw new DefinitionError(root, [`no ${DESIGN_CONFIG_FILE}: not a design repo (pass --design <dir>, or set source.path in youi.project.json)`]);
+  const config = await readDefinition(join(root, DESIGN_CONFIG_FILE), DesignConfig, root);
   const systems = await Promise.all(
     config.systems.map((system) => loadSystem(root, { ...system, tokens: normalizeRelPath(system.tokens), components: normalizeRelPath(system.components), rules: normalizeRelPath(system.rules), support: system.support.map(normalizeRelPath) })),
   );
@@ -102,6 +106,6 @@ export async function loadDesignRepo(root: string): Promise<DesignRepo> {
 
 export function getSystem(repo: DesignRepo, id?: string): LoadedSystem {
   const system = id ? repo.systems.find((s) => s.config.id === id) : repo.systems[0];
-  if (!system) throw new DefinitionError("youi.config.json", [`no system "${id}"; known: ${repo.systems.map((s) => s.config.id).join(", ")}`]);
+  if (!system) throw new DefinitionError(DESIGN_CONFIG_FILE, [`no system "${id}"; known: ${repo.systems.map((s) => s.config.id).join(", ")}`]);
   return system;
 }

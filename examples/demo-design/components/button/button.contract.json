@@ -1,0 +1,96 @@
+{
+  "$schema": "../../../../schema/youi.component.schema.json",
+  "schema": "youi.component/v1",
+  "id": "youi:demo/component/button",
+  "name": "Button",
+  "version": "1.0.0",
+  "status": "stable",
+  "summary": "Every action a person can take. Filled accent for the main action of a view; outline and ghost for the rest; danger only for a destructive act.",
+  "source": {
+    "file": "button/button.tsx",
+    "export": "Button",
+    "also": []
+  },
+  "platforms": ["web"],
+  "passthrough": "button",
+  "props": {
+    "variant": {
+      "type": "enum",
+      "values": ["default", "outline", "ghost", "danger", "link"],
+      "default": "default",
+      "description": "default = the main action of a view (at most one); outline = secondary actions and row tools; ghost = toolbars and low-emphasis actions; danger = a confirmed destructive act; link = navigation styled as text."
+    },
+    "size": {
+      "type": "enum",
+      "values": ["default", "sm", "icon"],
+      "default": "default",
+      "description": "36px tall by default, 32px for sm; icon is a 36px square."
+    },
+    "disabled": {
+      "type": "boolean",
+      "default": false
+    },
+    "className": {
+      "type": "string",
+      "description": "Extra classes, merged last with cn(); use token utilities only."
+    },
+    "children": {
+      "type": "node"
+    },
+    "onClick": {
+      "type": "function"
+    }
+  },
+  "tokens": {
+    "bg.default": "youi:demo/token/color.accent",
+    "fg.default": "youi:demo/token/color.on-accent",
+    "border.outline": "youi:demo/token/color.line",
+    "bg.danger": "youi:demo/token/color.danger-soft",
+    "fg.danger": "youi:demo/token/color.danger",
+    "radius": "youi:demo/token/radius.control",
+    "text": "youi:demo/token/typography.label"
+  },
+  "a11y": {
+    "role": "button",
+    "notes": [
+      "size=\"icon\" has no visible text: give it aria-label.",
+      "Focus is a 2px accent ring at a 2px offset; never remove it.",
+      "Disabled drops to 50% opacity and ignores pointer events."
+    ]
+  },
+  "rules": [
+    "youi:demo/rule/color.no-raw-color",
+    "youi:demo/rule/tokens.no-arbitrary-values",
+    "youi:demo/rule/components.canonical-import",
+    "youi:demo/rule/props.contract-values",
+    "youi:demo/rule/components.no-native-controls",
+    "youi:demo/rule/components.one-primary-action"
+  ],
+  "guidance": {
+    "do": [
+      "Give each view one default (filled) Button for its main action.",
+      "Use variant=\"outline\" for secondary actions and row tools.",
+      "Name the action with a verb: Save, Invite, Delete project."
+    ],
+    "dont": [
+      "Don't render a raw <button> with hand-written classes.",
+      "Don't use danger for anything that is not destructive."
+    ]
+  },
+  "examples": [
+    {
+      "title": "Main and secondary action",
+      "code": "<Button>Save</Button>\n<Button variant=\"outline\">Cancel</Button>"
+    },
+    {
+      "title": "Destructive act",
+      "code": "<Button variant=\"danger\">Delete project</Button>"
+    },
+    {
+      "title": "Icon-only",
+      "code": "<Button size=\"icon\" variant=\"ghost\" aria-label=\"Settings\"><Settings /></Button>"
+    }
+  ],
+  "aliases": ["buttonVariants"],
+  "owners": ["group:design-system"]
+}

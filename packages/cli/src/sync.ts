@@ -10,17 +10,19 @@
 import { execFile } from "node:child_process";
 import { lstat, mkdir, mkdtemp, readdir, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, relative } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import { findFiles, LockFile, readDefinition, readTextOrNull, sha256, writeFileAtomic, type ElementId, type LockEntry } from "@youiyoux/core";
 import { buildTokens } from "@youiyoux/tokens";
-import { vendoredPath, type Project } from "@youiyoux/scanner";
+import { PROJECT_FILE, vendoredPath, type Project } from "@youiyoux/scanner";
 import { agentsBlock, astGrepRules, designMd, GENERATED_MARK, skillMd, upsertBlock } from "./agents.ts";
 
 export const LOCK_FILE = "youi.lock.json";
 const BASE_DIR = ".youi/base";
 const INCOMING_DIR = ".youi/incoming";
 const CONFLICT_DIR = ".youi/conflicts";
+/** The youi CLI the project's .mcp.json runs: this tool's checkout, not the design repo. */
+const CLI_BIN = resolve(import.meta.dirname, "../bin/youi.js");
 
 export type SyncActionKind = "created" | "updated" | "unchanged" | "adopted" | "merged" | "kept-local" | "conflict" | "skipped";
 
@@ -206,8 +208,7 @@ export async function syncProject(project: Project, options: SyncOptions = {}): 
   for (const rule of astGrepRules(project)) await writer.generated(`youi-rules/${rule.file}`, rule.content, "agents");
   await writer.managedBlock(config.agents.agentsMd, agentsBlock(project));
   if (config.agents.claudeSkillLink) await writer.link(".claude/skills/youiyoux", relative(join(project.root, ".claude/skills"), join(project.root, config.agents.skillDir)));
-  const cli = relative(project.root, join(repo.root, "packages/cli/bin/youi.js"));
-  await writer.mcpEntry(".mcp.json", { command: "node", args: [cli, "mcp", "--project", "."] });
+  await writer.mcpEntry(".mcp.json", { command: "node", args: mcpArgs(project) });
 
   const sources = new Map<string, { elements: ElementId[]; version: string }>();
   for (const { contract } of system.components) {
@@ -233,6 +234,19 @@ export async function syncProject(project: Project, options: SyncOptions = {}): 
   };
   if (!options.dryRun) await writeFileAtomic(join(project.root, LOCK_FILE), `${JSON.stringify(lock, null, 2)}\n`);
   return { actions: writer.actions, lock };
+}
+
+/** How the project's MCP server finds what this sync used: a config kept elsewhere and an overridden design repo are passed explicitly. */
+export function mcpArgs(project: Project): string[] {
+  const rel = (path: string): string => relative(project.root, path) || ".";
+  return [
+    rel(CLI_BIN),
+    "mcp",
+    "--project",
+    ".",
+    ...(project.configFile && project.configFile !== join(project.root, PROJECT_FILE) ? ["--config", rel(project.configFile)] : []),
+    ...(project.designOverride ? ["--design", rel(project.repo.root)] : []),
+  ];
 }
 
 /** Files in the owned components dir that no contract (or support entry) covers. */

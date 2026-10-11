@@ -15,7 +15,7 @@ describe("parseColor", () => {
   });
 
   test("returns null for values it cannot resolve", () => {
-    expect(parseColor("var(--so-ink)")).toBeNull();
+    expect(parseColor("var(--demo-color-foreground)")).toBeNull();
     expect(parseColor("color-mix(in srgb, red, blue)")).toBeNull();
     expect(parseColor("#12")).toBeNull();
   });

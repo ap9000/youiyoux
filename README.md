@@ -1,21 +1,40 @@
 # YouIyouX
 
-The company design language and its tooling. Every token, component and rule has a stable id (`youi:<system>/<kind>/<name>`), a JSON contract, and a live map of where it is used in each product: file, line and screen. Every change is planned against those uses before it ships.
+Tooling for a design language. Every token, component and rule has a stable id (`youi:<system>/<kind>/<name>`), a JSON contract, and a live map of where it is used in each product: file, line and screen. Every change is planned against those uses before it ships.
 
-Phase 0 is CLI only: definitions in Git, the `youi` CLI, a scanner, and a local MCP server. The first system, **Signal**, is imported from Toolroll; see [`pilot/toolroll`](pilot/toolroll/README.md) and [the findings](pilot/toolroll-findings.md).
+Phase 0 is local: the `youi` CLI, a scanner, a local MCP server and a web hub. No hosted service yet.
 
-## Layout
+## The tool and the data live apart
+
+This repository is the tool. It holds no product's design data: each design system lives in its own repository (a *design repo*), and `youi` reads it from a checkout, the way Terraform is a public tool that reads configuration it does not own.
+
+| Lives | Where |
+| --- | --- |
+| The CLI, scanner, MCP server, hub and the published JSON Schemas | here |
+| A system's tokens, component contracts and owned implementations, rules and narrative | its design repo |
+| How a product uses a system (`youi.project.json`) | the product repo, or beside the system in its design repo |
+| Scan results, permissions and approvals | the hosted database (not built yet); never in a repo |
+
+A design repo is any directory with a `youi.config.json`. A product names it with `source.path` in its `youi.project.json` (relative to the config, or absolute), or any command takes `--design <dir>`. A design repo keeps the layout below; [`examples/demo-design`](examples/demo-design) is a complete one.
+
+| Path in a design repo | Contents |
+| --- | --- |
+| `youi.config.json` | Systems and where their definitions live |
+| `tokens/<system>/` | DTCG 2025.10 tokens: a resolver (base set plus a light/dark `theme` modifier) |
+| `components/<name>/` | `youi.component/v1` contracts, the owned implementations that sync vendors into products, and an optional `<name>.demo.tsx` the hub previews |
+| `rules/` | `youi.rule/v1` rules: prose for people, an instruction for agents, and an executable check |
+| `systems/<system>/design.md` | The narrative; DESIGN.md is generated from it plus the tokens |
+| `schema/` | Optional copies of this tool's JSON Schemas for editor validation (`youi schema --write --design .`; `--check` verifies them) |
+
+## This repository
 
 | Path | Contents |
 | --- | --- |
-| `youi.config.json` | Systems and where their definitions live |
-| `tokens/signal/` | DTCG 2025.10 tokens: `signal.resolver.json` (base set plus a light/dark `theme` modifier) |
-| `components/<name>/` | `youi.component/v1` contracts and the owned implementations that sync vendors into products |
-| `rules/` | `youi.rule/v1` rules: prose for people, an instruction for agents, and an executable check |
-| `systems/signal/design.md` | Signal's narrative; DESIGN.md is generated from it plus the tokens |
-| `schema/` | JSON Schemas, emitted from the Zod definitions in `packages/core` (`youi schema --write`) |
 | `packages/` | `core` (schemas, loader), `tokens` (Terrazzo build, import, parity), `scanner` (usage map, checks, migrations, plans), `cli`, `mcp` |
-| `pilot/` | The Toolroll pilot: config, import, cross-checks, findings |
+| `apps/web/` | The hub: find an element, see its contract, tokens and rules, preview it, see where it lives ([README](apps/web/README.md)) |
+| `schema/` | JSON Schemas, emitted from the Zod definitions in `packages/core` (`youi schema --write`) |
+| `examples/demo-design/` | **Demo**, a made-up design system (Button, Input and Card; 19 tokens; 6 rules) used by the tests, these docs and the hub's default data |
+| `examples/demo-app/` | A made-up product that uses Demo, with a few deliberate violations |
 
 ## Use
 
@@ -26,13 +45,22 @@ pnpm install
 pnpm test                       # vitest
 pnpm typecheck
 node packages/cli/bin/youi.js   # help
+alias youi="node $PWD/packages/cli/bin/youi.js"
+```
+
+Try it on the demo:
+
+```sh
+youi check --project examples/demo-app          # 1 error, 2 warnings
+youi where button --project examples/demo-app   # 6 sites on 3 screens
+youi ui                                         # the hub on the demo system: http://localhost:5173
 ```
 
 In a product repo:
 
 | Command | Does |
 | --- | --- |
-| `youi init` | Write `youi.project.json` (detects Expo Router, the components directory and the `@/` alias), then sync |
+| `youi init --design <dir>` | Write `youi.project.json` pointing at a design repo checkout (detects Expo Router, the components directory and the `@/` alias), then sync |
 | `youi sync` | Write tokens (`tokens.css`, Tailwind v4 `theme.css`, `tokens.ts`; React Native optional), DESIGN.md, the `youiyoux` skill and the AGENTS.md block; vendor owned components with 3-way merges; record `youi.lock.json` |
 | `youi scan` | Build the `youi.usage/v1` usage map |
 | `youi where <component>` / `youi bom <route>` | Where a component lives, screen by screen; everything on one screen |
@@ -41,9 +69,29 @@ In a product repo:
 | `youi plan` / `youi migrate` | Classify a change and its impact; run a gated codemod (dry run unless `--write`) |
 | `youi mcp` | stdio MCP server: read tools plus `youi_plan`; no publish, approve or merge tools |
 
+Every product command takes `--design <dir>` (override the design repo) and `--config <file>` (a project config kept outside the product, for example in the design repo).
+
+In a design repo (the current directory, or `--design <dir>`):
+
+| Command | Does |
+| --- | --- |
+| `youi build` | Build the token outputs (`--out`, `--prefix`) |
+| `youi parity --css <file>` | Compare the generated CSS with a product's shipped CSS, light and dark |
+| `youi schema --check` | Check the repo's `schema/` copies against this tool's schemas (`--write` refreshes them) |
+
+Anywhere:
+
+| Command | Does |
+| --- | --- |
+| `youi ui [--design <dir>] [--project <dir>] [--config <file>]` | Start the hub on a design system (default: the demo); with `--project`, plus that product's usage map from a read-only scan |
+
 ## Guarantees
 
 - **Identity, not names.** A `<Button>` counts only if its import resolves (TypeScript module resolution, through barrels and aliases) to the owned implementation. A same-named component from elsewhere is reported as a lookalike.
 - **Unknown is never zero.** Sites the scanner cannot resolve are listed as unknown, and a scan with files it could not parse is marked `partial`.
 - **Rewrites are gated.** A migration is written only if the rewritten files parse cleanly, the element's usage count is unchanged, no site became unknown, no non-residual site keeps the old API, and a second run changes nothing.
 - **Agents propose, people approve.** Agents get read tools and a planner; nothing in the agent surface can publish a change.
+
+## License
+
+None chosen yet; see [LICENSE](LICENSE). The repository is private.
