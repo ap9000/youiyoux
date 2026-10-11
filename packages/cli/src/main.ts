@@ -50,9 +50,10 @@ ${style.bold("In a product repo")}
   mcp                      stdio MCP server (read tools + plan)
 
 ${style.bold("The hub")}
-  ui [--design dir] [--project dir] [--config file] [--port n]
+  ui [--design dir] [--project dir] [--config file] [--port n] [--watch]
                            open the web hub on a design system (default: the demo system);
-                           --project adds that product's usage map (read-only scan)
+                           --project adds that product's usage map (read-only scan);
+                           --watch re-scans on every save and updates the open hub
 
 ${style.bold("In a design repo")} ${style.dim("(the current directory, or --design)")}
   build [--out dir] [--prefix p]   build token outputs
@@ -101,6 +102,7 @@ const OPTIONS = {
   prefix: { type: "string" },
   light: { type: "string" },
   port: { type: "string" },
+  watch: { type: "boolean", default: false },
   dark: { type: "string" },
   help: { type: "boolean", short: "h", default: false },
 } satisfies ParseArgsConfig["options"];
@@ -376,7 +378,7 @@ async function cmdWatch(values: Values): Promise<number> {
 }
 
 async function cmdUi(values: Values): Promise<number> {
-  return runHub(TOOL_ROOT, { ...(values.design ? { design: values.design } : {}), ...(values.project ? { project: values.project } : {}), ...(values.config ? { config: values.config } : {}), ...(values.port ? { port: values.port } : {}) });
+  return runHub(TOOL_ROOT, { ...(values.design ? { design: values.design } : {}), ...(values.project ? { project: values.project } : {}), ...(values.config ? { config: values.config } : {}), ...(values.port ? { port: values.port } : {}), watch: values.watch });
 }
 
 async function cmdMcp(values: Values): Promise<number> {
