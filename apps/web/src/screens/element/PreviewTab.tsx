@@ -79,7 +79,7 @@ export function PreviewTab({ name, contract, paper }: PreviewTabProps) {
         <div className="flex flex-wrap items-center gap-2">
           <Segmented<Scheme> label="Colour scheme" value={scheme} onChange={setScheme} options={[{ value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} />
           <Segmented<Width> label="Width" value={width} onChange={setWidth} options={[{ value: "desk", label: "Desk" }, { value: "phone", label: "Phone" }]} />
-          <span className="ml-auto text-small text-muted">{showImage ? "Snapshot. Click to interact." : "Live: the owned component in Signal's tokens."}</span>
+          <span className="ml-auto text-small text-muted">{showImage ? "Snapshot. Click to interact." : "Live: the owned component in its system's tokens."}</span>
         </div>
         <div className="overflow-hidden rounded-lg border border-line" style={{ background: paper[scheme] }}>
           {showImage ? (

@@ -1,9 +1,9 @@
 {
   "schema": "youi.project/v1",
   "id": "expo-fixture",
-  "system": "signal",
+  "system": "demo",
   "source": {
-    "path": "../../../../.."
+    "path": "../../../../../examples/demo-design"
   },
   "tsconfig": "tsconfig.json",
   "include": [
@@ -25,6 +25,6 @@
   },
   "outputs": {
     "dir": "src/design",
-    "cssVarPrefix": "so"
+    "cssVarPrefix": "demo"
   }
 }

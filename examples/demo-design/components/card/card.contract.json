@@ -1,0 +1,58 @@
+{
+  "$schema": "../../../../schema/youi.component.schema.json",
+  "schema": "youi.component/v1",
+  "id": "youi:demo/component/card",
+  "name": "Card",
+  "version": "1.0.0",
+  "status": "stable",
+  "summary": "A container for one subject: card fill, hairline border, 12px corners and one soft shadow. Never nested.",
+  "source": {
+    "file": "card/card.tsx",
+    "export": "Card",
+    "also": ["CardHeader", "CardTitle", "CardContent"]
+  },
+  "platforms": ["web"],
+  "passthrough": "section",
+  "props": {
+    "className": {
+      "type": "string",
+      "description": "Extra classes, merged last with cn(); use token utilities only."
+    },
+    "children": {
+      "type": "node"
+    }
+  },
+  "tokens": {
+    "bg": "youi:demo/token/color.card",
+    "border": "youi:demo/token/color.line",
+    "radius": "youi:demo/token/radius.card",
+    "shadow": "youi:demo/token/shadow.card"
+  },
+  "a11y": {
+    "notes": [
+      "CardTitle renders an h2; keep the page's heading order."
+    ]
+  },
+  "rules": [
+    "youi:demo/rule/color.no-raw-color",
+    "youi:demo/rule/tokens.no-arbitrary-values",
+    "youi:demo/rule/components.canonical-import"
+  ],
+  "guidance": {
+    "do": [
+      "Put one subject in a card: a project, an invoice, a person."
+    ],
+    "dont": [
+      "Don't nest cards.",
+      "Don't give a card a second shadow or a coloured border."
+    ]
+  },
+  "examples": [
+    {
+      "title": "Card with header",
+      "code": "<Card><CardHeader><CardTitle>Billing</CardTitle></CardHeader><CardContent>…</CardContent></Card>"
+    }
+  ],
+  "aliases": [],
+  "owners": ["group:design-system"]
+}

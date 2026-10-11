@@ -11,36 +11,36 @@ import { contrastPairs } from "../src/screens/tokens/TokenDetail.tsx";
 import { filterTokens } from "../src/screens/tokens/TokensScreen.tsx";
 import { withLoadedFonts } from "../src/screens/tokens/TokenValue.tsx";
 
-const DATA = join(import.meta.dirname, "../public/data");
+const DATA = join(import.meta.dirname, "../snapshot/public/data");
 const manifest = JSON.parse(readFileSync(join(DATA, "manifest.json"), "utf8")) as Manifest;
 const catalog = JSON.parse(readFileSync(join(DATA, manifest.systems[0]!.catalog), "utf8")) as Catalog;
 const model = buildModel(catalog, manifest);
 
 describe("ids", () => {
   test("parse and format round-trip", () => {
-    const id = formatId("signal", "token", "color.ink");
-    expect(id).toBe("youi:signal/token/color.ink");
-    expect(parseId(id)).toEqual({ system: "signal", kind: "token", name: "color.ink" });
+    const id = formatId("demo", "token", "color.foreground");
+    expect(id).toBe("youi:demo/token/color.foreground");
+    expect(parseId(id)).toEqual({ system: "demo", kind: "token", name: "color.foreground" });
     expect(parseId("dl:core/button")).toBeNull();
   });
 
   test("hub URLs keep the preview tab implicit", () => {
-    expect(elementHref("youi:signal/component/button")).toBe("/elements/signal/component/button");
-    expect(elementHref("youi:signal/component/button", "where")).toBe("/elements/signal/component/button/where");
+    expect(elementHref("youi:demo/component/button")).toBe("/elements/demo/component/button");
+    expect(elementHref("youi:demo/component/button", "where")).toBe("/elements/demo/component/button/where");
     expect(elementHref("nonsense")).toBe("/elements");
     expect(tokenHref("color.ink")).toBe("/tokens/color.ink");
-    expect(shortName("youi:signal/rule/color.no-raw-color")).toBe("color.no-raw-color");
+    expect(shortName("youi:demo/rule/color.no-raw-color")).toBe("color.no-raw-color");
   });
 
   test("readSelection reads the element and tab from the route, defaulting bad tabs to preview", () => {
-    expect(readSelection("signal/component/button/where")).toEqual({ id: "youi:signal/component/button", tab: "where" });
-    expect(readSelection("signal/component/button/bogus").tab).toBe("preview");
-    expect(readSelection("signal/widget/button").id).toBeNull();
+    expect(readSelection("demo/component/button/where")).toEqual({ id: "youi:demo/component/button", tab: "where" });
+    expect(readSelection("demo/component/button/bogus").tab).toBe("preview");
+    expect(readSelection("demo/widget/button").id).toBeNull();
     expect(readSelection("").id).toBeNull();
   });
 });
 
-describe("buildModel on the Signal snapshot", () => {
+describe("buildModel on the demo snapshot", () => {
   test("orders components, then tokens by group, then rules", () => {
     const kinds = model.elements.map((e) => e.kind);
     expect(kinds.indexOf("token")).toBe(countByKind(model.elements).component);
@@ -50,22 +50,23 @@ describe("buildModel on the Signal snapshot", () => {
   });
 
   test("knows which components bind a token and declare a rule", () => {
-    const consumers = model.tokenConsumers.get("youi:signal/token/color.attention") ?? [];
-    expect(consumers).toContainEqual({ component: "youi:signal/component/button", role: "bg.attention" });
-    expect(model.ruleComponents.get("youi:signal/rule/color.no-raw-color")).toContain("youi:signal/component/button");
+    const consumers = model.tokenConsumers.get("youi:demo/token/color.danger") ?? [];
+    expect(consumers).toContainEqual({ component: "youi:demo/component/button", role: "fg.danger" });
+    expect(consumers).toContainEqual({ component: "youi:demo/component/input", role: "border.invalid" });
+    expect(model.ruleComponents.get("youi:demo/rule/color.no-raw-color")).toContain("youi:demo/component/button");
   });
 
   test("alias chains end at the token that holds the value", () => {
-    const attention = model.tokenByPath.get("color.attention")!;
-    expect(attention.aliasChain).toEqual(["youi:signal/token/color.attention", "youi:signal/token/color.signal"]);
-    expect(attention.light).toBe(model.tokenByPath.get("color.signal")!.light);
+    const accent = model.tokenByPath.get("color.accent")!;
+    expect(accent.aliasChain).toEqual(["youi:demo/token/color.accent", "youi:demo/token/color.brand"]);
+    expect(accent.light).toBe(model.tokenByPath.get("color.brand")!.light);
   });
 });
 
 describe("element list rows", () => {
   test("group headers appear only when browsing without a query", () => {
     const grouped = toRows(model.elements, true);
-    expect(grouped[0]).toMatchObject({ type: "header", label: "Components", count: 8 });
+    expect(grouped[0]).toMatchObject({ type: "header", label: "Components", count: 3 });
     expect(grouped.filter((r) => r.type === "item")).toHaveLength(model.elements.length);
     expect(toRows(model.elements, false).every((r) => r.type === "item")).toBe(true);
   });
@@ -73,8 +74,8 @@ describe("element list rows", () => {
 
 describe("token helpers", () => {
   test("filterTokens matches path, variable and value", () => {
-    expect(filterTokens([...model.tokens.values()], "c4320a").map((t) => t.path)).toEqual(["color.danger"]);
-    expect(filterTokens([...model.tokens.values()], "--so-ink").map((t) => t.path)).toContain("color.ink");
+    expect(filterTokens([...model.tokens.values()], "c62828").map((t) => t.path)).toEqual(["color.danger"]);
+    expect(filterTokens([...model.tokens.values()], "--demo-color-fore").map((t) => t.path)).toEqual(["color.foreground"]);
     expect(filterTokens([...model.tokens.values()], "")).toHaveLength(model.tokens.size);
   });
 
@@ -82,16 +83,16 @@ describe("token helpers", () => {
     const pairs = (path: string) => contrastPairs(model, model.tokenByPath.get(path)!).map((p) => [p.foreground.path, p.background.path]);
     expect(pairs("color.on-accent")).toEqual([["color.on-accent", "color.accent"]]);
     expect(pairs("color.danger-soft")).toEqual([["color.danger", "color.danger-soft"]]);
+    // The demo names its surfaces background and card, and its ink foreground (shadcn-style names).
     expect(pairs("color.muted")).toEqual([
-      ["color.muted", "color.paper"],
-      ["color.muted", "color.ground"],
-      ["color.muted", "color.raised"],
+      ["color.muted", "color.background"],
+      ["color.muted", "color.card"],
     ]);
-    expect(pairs("color.paper")).toEqual([
-      ["color.ink", "color.paper"],
-      ["color.muted", "color.paper"],
+    expect(pairs("color.card")).toEqual([
+      ["color.foreground", "color.card"],
+      ["color.muted", "color.card"],
     ]);
-    expect(contrastPairs(model, model.tokenByPath.get("radius.md")!)).toEqual([]);
+    expect(contrastPairs(model, model.tokenByPath.get("radius.card")!)).toEqual([]);
   });
 
   test("withLoadedFonts points Geist families at the loaded variable faces", () => {
@@ -102,7 +103,9 @@ describe("token helpers", () => {
 
 describe("packageDeps", () => {
   test("lists the npm packages a component's files import, without React or relative paths", () => {
-    const button = model.components.get("youi:signal/component/button")!;
-    expect(packageDeps(button.files)).toEqual(["@radix-ui/react-slot", "class-variance-authority", "clsx", "tailwind-merge"]);
+    const button = model.components.get("youi:demo/component/button")!;
+    expect(packageDeps(button.files)).toEqual(["class-variance-authority", "clsx", "tailwind-merge"]);
+    const scoped = [{ path: "tabs.tsx", code: 'import * as Tabs from "@radix-ui/react-tabs";\nimport { Slot } from "@radix-ui/react-slot/dist";\nimport { cn } from "./utils";' }];
+    expect(packageDeps(scoped)).toEqual(["@radix-ui/react-slot", "@radix-ui/react-tabs"]);
   });
 });

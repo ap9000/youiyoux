@@ -5,10 +5,19 @@ The design language hub: find an element, see its contract, tokens and rules, pr
 ```sh
 pnpm install        # at the repository root (apps/* is in the workspace)
 cd apps/web
-pnpm dev            # http://localhost:5173
+pnpm dev            # http://localhost:5173, on the demo system
 ```
 
-Everything the app reads is a committed static snapshot, so `pnpm dev` works on its own.
+Or, from anywhere, with the CLI:
+
+```sh
+youi ui                                              # the demo system
+youi ui --design ~/src/acme-design                   # your design repo
+youi ui --project ~/src/acme-app                     # plus where it is used in a product (read-only scan)
+youi ui --project ~/src/acme-app --config ~/src/acme-design/acme-app.youi.json   # config kept outside the product
+```
+
+The hub shows one design system at a time, read from a snapshot directory. The committed default (`snapshot/`) is the made-up demo system, so `pnpm dev` works on its own and the tool repo holds no product's data. `youi ui` with a system named writes its snapshot to `.hub/` (gitignored) and starts the dev server on that instead, so pointing the hub at a real system never changes the checkout.
 
 ## Screens
 
@@ -24,23 +33,18 @@ Keyboard: `⌘K` palette, `/` search the list, `j`/`k` or arrows move, `g` then 
 
 ## Data
 
-`pnpm data [--from <design-language checkout>] [--commit <sha>]` rebuilds everything the app reads, using the `@youiyoux/core` and `@youiyoux/tokens` code from that checkout (default: this repository's root). The snapshot records the commit that last changed the definitions it read.
+`pnpm data [--design <dir>] [--project <dir>] [--config <file>] [--out <dir>] [--commit <sha>]` (`scripts/snapshot.ts`) builds a snapshot with this repository's `@youiyoux/core`, `@youiyoux/tokens` and `@youiyoux/scanner`; it never runs code from the design repo. With no options it rebuilds the committed demo: `examples/demo-design`, and a scan of `examples/demo-app`.
 
-- `public/data/manifest.json` plus content-hashed `signal.catalog.<hash>.json` (tokens resolved per scheme, component contracts and their owned files, rules, the design narrative) and `<project>.usage.<hash>.json` (every `fixtures/*.usage.json`, validated against `youi.usage/v1`). The browser keeps hashed files in Cache Storage, so repeat visits and offline work need only the manifest.
-- `src/styles/generated/`: the hub's own tokens (`design/youiyoux.*.json`, DTCG, built by `@youiyoux/tokens` exactly like Signal) as CSS variables and a Tailwind v4 theme. The hub replaces Tailwind's colour, radius, shadow, type and easing scales with its tokens (the reserved names are mapped explicitly in `scripts/snapshot.ts`), so it uses no style that is not a YouIyouX token.
-- `src/preview/generated/`: Signal's variables scoped to `.signal-scope`, and Signal's owned component files, which the preview frame renders.
-
-`fixtures/toolroll.usage.json` is the real `youi scan` of Toolroll, written outside the Toolroll repo:
-
-```sh
-node packages/cli/bin/youi.js scan --project <toolroll> --config pilot/toolroll/youi.project.json --design . --out apps/web/fixtures/toolroll.usage.json
-```
+- `--design` is the design repo checkout (the directory holding `youi.config.json`). `--project` scans a product repo, read-only, for the usage map; its `youi.project.json` (or `--config`) also names the design repo, the system, the CSS variable prefix and the Tailwind names its components use. The snapshot records the commit that last changed the definitions it read.
+- `<snapshot>/public/data/`: `manifest.json` plus content-hashed `<system>.catalog.<hash>.json` (tokens resolved per scheme, component contracts and their owned files, rules, the design narrative) and `<project>.usage.<hash>.json` (validated against `youi.usage/v1`). The browser keeps hashed files in Cache Storage, so repeat visits and offline work need only the manifest. Vite serves them beside `public/` and copies them into the build.
+- `<snapshot>/preview/`: `system.css` (the system's variables scoped to `.system-scope`, the surface it sits on, and its Tailwind theme) and the system's owned component files, which the preview frame renders.
+- `src/styles/generated/`: the hub's own tokens (`design/youiyoux.*.json`, DTCG, built by `@youiyoux/tokens` like any system's) as CSS variables and a Tailwind v4 theme. The hub replaces Tailwind's colour, radius, shadow, type and easing scales with its tokens (the reserved names are mapped explicitly in `scripts/snapshot.ts`), so it uses no style that is not a YouIyouX token. Rebuilt with the default snapshot.
 
 ## Previews
 
-The element Preview tab shows a captured image (`public/previews/<component>.<scheme>.webp`) until someone clicks; then it loads `preview.html`, which renders the real owned component with Signal's tokens in its own document. Signal's components speak shadcn's vocabulary (`bg-primary`, `bg-accent`), so they get their own Tailwind sheet there and never collide with the hub's. Demos live in `src/preview/demos.tsx`.
+The element Preview tab shows a captured image (`<snapshot>/public/previews/<component>.<scheme>.webp`) until someone clicks; then it loads `preview.html`, which renders the system's own demo for that component with the system's tokens, in its own document. Demos live in the design repo, beside each contract: `components/<name>/<name>.demo.tsx`, a default-exported React component that imports the owned files by their vendored names (`./button`, `./utils`). A component with no demo says so in the frame. The frame gets its own Tailwind sheet, so a system's vocabulary (shadcn's `bg-primary`, or the demo's `bg-accent`) never collides with the hub's.
 
-`scripts/capture.sh [base-url] [previews|screens|all]` refreshes the thumbnails and the review screenshots in `screenshots/` (light and dark) with `chrome-devtools-axi`.
+`scripts/capture.sh [base-url] [previews|screens|all]` refreshes the thumbnails (into the running snapshot) and the review screenshots in `screenshots/` (light and dark) with `chrome-devtools-axi`. The committed screenshots show the demo system.
 
 ## Speed
 
@@ -57,7 +61,8 @@ src/search/        MiniSearch engine, Web Worker, client hook
 src/shell/         nav rail, keyboard layer, command palette, shortcuts sheet
 src/ui/            the hub's owned components
 src/screens/       home, catalog, element tabs, tokens, planned screens
-src/preview/       the isolated preview frame
+src/preview/       the isolated preview frame (loads the snapshot's demos through the @snapshot alias)
+snapshot/          the committed demo snapshot (data, previews, preview sources)
 test/              unit tests (pnpm test)
 ```
 

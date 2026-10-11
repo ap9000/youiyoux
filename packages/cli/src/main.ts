@@ -3,22 +3,24 @@ import { readFile } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import { parseArgs, type ParseArgsConfig } from "node:util";
 import { parse as parseYaml } from "yaml";
-import { DefinitionError, findFiles, loadDesignRepo, MigrationSpec, OutputConfig, renderJsonSchemas, writeFileAtomic } from "@youiyoux/core";
+import { DefinitionError, findFiles, getSystem, loadDesignRepo, MigrationSpec, OutputConfig, renderJsonSchemas, writeFileAtomic } from "@youiyoux/core";
 import { buildTokens, compareParity } from "@youiyoux/tokens";
 import { componentCard, findContract, loadProject, planChange, runMigration, scanProject, screenBom, whereUsed, type PlanInput, type Project } from "@youiyoux/scanner";
+import { runHub } from "./hub.ts";
 import { initProject } from "./init.ts";
 import { renderBom, renderCheck, renderMigration, renderPlan, renderScan, renderShow, renderSync, renderWhere } from "./render.ts";
 import { syncProject, verifyLock, verifyWiring } from "./sync.ts";
 import { ms, plural, style } from "./ui.ts";
 
-const DESIGN_ROOT = resolve(import.meta.dirname, "../../..");
+/** This tool's own checkout: the published JSON Schemas live here. Design systems live in their own repos. */
+const TOOL_ROOT = resolve(import.meta.dirname, "../../..");
 
 const HELP = `${style.accent("youi")} ${style.dim("· YouIyouX design language")}
 
 ${style.bold("Usage")}  youi <command> [options]
 
 ${style.bold("In a product repo")}
-  init                     write youi.project.json, then sync
+  init --design <dir>      write youi.project.json pointing at a design repo checkout, then sync
   sync [--dry-run] [--adopt]   tokens, DESIGN.md, skill, AGENTS.md block, owned components (3-way merge), lockfile
   scan [--out file]        build the usage map (default .youi/usage.json)
   show <component>         the contract: import, legal prop values, guidance, examples
@@ -30,15 +32,23 @@ ${style.bold("In a product repo")}
   migrate <migration.yaml> [--write] [--diff]   gated codemod; dry run unless --write
   mcp                      stdio MCP server (read tools + plan)
 
-${style.bold("In the design-language repo")}
+${style.bold("The hub")}
+  ui [--design dir] [--project dir] [--config file] [--port n]
+                           open the web hub on a design system (default: the demo system);
+                           --project adds that product's usage map (read-only scan)
+
+${style.bold("In a design repo")} ${style.dim("(the current directory, or --design)")}
   build [--out dir] [--prefix p]   build token outputs
   parity --css <file> [--prefix p] [--light sel] [--dark sel]   generated CSS vs a project's shipped CSS
-  schema [--write]         emit JSON Schemas from the Zod definitions
+
+${style.bold("In this tool's repo")}
+  schema [--write|--check] emit JSON Schemas from the Zod definitions; --design writes or checks a design repo's schema/
 
 ${style.bold("Options")}
   --project <dir>   project root (default: current directory)
   --config <file>   project config (default: <project>/youi.project.json)
-  --design <dir>    design-language repo (default: source.path from the config)
+  --design <dir>    design repo checkout, the directory holding youi.config.json
+                    (default: source.path from the project config; the current directory for build and parity)
   --json            machine-readable output`;
 
 const OPTIONS = {
@@ -56,16 +66,17 @@ const OPTIONS = {
   token: { type: "string" },
   value: { type: "string" },
   write: { type: "boolean", default: false },
+  check: { type: "boolean", default: false },
   diff: { type: "boolean", default: false },
   "dry-run": { type: "boolean", default: false },
   adopt: { type: "boolean", default: false },
   force: { type: "boolean", default: false },
   system: { type: "string" },
   components: { type: "string" },
-  source: { type: "string" },
   css: { type: "string" },
   prefix: { type: "string" },
   light: { type: "string" },
+  port: { type: "string" },
   dark: { type: "string" },
   help: { type: "boolean", short: "h", default: false },
 } satisfies ParseArgsConfig["options"];
@@ -188,8 +199,9 @@ async function cmdSync(values: Values): Promise<number> {
 }
 
 async function cmdInit(values: Values): Promise<number> {
+  if (!values.design) throw new UsageError("youi init --design <dir>   (a design repo checkout, the directory holding youi.config.json)");
   const root = values.project ?? process.cwd();
-  const result = await initProject({ root, source: values.source ?? DESIGN_ROOT, ...(values.system ? { system: values.system } : {}), ...(values.components ? { componentsDir: values.components } : {}), force: values.force });
+  const result = await initProject({ root, design: values.design, schemaDir: join(TOOL_ROOT, "schema"), ...(values.system ? { system: values.system } : {}), ...(values.components ? { componentsDir: values.components } : {}), force: values.force });
   if (!values.json) {
     print(`${style.ok("created")} ${result.file}`);
     for (const note of result.notes) print(style.dim(`  · ${note}`));
@@ -199,9 +211,8 @@ async function cmdInit(values: Values): Promise<number> {
 }
 
 async function cmdBuild(values: Values): Promise<number> {
-  const root = values.design ?? DESIGN_ROOT;
-  const repo = await loadDesignRepo(root);
-  const system = repo.systems.find((s) => s.config.id === (values.system ?? s.config.id))!;
+  const root = resolve(values.design ?? process.cwd());
+  const system = getSystem(await loadDesignRepo(root), values.system);
   const output = OutputConfig.parse({ cssVarPrefix: values.prefix ?? "youi", targets: ["css-vars", "tailwind-v4", "ts", "react-native"] });
   const started = performance.now();
   const built = await buildTokens(root, system.config, output);
@@ -213,10 +224,9 @@ async function cmdBuild(values: Values): Promise<number> {
 }
 
 async function cmdParity(values: Values): Promise<number> {
-  if (!values.css) throw new UsageError("youi parity --css <file> [--prefix so]");
-  const root = values.design ?? DESIGN_ROOT;
-  const repo = await loadDesignRepo(root);
-  const system = repo.systems.find((s) => s.config.id === (values.system ?? s.config.id))!;
+  if (!values.css) throw new UsageError("youi parity --css <file> [--prefix p]");
+  const root = resolve(values.design ?? process.cwd());
+  const system = getSystem(await loadDesignRepo(root), values.system);
   const prefix = values.prefix ?? "youi";
   const dark = { selector: values.dark ?? ":root[data-theme=\"dark\"]" };
   const built = await buildTokens(root, system.config, OutputConfig.parse({ cssVarPrefix: prefix, dark: [dark], targets: ["css-vars"] }));
@@ -233,11 +243,26 @@ async function cmdParity(values: Values): Promise<number> {
 
 async function cmdSchema(values: Values): Promise<number> {
   const schemas = renderJsonSchemas();
+  if (values.check) {
+    // A design repo keeps copies for editor validation; the Zod definitions here stay the one authority.
+    const dir = join(values.design ? resolve(values.design) : TOOL_ROOT, "schema");
+    const stale = [];
+    for (const { file, content } of schemas) if ((await readFile(join(dir, file), "utf8").catch(() => null)) !== content) stale.push(file);
+    if (values.json) json({ dir, stale });
+    else print(stale.length === 0 ? `${style.ok("✓")} ${dir} matches this youi's schemas` : `${style.error("✖")} out of date in ${dir}: ${stale.join(", ")}; run youi schema --write${values.design ? " --design <dir>" : ""}`);
+    return stale.length === 0 ? 0 : 1;
+  }
   if (values.write) {
-    for (const { file, content } of schemas) await writeFileAtomic(join(values.design ?? DESIGN_ROOT, "schema", file), content);
+    // Into a design repo with --design (for editor validation there), otherwise into this tool's schema/.
+    const root = values.design ? resolve(values.design) : TOOL_ROOT;
+    for (const { file, content } of schemas) await writeFileAtomic(join(root, "schema", file), content);
     print(`${style.ok("wrote")} ${schemas.map((s) => s.file).join(", ")}`);
   } else json(Object.fromEntries(schemas.map((s) => [s.file, JSON.parse(s.content)])));
   return 0;
+}
+
+async function cmdUi(values: Values): Promise<number> {
+  return runHub(TOOL_ROOT, { ...(values.design ? { design: values.design } : {}), ...(values.project ? { project: values.project } : {}), ...(values.config ? { config: values.config } : {}), ...(values.port ? { port: values.port } : {}) });
 }
 
 async function cmdMcp(values: Values): Promise<number> {
@@ -247,7 +272,7 @@ async function cmdMcp(values: Values): Promise<number> {
 }
 
 const COMMANDS: Record<string, (values: Values, positionals: string[]) => Promise<number>> = {
-  init: cmdInit, sync: cmdSync, scan: cmdScan, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, plan: cmdPlan, migrate: cmdMigrate, mcp: cmdMcp, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+  init: cmdInit, sync: cmdSync, scan: cmdScan, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, plan: cmdPlan, migrate: cmdMigrate, mcp: cmdMcp, ui: cmdUi, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
 
 export async function main(argv: string[]): Promise<number> {

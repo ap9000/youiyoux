@@ -1,11 +1,11 @@
 import { cp, mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { loadProject, type Project } from "@youiyoux/scanner";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { BLOCK_BEGIN, BLOCK_END, mergeThreeWay, readLock, syncProject, verifyLock } from "../src/index.ts";
+import { BLOCK_BEGIN, BLOCK_END, mcpArgs, mergeThreeWay, readLock, syncProject, verifyLock } from "../src/index.ts";
 
-const REPO = join(import.meta.dirname, "../../..");
+const DEMO = join(import.meta.dirname, "../../../examples/demo-design");
 const FIXTURE = join(import.meta.dirname, "../../scanner/test/fixtures/expo-app");
 
 let dir: string;
@@ -16,7 +16,7 @@ beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), "youi-sync-"));
   design = join(dir, "design");
   app = join(dir, "app");
-  for (const part of ["youi.config.json", "tokens", "components", "rules", "systems"]) await cp(join(REPO, part), join(design, part), { recursive: true });
+  await cp(DEMO, design, { recursive: true });
   await cp(FIXTURE, app, { recursive: true });
   // Start from a project with no owned components yet, so sync delivers them.
   await rm(join(app, "components/ui"), { recursive: true });
@@ -35,8 +35,8 @@ describe("first sync", () => {
     const { actions, lock } = await syncProject(await project());
     expect(actionFor(actions, "src/design/tokens.css")).toBe("created");
     expect(actionFor(actions, "components/ui/button.tsx")).toBe("created");
-    expect(await read("src/design/tokens.css")).toContain("--so-ink: #171717;");
-    expect(await read("DESIGN.md")).toMatch(/^---\nname: Signal\n/);
+    expect(await read("src/design/tokens.css")).toContain("--demo-color-foreground: #1c1c21;");
+    expect(await read("DESIGN.md")).toMatch(/^---\nname: Demo\n/);
     expect(await read("DESIGN.md")).toContain("## Components (contracts)");
     expect(await read(".agents/skills/youiyoux/SKILL.md")).toMatch(/^---\nname: youiyoux\ndescription: /);
     expect(await readlink(join(app, ".claude/skills/youiyoux"))).toBe("../../.agents/skills/youiyoux");
@@ -44,8 +44,12 @@ describe("first sync", () => {
     expect(agents.startsWith(BLOCK_BEGIN)).toBe(true);
     expect(agents.split("\n").length).toBeLessThanOrEqual(40);
     expect(agents).toContain("`@/components/ui`");
-    expect(JSON.parse(await read(".mcp.json")).mcpServers.youiyoux.args).toContain("mcp");
-    expect(lock.files["components/ui/form-controls.tsx"]).toMatchObject({ kind: "vendored", elements: expect.arrayContaining(["youi:signal/component/input", "youi:signal/component/label"]) });
+    const mcp = JSON.parse(await read(".mcp.json")).mcpServers.youiyoux as { args: string[] };
+    // The test loads the design repo by override, so the server is told where it is.
+    expect(mcp.args.slice(1)).toEqual(["mcp", "--project", ".", "--design", "../design"]);
+    // The MCP entry runs this tool's CLI, which lives apart from the design repo.
+    expect(resolve(app, mcp.args[0]!)).toBe(join(import.meta.dirname, "../bin/youi.js"));
+    expect(lock.files["components/ui/utils.ts"]).toMatchObject({ kind: "vendored", elements: ["youi:demo/component/button", "youi:demo/component/card", "youi:demo/component/input"] });
     expect(await readLock(app)).toEqual(lock);
   });
 
@@ -107,7 +111,7 @@ describe("updates", () => {
     const local = (await read("components/ui/button.tsx")).replace(/\n$/, "\n// Local note: kept by the project.\n");
     await writeFile(join(app, "components/ui/button.tsx"), local);
     expect((await verifyLock(await project()))?.map((i) => i.severity)).toEqual(["warn"]);
-    const upstream = (await readFile(upstreamButton(), "utf8")).replace("/** shadcn/ui Button (MIT), on the shared palette. */", "/** Button: every act a person can take. */");
+    const upstream = (await readFile(upstreamButton(), "utf8")).replace("/** Demo Button: every action a person can take. */", "/** Button: every act a person can take. */");
     await writeFile(upstreamButton(), upstream);
     const { actions } = await syncProject(await project());
     expect(actionFor(actions, "components/ui/button.tsx")).toBe("merged");
@@ -120,9 +124,9 @@ describe("updates", () => {
   test("overlapping edits are a conflict: the file is untouched and the markers go to .youi/conflicts", async () => {
     await syncProject(await project());
     const original = await read("components/ui/button.tsx");
-    const mine = original.replace("/** shadcn/ui Button (MIT), on the shared palette. */", "/** Our Button. */");
+    const mine = original.replace("/** Demo Button: every action a person can take. */", "/** Our Button. */");
     await writeFile(join(app, "components/ui/button.tsx"), mine);
-    await writeFile(upstreamButton(), original.replace("/** shadcn/ui Button (MIT), on the shared palette. */", "/** Their Button. */"));
+    await writeFile(upstreamButton(), original.replace("/** Demo Button: every action a person can take. */", "/** Their Button. */"));
     const lockBefore = await readLock(app);
     const { actions } = await syncProject(await project());
     expect(actionFor(actions, "components/ui/button.tsx")).toBe("conflict");
@@ -135,9 +139,9 @@ describe("updates", () => {
 
   test("local edits with no upstream change are kept as drift", async () => {
     await syncProject(await project());
-    await writeFile(join(app, "components/ui/badge.tsx"), `${await read("components/ui/badge.tsx")}// tweak\n`);
+    await writeFile(join(app, "components/ui/card.tsx"), `${await read("components/ui/card.tsx")}// tweak\n`);
     const { actions } = await syncProject(await project());
-    expect(actionFor(actions, "components/ui/badge.tsx")).toBe("kept-local");
+    expect(actionFor(actions, "components/ui/card.tsx")).toBe("kept-local");
   });
 
   test("an edited generated file fails the lock check and is regenerated by the next sync", async () => {
@@ -155,35 +159,50 @@ test("mergeThreeWay reports clean merges and counts conflicts", async () => {
   expect((await mergeThreeWay("a\nX\nc\n", "a\nb\nc\n", "a\nY\nc\n")).conflicts).toBe(1);
 });
 
+describe("the MCP entry", () => {
+  test("names a config kept outside the project, and finds the design repo through it", async () => {
+    const config = join(dir, "configs/app.youi.json");
+    await cp(join(app, "youi.project.json"), config);
+    await rm(join(app, "youi.project.json"));
+    const text = (await readFile(config, "utf8")).replace(/"path": "[^"]*"/, `"path": "../design"`);
+    await writeFile(config, text);
+    const external = await loadProject(app, { configPath: config });
+    expect(mcpArgs(external).slice(1)).toEqual(["mcp", "--project", ".", "--config", "../configs/app.youi.json"]);
+    const server = mcpArgs(external);
+    const reloaded = await loadProject(app, { configPath: resolve(app, server[server.indexOf("--config") + 1]!) });
+    expect(reloaded.repo.root).toBe(design);
+  });
+});
+
 describe("review regressions", () => {
-  const upstreamBadge = (): string => join(design, "components/badge/badge.tsx");
+  const upstreamCard = (): string => join(design, "components/card/card.tsx");
 
   test("local edits survive later syncs: kept as drift, then merged when upstream changes", async () => {
     await syncProject(await project());
-    await writeFile(join(app, "components/ui/badge.tsx"), `${await read("components/ui/badge.tsx")}// our tweak\n`);
-    expect(actionFor((await syncProject(await project())).actions, "components/ui/badge.tsx")).toBe("kept-local");
-    const upstream = (await readFile(upstreamBadge(), "utf8")).replace("/** shadcn/ui Badge (MIT): status tones from the shared palette. */", "/** Badge: status chips. */");
-    await writeFile(upstreamBadge(), upstream);
+    await writeFile(join(app, "components/ui/card.tsx"), `${await read("components/ui/card.tsx")}// our tweak\n`);
+    expect(actionFor((await syncProject(await project())).actions, "components/ui/card.tsx")).toBe("kept-local");
+    const upstream = (await readFile(upstreamCard(), "utf8")).replace("/** Demo Card: a container for one subject, and its parts. */", "/** Card: one subject. */");
+    await writeFile(upstreamCard(), upstream);
     const { actions } = await syncProject(await project());
-    expect(actionFor(actions, "components/ui/badge.tsx")).toBe("merged");
-    const merged = await read("components/ui/badge.tsx");
+    expect(actionFor(actions, "components/ui/card.tsx")).toBe("merged");
+    const merged = await read("components/ui/card.tsx");
     expect(merged).toContain("// our tweak");
-    expect(merged).toContain("/** Badge: status chips. */");
-    expect((await verifyLock(await project()))?.map((i) => `${i.file} ${i.severity}`)).toEqual(["components/ui/badge.tsx warn"]);
+    expect(merged).toContain("/** Card: one subject. */");
+    expect((await verifyLock(await project()))?.map((i) => `${i.file} ${i.severity}`)).toEqual(["components/ui/card.tsx warn"]);
     // A third sync with nothing new keeps the edit too.
-    expect(actionFor((await syncProject(await project())).actions, "components/ui/badge.tsx")).toBe("kept-local");
-    expect(await read("components/ui/badge.tsx")).toContain("// our tweak");
+    expect(actionFor((await syncProject(await project())).actions, "components/ui/card.tsx")).toBe("kept-local");
+    expect(await read("components/ui/card.tsx")).toContain("// our tweak");
   });
 
   test("a resolved conflict is recorded with --adopt and then merges normally", async () => {
     await syncProject(await project());
-    const original = await read("components/ui/badge.tsx");
-    const line = "/** shadcn/ui Badge (MIT): status tones from the shared palette. */";
-    await writeFile(join(app, "components/ui/badge.tsx"), original.replace(line, "/** Ours. */"));
-    await writeFile(upstreamBadge(), original.replace(line, "/** Theirs. */"));
-    expect(actionFor((await syncProject(await project())).actions, "components/ui/badge.tsx")).toBe("conflict");
-    expect(actionFor((await syncProject(await project(), { adopt: true })).actions, "components/ui/badge.tsx")).toBe("kept-local");
-    expect(actionFor((await syncProject(await project())).actions, "components/ui/badge.tsx")).toBe("kept-local");
-    expect(await read("components/ui/badge.tsx")).toContain("/** Ours. */");
+    const original = await read("components/ui/card.tsx");
+    const line = "/** Demo Card: a container for one subject, and its parts. */";
+    await writeFile(join(app, "components/ui/card.tsx"), original.replace(line, "/** Ours. */"));
+    await writeFile(upstreamCard(), original.replace(line, "/** Theirs. */"));
+    expect(actionFor((await syncProject(await project())).actions, "components/ui/card.tsx")).toBe("conflict");
+    expect(actionFor((await syncProject(await project(), { adopt: true })).actions, "components/ui/card.tsx")).toBe("kept-local");
+    expect(actionFor((await syncProject(await project())).actions, "components/ui/card.tsx")).toBe("kept-local");
+    expect(await read("components/ui/card.tsx")).toContain("/** Ours. */");
   });
 });

@@ -1,0 +1,29 @@
+$schema: ../../../schema/youi.rule.schema.json
+schema: youi.rule/v1
+id: youi:demo/rule/components.no-native-controls
+title: Use the owned controls, not native elements
+severity: warn
+statement: Outside the components directory, render Button and Input instead of styling <button> and <input> by hand.
+rationale: Hand-styled controls skip the system's focus ring, disabled state and scheme, and they are invisible to the usage map.
+agent: Use <Button> and <Input> from the components directory; never style a native <button> or <input> yourself.
+check:
+  engine: youi
+  id: native-element
+  options:
+    elements:
+      button: youi:demo/component/button
+      input: youi:demo/component/input
+    allowInputTypes:
+      - hidden
+      - checkbox
+      - radio
+      - file
+      - range
+      - color
+files:
+  - "**/*.tsx"
+examples:
+  bad:
+    - <button className="rounded-lg bg-indigo-600 px-3 text-white">Save</button>
+  good:
+    - <Button>Save</Button>

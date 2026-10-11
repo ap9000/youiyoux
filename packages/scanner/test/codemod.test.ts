@@ -6,13 +6,13 @@ import { afterEach, describe, expect, test } from "vitest";
 import { loadProject, planChange, runMigration, scanProject, verifyRewrite } from "../src/index.ts";
 
 const FIXTURE = join(import.meta.dirname, "fixtures/expo-app");
-const REPO = join(import.meta.dirname, "../../..");
+const DEMO = join(import.meta.dirname, "../../../examples/demo-design");
 
 /** variant → tone, and two values renamed: the shape of a real api-breaking Button change. */
 const migration = MigrationSpec.parse({
   schema: "youi.migration/v1",
-  id: "youi:signal/migration/button-2.0.0",
-  element: "youi:signal/component/button",
+  id: "youi:demo/migration/button-2.0.0",
+  element: "youi:demo/component/button",
   from: "1.x",
   to: "2.0.0",
   changes: [{ renameProp: { from: "variant", to: "tone" } }, { mapValues: { prop: "tone", map: { outline: "secondary", primary: "default" } } }],
@@ -27,7 +27,7 @@ async function copyOfFixture(): Promise<string> {
   await rm(join(dir, "app/broken.tsx"));
   return dir;
 }
-const load = (root: string) => loadProject(root, { designRoot: REPO });
+const load = (root: string) => loadProject(root, { designRoot: DEMO });
 
 afterEach(async () => {
   await Promise.all(temps.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
@@ -122,8 +122,10 @@ describe("planChange", () => {
     expect(additive).toMatchObject({ class: "api-additive", semver: "minor" });
     const docs = await planChange(project, scan, { element: "button", patch: { summary: "Every act a person can take." } });
     expect(docs).toMatchObject({ class: "docs", semver: "patch" });
-    const removal = await planChange(project, scan, { element: "button", patch: { props: { asChild: null } } });
-    expect(removal).toMatchObject({ class: "api-breaking", reasons: ["prop asChild removed"] });
+    // By display name too, for an element that is not the first in the system.
+    expect(await planChange(project, scan, { element: "Input", patch: { summary: "A single-line field." } })).toMatchObject({ target: "youi:demo/component/input", class: "docs" });
+    const removal = await planChange(project, scan, { element: "button", patch: { props: { disabled: null } } });
+    expect(removal).toMatchObject({ class: "api-breaking", reasons: ["prop disabled removed"] });
   });
 
   test("a token change reaches the components bound to it and their screens", async () => {

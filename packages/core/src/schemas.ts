@@ -105,7 +105,7 @@ export const ProjectConfig = z.object({
   schema: z.literal("youi.project/v1"),
   id: z.string().regex(/^[a-z][a-z0-9-]*$/),
   system: z.string(),
-  /** Path to the design-language definitions repo, relative to the project root or absolute. */
+  /** Path to the design repo checkout (the directory holding youi.config.json), relative to the project root or absolute. */
   source: z.object({ path: z.string().min(1) }),
   tsconfig: RelPath.default("tsconfig.json"),
   include: z.array(z.string()).min(1),

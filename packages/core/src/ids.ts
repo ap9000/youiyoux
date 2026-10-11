@@ -1,4 +1,4 @@
-/** Element identity: `youi:<system>/<kind>/<name>`, e.g. `youi:signal/component/button`. */
+/** Element identity: `youi:<system>/<kind>/<name>`, e.g. `youi:demo/component/button`. */
 import { z } from "zod";
 
 export const ELEMENT_KINDS = ["token", "component", "rule", "migration"] as const;

@@ -33,7 +33,7 @@ export function tokenHref(path: string): string {
   return `/tokens/${path}`;
 }
 
-/** `youi:signal/token/color.ink` → `color.ink`; the readable tail of any id. */
+/** `youi:demo/token/color.accent` → `color.accent`; the readable tail of any id. */
 export function shortName(id: ElementId): string {
   return parseId(id)?.name ?? id;
 }

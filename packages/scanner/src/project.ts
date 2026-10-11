@@ -10,6 +10,10 @@ export interface Project {
   readonly config: ProjectConfig;
   readonly repo: DesignRepo;
   readonly system: LoadedSystem;
+  /** Absolute path of the config this project was loaded from (it may live outside the project, e.g. in a design repo). */
+  readonly configFile?: string;
+  /** True when the design repo came from an explicit override rather than the config's source.path. */
+  readonly designOverride?: boolean;
 }
 
 export interface LoadProjectOptions {
@@ -29,5 +33,5 @@ export async function loadProject(root: string, options: LoadProjectOptions = {}
       ? config.source.path
       : resolve(options.configPath ? dirname(configFile) : absoluteRoot, config.source.path);
   const repo = await loadDesignRepo(designRoot);
-  return { root: absoluteRoot, config, repo, system: getSystem(repo, config.system) };
+  return { root: absoluteRoot, config, repo, system: getSystem(repo, config.system), configFile, designOverride: Boolean(options.designRoot) };
 }

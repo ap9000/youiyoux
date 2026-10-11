@@ -1,0 +1,19 @@
+$schema: ../../../schema/youi.rule.schema.json
+schema: youi.rule/v1
+id: youi:demo/rule/components.canonical-import
+title: Render the design-system component, not a lookalike
+severity: error
+statement: A component named like a design-system element (Button, Input, Card) must resolve to the owned implementation in the components directory. A second implementation with the same name splits the system in two.
+rationale: "Two Buttons drift apart: a fix to one never reaches the other, and the usage map cannot tell a reader which Button a screen shows."
+agent: Import components only from the owned components directory; never define or import another Button, Input or Card.
+check:
+  engine: youi
+  id: lookalike-component
+  options: {}
+files:
+  - "**/*.tsx"
+examples:
+  bad:
+    - import { Button } from "./legacy/button"; // a second Button implementation
+  good:
+    - import { Button } from "@/components/ui";

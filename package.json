@@ -2,7 +2,7 @@
   "name": "youiyoux",
   "version": "0.1.0",
   "private": true,
-  "description": "YouIyouX: the company design language. Definitions (DTCG tokens, youi.component/v1 contracts, rules, migrations) plus the youi CLI, scanner and MCP server.",
+  "description": "YouIyouX: design-language tooling. The youi CLI, scanner, MCP server and hub; design systems live in their own repos.",
   "type": "module",
   "packageManager": "pnpm@10.13.1",
   "engines": {

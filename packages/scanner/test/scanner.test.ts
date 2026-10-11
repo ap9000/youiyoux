@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, test } from "vitest";
 import { expoRoute, loadProject, scanProject, type ScanResult } from "../src/index.ts";
 
 const FIXTURE = join(import.meta.dirname, "fixtures/expo-app");
-const BUTTON = "youi:signal/component/button";
+const BUTTON = "youi:demo/component/button";
 
 let result: ScanResult;
 beforeAll(async () => {
@@ -12,7 +12,7 @@ beforeAll(async () => {
 });
 
 const sites = (element: string) => result.report.usages.filter((u) => u.element === element).map((u) => `${u.file}:${u.line}`);
-const rule = (slug: string) => result.report.violations.filter((v) => v.rule === `youi:signal/rule/${slug}`).map((v) => `${v.file}:${v.line}`);
+const rule = (slug: string) => result.report.violations.filter((v) => v.rule === `youi:demo/rule/${slug}`).map((v) => `${v.file}:${v.line}`);
 
 describe("usage map", () => {
   test("report validates against the published youi.usage/v1 schema", () => {
@@ -37,7 +37,7 @@ describe("usage map", () => {
   });
 
   test("records sub-parts and variants functions under their element", () => {
-    const card = result.report.usages.filter((u) => u.element === "youi:signal/component/card").map((u) => u.export);
+    const card = result.report.usages.filter((u) => u.element === "youi:demo/component/card").map((u) => u.export);
     expect(card).toEqual(["Card", "CardHeader"]);
     const variants = result.report.usages.find((u) => u.kind === "variants");
     expect(variants).toMatchObject({ export: "buttonVariants", props: { variant: { literal: "link" } } });
@@ -95,8 +95,8 @@ describe("checks", () => {
 
   test("raw colours are found in class names, style objects and stylesheets, with exact-value token candidates", () => {
     expect(rule("color.no-raw-color")).toEqual(["app/(tabs)/index.tsx:7", "app/(tabs)/index.tsx:8", "styles/app.css:1", "styles/tokens.css:2"]);
-    const danger = result.report.violations.find((v) => v.text === "#c4320a");
-    expect(danger?.suggestion).toContain("var(--so-danger)");
+    const danger = result.report.violations.find((v) => v.text === "#c62828");
+    expect(danger?.suggestion).toContain("var(--demo-color-danger)");
   });
 
   test("an issue number in prose is not a colour", () => {
@@ -109,7 +109,7 @@ describe("checks", () => {
 
   test("arbitrary values that copy a token suggest its utility", () => {
     const arbitrary = result.report.violations.find((v) => v.rule.endsWith("tokens.no-arbitrary-values"));
-    expect(arbitrary).toMatchObject({ text: "rounded-[10px]", suggestion: "rounded-card" });
+    expect(arbitrary).toMatchObject({ text: "rounded-[12px]", suggestion: "rounded-card" });
   });
 
   test("native controls outside the owned directory are flagged; hidden inputs are allowed", () => {
