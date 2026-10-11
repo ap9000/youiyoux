@@ -8,32 +8,44 @@
   "initial": {
     "boundary": "first route: index.html + entry JS/CSS + modulepreloads + manifest + catalog + Latin font files (woff2 as is, the rest gzip -9)",
     "htmlKbGzip": 0.6,
-    "jsKbGzip": 81.8,
+    "jsKbGzip": 82.4,
     "cssKbGzip": 8.4,
-    "snapshotKbGzip": 23,
+    "snapshotKbGzip": 6.6,
     "fontsKb": 29.2,
-    "totalKb": 143.1,
+    "totalKb": 127.3,
     "withinBudget": true,
     "assets": [
       {
-        "file": "assets/main-Ch8xcEY-.js",
-        "kbGzip": 11.3
+        "file": "assets/main-CcuR44HL.js",
+        "kbGzip": 11.9
       },
       {
         "file": "assets/react-yIOJJ3r4.js",
         "kbGzip": 3.2
       },
       {
-        "file": "assets/dist-COJrK_MW.js",
-        "kbGzip": 66.1
+        "file": "assets/jsx-runtime-4pWJuFt2.js",
+        "kbGzip": 64
       },
       {
-        "file": "assets/Kbd-D0EWP0GD.js",
+        "file": "assets/createLucideIcon-B35133ZF.js",
+        "kbGzip": 1.4
+      },
+      {
+        "file": "assets/clsx-DB0hHKMi.js",
+        "kbGzip": 0.2
+      },
+      {
+        "file": "assets/Kbd-CowQYnn0.js",
         "kbGzip": 0.8
       },
       {
-        "file": "assets/monitor-DgKqmxlH.js",
+        "file": "assets/monitor-BgfZwRa_.js",
         "kbGzip": 0.5
+      },
+      {
+        "file": "assets/dist-BogNzeK9.js",
+        "kbGzip": 0.4
       },
       {
         "file": "assets/main-DkI_p_0q.css",
@@ -52,37 +64,32 @@
     ]
   },
   "later": {
-    "usageMapsKbGzip": 16.8,
+    "usageMapsKbGzip": 1.6,
     "note": "Usage maps load after first paint (idle) or when a usage view opens; route chunks preload on hover, focus and idle."
   },
   "chunks": [
     {
-      "file": "assets/dist-COJrK_MW.js",
-      "kbRaw": 212.7,
-      "kbGzip": 66.1
+      "file": "assets/jsx-runtime-4pWJuFt2.js",
+      "kbRaw": 207.3,
+      "kbGzip": 64
     },
     {
-      "file": "assets/preview-DnwgL4F7.js",
-      "kbRaw": 43.6,
-      "kbGzip": 13.6
+      "file": "assets/CatalogScreen-B_UJIVg3.js",
+      "kbRaw": 49.2,
+      "kbGzip": 15.1
     },
     {
-      "file": "assets/SearchField-cCjVHdJ9.js",
-      "kbRaw": 39,
-      "kbGzip": 12.3
+      "file": "assets/SearchField-C6zBBWqD.js",
+      "kbRaw": 39.2,
+      "kbGzip": 12.4
     },
     {
-      "file": "assets/main-Ch8xcEY-.js",
-      "kbRaw": 29.5,
-      "kbGzip": 11.3
+      "file": "assets/main-CcuR44HL.js",
+      "kbRaw": 31.1,
+      "kbGzip": 11.9
     },
     {
-      "file": "assets/CatalogScreen-Bly5AHad.js",
-      "kbRaw": 35.9,
-      "kbGzip": 10.7
-    },
-    {
-      "file": "assets/dist-CaTTiKnc.js",
+      "file": "assets/dist-D4nlK1iS.js",
       "kbRaw": 26.1,
       "kbGzip": 9
     },
@@ -92,7 +99,12 @@
       "kbGzip": 8.4
     },
     {
-      "file": "assets/CommandPalette-E0iyGkES.js",
+      "file": "assets/utils-BoaXfs8y.js",
+      "kbRaw": 26.6,
+      "kbGzip": 8.3
+    },
+    {
+      "file": "assets/CommandPalette-DnhkQmaE.js",
       "kbRaw": 18.3,
       "kbGzip": 7
     },
@@ -107,14 +119,9 @@
       "kbGzip": 5.7
     },
     {
-      "file": "assets/preview-DYpvHwlc.css",
-      "kbRaw": 21.5,
-      "kbGzip": 5.1
-    },
-    {
-      "file": "assets/dist-CimsjiMK.js",
-      "kbRaw": 13.3,
-      "kbGzip": 4.8
+      "file": "assets/preview-CYW7OJxl.css",
+      "kbRaw": 14.7,
+      "kbGzip": 3.8
     },
     {
       "file": "assets/react-yIOJJ3r4.js",
@@ -122,91 +129,126 @@
       "kbGzip": 3.2
     },
     {
-      "file": "assets/dist-CaVhM7XA.js",
-      "kbRaw": 7.8,
+      "file": "assets/dist-YIEUeHjT.js",
+      "kbRaw": 7.9,
       "kbGzip": 3
     },
     {
-      "file": "assets/StubScreens-BaeGaQFh.js",
+      "file": "assets/StubScreens-4peQwUTo.js",
       "kbRaw": 5.7,
-      "kbGzip": 2.3
+      "kbGzip": 2.4
     },
     {
-      "file": "assets/TokensScreen-QJtc61fD.js",
+      "file": "assets/TokensScreen-D_PU1nBB.js",
       "kbRaw": 5,
       "kbGzip": 2.3
     },
     {
-      "file": "assets/HomeScreen-kuO7Tcwa.js",
+      "file": "assets/HomeScreen--rMLadsW.js",
       "kbRaw": 6.4,
       "kbGzip": 2.2
     },
     {
-      "file": "assets/KindIcon-BOeLMMCa.js",
+      "file": "assets/createLucideIcon-B35133ZF.js",
       "kbRaw": 3,
-      "kbGzip": 1.3
+      "kbGzip": 1.4
     },
     {
-      "file": "assets/client-DGxN_Ai8.js",
+      "file": "assets/KindIcon-ChGXiKZQ.js",
+      "kbRaw": 3.1,
+      "kbGzip": 1.4
+    },
+    {
+      "file": "assets/preview-Cd02I_m0.js",
+      "kbRaw": 2.6,
+      "kbGzip": 1.2
+    },
+    {
+      "file": "assets/client-B1zUH5b5.js",
       "kbRaw": 2.1,
       "kbGzip": 1.1
     },
     {
-      "file": "assets/Kbd-D0EWP0GD.js",
+      "file": "assets/Kbd-CowQYnn0.js",
       "kbRaw": 1.8,
       "kbGzip": 0.8
     },
     {
-      "file": "assets/CheatSheet-D-pemP99.js",
+      "file": "assets/button.demo-B1YAOVWh.js",
+      "kbRaw": 2,
+      "kbGzip": 0.8
+    },
+    {
+      "file": "assets/CheatSheet-wZdbwv1t.js",
       "kbRaw": 1.5,
       "kbGzip": 0.7
     },
     {
-      "file": "assets/Section-CbO8oQGR.js",
+      "file": "assets/input.demo-BwoYDUb4.js",
+      "kbRaw": 1.6,
+      "kbGzip": 0.6
+    },
+    {
+      "file": "assets/Section-DmMl8Wzp.js",
       "kbRaw": 1.4,
       "kbGzip": 0.6
     },
     {
-      "file": "assets/Badge-CiDS97Rv.js",
+      "file": "assets/button-C_hoB35B.js",
+      "kbRaw": 1.1,
+      "kbGzip": 0.6
+    },
+    {
+      "file": "assets/Badge-DO0HpM5e.js",
+      "kbRaw": 1,
+      "kbGzip": 0.5
+    },
+    {
+      "file": "assets/card.demo-C6y5uKhP.js",
+      "kbRaw": 1.2,
+      "kbGzip": 0.5
+    },
+    {
+      "file": "assets/monitor-BgfZwRa_.js",
       "kbRaw": 0.9,
       "kbGzip": 0.5
     },
     {
-      "file": "assets/monitor-DgKqmxlH.js",
-      "kbRaw": 0.9,
-      "kbGzip": 0.5
+      "file": "assets/dist-BogNzeK9.js",
+      "kbRaw": 0.6,
+      "kbGzip": 0.4
     },
     {
-      "file": "assets/arrow-right-pWblC20A.js",
+      "file": "assets/clsx-DB0hHKMi.js",
+      "kbRaw": 0.4,
+      "kbGzip": 0.2
+    },
+    {
+      "file": "assets/arrow-right-COhnRnIN.js",
       "kbRaw": 0.2,
       "kbGzip": 0.2
     },
     {
-      "file": "assets/x-DUcfmsaW.js",
+      "file": "assets/x-D_L2uCEz.js",
       "kbRaw": 0.2,
-      "kbGzip": 0.2
-    },
-    {
-      "file": "assets/check-DmtuQKoY.js",
-      "kbRaw": 0.1,
       "kbGzip": 0.2
     }
   ],
   "search": {
-    "signal": {
-      "docs": 89,
-      "indexMs": 4.7,
-      "p50": 0.013,
-      "p95": 0.045,
-      "max": 0.39
+    "system": {
+      "docs": 28,
+      "indexMs": 2,
+      "p50": 0.015,
+      "p95": 0.025,
+      "max": 0.307
     },
     "scaled": {
       "factor": 50,
-      "docs": 4450,
-      "indexMs": 79.5,
-      "p50": 0.211,
-      "p95": 0.704,
-      "max": 1.947
+      "docs": 1400,
+      "indexMs": 26.4,
+      "p50": 0.149,
+      "p95": 0.458,
+      "max": 24.936
     }
   }
 }
