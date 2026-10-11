@@ -11,7 +11,7 @@ import type { Model } from "../../data/model.ts";
 import { screenHref, screensOf, screensOfElement } from "../../data/screens.ts";
 import { retryUsage, type Resource } from "../../data/store.ts";
 import type { ComponentContract } from "../../data/types.ts";
-import { DYNAMIC, elementIssues, EVERY_SCREEN, filterSites, groupByScreen, propDistribution, type PropFilters, type Site, summarize, UNROUTED, UNSET, type UsageIndex } from "../../data/usage.ts";
+import { elementIssues, enumDefault, EVERY_SCREEN, filterSites, groupByScreen, propDistribution, type PropFilters, type Site, summarize, UNROUTED, type UsageIndex, valueLabel } from "../../data/usage.ts";
 import { Badge } from "../../ui/Badge.tsx";
 import { EmptyState } from "../../ui/EmptyState.tsx";
 import { ResourceState } from "../../ui/Pane.tsx";
@@ -29,8 +29,6 @@ const ROUTE_SOURCE: Record<Site["routeSource"], string> = {
   shell: "app shell",
   unrouted: "not on a screen",
 };
-
-const filterLabel = (value: string): string => (value === UNSET ? "not set" : value === DYNAMIC ? "computed" : value);
 
 function ScreenGroups({ sites, contract, showAll }: { sites: readonly Site[]; contract: ComponentContract; showAll: boolean }) {
   const groups = useMemo(() => groupByScreen(sites), [sites]);
@@ -134,8 +132,6 @@ function Usage({ model, contract, index }: { model: Model; contract: ComponentCo
   const listRef = useRef<HTMLElement>(null);
   const summary = summarize(all);
   const report = index.reports[0];
-  const mainSpec = issues.unset ? contract.props[issues.unset.prop] : undefined;
-  const fallback = mainSpec && "default" in mainSpec && mainSpec.default !== undefined ? String(mainSpec.default) : undefined;
 
   const toggle = (prop: string, value: string): void => {
     setView("sites");
@@ -175,8 +171,8 @@ function Usage({ model, contract, index }: { model: Model; contract: ComponentCo
             </Badge>
           )}
         </p>
-        <IssueList issues={issues} name={contract.name} fallback={fallback} onShow={show} />
-        <Distribution distribution={distribution} filters={filters} onToggle={toggle} />
+        <IssueList issues={issues} name={contract.name} onShow={show} />
+        <Distribution contract={contract} distribution={distribution} filters={filters} onToggle={toggle} />
         <TopScreens list={onScreens} scheme={scheme} />
 
         <section ref={listRef} aria-labelledby="usage-sites" className="scroll-mt-4 space-y-3">
@@ -198,8 +194,8 @@ function Usage({ model, contract, index }: { model: Model; contract: ComponentCo
             )}
             {view === "sites" &&
               active.map(([prop, value]) => (
-                <button key={prop} type="button" onClick={() => toggle(prop, value)} className="inline-flex h-6 items-center gap-1 rounded-sm bg-accent-soft px-2 text-small text-accent hover:bg-accent-soft/70" aria-label={`Remove filter ${prop} ${filterLabel(value)}`}>
-                  <span className="font-mono">{prop}</span> {filterLabel(value)} <X className="size-3" />
+                <button key={prop} type="button" onClick={() => toggle(prop, value)} className="inline-flex h-6 items-center gap-1 rounded-sm bg-accent-soft px-2 text-small text-accent hover:bg-accent-soft/70" aria-label={`Remove filter ${prop} ${valueLabel(value, enumDefault(contract, prop))}`}>
+                  <span className="font-mono">{prop}</span> {valueLabel(value, enumDefault(contract, prop))} <X className="size-3" />
                 </button>
               ))}
             {view === "sites" && (

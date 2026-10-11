@@ -73,6 +73,18 @@ export function summarize(sites: readonly Site[]): UsageSummary {
 export const DYNAMIC = "dynamic";
 export const UNSET = "unset";
 
+/** The default the contract gives an enum prop, if any. */
+export function enumDefault(contract: ComponentContract, prop: string): string | undefined {
+  const spec = contract.props[prop];
+  return spec?.type === "enum" ? spec.default : undefined;
+}
+
+/** How a filterable value reads: an unset prop shows its default when the contract has one. */
+export function valueLabel(value: string, fallback: string | undefined): string {
+  if (value === UNSET) return fallback ? `${fallback} (implicit)` : "not set";
+  return value === DYNAMIC ? "computed" : value;
+}
+
 /** The value a site passes for `prop`, as a filterable label. */
 export function propLabel(value: PropValue | undefined): string {
   if (value === undefined) return UNSET;
@@ -148,7 +160,7 @@ export interface ElementIssues {
   readonly lookalikes: number;
   /** Sites the scanner could not resolve that might be the element. */
   readonly unresolved: number;
-  /** Render sites that leave the element's main choice (its first enum prop, e.g. variant) unset. */
+  /** Render sites that leave the element's main choice (its first enum prop, e.g. variant) unset when the contract gives it no default. */
   readonly unset: { readonly prop: string; readonly count: number } | null;
   readonly total: number;
 }
@@ -162,7 +174,8 @@ export function mainChoice(contract: ComponentContract): string | null {
 export function elementIssues(index: UsageIndex, contract: ComponentContract): ElementIssues {
   const lookalikes = index.lookalikesByElement.get(contract.id)?.length ?? 0;
   const unresolved = index.unknownsByCandidate.get(contract.id)?.length ?? 0;
-  const prop = mainChoice(contract);
+  const main = mainChoice(contract);
+  const prop = main && enumDefault(contract, main) === undefined ? main : null;
   const count = prop ? (index.sitesByElement.get(contract.id) ?? []).filter((s) => s.kind === "render" && s.props[prop] === undefined).length : 0;
   const unset = prop && count > 0 ? { prop, count } : null;
   return { lookalikes, unresolved, unset, total: lookalikes + unresolved + count };

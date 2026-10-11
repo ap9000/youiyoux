@@ -8,7 +8,8 @@ import { useState } from "react";
 import { Link } from "wouter";
 import type { Scheme } from "../../app/theme.tsx";
 import { type ElementScreen, routeLabel, screenHref } from "../../data/screens.ts";
-import { DYNAMIC, type ElementIssues, type PropFilters, UNSET, type ValueCount } from "../../data/usage.ts";
+import type { ComponentContract } from "../../data/types.ts";
+import { DYNAMIC, type ElementIssues, enumDefault, type PropFilters, UNSET, type ValueCount, valueLabel } from "../../data/usage.ts";
 import { ScreenImage } from "../../ui/ScreenImage.tsx";
 import { Section } from "../../ui/Section.tsx";
 
@@ -40,7 +41,7 @@ function IssueRow({ icon: Icon, count, title, body, onShow }: IssueRowProps) {
   );
 }
 
-export function IssueList({ issues, name, fallback, onShow }: { issues: ElementIssues; name: string; fallback: string | undefined; onShow: (request: ShowRequest) => void }) {
+export function IssueList({ issues, name, onShow }: { issues: ElementIssues; name: string; onShow: (request: ShowRequest) => void }) {
   if (issues.total === 0) return null;
   const { unset } = issues;
   return (
@@ -60,7 +61,7 @@ export function IssueList({ issues, name, fallback, onShow }: { issues: ElementI
             icon={SquareDashed}
             count={unset.count}
             title={`${unset.count === 1 ? "site doesn't" : "sites don't"} set ${unset.prop}`}
-            body={`They get the default ${unset.prop}${fallback && fallback !== "default" ? `, ${fallback}` : ""}. Worth checking that each one means it.`}
+            body={`The contract gives ${unset.prop} no default, so these render without one. Worth checking that each one means it.`}
             onShow={() => onShow({ filter: [unset.prop, UNSET] })}
           />
         )}
@@ -78,9 +79,7 @@ export function IssueList({ issues, name, fallback, onShow }: { issues: ElementI
   );
 }
 
-const valueLabel = (value: string): string => (value === UNSET ? "not set" : value === DYNAMIC ? "computed" : value);
-
-function PropBars({ prop, counts, active, onToggle }: { prop: string; counts: readonly ValueCount[]; active: string | undefined; onToggle: (value: string) => void }) {
+function PropBars({ prop, fallback, counts, active, onToggle }: { prop: string; fallback: string | undefined; counts: readonly ValueCount[]; active: string | undefined; onToggle: (value: string) => void }) {
   const [showUnused, setShowUnused] = useState(false);
   const total = counts.reduce((sum, c) => sum + c.count, 0);
   const max = Math.max(1, ...counts.map((c) => c.count));
@@ -101,14 +100,14 @@ function PropBars({ prop, counts, active, onToggle }: { prop: string; counts: re
                 aria-pressed={selected}
                 disabled={count === 0}
                 onClick={() => onToggle(value)}
-                aria-label={`${prop} ${valueLabel(value)}: ${count} ${count === 1 ? "site" : "sites"}`}
+                aria-label={`${prop} ${valueLabel(value, fallback)}: ${count} ${count === 1 ? "site" : "sites"}`}
                 title={count === 0 ? "No site uses this value" : `${Math.round((count / total) * 100)}% of sites. Click to filter the list.`}
                 className={clsx(
                   "grid w-full grid-cols-[6.5rem_1fr_2.5rem] items-center gap-2.5 rounded-sm px-1.5 py-1 text-left transition-colors duration-100 disabled:cursor-default",
                   selected ? "bg-accent-soft" : "enabled:hover:bg-raised",
                 )}
               >
-                <span className={clsx("truncate text-small", special ? "text-muted italic" : "font-mono text-ink-2", count === 0 && "text-faint")}>{valueLabel(value)}</span>
+                <span className={clsx("truncate text-small", special ? "text-muted italic" : "font-mono text-ink-2", count === 0 && "text-faint")}>{valueLabel(value, fallback)}</span>
                 <span className="h-1.5 overflow-hidden rounded-full bg-neutral-soft">
                   <span className={clsx("block h-full rounded-full", selected ? "bg-accent" : special ? "bg-line-strong" : "bg-ink-2")} style={{ width: `${(count / max) * 100}%` }} />
                 </span>
@@ -127,13 +126,13 @@ function PropBars({ prop, counts, active, onToggle }: { prop: string; counts: re
   );
 }
 
-export function Distribution({ distribution, filters, onToggle }: { distribution: ReadonlyMap<string, readonly ValueCount[]>; filters: PropFilters; onToggle: (prop: string, value: string) => void }) {
+export function Distribution({ contract, distribution, filters, onToggle }: { contract: ComponentContract; distribution: ReadonlyMap<string, readonly ValueCount[]>; filters: PropFilters; onToggle: (prop: string, value: string) => void }) {
   if (distribution.size === 0) return null;
   return (
     <Section title="How it's used" aside={<span className="text-small text-muted max-sm:hidden">Click a value to filter the sites</span>}>
       <div className="grid gap-x-10 gap-y-5 md:grid-cols-2">
         {[...distribution].map(([prop, counts]) => (
-          <PropBars key={prop} prop={prop} counts={counts} active={filters[prop]} onToggle={(value) => onToggle(prop, value)} />
+          <PropBars key={prop} prop={prop} fallback={enumDefault(contract, prop)} counts={counts} active={filters[prop]} onToggle={(value) => onToggle(prop, value)} />
         ))}
       </div>
     </Section>

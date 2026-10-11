@@ -107,12 +107,11 @@ describe("buildScreens", () => {
 });
 
 describe("screensOfElement", () => {
-  test("ranks an element's screens by its sites there, with the app shell last", () => {
+  test("ranks an element's routed screens by its sites there, with the app shell last and unrouted sites left out", () => {
     const list = screensOfElement(buildScreens(indexUsage([report]), manifest), BUTTON);
     expect(list.map((s) => [s.screen.route, s.sites])).toEqual([
       ["/work", 3],
       ["/review", 1],
-      [UNROUTED, 1],
       [EVERY_SCREEN, 1],
     ]);
   });

@@ -219,10 +219,11 @@ export interface ElementScreen {
   readonly sites: number;
 }
 
-/** The screens an element renders on, most sites first; the app shell goes last because it is on every screen. */
+/** The routed screens an element renders on, most sites first; the app shell goes last because it is on every screen. */
 export function screensOfElement(screens: ScreenIndex, id: ElementId): ElementScreen[] {
   return screens.screens
     .flatMap((screen): ElementScreen[] => {
+      if (screen.route === UNROUTED) return [];
       const sites = screen.elements.find((e) => e.id === id)?.sites.length ?? 0;
       return sites > 0 ? [{ screen, sites }] : [];
     })

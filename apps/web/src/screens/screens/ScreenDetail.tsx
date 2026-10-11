@@ -47,7 +47,7 @@ function ElementGroup({ model, element, scheme }: { model: Model; element: Scree
         <>
           {summary && <KindIcon element={summary} scheme={scheme} />}
           <span className="font-medium text-ink">{name}</span>
-          <span className="tabular text-small text-muted">{element.sites.length}</span>
+          {element.sites.length > 0 && <span className="tabular text-small text-muted">{element.sites.length}</span>}
           <span className="ml-auto flex items-center gap-1.5">
             {element.lookalikes.length > 0 && (
               <Badge tone="warning" className="tabular" title="Local components named like this element that resolve elsewhere">
@@ -179,7 +179,8 @@ export function ScreenDetail({ model, screens, screen }: { model: Model; screens
   const full = shotFile(screen.shot, scheme, "full");
   const ratio = shots ? shots.viewport.width / shots.viewport.height : undefined;
   const label = routeLabel(screen.route);
-  const rendered = screen.elements.filter((e) => e.sites.length > 0).length;
+  const rendered = screen.elements.filter((e) => e.sites.length > 0);
+  const suspected = screen.elements.filter((e) => e.sites.length === 0);
   const breakdown = issueBreakdown(screen.issues);
   const image = <ScreenImage shot={screen.shot} scheme={scheme} size="full" label={`${screen.project} ${label}`} {...(ratio ? { ratio } : {})} />;
 
@@ -236,19 +237,28 @@ export function ScreenDetail({ model, screens, screen }: { model: Model; screens
           <div className="space-y-2">
             <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-small text-muted">
               <span className="tabular">
-                <span className="text-heading text-ink">{rendered}</span> elements · <span className="text-ink-2">{screen.sites}</span> sites
+                <span className="text-heading text-ink">{rendered.length}</span> elements · <span className="text-ink-2">{screen.sites}</span> sites
               </span>
               <IssueBadge issues={screen.issues} />
             </p>
             {breakdown.length > 0 && <p className="tabular text-small text-muted">{breakdown.join(" · ")}, counted from the files that render on this screen.</p>}
           </div>
-          <Section title="Elements" count={screen.elements.length}>
+          <Section title="Elements" count={rendered.length}>
             <div className="rounded-md border border-line">
-              {screen.elements.map((element) => (
+              {rendered.map((element) => (
                 <ElementGroup key={element.id} model={model} element={element} scheme={hubScheme} />
               ))}
             </div>
           </Section>
+          {suspected.length > 0 && (
+            <Section title="Only lookalikes or unresolved" count={suspected.length}>
+              <div className="rounded-md border border-line">
+                {suspected.map((element) => (
+                  <ElementGroup key={element.id} model={model} element={element} scheme={hubScheme} />
+                ))}
+              </div>
+            </Section>
+          )}
           <Section title="Rule issues" count={screen.violations.length}>
             <IssueGroups model={model} screen={screen} />
           </Section>
