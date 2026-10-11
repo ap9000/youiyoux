@@ -267,13 +267,39 @@ export const Violation = Position.extend({
 });
 export type Violation = z.infer<typeof Violation>;
 
+export const RuleRun = z.object({
+  rule: ElementId,
+  /**
+   * ran: checked every file its globs match. off / advisory: not checked, by design.
+   * unsupported / error: it should have been checked but was not, so the scan is partial.
+   */
+  state: z.enum(["ran", "off", "advisory", "unsupported", "error"]),
+  reason: z.string().optional(),
+  findings: z.number().int().optional(),
+});
+export type RuleRun = z.infer<typeof RuleRun>;
+
 export const ScanReport = z.object({
   schema: z.literal("youi.usage/v1"),
   project: z.string(),
   system: z.string(),
+  /** HEAD of the project when scanned; `content` says whether the scanned files differ from it. */
   commit: z.string().nullable(),
   scanner: z.string(),
+  /** Digest of everything that decides the findings: project config, full contracts and rules, resolved tokens, scanner version. */
   configDigest: z.string(),
+  /** Exactly what was scanned: a digest of every file's path and content, and which files differ from `commit`. */
+  content: z
+    .object({
+      digest: z.string(),
+      /** Scanned files that differ from `commit` (modified, staged or untracked) or were overridden: the first 50. */
+      dirty: z.array(z.string()),
+      /** null when there is no commit to compare with. */
+      dirtyCount: z.number().int().nullable(),
+      /** Files checked from supplied text (unsaved edits, candidate code) rather than disk. */
+      overrides: z.array(z.string()),
+    })
+    .optional(),
   generatedAt: IsoTime,
   durationMs: z.number(),
   status: z.enum(["complete", "partial"]),
@@ -288,6 +314,8 @@ export const ScanReport = z.object({
   suppressed: z.number().int().default(0),
   lookalikes: z.array(Lookalike),
   violations: z.array(Violation),
+  /** How each rule was executed in this scan. Empty in scans made before rules reported it. */
+  checks: z.array(RuleRun).default([]),
 });
 export type ScanReport = z.infer<typeof ScanReport>;
 

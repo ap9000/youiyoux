@@ -5,6 +5,7 @@
  */
 import { matchesQuery, type ComponentContract, type PropValue, type ScanReport, type UsageSite } from "@youiyoux/core";
 import { cssValue } from "@youiyoux/tokens";
+import { ruleCapability } from "./capabilities.ts";
 import type { TokenIndex } from "./checks.ts";
 import type { Project } from "./project.ts";
 
@@ -228,14 +229,26 @@ export function tokenRows(project: Project, tokens: TokenIndex, group?: string, 
   return { columns: ["id", "cssVar", "light", "dark", "utility"], rows: rows.slice(0, limit), total: rows.length, truncated: rows.length > limit };
 }
 
+/**
+ * Rules for agents: what each asks and whether `youi check` actually enforces it. `off` rules are
+ * left out entirely; a check this youi cannot run says so instead of claiming enforcement.
+ */
 export function ruleRows(project: Project): Array<Record<string, unknown>> {
-  return project.system.rules.map((r) => ({
-    id: r.id,
-    title: r.title,
-    severity: r.severity,
-    enforced: r.check.engine !== "advisory",
-    do: r.agent,
-    ...(r.examples.bad.length ? { bad: r.examples.bad[0] } : {}),
-    ...(r.examples.good.length ? { good: r.examples.good[0] } : {}),
-  }));
+  return project.system.rules.flatMap((r) => {
+    const execution = ruleCapability(r);
+    if (execution.state === "off") return [];
+    return [
+      {
+        id: r.id,
+        title: r.title,
+        severity: r.severity,
+        enforced: execution.state === "enforced",
+        execution: execution.state,
+        ...(execution.state === "unsupported" ? { notChecked: execution.reason } : {}),
+        do: r.agent,
+        ...(r.examples.bad.length ? { bad: r.examples.bad[0] } : {}),
+        ...(r.examples.good.length ? { good: r.examples.good[0] } : {}),
+      },
+    ];
+  });
 }

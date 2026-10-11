@@ -5,10 +5,10 @@ import { parseArgs, type ParseArgsConfig } from "node:util";
 import { parse as parseYaml } from "yaml";
 import { DefinitionError, findFiles, getSystem, loadDesignRepo, MigrationSpec, OutputConfig, renderJsonSchemas, writeFileAtomic } from "@youiyoux/core";
 import { buildTokens, compareParity } from "@youiyoux/tokens";
-import { componentCard, findContract, loadProject, planChange, runMigration, scanProject, screenBom, whereUsed, type PlanInput, type Project } from "@youiyoux/scanner";
+import { checkCapabilities, componentCard, evaluateRule, failedChecks, findContract, loadProject, planChange, ruleCapability, runMigration, scanProject, screenBom, whereUsed, type PlanInput, type Project } from "@youiyoux/scanner";
 import { runHub } from "./hub.ts";
 import { initProject } from "./init.ts";
-import { renderBom, renderCheck, renderMigration, renderPlan, renderScan, renderShow, renderSync, renderWhere } from "./render.ts";
+import { renderBom, renderCheck, renderMigration, renderPlan, renderRulePreview, renderRules, renderScan, renderShow, renderSync, renderWhere } from "./render.ts";
 import { syncProject, verifyLock, verifyWiring } from "./sync.ts";
 import { ms, plural, style } from "./ui.ts";
 
@@ -30,6 +30,7 @@ ${style.bold("In a product repo")}
   plan <component> --patch <json|file>    classify a contract change and show its impact
   plan --token <id> [--value v]           impact of a token change
   migrate <migration.yaml> [--write] [--diff]   gated codemod; dry run unless --write
+  rules [--preview <rule.yaml>]   whether each rule is checked; preview a draft rule on the current scan
   mcp                      stdio MCP server (read tools + plan)
 
 ${style.bold("The hub")}
@@ -61,6 +62,7 @@ const OPTIONS = {
   all: { type: "boolean", default: false },
   limit: { type: "string" },
   rule: { type: "string" },
+  preview: { type: "string" },
   quiet: { type: "boolean", default: false },
   patch: { type: "string" },
   token: { type: "string" },
@@ -152,13 +154,15 @@ async function cmdCheck(values: Values, positionals: string[]): Promise<number> 
   const scanned = new Set([...report.usages.map((u) => u.file), ...report.violations.map((v) => v.file), ...(await scannedFiles(p))]);
   const unmatched = [...only].filter((f) => !scanned.has(f));
   const failedHere = report.coverage.failed.filter((f) => only.size === 0 || only.has(f.file) || !f.file.match(/\.(tsx?|css)$/));
-  const violations = report.violations.filter((v) => (only.size === 0 || only.has(v.file)) && (!values.rule || v.rule.endsWith(`/rule/${values.rule}`)) && (!values.quiet || v.severity === "error"));
+  const wantedRule = (id: string): boolean => !values.rule || id.endsWith(`/rule/${values.rule}`);
+  const violations = report.violations.filter((v) => (only.size === 0 || only.has(v.file)) && wantedRule(v.rule) && (!values.quiet || v.severity === "error"));
+  const notRun = failedChecks(report.checks).filter((c) => wantedRule(c.rule));
   const lock = await verifyLock(p);
   const lockIssues = lock === null ? null : [...lock, ...(await verifyWiring(p))];
   const errors = violations.filter((v) => v.severity === "error").length + (lockIssues ?? []).filter((i) => i.severity === "error").length;
   // A clean result only counts when everything asked about was actually checked.
-  const incomplete = unmatched.length > 0 || failedHere.length > 0;
-  if (values.json) json({ errors, incomplete, unmatched, violations, lock: lockIssues, suppressed: report.suppressed, coverage: report.coverage, status: report.status });
+  const incomplete = unmatched.length > 0 || failedHere.length > 0 || notRun.length > 0;
+  if (values.json) json({ errors, incomplete, unmatched, notRun, violations, lock: lockIssues, suppressed: report.suppressed, coverage: report.coverage, status: report.status, checks: report.checks });
   else {
     print(renderCheck(violations, lockIssues, report, report.suppressed));
     for (const file of unmatched) print(style.error(`✖ ${file} was not checked: it is not in this project's include globs (or does not exist)`));
@@ -178,6 +182,21 @@ async function cmdPlan(values: Values, positionals: string[]): Promise<number> {
   if (values.json) json(plan);
   else print(renderPlan(plan));
   return 0;
+}
+
+async function cmdRules(values: Values): Promise<number> {
+  const p = await project(values);
+  if (values.preview) {
+    const draft: unknown = parseYaml(await readFile(values.preview, "utf8"));
+    const evaluation = evaluateRule(p, await scanProject(p), draft);
+    if (values.json) json(evaluation);
+    else print(renderRulePreview(evaluation));
+    return evaluation.ok && evaluation.findings !== null ? 0 : 1;
+  }
+  const rules = p.system.rules.map((rule) => ({ rule, execution: ruleCapability(rule) }));
+  if (values.json) json({ capabilities: checkCapabilities(), rules: rules.map(({ rule, execution }) => ({ id: rule.id, severity: rule.severity, ...execution })) });
+  else print(renderRules(rules));
+  return rules.some(({ execution }) => execution.state === "unsupported") ? 1 : 0;
 }
 
 async function cmdMigrate(values: Values, positionals: string[]): Promise<number> {
@@ -272,7 +291,7 @@ async function cmdMcp(values: Values): Promise<number> {
 }
 
 const COMMANDS: Record<string, (values: Values, positionals: string[]) => Promise<number>> = {
-  init: cmdInit, sync: cmdSync, scan: cmdScan, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, plan: cmdPlan, migrate: cmdMigrate, mcp: cmdMcp, ui: cmdUi, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+  init: cmdInit, sync: cmdSync, scan: cmdScan, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, mcp: cmdMcp, ui: cmdUi, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
 
 export async function main(argv: string[]): Promise<number> {

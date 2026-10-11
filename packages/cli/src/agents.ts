@@ -8,9 +8,9 @@
  * agents, and an executable check.
  */
 import { stringify } from "yaml";
-import type { ComponentContract, RuleSpec } from "@youiyoux/core";
+import { executionLabel, type ComponentContract, type RuleSpec } from "@youiyoux/core";
 import { cssValue, type ResolvedToken, type TokenBuild } from "@youiyoux/tokens";
-import { importLine, type Project } from "@youiyoux/scanner";
+import { importLine, ruleCapability, type Project } from "@youiyoux/scanner";
 
 export const BLOCK_BEGIN = "<!-- youi:begin -->";
 export const BLOCK_END = "<!-- youi:end -->";
@@ -21,7 +21,10 @@ function generatedNote(project: Project): string {
   return `${GENERATED_MARK} from the ${s.name} design language v${s.version}. Do not edit: change the design language and run \`youi sync\`.`;
 }
 
-const enforced = (rules: readonly RuleSpec[]): RuleSpec[] => rules.filter((r) => r.severity !== "off" && r.check.engine !== "advisory");
+/** Rules `youi check` actually runs. */
+const enforced = (rules: readonly RuleSpec[]): RuleSpec[] => rules.filter((r) => ruleCapability(r).state === "enforced");
+/** Rules agents still follow though nothing checks them: advisory prose, and checks this youi cannot run. */
+const unchecked = (rules: readonly RuleSpec[]): RuleSpec[] => rules.filter((r) => ["advisory", "unsupported"].includes(ruleCapability(r).state));
 
 function enumSummary(contract: ComponentContract): string {
   return Object.entries(contract.props)
@@ -46,6 +49,7 @@ export function agentsBlock(project: Project): string {
     `- Build UI from the owned components, imported from \`${from}\`: ${names}.`,
     "- Before using a component's props, call `youi_get_component` (MCP server `youiyoux`) or run `youi show <component>`; use only the listed values.",
     ...enforced(system.rules).map((r) => `- ${r.agent}`),
+    ...unchecked(system.rules).map((r) => `- ${r.agent} (not checked by \`youi check\`: follow it yourself)`),
     `- Never edit files marked \`${GENERATED_MARK}\` (\`${config.outputs.dir}/*\`, ${config.agents.designMd}, the youiyoux skill). Change the design language and run \`youi sync\`.`,
     `- Owned component files in \`${config.componentsDir}\` may be edited; \`youi sync\` 3-way merges upstream changes into them and reports drift.`,
     "- Before you finish, run `youi check`; it must report 0 errors.",
@@ -127,7 +131,7 @@ function componentsSection(project: Project): string {
 }
 
 function rulesSection(project: Project): string {
-  const rows = project.system.rules.map((r) => `| ${r.title} | ${r.severity} | ${r.check.engine === "advisory" ? "advisory (not checked)" : "checked by `youi check`"} | ${r.statement} |`);
+  const rows = project.system.rules.filter((r) => r.severity !== "off").map((r) => `| ${r.title} | ${r.severity} | ${executionLabel(ruleCapability(r))} | ${r.statement} |`);
   return ["## Rules", "", "| Rule | Severity | Enforcement | Statement |", "| --- | --- | --- | --- |", ...rows].join("\n");
 }
 
@@ -207,7 +211,8 @@ export function skillMd(project: Project, uncontracted: readonly string[] = []):
 export function astGrepRules(project: Project): Array<{ file: string; content: string }> {
   const out: Array<{ file: string; content: string }> = [];
   const header = `# ${generatedNote(project)}\n# Portable subset: youi check also resolves imports; these run with plain \`ast-grep scan -r <file>\`.\n`;
-  for (const rule of project.system.rules) {
+  // Only rules youi check runs: an off or uncompilable rule must not keep running under plain ast-grep.
+  for (const rule of enforced(project.system.rules)) {
     if (rule.check.engine === "ast-grep") {
       out.push({ file: `${rule.id.split("/rule/")[1]}.yml`, content: header + stringify({ id: rule.id, language: rule.check.language, severity: rule.severity === "error" ? "error" : "warning", message: rule.title, note: rule.agent, rule: rule.check.rule }) });
     }

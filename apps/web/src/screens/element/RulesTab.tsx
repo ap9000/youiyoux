@@ -1,4 +1,5 @@
 /** Rules: what the component promises to obey, how each rule is checked, and where projects break it. */
+import { executionLabel, ruleExecution } from "@youiyoux/core/rules";
 import { Link } from "wouter";
 import { elementHref } from "../../data/ids.ts";
 import type { Model } from "../../data/model.ts";
@@ -8,9 +9,7 @@ import { Badge, SeverityBadge } from "../../ui/Badge.tsx";
 import { Section } from "../../ui/Section.tsx";
 
 export function checkLabel(rule: RuleSpec): string {
-  if (rule.check.engine === "youi") return `Checked by youi scan (${rule.check.id})`;
-  if (rule.check.engine === "ast-grep") return `Checked by ast-grep (${rule.check.language})`;
-  return "Advisory: shown to people and agents, not enforced";
+  return executionLabel(ruleExecution(rule));
 }
 
 export function RulesTab({ model, contract }: { model: Model; contract: ComponentContract }) {

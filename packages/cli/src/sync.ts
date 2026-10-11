@@ -6,6 +6,7 @@
  *   owned      vendored components: 3-way merged (base = what we last delivered, ours = the
  *              project's file, theirs = upstream now); conflicts never land in source
  *   lock       youi.lock.json records every file's hash, so edits show up as drift
+ *   retired    a generated file no longer produced (a rule turned off) is removed, unless edited by hand
  */
 import { execFile } from "node:child_process";
 import { lstat, mkdir, mkdtemp, readdir, readlink, rm, symlink, writeFile } from "node:fs/promises";
@@ -24,7 +25,7 @@ const CONFLICT_DIR = ".youi/conflicts";
 /** The youi CLI the project's .mcp.json runs: this tool's checkout, not the design repo. */
 const CLI_BIN = resolve(import.meta.dirname, "../bin/youi.js");
 
-export type SyncActionKind = "created" | "updated" | "unchanged" | "adopted" | "merged" | "kept-local" | "conflict" | "skipped";
+export type SyncActionKind = "created" | "updated" | "unchanged" | "adopted" | "merged" | "kept-local" | "conflict" | "skipped" | "removed";
 
 export interface SyncAction {
   readonly file: string;
@@ -152,6 +153,25 @@ class Writer {
     record("conflict", `${merged.conflicts} conflict(s): resolve ${CONFLICT_DIR}/${file} into the file, then \`youi sync --adopt\` to record it`);
   }
 
+  /**
+   * Generated files the last sync wrote that this sync no longer produces (e.g. youi-rules/x.yml for a
+   * rule now off): left behind, plain ast-grep would keep enforcing them. Removed when untouched;
+   * an edited one is reported and left for a person.
+   */
+  async retire(): Promise<void> {
+    for (const [file, entry] of Object.entries(this.previous?.files ?? {})) {
+      if (entry.kind !== "generated" || file in this.files) continue;
+      const current = await readTextOrNull(this.path(file));
+      if (current === null) continue;
+      if (sha256(current) !== entry.sha256) {
+        this.record({ file, role: "agents", action: "skipped", detail: "no longer generated, but edited by hand: remove it yourself" });
+        continue;
+      }
+      if (!this.options.dryRun) await rm(this.path(file));
+      this.record({ file, role: "agents", action: "removed", detail: "no longer generated" });
+    }
+  }
+
   async managedBlock(file: string, block: string): Promise<void> {
     const current = await readTextOrNull(this.path(file));
     const next = upsertBlock(current, block);
@@ -223,6 +243,7 @@ export async function syncProject(project: Project, options: SyncOptions = {}): 
     upstreams.set(source, upstream);
   }
   for (const [source, { elements, version }] of sources) await writer.owned(vendoredPath(project, source), upstreams.get(source)!, elements, version);
+  await writer.retire();
 
   const lock: LockFile = {
     schema: "youi.lock/v1",
