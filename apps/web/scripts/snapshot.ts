@@ -1,10 +1,14 @@
 /**
  * Builds everything the hub reads about one design system, from that system's own repo:
  *
- *   node scripts/snapshot.ts [--design <dir>] [--project <dir>] [--config <youi.project.json>] [--out <dir>] [--commit <sha>] [--watch]
+ *   node scripts/snapshot.ts [--design <dir>] [--project <dir>] [--config <youi.project.json>] [--screens <dir>] [--out <dir>] [--commit <sha>] [--watch]
  *
  * - <out>/public/data/*.json: the system catalog (tokens, contracts, rules, narrative)
  *   and the project's usage map, content-hashed so the browser can cache them forever.
+ * - <out>/public/data/<project>.screen.<hash>.webp: the project's captured screens, light and
+ *   dark, from `--screens` or `<project>/.youi/screens` (screens.json plus images, written by
+ *   scripts/capture-screens.ts). They belong to the project, like its usage map, so they never
+ *   live in this repo; a route without a picture shows an empty state.
  * - <out>/preview/: the system's owned component files and their demos (`*.demo.tsx`
  *   next to a contract in the design repo), plus system.css: the system's variables
  *   scoped to the preview frame and its Tailwind theme.
@@ -21,10 +25,12 @@
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { pathToFileURL } from "node:url";
+import { screenSlug } from "../src/data/screens.ts";
+import type { ProjectShots } from "../src/data/types.ts";
 
 const APP = resolve(import.meta.dirname, "..");
 const TOOL = resolve(APP, "../..");
@@ -168,6 +174,8 @@ async function buildHubTokens(core: CoreModule, lib: TokensModule): Promise<void
 
 interface Source {
   readonly designRoot: string;
+  /** The scanned product repo, when there is one. */
+  readonly projectDir?: string;
   readonly systemId?: string;
   readonly output: OutputConfig;
   readonly usage: ScanReport | null;
@@ -180,7 +188,7 @@ async function readSource(values: { design?: string; project?: string; config?: 
   if (projectDir) {
     const project = await scanner.loadProject(projectDir, { ...(values.config ? { configPath: values.config } : {}), ...(values.design ? { designRoot: values.design } : {}) });
     const { report } = await scanner.scanProject(project);
-    return { designRoot: project.repo.root, systemId: project.config.system, output: project.config.outputs, usage: core.ScanReport.parse(report) };
+    return { designRoot: project.repo.root, projectDir: resolve(projectDir), systemId: project.config.system, output: project.config.outputs, usage: core.ScanReport.parse(report) };
   }
   if (values.config) {
     const configFile = resolve(values.config);
@@ -206,6 +214,66 @@ function writePreview(out: string, system: LoadedSystem, componentsRoot: string)
   return demos;
 }
 
+interface ScreensFile {
+  schema: "youiyoux.screens/v1";
+  project: string;
+  source: string;
+  capturedAt: string;
+  viewport: { width: number; height: number };
+  screens: Array<{ route: string; path: string; note?: string }>;
+}
+
+function readScreensFile(dir: string, project: string): ScreensFile {
+  const path = join(dir, "screens.json");
+  const value = JSON.parse(readFileSync(path, "utf8")) as Partial<ScreensFile>;
+  const valid =
+    value.schema === "youiyoux.screens/v1" &&
+    value.project === project &&
+    typeof value.source === "string" &&
+    typeof value.capturedAt === "string" &&
+    typeof value.viewport?.width === "number" &&
+    typeof value.viewport.height === "number" &&
+    Array.isArray(value.screens) &&
+    value.screens.every((s) => typeof s.route === "string" && typeof s.path === "string");
+  if (!valid) throw new Error(`${path} is not a youiyoux.screens/v1 document for ${project}`);
+  return value as ScreensFile;
+}
+
+/** A captured image, named by its content alone (two routes showing the same page share one file); null when never captured. */
+function copyShot(dir: string, dataDir: string, project: string, slug: string, variant: string): string | null {
+  const source = join(dir, `${slug}.${variant}.webp`);
+  if (!existsSync(source)) return null;
+  const bytes = readFileSync(source);
+  const file = `${project}.screen.${createHash("sha256").update(bytes).digest("hex").slice(0, HASH_LENGTH)}.webp`;
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(join(dataDir, file), bytes);
+  return file;
+}
+
+/** The project's captured screens → the manifest's screens entry. Pictures that are missing stay missing. */
+function writeScreens(dir: string, dataDir: string, project: string): ProjectShots {
+  const file = readScreensFile(dir, project);
+  const screens = file.screens.map((screen) => {
+    const slug = screenSlug(screen.route);
+    const schemes = Object.fromEntries(
+      (["light", "dark"] as const).flatMap((scheme) => {
+        const full = copyShot(dir, dataDir, project, slug, scheme);
+        const thumb = copyShot(dir, dataDir, project, slug, `${scheme}.thumb`);
+        return full && thumb ? [[scheme, { full, thumb }]] : [];
+      }),
+    );
+    return { route: screen.route, path: screen.path, ...(screen.note ? { note: screen.note } : {}), ...schemes };
+  });
+  return { source: file.source, capturedAt: file.capturedAt, viewport: file.viewport, screens };
+}
+
+/** `--screens`, else the project's own `.youi/screens` when it has one. */
+function screensDir(explicit: string | undefined, projectDir: string | undefined): string | null {
+  if (explicit) return resolve(explicit);
+  const conventional = projectDir ? join(projectDir, ".youi/screens") : null;
+  return conventional && existsSync(join(conventional, "screens.json")) ? conventional : null;
+}
+
 function previousSystemId(dataDir: string): string | undefined {
   try {
     const manifest = JSON.parse(readFileSync(join(dataDir, "manifest.json"), "utf8")) as { systems?: { id?: string }[] };
@@ -226,7 +294,7 @@ interface Libraries {
   readonly scanner: ScannerModule;
 }
 
-type UsageRef = { project: string; file: string };
+type UsageRef = { project: string; file: string; screens?: ProjectShots };
 type Live = { generation: number; status: "complete" | "partial" | "failed"; updatedAt: string; rules?: string; message?: string };
 
 interface WrittenSystem {
@@ -270,11 +338,16 @@ async function writeSystem(out: string, designRoot: string, systemId: string | u
   return { id: config.id, catalogFile, commit, summary };
 }
 
-function writeUsage(dataDir: string, report: ScanReport): UsageRef {
+function writeUsage(dataDir: string, report: ScanReport, screens: ProjectShots | null): UsageRef {
   const text = json(report);
   const file = `${report.project}.usage.${hash(text)}.json`;
   write(join(dataDir, file), text);
-  return { project: report.project, file };
+  return { project: report.project, file, ...(screens ? { screens } : {}) };
+}
+
+/** Every data file a usage ref names: its usage map and its screenshots. */
+function usageFiles(usage: readonly UsageRef[]): string[] {
+  return usage.flatMap((u) => [u.file, ...(u.screens?.screens ?? []).flatMap((shot) => [shot.light, shot.dark].flatMap((f) => (f ? [f.full, f.thumb] : [])))]);
 }
 
 /** The manifest last: written to a temporary name and renamed, so a reader never sees half of it. */
@@ -297,7 +370,7 @@ function pruneData(dataDir: string, keep: ReadonlySet<string>): void {
  * with an atomic manifest write, which the dev server announces to the open hub. A failed
  * run keeps the last good data and marks the manifest failed.
  */
-async function watchSnapshot(values: { design?: string; project?: string; config?: string; commit?: string }, out: string, libs: Libraries): Promise<void> {
+async function watchSnapshot(values: { design?: string; project?: string; config?: string; commit?: string; screens?: string }, out: string, libs: Libraries): Promise<void> {
   const dataDir = join(out, "public/data");
   mkdirSync(dataDir, { recursive: true });
   const root = values.project ?? DEMO_PROJECT;
@@ -305,6 +378,8 @@ async function watchSnapshot(values: { design?: string; project?: string; config
   let system: WrittenSystem | null = null;
   let systemOf: ScannedProject | null = null;
   let usage: UsageRef[] = [];
+  // Screenshots are copied once: they come from a capture, not from the sources being watched.
+  let shots: ProjectShots | null | undefined;
   let previous = new Set<string>();
   const stamp = (): string => new Date().toISOString();
   const watcher = await libs.scanner.ProjectWatcher.start({
@@ -324,13 +399,20 @@ async function watchSnapshot(values: { design?: string; project?: string; config
     },
     onUpdate: (update) => {
       if (!system) return void process.stderr.write(`youi ui: ${update.status === "failed" ? update.error : "no system"}\n`);
-      if (update.status === "ok") usage = [writeUsage(dataDir, update.result.report)];
+      if (update.status === "ok") {
+        const { report } = update.result;
+        if (shots === undefined) {
+          const dir = screensDir(values.screens, resolve(root));
+          shots = dir ? writeScreens(dir, dataDir, report.project) : null;
+        }
+        usage = [writeUsage(dataDir, report, shots)];
+      }
       const live: Live =
         update.status === "ok"
           ? { generation: update.generation, status: update.result.report.status, updatedAt: stamp(), rules: update.result.rules }
           : { generation: update.generation, status: "failed", updatedAt: stamp(), message: update.error };
       writeManifest(dataDir, system, usage, live);
-      const current = new Set([system.catalogFile, ...usage.map((u) => u.file)]);
+      const current = new Set([system.catalogFile, ...usageFiles(usage)]);
       pruneData(dataDir, new Set([...current, ...previous]));
       previous = current;
       process.stdout.write(`youi ui: generation ${update.generation} ${live.status}${live.message ? `: ${live.message}` : ""}\n`);
@@ -345,7 +427,7 @@ async function watchSnapshot(values: { design?: string; project?: string; config
 }
 
 async function main(): Promise<void> {
-  const { values } = parseArgs({ options: { design: { type: "string" }, project: { type: "string" }, config: { type: "string" }, out: { type: "string" }, commit: { type: "string" }, watch: { type: "boolean", default: false } } });
+  const { values } = parseArgs({ options: { design: { type: "string" }, project: { type: "string" }, config: { type: "string" }, out: { type: "string" }, commit: { type: "string" }, screens: { type: "string" }, watch: { type: "boolean", default: false } } });
   const libs: Libraries = { core: await load<CoreModule>("core"), lib: await load<TokensModule>("tokens"), scanner: await load<ScannerModule>("scanner") };
   const out = resolve(values.out ?? DEFAULT_OUT);
   if (values.watch) {
@@ -358,10 +440,12 @@ async function main(): Promise<void> {
   rmSync(dataDir, { recursive: true, force: true });
   const system = await writeSystem(out, source.designRoot, source.systemId, source.output, values.commit, libs);
   dropPreviewsOfOtherSystem(out, previousId, system.id);
-  const usage = source.usage ? [writeUsage(dataDir, source.usage)] : [];
+  const shotsDir = source.usage ? screensDir(values.screens, source.projectDir) : null;
+  const shots = source.usage && shotsDir ? writeScreens(shotsDir, dataDir, source.usage.project) : null;
+  const usage = source.usage ? [writeUsage(dataDir, source.usage, shots)] : [];
   writeManifest(dataDir, system, usage);
   if (out === DEFAULT_OUT) await buildHubTokens(libs.core, libs.lib);
-  process.stdout.write(`snapshot of ${system.summary}; ${usage.length ? `usage map of ${usage[0]!.project}` : "no usage map"} → ${relative(process.cwd(), out) || "."}\n`);
+  process.stdout.write(`snapshot of ${system.summary}; ${usage.length ? `usage map of ${usage[0]!.project}${shots ? ` with ${shots.screens.length} screens` : ""}` : "no usage map"} → ${relative(process.cwd(), out) || "."}\n`);
 }
 
 await main();

@@ -1,18 +1,11 @@
-/**
- * Screens that come next. Screens already reads the usage map (a bill of materials
- * per route); Changes and Access describe what they will hold.
- */
+/** Screens that come next: Rules, Sources, Changes and Access describe what they will hold. Also the not-found page. */
 import { ClipboardCheck, Compass, Eye, FilePenLine, GitPullRequestArrow, KeyRound, Layers, Monitor, PlugZap, Replace, Rocket, Scale } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Link } from "wouter";
-import { elementHref } from "../../data/ids.ts";
-import type { Model } from "../../data/model.ts";
-import { retryModel, retryUsage, useModelState, useUsageState } from "../../data/store.ts";
-import { EVERY_SCREEN, screenBoms, type UsageIndex } from "../../data/usage.ts";
 import { Badge } from "../../ui/Badge.tsx";
 import { Button } from "../../ui/Button.tsx";
 import { EmptyState } from "../../ui/EmptyState.tsx";
-import { PaneHeader, ResourceState } from "../../ui/Pane.tsx";
+import { PaneHeader } from "../../ui/Pane.tsx";
 
 function Planned({ title, icon, intro, stages }: { title: string; icon: LucideIcon; intro: string; stages: ReadonlyArray<{ icon: LucideIcon; title: string; body: string }> }) {
   const Icon = icon;
@@ -103,51 +96,6 @@ export function AccessScreen() {
         { icon: Monitor, title: "Projects", body: "Per-project install tokens for `youi add`, scoped to the systems that project uses." },
       ]}
     />
-  );
-}
-
-export function ScreensScreen() {
-  const model = useModelState();
-  const usage = useUsageState();
-  if (model.status !== "ready") return <ResourceState state={model} onRetry={retryModel} what="the catalog" />;
-  if (usage.status !== "ready") return <ResourceState state={usage} onRetry={retryUsage} what="the usage map" />;
-  return <ScreenList model={model.value} index={usage.value} />;
-}
-
-function ScreenList({ model, index }: { model: Model; index: UsageIndex }) {
-  const boms = screenBoms(index);
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <PaneHeader title="Screens" count={boms.length}>
-        <span className="text-small text-muted max-sm:hidden">Thumbnails and violations per screen come with visual review</span>
-      </PaneHeader>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <ul className="mx-auto grid max-w-5xl gap-3 p-6 md:grid-cols-2 animate-enter">
-          {boms.map((bom) => {
-            const elements = [...bom.elements].sort((a, b) => b[1] - a[1]);
-            return (
-              <li key={`${bom.project}:${bom.route}`} className="space-y-3 rounded-lg border border-line p-4">
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-mono text-ink">{bom.route === EVERY_SCREEN ? "every screen" : bom.route}</span>
-                  {bom.route === EVERY_SCREEN && <Badge tone="outline">app shell</Badge>}
-                  <span className="ml-auto text-small text-muted">
-                    {bom.project} · <span className="tabular">{bom.sites}</span> sites
-                  </span>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {elements.map(([id, count]) => (
-                    <Link key={id} href={elementHref(id, "where")} className="inline-flex h-6 items-center gap-1.5 rounded-sm border border-line px-2 text-small text-ink-2 hover:border-line-strong hover:text-ink">
-                      {model.byId.get(id)?.name ?? id}
-                      <span className="tabular text-caption text-muted">{count}</span>
-                    </Link>
-                  ))}
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      </div>
-    </div>
   );
 }
 

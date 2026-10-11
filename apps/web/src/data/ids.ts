@@ -19,14 +19,23 @@ export function formatId(system: string, kind: ElementKind, name: string): Eleme
   return `youi:${system}/${kind}/${name}`;
 }
 
-export const ELEMENT_TABS = ["preview", "contract", "tokens", "rules", "where"] as const;
+export const ELEMENT_TABS = ["overview", "usage", "contract", "rules"] as const;
 export type ElementTab = (typeof ELEMENT_TABS)[number];
+
+/** Tab names from before the tabs were merged, so old links still land on the right content. */
+const LEGACY_TABS: Readonly<Record<string, ElementTab>> = { preview: "overview", where: "usage", tokens: "contract" };
+
+/** A URL segment → the tab it names (overview when it names none). */
+export function tabOf(segment: string | undefined): ElementTab {
+  if (!segment) return "overview";
+  return ELEMENT_TABS.find((t) => t === segment) ?? LEGACY_TABS[segment] ?? "overview";
+}
 
 export function elementHref(id: ElementId, tab?: ElementTab): string {
   const parsed = parseId(id);
   if (!parsed) return "/elements";
   const base = `/elements/${parsed.system}/${parsed.kind}/${parsed.name}`;
-  return tab && tab !== "preview" ? `${base}/${tab}` : base;
+  return tab && tab !== "overview" ? `${base}/${tab}` : base;
 }
 
 export function tokenHref(path: string): string {

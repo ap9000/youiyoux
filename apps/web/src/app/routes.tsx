@@ -39,8 +39,8 @@ const home = preloadable(() => import("../screens/home/HomeScreen.tsx"), (m) => 
 const catalog = preloadable(() => import("../screens/catalog/CatalogScreen.tsx"), (m) => m.CatalogScreen);
 const tokens = preloadable(() => import("../screens/tokens/TokensScreen.tsx"), (m) => m.TokensScreen);
 const library = preloadable(() => import("../screens/library/LibraryScreen.tsx"), (m) => m.LibraryScreen);
+const screens = preloadable(() => import("../screens/screens/ScreensScreen.tsx"), (m) => m.ScreensScreen);
 const loadStubs = () => import("../screens/stubs/StubScreens.tsx");
-const screens = preloadable(loadStubs, (m) => m.ScreensScreen);
 const rules = preloadable(loadStubs, (m) => m.RulesScreen);
 const sources = preloadable(loadStubs, (m) => m.SourcesScreen);
 const changes = preloadable(loadStubs, (m) => m.ChangesScreen);
@@ -63,7 +63,8 @@ const loaders = {
   catalog: catalog.preload,
   tokens: tokens.preload,
   library: library.preload,
-  stubs: () => Promise.all([screens, rules, sources, changes, access, notFound].map((s) => s.preload())).then(() => undefined),
+  screens: screens.preload,
+  stubs: () => Promise.all([rules, sources, changes, access, notFound].map((s) => s.preload())).then(() => undefined),
 } as const;
 
 /**
@@ -94,7 +95,7 @@ export const NAV: readonly NavItem[] = [
   { href: "/elements", label: "Components", icon: Boxes, key: "c", loader: "catalog", section: "system" },
   { href: "/tokens", label: "Tokens", icon: Palette, key: "t", loader: "tokens", section: "system" },
   { href: "/rules", label: "Rules", icon: Scale, key: "r", loader: "stubs", section: "system" },
-  { href: "/screens", label: "Screens", icon: Monitor, key: "s", loader: "stubs", section: "system" },
+  { href: "/screens", label: "Screens", icon: Monitor, key: "s", loader: "screens", section: "system" },
   { href: "/library", label: "Browse", icon: Library, key: "l", loader: "library", section: "library" },
   { href: "/library/sources", label: "Sources", icon: PlugZap, key: "i", loader: "stubs", section: "library" },
   { href: "/changes", label: "Changes", icon: GitPullRequestArrow, key: "w", loader: "stubs", section: "work" },

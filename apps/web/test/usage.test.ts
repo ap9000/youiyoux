@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { ComponentContract, ScanReport, UsageSite } from "../src/data/types.ts";
-import { EVERY_SCREEN, filterSites, groupByScreen, indexUsage, propDistribution, propLabel, screenBoms, summarize, UNROUTED, UNSET } from "../src/data/usage.ts";
+import { DYNAMIC, elementIssues, enumDefault, EVERY_SCREEN, filterSites, groupByScreen, indexUsage, mainChoice, propDistribution, propLabel, summarize, UNROUTED, UNSET, valueLabel } from "../src/data/usage.ts";
 
 const BUTTON = "youi:demo/component/button";
 const CARD = "youi:demo/component/card";
@@ -35,6 +35,7 @@ const report: ScanReport = {
 };
 
 const contract = {
+  id: BUTTON,
   props: { variant: { type: "enum", values: ["default", "outline", "ghost"], default: "default" }, children: { type: "node" } },
 } as unknown as ComponentContract;
 
@@ -87,10 +88,30 @@ describe("groupByScreen", () => {
   });
 });
 
-describe("screenBoms", () => {
-  test("lists the elements each screen renders with their counts", () => {
-    const work = screenBoms(indexUsage([report])).find((b) => b.route === "/projects");
-    expect(work?.elements.get(BUTTON)).toBe(2);
-    expect(work?.elements.get(CARD)).toBe(1);
+
+describe("valueLabel", () => {
+  test("an unset prop reads as its contract default, marked implicit, and as not set without one", () => {
+    expect(valueLabel(UNSET, enumDefault(contract, "variant"))).toBe("default (implicit)");
+    expect(valueLabel(UNSET, enumDefault(contract, "children"))).toBe("not set");
+    expect(valueLabel(DYNAMIC, undefined)).toBe("computed");
+    expect(valueLabel("outline", "default")).toBe("outline");
+  });
+});
+
+describe("elementIssues", () => {
+  test("does not count unset sites when the main choice has a contract default", () => {
+    expect(elementIssues(indexUsage([report]), contract)).toEqual({ lookalikes: 1, unresolved: 1, unset: null, total: 2 });
+  });
+
+  test("counts render sites that leave a main choice without a default unset", () => {
+    const noDefault = { ...contract, props: { ...contract.props, variant: { type: "enum", values: ["default", "outline", "ghost"] } } } as unknown as ComponentContract;
+    expect(elementIssues(indexUsage([report]), noDefault)).toEqual({ lookalikes: 1, unresolved: 1, unset: { prop: "variant", count: 1 }, total: 3 });
+  });
+
+  test("the main choice is variant when the contract has one, else its first enum prop", () => {
+    expect(mainChoice(contract)).toBe("variant");
+    const toned = { props: { tone: { type: "enum", values: ["a"] }, size: { type: "enum", values: ["b"] } } } as unknown as ComponentContract;
+    expect(mainChoice(toned)).toBe("tone");
+    expect(mainChoice({ props: { children: { type: "node" } } } as unknown as ComponentContract)).toBeNull();
   });
 });

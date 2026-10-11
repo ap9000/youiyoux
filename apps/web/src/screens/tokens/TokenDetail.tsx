@@ -183,7 +183,7 @@ export function TokenDetail({ model, token }: { model: Model; token: TokenEntry 
             <ul className="divide-y divide-line rounded-md border border-line">
               {consumers.map(({ component, role }) => (
                 <li key={`${component}:${role}`} className="flex h-9 items-center gap-3 px-3">
-                  <Link href={elementHref(component, "tokens")} className="font-medium text-ink hover:underline">
+                  <Link href={elementHref(component, "contract")} className="font-medium text-ink hover:underline">
                     {model.byId.get(component)?.name ?? component}
                   </Link>
                   <span className="font-mono text-mono-sm text-muted">{role}</span>
