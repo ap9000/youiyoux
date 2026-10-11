@@ -1,7 +1,7 @@
 {
   "schema": "youiyoux.manifest/v1",
   "source": {
-    "commit": null
+    "commit": "ad9e210f2d8d59ba0ecf7ed85130291e03a44177"
   },
   "systems": [
     {
@@ -10,7 +10,7 @@
       "usage": [
         {
           "project": "demo-app",
-          "file": "demo-app.usage.2d601e4795.json"
+          "file": "demo-app.usage.57b2a67225.json"
         }
       ]
     }
