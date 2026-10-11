@@ -291,6 +291,45 @@ export const ScanReport = z.object({
 });
 export type ScanReport = z.infer<typeof ScanReport>;
 
+/* -------------------------------------------------------------- youi.baseline/v1 */
+
+/** Where a check result came from: tool, exact definitions and both repos' revisions. */
+export const CheckIdentity = z.object({
+  /** Scanner version that produced the findings. */
+  tool: z.string(),
+  system: z.object({ id: z.string(), version: SemVer }),
+  /** Digest of everything that decides findings: project config, contracts, rules and resolved token values. */
+  definitions: z.string(),
+  /** The design repo's revision; `dirty` means its working tree differs from the commit. */
+  design: z.object({ commit: z.string().nullable(), dirty: z.boolean() }),
+  project: z.object({ commit: z.string().nullable(), dirty: z.boolean() }),
+});
+export type CheckIdentity = z.infer<typeof CheckIdentity>;
+
+export const BaselineEntry = z.object({
+  rule: ElementId,
+  file: z.string(),
+  /** The flagged source text; with rule and file it identifies a finding across line moves. */
+  text: z.string(),
+  severity: z.enum(["error", "warn"]),
+  count: z.number().int().min(1),
+  /** Lines when recorded: a hint for which occurrence is the new one, never part of the match. */
+  lines: z.array(z.number().int()),
+});
+export type BaselineEntry = z.infer<typeof BaselineEntry>;
+
+/** Accepted existing violations: `youi check --baseline` fails only on findings beyond these. */
+export const Baseline = z.object({
+  $schema: z.string().optional(),
+  schema: z.literal("youi.baseline/v1"),
+  project: z.string(),
+  recordedAt: IsoTime,
+  identity: CheckIdentity,
+  totals: z.object({ errors: z.number().int(), warnings: z.number().int() }),
+  entries: z.array(BaselineEntry),
+});
+export type Baseline = z.infer<typeof Baseline>;
+
 /* ------------------------------------------------------------------ youi.lock/v1 */
 
 export const LockEntry = z.discriminatedUnion("kind", [
@@ -326,6 +365,7 @@ export const PUBLISHED_SCHEMAS = {
   "youi.migration.schema.json": MigrationSpec,
   "youi.usage.schema.json": ScanReport,
   "youi.lock.schema.json": LockFile,
+  "youi.baseline.schema.json": Baseline,
 } as const;
 
 /** Project config with every path normalized, so comparisons with scanned paths are exact. Loaders call this. */
