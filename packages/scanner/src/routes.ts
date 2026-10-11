@@ -58,7 +58,8 @@ export class RouteIndex {
   static build(graph: ModuleGraph, modules: ReadonlyMap<string, ModuleInfo | null>, config: RouteConfig): RouteIndex {
     const index = new RouteIndex();
     if (config.strategy === "none" && config.shell.length === 0) return index;
-    const files = [...modules.keys()];
+    // Sorted: the map fills in parse-completion order, and route lists must not depend on it.
+    const files = [...modules.keys()].sort();
     const scanned = new Set(files);
     const entries = routeEntries(files, config);
     const reached = new Map<string, { routes: Set<string>; via: string; shellOnly: boolean }>();

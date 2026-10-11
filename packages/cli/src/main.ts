@@ -6,9 +6,9 @@ import { parseArgs, promisify, type ParseArgsConfig } from "node:util";
 import { parse as parseYaml } from "yaml";
 import { DefinitionError, getSystem, loadDesignRepo, MigrationSpec, OutputConfig, renderJsonSchemas, writeFileAtomic } from "@youiyoux/core";
 import { buildTokens, compareParity } from "@youiyoux/tokens";
-import { componentCard, describeIdentity, findContract, loadProject, planChange, runMigration, scanProject, screenBom, whereUsed, type PlanInput, type Project } from "@youiyoux/scanner";
-import { baselinePath, exitCodeOf, runCheck, writeBaseline } from "./check.ts";
-import { githubAnnotations, githubSummary, renderCheckText } from "./check-render.ts";
+import { componentCard, describeIdentity, findContract, ProjectWatcher, type CacheStats, type WatchUpdate, loadProject, planChange, runMigration, scanProject, screenBom, whereUsed, type PlanInput, type Project } from "@youiyoux/scanner";
+import { baselinePath, exitCodeOf, runCheck, writeBaseline, type CheckResult } from "./check.ts";
+import { actionable, githubAnnotations, githubSummary, renderCheckText } from "./check-render.ts";
 import { runClaudeHook, runPreCommitHook, type HookTarget } from "./hooks.ts";
 import { hookCommand, installClaudeHook, installPreCommit, installWorkflow, repoRootOf } from "./hooks-install.ts";
 import { runHub } from "./hub.ts";
@@ -37,6 +37,8 @@ ${style.bold("In a product repo")}
                            --format github annotates PR lines and writes the job summary
   baseline [--force]       record existing violations (youi.baseline.json beside the config);
                            later runs only remove fixed ones; --force accepts current ones as debt
+  watch [--baseline] [--json]   re-check on every save (debounced; only edited files and their
+                           importers are re-analysed; definition changes reload the rules)
   hooks install [--claude] [--git] [--ci] [--strict]
                            live checks, existing config kept (default: --claude --git):
                            Claude Code PostToolUse (advisory context after each edit),
@@ -333,6 +335,46 @@ async function cmdHooks(values: Values, positionals: string[]): Promise<number> 
   return 0;
 }
 
+function watchLine(update: WatchUpdate<CheckResult>, stats: CacheStats): string {
+  const time = new Date().toLocaleTimeString();
+  if (update.status === "failed") return `${style.dim(time)} ${style.error("✖ incomplete")}  ${update.error}`;
+  const result = update.result;
+  const found = actionable(result);
+  const verdict = result.incomplete ? style.warn("! incomplete") : result.errors > 0 ? style.error(`✖ ${plural(result.errors, "error")}`) : style.ok("✓ 0 errors");
+  const known = result.baseline ? style.dim(` · ${result.baseline.comparison.known.length} baselined`) : "";
+  const what = update.reloaded ? "definitions reloaded" : update.changed.length > 0 ? update.changed.join(", ") : "initial scan";
+  const lines = [`${style.dim(time)} ${verdict}${known} · ${plural(found.length - found.filter((v) => v.severity === "error").length, "warning")}  ${style.dim(`${what} · ${ms(update.durationMs)} · ${stats.analysed} analysed, ${stats.reusedAnalyses} reused`)}`];
+  for (const v of found.slice(0, 12)) lines.push(`  ${v.severity === "error" ? style.error("error") : style.warn("warn ")} ${v.file}:${v.line}:${v.column}  ${v.message}`);
+  if (found.length > 12) lines.push(style.dim(`  …${found.length - 12} more`));
+  return lines.join("\n");
+}
+
+async function cmdWatch(values: Values): Promise<number> {
+  const root = values.project ?? process.cwd();
+  const load = { ...(values.config ? { configPath: values.config } : {}), ...(values.design ? { designRoot: values.design } : {}) };
+  let stats: CacheStats = { parsed: 0, reusedParses: 0, analysed: 0, reusedAnalyses: 0 };
+  const watcher = await ProjectWatcher.start<CheckResult>({
+    root,
+    load,
+    job: async (p, cache) => {
+      const result = await runCheck(p, { cache, baseline: baselineFile(values, p), lock: false });
+      stats = { ...cache.stats };
+      return result;
+    },
+    onUpdate: (update) => {
+      if (!values.json) return print(watchLine(update, stats));
+      const base = { generation: update.generation, status: update.status, changed: update.changed, reloaded: update.reloaded, durationMs: update.durationMs };
+      if (update.status === "failed") return print(JSON.stringify({ ...base, error: update.error }));
+      const r = update.result;
+      print(JSON.stringify({ ...base, errors: r.errors, incomplete: r.incomplete, identity: r.identity, contentDigest: r.scan.contentDigest, findings: actionable(r), baseline: r.baseline ? { known: r.baseline.comparison.known.length, fixed: r.baseline.comparison.fixed.length } : null, cache: stats }));
+    },
+  });
+  if (!values.json) print(style.dim(`watching ${root} and its design definitions · ctrl-c to stop`));
+  await new Promise<void>((done) => process.once("SIGINT", () => done()));
+  watcher.close();
+  return 0;
+}
+
 async function cmdUi(values: Values): Promise<number> {
   return runHub(TOOL_ROOT, { ...(values.design ? { design: values.design } : {}), ...(values.project ? { project: values.project } : {}), ...(values.config ? { config: values.config } : {}), ...(values.port ? { port: values.port } : {}) });
 }
@@ -344,7 +386,7 @@ async function cmdMcp(values: Values): Promise<number> {
 }
 
 const COMMANDS: Record<string, (values: Values, positionals: string[]) => Promise<number>> = {
-  init: cmdInit, sync: cmdSync, scan: cmdScan, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, hooks: cmdHooks, plan: cmdPlan, migrate: cmdMigrate, mcp: cmdMcp, ui: cmdUi, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+  init: cmdInit, sync: cmdSync, scan: cmdScan, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, hooks: cmdHooks, watch: cmdWatch, plan: cmdPlan, migrate: cmdMigrate, mcp: cmdMcp, ui: cmdUi, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
 
 export async function main(argv: string[]): Promise<number> {

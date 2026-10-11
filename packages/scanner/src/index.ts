@@ -13,3 +13,4 @@ export * from "./usage.ts";
 export * from "./codemod.ts";
 export * from "./plan.ts";
 export * from "./queries.ts";
+export * from "./watch.ts";
