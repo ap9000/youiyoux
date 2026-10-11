@@ -1,6 +1,6 @@
 # YouIyouX web
 
-The design language hub: find an element, see its contract, tokens and rules, preview the real component, and see exactly where it lives in each project. Local-only for now: no server, no accounts.
+The design language hub: find an element, see its contract, tokens and rules, preview the real component, and see exactly where it lives in each project. Local-only for now: no accounts. Everything reads a static snapshot except Changes, which talks to the local `youi editor` service.
 
 ```sh
 pnpm install        # at the repository root (apps/* is in the workspace)
@@ -19,6 +19,8 @@ youi ui --project ~/src/acme-app --config ~/src/acme-design/acme-app.youi.json  
 
 The hub shows one design system at a time, read from a snapshot directory. The committed default (`snapshot/`) is the made-up demo system, so `pnpm dev` works on its own and the tool repo holds no product's data. `youi ui` with a system named writes its snapshot to `.hub/` (gitignored) and starts the dev server on that instead, so pointing the hub at a real system never changes the checkout.
 
+Changes is live rather than a snapshot: it needs `youi editor` running (`pnpm dev` proxies `/api` to it).
+
 ## Screens
 
 | Route | What it is |
@@ -27,7 +29,8 @@ The hub shows one design system at a time, read from a snapshot directory. The c
 | `/elements[/<system>/<kind>/<name>[/<tab>]]` | Catalog (search, kind filter) beside the element page: Preview, Contract, Tokens, Rules, Where it lives. Tokens and rules open their own detail. |
 | `/tokens[/<path>]` | Token explorer: palette overview, light and dark values, alias chain, WCAG contrast, consumers |
 | `/screens` | Each project screen and the elements it renders (from the usage map) |
-| `/changes`, `/access` | Planned: change requests (plan, rollout, visual review) and access |
+| `/changes[/<draft>]` | The rule editor: published rules, drafts, the rule form, impact preview, approval and review branch. Live, from `youi editor` ([guide](../../packages/workflow/README.md)) |
+| `/access` | Planned: access |
 
 Keyboard: `⌘K` palette, `/` search the list, `j`/`k` or arrows move, `g` then `h e t s c a` to jump, `?` for all shortcuts.
 

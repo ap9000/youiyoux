@@ -30,7 +30,7 @@ A design repo is any directory with a `youi.config.json`. A product names it wit
 
 | Path | Contents |
 | --- | --- |
-| `packages/` | `core` (schemas, loader), `tokens` (Terrazzo build, import, parity), `scanner` (usage map, checks, migrations, plans), `cli`, `mcp` |
+| `packages/` | `core` (schemas, loader), `tokens` (Terrazzo build, import, parity), `scanner` (usage map, checks, migrations, plans), `cli`, `mcp`, `workflow` (rule-editor service) |
 | `apps/web/` | The hub: find an element, see its contract, tokens and rules, preview it, see where it lives ([README](apps/web/README.md)) |
 | `schema/` | JSON Schemas, emitted from the Zod definitions in `packages/core` (`youi schema --write`) |
 | `examples/demo-design/` | **Demo**, a made-up design system (Button, Input and Card; 19 tokens; 6 rules) used by the tests, these docs and the hub's default data |
@@ -68,6 +68,7 @@ In a product repo:
 | `youi check` | Rules plus lockfile drift; exits 1 on errors |
 | `youi plan` / `youi migrate` | Classify a change and its impact; run a gated codemod (dry run unless `--write`) |
 | `youi mcp` | stdio MCP server: read tools plus `youi_plan`; no publish, approve or merge tools |
+| `youi editor` | Local rule editor: drafts, impact preview against the project, approval, and a review branch in the design repo ([guide](packages/workflow/README.md)) |
 
 Every product command takes `--design <dir>` (override the design repo) and `--config <file>` (a project config kept outside the product, for example in the design repo).
 
