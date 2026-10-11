@@ -3,9 +3,9 @@ import { buildScreens, countIssues, routeLabel, screenHref, screensOf, screensOf
 import type { Manifest, ScanReport, UsageSite } from "../src/data/types.ts";
 import { EVERY_SCREEN, indexUsage, UNROUTED } from "../src/data/usage.ts";
 
-const BUTTON = "youi:signal/component/button";
-const BADGE = "youi:signal/component/badge";
-const RAW_COLOR = "youi:signal/rule/color.no-raw-color";
+const BUTTON = "youi:demo/component/button";
+const CARD = "youi:demo/component/card";
+const RAW_COLOR = "youi:demo/rule/color.no-raw-color";
 
 function site(overrides: Partial<UsageSite>): UsageSite {
   return { element: BUTTON, kind: "render", export: "Button", local: "Button", props: {}, spread: false, file: "src/work.tsx", line: 1, column: 1, routes: ["/work"], routeSource: "route-file", fingerprint: "f", ...overrides };
@@ -13,8 +13,8 @@ function site(overrides: Partial<UsageSite>): UsageSite {
 
 const report: ScanReport = {
   schema: "youi.usage/v1",
-  project: "toolroll",
-  system: "signal",
+  project: "demo-app",
+  system: "demo",
   commit: "abc1234def",
   scanner: "test",
   configDigest: "x",
@@ -25,7 +25,7 @@ const report: ScanReport = {
   usages: [
     site({ line: 3 }),
     site({ line: 9, props: { variant: { literal: "ghost" } } }),
-    site({ element: BADGE, export: "Badge", local: "Badge", line: 12 }),
+    site({ element: CARD, export: "Card", local: "Card", line: 12 }),
     site({ file: "src/shared.tsx", routes: ["/work", "/review"], routeSource: "imported-by" }),
     site({ file: "src/app.tsx", routes: [EVERY_SCREEN], routeSource: "shell" }),
     site({ file: "src/orphan.tsx", routes: [], routeSource: "unrouted" }),
@@ -46,9 +46,9 @@ const manifest: Manifest = {
   source: { commit: null },
   systems: [
     {
-      id: "signal",
-      catalog: "signal.catalog.json",
-      usage: [{ project: "toolroll", file: "toolroll.usage.json", screens: { source: "a demo", capturedAt: "2026-10-11", viewport: { width: 1440, height: 900 }, screens: [{ route: "/work", path: "/work", ...shot }] } }],
+      id: "demo",
+      catalog: "demo.catalog.json",
+      usage: [{ project: "demo-app", file: "demo-app.usage.json", screens: { source: "a demo", capturedAt: "2026-10-11", viewport: { width: 1440, height: 900 }, screens: [{ route: "/work", path: "/work", ...shot }] } }],
     },
   ],
 };
@@ -61,7 +61,7 @@ describe("screen slugs and links", () => {
     expect(screenSlug("/")).toBe("root");
     expect(screenSlug(EVERY_SCREEN)).toBe("app-shell");
     expect(screenSlug(UNROUTED)).toBe("unrouted");
-    expect(screenHref("toolroll", "/review")).toBe("/screens/toolroll/review");
+    expect(screenHref("demo-app", "/review")).toBe("/screens/demo-app/review");
     expect(routeLabel(EVERY_SCREEN)).toBe("App shell");
   });
 });
@@ -79,7 +79,7 @@ describe("buildScreens", () => {
     expect(work.sites).toBe(4);
     expect(work.elements.map((e) => [e.id, e.sites.length])).toEqual([
       [BUTTON, 3],
-      [BADGE, 1],
+      [CARD, 1],
     ]);
   });
 
@@ -97,7 +97,7 @@ describe("buildScreens", () => {
   test("attaches the captured screenshot and leaves screens without one empty", () => {
     expect(at("/work").shot?.light?.full).toBe("l.webp");
     expect(at("/review").shot).toBeNull();
-    expect(screens.byHref.get("/screens/toolroll/work")).toBe(at("/work"));
+    expect(screens.byHref.get("/screens/demo-app/work")).toBe(at("/work"));
   });
 
   test("screensOf builds once per usage index", () => {

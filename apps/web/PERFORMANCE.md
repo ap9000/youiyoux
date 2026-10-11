@@ -19,6 +19,7 @@ The catalog grows with the system: the 89-element system's was 23 KB, for a tota
 Not in the initial download:
 
 - Route chunks are preloaded on hover, focus and idle. The largest are catalog 14.6 KB, palette 7 KB, tokens 2.3 KB and home 2.2 KB.
+- Project screenshots load as they scroll into view: a thumbnail is about 13 to 21 KB, and a screen page loads one 2x image of about 83 to 136 KB (measured on Toolroll).
 - The search worker and its engine: 5.8 KB.
 - The usage map loads on idle: 1.4 KB for the demo app, 17 KB for a 265-site product.
 - The preview frame, 1.2 KB JS plus the system's demos and 3.8 KB CSS, loads on the first click.
@@ -53,7 +54,7 @@ What keeps it there:
 - Every route is its own chunk, preloaded on hover, focus and idle.
 - Preloaded screens render synchronously. `React.lazy` would suspend once even after the chunk loaded, and React holds a suspended fallback for at least 300 ms. That cost was measured at 310 ms before the change.
 - The catalog stays in memory.
-- Long lists are virtualized: element list, token list and usage sites.
+- Long lists are virtualized: element list and token list. Usage sites are collapsed per screen and render 50 at a time until someone asks for the rest.
 
 ## Live numbers
 
