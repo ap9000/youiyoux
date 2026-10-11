@@ -1,0 +1,110 @@
+/* The hub's stylesheet: Tailwind v4 on the YouIyouX tokens. Only src/ is scanned for classes;
+ * the preview frame (src/preview) has its own sheet for the system it renders. */
+@import "tailwindcss" source(none);
+@import "./theme-reset.css";
+@import "./generated/theme.css";
+@import "./generated/tokens.css";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+@source "../";
+@source not "../preview";
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    background: var(--color-canvas);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background: var(--color-selection);
+    color: var(--color-ink);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-line-strong) transparent;
+  }
+
+  code,
+  kbd,
+  pre,
+  samp {
+    font-family: var(--font-mono);
+  }
+}
+
+@utility tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A hairline that reads on any fill, light or dark. */
+@utility edge {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-ink) 12%, transparent);
+}
+
+/* Transparent-colour backdrop for swatches. */
+@utility checker {
+  background-color: var(--color-surface);
+  background-image: conic-gradient(var(--color-line) 25%, transparent 0 50%, var(--color-line) 0 75%, transparent 0);
+  background-size: 8px 8px;
+}
+
+@keyframes yx-enter {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+
+@keyframes yx-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
+}
+
+@keyframes yx-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@utility animate-enter {
+  animation: yx-enter var(--yx-duration-base) var(--yx-easing-out) both;
+}
+
+@utility animate-pop {
+  animation: yx-pop var(--yx-duration-base) var(--yx-easing-out) both;
+}
+
+@utility animate-fade {
+  animation: yx-fade var(--yx-duration-fast) var(--yx-easing-out) both;
+}
+
+/* Motion is quick and quiet, and gone when the person asks for less. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

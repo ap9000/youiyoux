@@ -1,0 +1,11 @@
+/* Start from an empty palette: every colour, radius, shadow, easing and text style the hub
+ * uses comes from the YouIyouX tokens (generated/theme.css), never Tailwind's defaults. */
+@theme {
+  --color-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+  --inset-shadow-*: initial;
+  --drop-shadow-*: initial;
+  --text-*: initial;
+  --ease-*: initial;
+}

@@ -1,0 +1,208 @@
+{
+  "budgets": {
+    "initialKbGzip": 150,
+    "searchMs": 50
+  },
+  "initial": {
+    "jsKbGzip": 81.6,
+    "cssKbGzip": 8.3,
+    "totalKbGzip": 89.9,
+    "withSnapshotKbGzip": 112.8,
+    "withinBudget": true,
+    "assets": [
+      {
+        "file": "assets/main-DrPUXnE1.js",
+        "kbGzip": 11.1
+      },
+      {
+        "file": "assets/react-yIOJJ3r4.js",
+        "kbGzip": 3.2
+      },
+      {
+        "file": "assets/dist-COJrK_MW.js",
+        "kbGzip": 66.1
+      },
+      {
+        "file": "assets/Kbd-D0EWP0GD.js",
+        "kbGzip": 0.8
+      },
+      {
+        "file": "assets/monitor-DgKqmxlH.js",
+        "kbGzip": 0.5
+      },
+      {
+        "file": "assets/main-B1eBEqEY.css",
+        "kbGzip": 8.3
+      }
+    ]
+  },
+  "snapshot": {
+    "catalogAndManifestKbGzip": 23,
+    "usageMapsKbGzip": 16.8,
+    "note": "Usage maps load after first paint (idle) or when a usage view opens."
+  },
+  "fontsLatinKb": [
+    {
+      "file": "assets/geist-latin-wght-normal-BgDaEnEv.woff2",
+      "kb": 28.7
+    },
+    {
+      "file": "assets/geist-mono-latin-wght-normal-XN7g48iV.woff2",
+      "kb": 22.6
+    }
+  ],
+  "chunks": [
+    {
+      "file": "assets/dist-COJrK_MW.js",
+      "kbRaw": 212.7,
+      "kbGzip": 66.1
+    },
+    {
+      "file": "assets/preview-DeVMLKrA.js",
+      "kbRaw": 43.5,
+      "kbGzip": 13.6
+    },
+    {
+      "file": "assets/SearchField-B6SLzjaN.js",
+      "kbRaw": 38.7,
+      "kbGzip": 12.2
+    },
+    {
+      "file": "assets/main-DrPUXnE1.js",
+      "kbRaw": 28.6,
+      "kbGzip": 11.1
+    },
+    {
+      "file": "assets/CatalogScreen-C8KX0ut_.js",
+      "kbRaw": 34,
+      "kbGzip": 10
+    },
+    {
+      "file": "assets/dist-CaTTiKnc.js",
+      "kbRaw": 26.1,
+      "kbGzip": 9
+    },
+    {
+      "file": "assets/main-B1eBEqEY.css",
+      "kbRaw": 42.9,
+      "kbGzip": 8.3
+    },
+    {
+      "file": "assets/CommandPalette-NdYSsG_J.js",
+      "kbRaw": 18.3,
+      "kbGzip": 7
+    },
+    {
+      "file": "assets/worker-fW70CDQ6.js",
+      "kbRaw": 18,
+      "kbGzip": 5.8
+    },
+    {
+      "file": "assets/engine-CMmt9yEz.js",
+      "kbRaw": 17.4,
+      "kbGzip": 5.7
+    },
+    {
+      "file": "assets/preview-DYpvHwlc.css",
+      "kbRaw": 21.5,
+      "kbGzip": 5.1
+    },
+    {
+      "file": "assets/dist-CimsjiMK.js",
+      "kbRaw": 13.3,
+      "kbGzip": 4.8
+    },
+    {
+      "file": "assets/react-yIOJJ3r4.js",
+      "kbRaw": 8.2,
+      "kbGzip": 3.2
+    },
+    {
+      "file": "assets/dist-CaVhM7XA.js",
+      "kbRaw": 7.8,
+      "kbGzip": 3
+    },
+    {
+      "file": "assets/StubScreens-Bi5CzB4l.js",
+      "kbRaw": 5.7,
+      "kbGzip": 2.3
+    },
+    {
+      "file": "assets/TokensScreen-a2xAHMpO.js",
+      "kbRaw": 4.9,
+      "kbGzip": 2.2
+    },
+    {
+      "file": "assets/HomeScreen-BsmGH5A6.js",
+      "kbRaw": 6.4,
+      "kbGzip": 2.2
+    },
+    {
+      "file": "assets/KindIcon-BOeLMMCa.js",
+      "kbRaw": 3,
+      "kbGzip": 1.3
+    },
+    {
+      "file": "assets/client-DzQ-GmYr.js",
+      "kbRaw": 2.1,
+      "kbGzip": 1.1
+    },
+    {
+      "file": "assets/Kbd-D0EWP0GD.js",
+      "kbRaw": 1.8,
+      "kbGzip": 0.8
+    },
+    {
+      "file": "assets/CheatSheet-BVn57yDE.js",
+      "kbRaw": 1.5,
+      "kbGzip": 0.7
+    },
+    {
+      "file": "assets/Section-CbO8oQGR.js",
+      "kbRaw": 1.4,
+      "kbGzip": 0.6
+    },
+    {
+      "file": "assets/Badge-CiDS97Rv.js",
+      "kbRaw": 0.9,
+      "kbGzip": 0.5
+    },
+    {
+      "file": "assets/monitor-DgKqmxlH.js",
+      "kbRaw": 0.9,
+      "kbGzip": 0.5
+    },
+    {
+      "file": "assets/arrow-right-pWblC20A.js",
+      "kbRaw": 0.2,
+      "kbGzip": 0.2
+    },
+    {
+      "file": "assets/x-DUcfmsaW.js",
+      "kbRaw": 0.2,
+      "kbGzip": 0.2
+    },
+    {
+      "file": "assets/check-DmtuQKoY.js",
+      "kbRaw": 0.1,
+      "kbGzip": 0.2
+    }
+  ],
+  "search": {
+    "signal": {
+      "docs": 89,
+      "indexMs": 2.8,
+      "p50": 0.013,
+      "p95": 0.039,
+      "max": 0.348
+    },
+    "scaled": {
+      "factor": 50,
+      "docs": 4450,
+      "indexMs": 50,
+      "p50": 0.191,
+      "p95": 0.465,
+      "max": 5.135
+    }
+  }
+}

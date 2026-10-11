@@ -1,0 +1,678 @@
+{
+  "color": {
+    "canvas": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.9647,
+          0.9647,
+          0.9686
+        ],
+        "hex": "#f6f6f7"
+      },
+      "$description": "Canvas: the frame behind the nav rail and between panes."
+    },
+    "surface": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          1,
+          1,
+          1
+        ],
+        "hex": "#ffffff"
+      },
+      "$description": "Surface: list and detail panes, menus, dialogs."
+    },
+    "raised": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.9529,
+          0.9529,
+          0.9608
+        ],
+        "hex": "#f3f3f5"
+      },
+      "$description": "Raised: row hover, segmented tracks, wells."
+    },
+    "sunken": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.9765,
+          0.9765,
+          0.9804
+        ],
+        "hex": "#f9f9fa"
+      },
+      "$description": "Sunken: code blocks and preview stages."
+    },
+    "line": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.9098,
+          0.9098,
+          0.9255
+        ],
+        "hex": "#e8e8ec"
+      },
+      "$description": "Hairline: every divider and pane edge."
+    },
+    "line-strong": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.8392,
+          0.8392,
+          0.8627
+        ],
+        "hex": "#d6d6dc"
+      },
+      "$description": "Control line: field and button boundaries."
+    },
+    "ink": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.0902,
+          0.0902,
+          0.1098
+        ],
+        "hex": "#17171c"
+      },
+      "$description": "Ink: primary text and icons."
+    },
+    "ink-2": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.2941,
+          0.2941,
+          0.3333
+        ],
+        "hex": "#4b4b55"
+      },
+      "$description": "Secondary ink: labels and values that sit beside primary text."
+    },
+    "muted": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.4314,
+          0.4314,
+          0.4706
+        ],
+        "hex": "#6e6e78"
+      },
+      "$description": "Muted: meta lines, counts, placeholders."
+    },
+    "faint": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.6392,
+          0.6392,
+          0.6784
+        ],
+        "hex": "#a3a3ad"
+      },
+      "$description": "Faint: disabled marks and decorative glyphs; never body text."
+    },
+    "accent": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.3176,
+          0.3137,
+          0.8392
+        ],
+        "hex": "#5150d6"
+      },
+      "$description": "Accent: the one colour of selection, focus and the primary verb."
+    },
+    "accent-hover": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.2627,
+          0.2588,
+          0.7608
+        ],
+        "hex": "#4342c2"
+      }
+    },
+    "on-accent": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          1,
+          1,
+          1
+        ],
+        "hex": "#ffffff"
+      },
+      "$description": "Text and icons on an accent fill."
+    },
+    "accent-soft": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.9333,
+          0.9333,
+          0.9882
+        ],
+        "hex": "#eeeefc"
+      },
+      "$description": "Accent wash: the selected row and the active nav item."
+    },
+    "success": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.0941,
+          0.4745,
+          0.3059
+        ],
+        "hex": "#18794e"
+      },
+      "$description": "Success: stable, passed, in sync."
+    },
+    "success-soft": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.9137,
+          0.9647,
+          0.9373
+        ],
+        "hex": "#e9f6ef"
+      }
+    },
+    "warning": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.6392,
+          0.3216,
+          0
+        ],
+        "hex": "#a35200"
+      },
+      "$description": "Warning: beta, drift, caution."
+    },
+    "warning-soft": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.9922,
+          0.9451,
+          0.8902
+        ],
+        "hex": "#fdf1e3"
+      }
+    },
+    "danger": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.7686,
+          0.1961,
+          0.1216
+        ],
+        "hex": "#c4321f"
+      },
+      "$description": "Danger: errors, violations, deprecated."
+    },
+    "danger-soft": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.9882,
+          0.9255,
+          0.9137
+        ],
+        "hex": "#fcece9"
+      }
+    },
+    "neutral-soft": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.9412,
+          0.9412,
+          0.9529
+        ],
+        "hex": "#f0f0f3"
+      },
+      "$description": "Neutral badge fill: facts that are not status."
+    },
+    "scrim": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0,
+          0,
+          0
+        ],
+        "alpha": 0.32,
+        "hex": "#000000"
+      },
+      "$description": "Scrim behind dialogs."
+    },
+    "focus": {
+      "$type": "color",
+      "$value": "{color.accent}",
+      "$description": "Focus ring: always the accent."
+    },
+    "selection": {
+      "$type": "color",
+      "$value": "{color.accent-soft}",
+      "$description": "Text selection and selected rows."
+    }
+  },
+  "shadow": {
+    "raise": {
+      "$type": "shadow",
+      "$value": [
+        {
+          "color": {
+            "colorSpace": "srgb",
+            "components": [
+              0,
+              0,
+              0
+            ],
+            "alpha": 0.05,
+            "hex": "#000000"
+          },
+          "offsetX": {
+            "value": 0,
+            "unit": "px"
+          },
+          "offsetY": {
+            "value": 1,
+            "unit": "px"
+          },
+          "blur": {
+            "value": 2,
+            "unit": "px"
+          },
+          "spread": {
+            "value": 0,
+            "unit": "px"
+          }
+        }
+      ],
+      "$description": "A pill or control lifted off its surface."
+    },
+    "popover": {
+      "$type": "shadow",
+      "$value": [
+        {
+          "color": {
+            "colorSpace": "srgb",
+            "components": [
+              0,
+              0,
+              0
+            ],
+            "alpha": 0.14,
+            "hex": "#000000"
+          },
+          "offsetX": {
+            "value": 0,
+            "unit": "px"
+          },
+          "offsetY": {
+            "value": 10,
+            "unit": "px"
+          },
+          "blur": {
+            "value": 30,
+            "unit": "px"
+          },
+          "spread": {
+            "value": -6,
+            "unit": "px"
+          }
+        },
+        {
+          "color": {
+            "colorSpace": "srgb",
+            "components": [
+              0,
+              0,
+              0
+            ],
+            "alpha": 0.06,
+            "hex": "#000000"
+          },
+          "offsetX": {
+            "value": 0,
+            "unit": "px"
+          },
+          "offsetY": {
+            "value": 2,
+            "unit": "px"
+          },
+          "blur": {
+            "value": 6,
+            "unit": "px"
+          },
+          "spread": {
+            "value": -2,
+            "unit": "px"
+          }
+        }
+      ],
+      "$description": "Command palette, menus and dialogs."
+    }
+  },
+  "easing": {
+    "out": {
+      "$type": "cubicBezier",
+      "$value": [
+        0.23,
+        1,
+        0.32,
+        1
+      ],
+      "$description": "Every transition: quick out, soft landing."
+    }
+  },
+  "duration": {
+    "fast": {
+      "$type": "duration",
+      "$value": {
+        "value": 120,
+        "unit": "ms"
+      }
+    },
+    "base": {
+      "$type": "duration",
+      "$value": {
+        "value": 180,
+        "unit": "ms"
+      }
+    }
+  },
+  "space": {
+    "1": {
+      "$type": "dimension",
+      "$value": {
+        "value": 4,
+        "unit": "px"
+      },
+      "$description": "Spacing steps match Tailwind’s 4px scale, so p-3 and gap-2 read these tokens."
+    },
+    "2": {
+      "$type": "dimension",
+      "$value": {
+        "value": 8,
+        "unit": "px"
+      }
+    },
+    "3": {
+      "$type": "dimension",
+      "$value": {
+        "value": 12,
+        "unit": "px"
+      }
+    },
+    "4": {
+      "$type": "dimension",
+      "$value": {
+        "value": 16,
+        "unit": "px"
+      }
+    },
+    "6": {
+      "$type": "dimension",
+      "$value": {
+        "value": 24,
+        "unit": "px"
+      }
+    },
+    "8": {
+      "$type": "dimension",
+      "$value": {
+        "value": 32,
+        "unit": "px"
+      }
+    }
+  },
+  "radius": {
+    "xs": {
+      "$type": "dimension",
+      "$value": {
+        "value": 4,
+        "unit": "px"
+      }
+    },
+    "sm": {
+      "$type": "dimension",
+      "$value": {
+        "value": 6,
+        "unit": "px"
+      }
+    },
+    "md": {
+      "$type": "dimension",
+      "$value": {
+        "value": 8,
+        "unit": "px"
+      }
+    },
+    "lg": {
+      "$type": "dimension",
+      "$value": {
+        "value": 10,
+        "unit": "px"
+      }
+    },
+    "xl": {
+      "$type": "dimension",
+      "$value": {
+        "value": 14,
+        "unit": "px"
+      }
+    },
+    "full": {
+      "$type": "dimension",
+      "$value": {
+        "value": 9999,
+        "unit": "px"
+      }
+    }
+  },
+  "size": {
+    "row": {
+      "$type": "dimension",
+      "$value": {
+        "value": 32,
+        "unit": "px"
+      },
+      "$description": "Dense list row."
+    },
+    "rail": {
+      "$type": "dimension",
+      "$value": {
+        "value": 52,
+        "unit": "px"
+      },
+      "$description": "Nav rail width."
+    },
+    "control": {
+      "$type": "dimension",
+      "$value": {
+        "value": 28,
+        "unit": "px"
+      }
+    }
+  },
+  "font": {
+    "sans": {
+      "$type": "fontFamily",
+      "$value": [
+        "Geist Variable",
+        "ui-sans-serif",
+        "system-ui",
+        "-apple-system",
+        "Segoe UI",
+        "sans-serif"
+      ]
+    },
+    "mono": {
+      "$type": "fontFamily",
+      "$value": [
+        "Geist Mono Variable",
+        "ui-monospace",
+        "SF Mono",
+        "Menlo",
+        "monospace"
+      ]
+    }
+  },
+  "typography": {
+    "display": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "{font.sans}",
+        "fontSize": {
+          "value": 22,
+          "unit": "px"
+        },
+        "fontWeight": 600,
+        "lineHeight": 1.2,
+        "letterSpacing": {
+          "value": -0.3,
+          "unit": "px"
+        }
+      }
+    },
+    "title": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "{font.sans}",
+        "fontSize": {
+          "value": 15,
+          "unit": "px"
+        },
+        "fontWeight": 600,
+        "lineHeight": 1.35,
+        "letterSpacing": {
+          "value": -0.1,
+          "unit": "px"
+        }
+      }
+    },
+    "heading": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "{font.sans}",
+        "fontSize": {
+          "value": 13,
+          "unit": "px"
+        },
+        "fontWeight": 600,
+        "lineHeight": 1.45
+      }
+    },
+    "body": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "{font.sans}",
+        "fontSize": {
+          "value": 13,
+          "unit": "px"
+        },
+        "fontWeight": 400,
+        "lineHeight": 1.5
+      }
+    },
+    "reading": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "{font.sans}",
+        "fontSize": {
+          "value": 14,
+          "unit": "px"
+        },
+        "fontWeight": 400,
+        "lineHeight": 1.6
+      }
+    },
+    "small": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "{font.sans}",
+        "fontSize": {
+          "value": 12,
+          "unit": "px"
+        },
+        "fontWeight": 400,
+        "lineHeight": 1.45
+      }
+    },
+    "caption": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "{font.sans}",
+        "fontSize": {
+          "value": 11.5,
+          "unit": "px"
+        },
+        "fontWeight": 500,
+        "lineHeight": 1.4
+      }
+    },
+    "mono": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "{font.mono}",
+        "fontSize": {
+          "value": 12,
+          "unit": "px"
+        },
+        "fontWeight": 400,
+        "lineHeight": 1.5
+      }
+    },
+    "mono-sm": {
+      "$type": "typography",
+      "$value": {
+        "fontFamily": "{font.mono}",
+        "fontSize": {
+          "value": 11,
+          "unit": "px"
+        },
+        "fontWeight": 450,
+        "lineHeight": 1.4
+      }
+    }
+  }
+}

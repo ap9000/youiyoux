@@ -1,0 +1,36 @@
+{
+  "$schema": "https://www.designtokens.org/schemas/2025.10/resolver.json",
+  "name": "YouIyouX",
+  "version": "2025.10",
+  "description": "YouIyouX app tokens: one base set plus a theme modifier whose dark context overrides the values that change. Built the same way as Signal.",
+  "sets": {
+    "base": {
+      "sources": [
+        {
+          "$ref": "youiyoux.tokens.json"
+        }
+      ]
+    }
+  },
+  "modifiers": {
+    "theme": {
+      "contexts": {
+        "light": [],
+        "dark": [
+          {
+            "$ref": "youiyoux.dark.tokens.json"
+          }
+        ]
+      },
+      "default": "light"
+    }
+  },
+  "resolutionOrder": [
+    {
+      "$ref": "#/sets/base"
+    },
+    {
+      "$ref": "#/modifiers/theme"
+    }
+  ]
+}
