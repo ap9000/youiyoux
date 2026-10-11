@@ -12,8 +12,8 @@ import { git, sandbox, type Sandbox } from "./helpers.ts";
 
 const PERSON: Actor = { kind: "person", name: "captain" };
 const AGENT: Actor = { kind: "agent", name: "claude" };
-const RAW_COLOR = "youi:signal/rule/color.no-raw-color";
-const NATIVE = "youi:signal/rule/components.no-native-controls";
+const RAW_COLOR = "youi:demo/rule/color.no-raw-color";
+const NATIVE = "youi:demo/rule/components.no-native-controls";
 
 let box: Sandbox;
 let workflow: RuleWorkflow;
@@ -68,7 +68,7 @@ describe("drafts", () => {
 
   test("only checks that can run are accepted; anything else is a problem, not a silent pass", async () => {
     const draft = await workflow.create(PERSON, { mode: "create" });
-    const content = withRule(draft, { id: "youi:signal/rule/custom.thing", title: "Custom", statement: "s", agent: "a", check: { engine: "ast-grep", language: "tsx", rule: { kind: "jsx_opening_element" } } });
+    const content = withRule(draft, { id: "youi:demo/rule/custom.thing", title: "Custom", statement: "s", agent: "a", check: { engine: "ast-grep", language: "tsx", rule: { kind: "jsx_opening_element" } } });
     const saved = await workflow.save(PERSON, draft.id, { revision: 1, content });
     expect(saved.problems).toEqual(["check: a custom ast-grep rule cannot run yet; choose a supported check or advisory"]);
     await expect(workflow.preview(PERSON, draft.id)).rejects.toMatchObject({ code: "invalid" });
@@ -90,7 +90,7 @@ describe("impact preview", () => {
     const silenced = builtinExecution.evaluate(project, scan, project.system.rules.filter((r) => r.id === RAW_COLOR)).suppressed;
     const published = scan.report.violations.filter((v) => v.rule === RAW_COLOR).length + silenced;
     const draft = await workflow.create(PERSON, { mode: "create" });
-    await workflow.save(PERSON, draft.id, { revision: 1, content: withRule(draft, { id: "youi:signal/rule/color.no-raw-color-again", title: "Again", statement: "No raw colours.", agent: "Use tokens.", check: { engine: "youi", id: "raw-color", options: {} }, files: ["**/*.{ts,tsx,css}"] }) });
+    await workflow.save(PERSON, draft.id, { revision: 1, content: withRule(draft, { id: "youi:demo/rule/color.no-raw-color-again", title: "Again", statement: "No raw colours.", agent: "Use tokens.", check: { engine: "youi", id: "raw-color", options: {} }, files: ["**/*.{ts,tsx,css}"] }) });
     const previewed = await workflow.preview(PERSON, draft.id);
     expect(published).toBeGreaterThan(0);
     expect(previewed.preview).toMatchObject({ flagged: published, baseline: 0, counts: { new: published, kept: 0, resolved: 0 }, enforced: true });
@@ -211,10 +211,10 @@ describe("hand-off", () => {
 
   test("a new rule lands as a new file plus the contracts that declare it, and agents see it once merged", async () => {
     const draft = await workflow.create(PERSON, { mode: "create" });
-    const id = "youi:signal/rule/components.no-native-select";
+    const id = "youi:demo/rule/components.no-native-select";
     await workflow.save(PERSON, draft.id, {
       revision: 1,
-      content: withRule(draft, { id, title: "Use the owned Select", statement: "Render Select, never a native <select>.", agent: "Never render a native <select>.", check: { engine: "youi", id: "native-element", options: { elements: { button: "youi:signal/component/button" } } } }, ["youi:signal/component/button"]),
+      content: withRule(draft, { id, title: "Use the owned Select", statement: "Render Select, never a native <select>.", agent: "Never render a native <select>.", check: { engine: "youi", id: "native-element", options: { elements: { button: "youi:demo/component/button" } } } }, ["youi:demo/component/button"]),
     });
     const done = await workflow.handoff(PERSON, (await approved(draft.id)).id);
     expect(done.handoff!.files).toEqual(["rules/components.no-native-select.rule.yaml", "components/button/button.contract.json"]);
