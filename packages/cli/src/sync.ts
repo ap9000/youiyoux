@@ -11,9 +11,9 @@
 import { execFile } from "node:child_process";
 import { lstat, mkdir, mkdtemp, readdir, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
-import { findFiles, LockFile, readDefinition, readTextOrNull, sha256, writeFileAtomic, type ElementId, type LockEntry } from "@youiyoux/core";
+import { findFiles, LockFile, normalizeRelPath, readDefinition, readTextOrNull, sha256, writeFileAtomic, type ElementId, type LockEntry } from "@youiyoux/core";
 import { buildTokens } from "@youiyoux/tokens";
 import { PROJECT_FILE, vendoredPath, type Project } from "@youiyoux/scanner";
 import { agentsBlock, astGrepRules, designMd, GENERATED_MARK, skillMd, upsertBlock } from "./agents.ts";
@@ -160,7 +160,7 @@ class Writer {
    */
   async retire(): Promise<void> {
     for (const [file, entry] of Object.entries(this.previous?.files ?? {})) {
-      if (entry.kind !== "generated" || file in this.files) continue;
+      if (entry.kind !== "generated" || file in this.files || !this.isGeneratedPath(file)) continue;
       const current = await readTextOrNull(this.path(file));
       if (current === null) continue;
       if (sha256(current) !== entry.sha256) {
@@ -170,6 +170,16 @@ class Writer {
       if (!this.options.dryRun) await rm(this.path(file));
       this.record({ file, role: "agents", action: "removed", detail: "no longer generated" });
     }
+  }
+
+  /**
+   * Only paths youi itself generates may be retired. The lockfile is project content: a key such as
+   * `../../x` must never make sync delete a file outside them, however its hash was written.
+   */
+  private isGeneratedPath(file: string): boolean {
+    if (isAbsolute(file) || normalizeRelPath(file) !== file || file.split("/").includes("..")) return false;
+    const { outputs, agents } = this.project.config;
+    return file.startsWith("youi-rules/") || file.startsWith(`${outputs.dir}/`) || file === agents.designMd || file === `${agents.skillDir}/SKILL.md`;
   }
 
   async managedBlock(file: string, block: string): Promise<void> {

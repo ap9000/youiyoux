@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -113,6 +113,37 @@ describe("youi", () => {
     const dir = await mkdtemp(join(tmpdir(), "youi-hub-"));
     try {
       await expect(runHub(dir, { design: DEMO })).rejects.toThrowError(/dependencies are not installed: run `pnpm install`/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("rules lists how each rule is checked; plan --token reports a lower bound", async () => {
+    expect(await main(["rules", "--project", FIXTURE, "--json"])).toBe(0);
+    const { rules, capabilities } = JSON.parse(out) as { rules: Array<{ id: string; state: string }>; capabilities: { builtIn: unknown[] } };
+    expect(rules.find((r) => r.id.endsWith("components.one-signal-verb"))?.state).toBe("advisory");
+    expect(rules.filter((r) => r.state === "enforced")).toHaveLength(5);
+    expect(capabilities.builtIn).toHaveLength(5);
+    out = "";
+    expect(await main(["plan", "--token", "color.ink", "--project", FIXTURE])).toBe(0);
+    expect(out).toContain("none found (not proof of none: see limits)");
+    expect(out).toContain("counts are a lower bound");
+  });
+
+  test("a rule youi cannot run makes check incomplete, and rules --preview shows no clean result", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "youi-rules-"));
+    try {
+      const design = join(dir, "design");
+      for (const part of ["youi.config.json", "tokens", "components", "rules", "systems"]) await cp(join(REPO, part), join(design, part), { recursive: true });
+      const broken = ["schema: youi.rule/v1", "id: youi:signal/rule/test.broken", "title: Broken", "severity: error", "statement: Never matches", "agent: Nothing", "check:", "  engine: ast-grep", "  language: tsx", "  rule:", "    kind: not_a_kind", ""].join("\n");
+      await writeFile(join(design, "rules/test.broken.rule.yaml"), broken);
+      expect(await main(["check", "--project", FIXTURE, "--design", design, "--json"])).toBe(1);
+      const check = JSON.parse(out) as { incomplete: boolean; notRun: Array<{ rule: string; state: string }> };
+      expect(check.incomplete).toBe(true);
+      expect(check.notRun).toEqual([expect.objectContaining({ rule: "youi:signal/rule/test.broken", state: "unsupported" })]);
+      out = "";
+      expect(await main(["rules", "--project", FIXTURE, "--design", design, "--preview", join(design, "rules/test.broken.rule.yaml")])).toBe(1);
+      expect(out).toContain("this is not a clean result");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
