@@ -1,0 +1,99 @@
+{
+  "$id": "https://design-language.local/schema/youi.config.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema": {
+      "type": "string",
+      "const": "youi.config/v1"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "systems": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+          },
+          "description": {
+            "default": "",
+            "type": "string"
+          },
+          "tokens": {
+            "type": "string",
+            "minLength": 1
+          },
+          "themeModifier": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "light": {
+                "type": "string"
+              },
+              "dark": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "light",
+              "dark"
+            ]
+          },
+          "components": {
+            "default": "components",
+            "type": "string",
+            "minLength": 1
+          },
+          "support": {
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "rules": {
+            "default": "rules",
+            "type": "string",
+            "minLength": 1
+          },
+          "design": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version",
+          "tokens"
+        ]
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "name",
+    "systems"
+  ]
+}

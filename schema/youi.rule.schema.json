@@ -1,0 +1,159 @@
+{
+  "$id": "https://design-language.local/schema/youi.rule.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema": {
+      "type": "string",
+      "const": "youi.rule/v1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^youi:([a-z][a-z0-9-]*)\\/(token|component|rule|migration)\\/([a-z0-9][a-z0-9.\\-]*)$"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "severity": {
+      "type": "string",
+      "enum": [
+        "error",
+        "warn",
+        "off"
+      ]
+    },
+    "statement": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rationale": {
+      "default": "",
+      "type": "string"
+    },
+    "agent": {
+      "type": "string",
+      "minLength": 1
+    },
+    "check": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "engine": {
+              "type": "string",
+              "const": "youi"
+            },
+            "id": {
+              "type": "string",
+              "enum": [
+                "raw-color",
+                "native-element",
+                "lookalike-component",
+                "arbitrary-value",
+                "prop-values"
+              ]
+            },
+            "options": {
+              "default": {},
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "required": [
+            "engine",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "engine": {
+              "type": "string",
+              "const": "ast-grep"
+            },
+            "language": {
+              "type": "string",
+              "enum": [
+                "tsx",
+                "typescript",
+                "css"
+              ]
+            },
+            "rule": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            }
+          },
+          "required": [
+            "engine",
+            "language",
+            "rule"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "engine": {
+              "type": "string",
+              "const": "advisory"
+            }
+          },
+          "required": [
+            "engine"
+          ]
+        }
+      ]
+    },
+    "files": {
+      "default": [
+        "**/*.{ts,tsx,css}"
+      ],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "examples": {
+      "default": {
+        "bad": [],
+        "good": []
+      },
+      "type": "object",
+      "properties": {
+        "bad": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "good": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "id",
+    "title",
+    "severity",
+    "statement",
+    "agent",
+    "check"
+  ]
+}

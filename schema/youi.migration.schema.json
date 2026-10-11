@@ -1,0 +1,103 @@
+{
+  "$id": "https://design-language.local/schema/youi.migration.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema": {
+      "type": "string",
+      "const": "youi.migration/v1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^youi:([a-z][a-z0-9-]*)\\/(token|component|rule|migration)\\/([a-z0-9][a-z0-9.\\-]*)$"
+    },
+    "element": {
+      "type": "string",
+      "pattern": "^youi:([a-z][a-z0-9-]*)\\/(token|component|rule|migration)\\/([a-z0-9][a-z0-9.\\-]*)$"
+    },
+    "from": {
+      "type": "string"
+    },
+    "to": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+    },
+    "changes": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "renameProp": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "from",
+                  "to"
+                ]
+              }
+            },
+            "required": [
+              "renameProp"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "mapValues": {
+                "type": "object",
+                "properties": {
+                  "prop": {
+                    "type": "string"
+                  },
+                  "map": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "prop",
+                  "map"
+                ]
+              }
+            },
+            "required": [
+              "mapValues"
+            ]
+          }
+        ]
+      }
+    },
+    "expectedUsageDelta": {
+      "default": 0,
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    }
+  },
+  "required": [
+    "schema",
+    "id",
+    "element",
+    "from",
+    "to",
+    "changes"
+  ]
+}

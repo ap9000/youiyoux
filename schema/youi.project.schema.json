@@ -1,0 +1,266 @@
+{
+  "$id": "https://design-language.local/schema/youi.project.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema": {
+      "type": "string",
+      "const": "youi.project/v1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "system": {
+      "type": "string"
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
+    "tsconfig": {
+      "default": "tsconfig.json",
+      "type": "string",
+      "minLength": 1
+    },
+    "include": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "exclude": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "componentsDir": {
+      "type": "string",
+      "minLength": 1
+    },
+    "tokenSources": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "routes": {
+      "default": {
+        "strategy": "none",
+        "appDir": "app",
+        "map": [],
+        "shell": []
+      },
+      "type": "object",
+      "properties": {
+        "strategy": {
+          "default": "none",
+          "type": "string",
+          "enum": [
+            "expo-router",
+            "map",
+            "none"
+          ]
+        },
+        "appDir": {
+          "default": "app",
+          "type": "string",
+          "minLength": 1
+        },
+        "map": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string",
+                "minLength": 1
+              },
+              "routes": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "evidence": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "file",
+              "routes"
+            ]
+          }
+        },
+        "shell": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "outputs": {
+      "default": {
+        "dir": "src/design",
+        "cssVarPrefix": "youi",
+        "dark": [
+          {
+            "media": "(prefers-color-scheme: dark)",
+            "selector": ":root:not([data-theme=\"light\"])"
+          },
+          {
+            "selector": ":root[data-theme=\"dark\"]"
+          }
+        ],
+        "targets": [
+          "css-vars",
+          "tailwind-v4",
+          "ts"
+        ],
+        "tailwind": {
+          "includeAll": true,
+          "map": {}
+        }
+      },
+      "type": "object",
+      "properties": {
+        "dir": {
+          "default": "src/design",
+          "type": "string",
+          "minLength": 1
+        },
+        "cssVarPrefix": {
+          "default": "youi",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$"
+        },
+        "dark": {
+          "default": [
+            {
+              "media": "(prefers-color-scheme: dark)",
+              "selector": ":root:not([data-theme=\"light\"])"
+            },
+            {
+              "selector": ":root[data-theme=\"dark\"]"
+            }
+          ],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "media": {
+                "type": "string"
+              },
+              "selector": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "selector"
+            ]
+          }
+        },
+        "targets": {
+          "default": [
+            "css-vars",
+            "tailwind-v4",
+            "ts"
+          ],
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "css-vars",
+              "tailwind-v4",
+              "ts",
+              "react-native"
+            ]
+          }
+        },
+        "tailwind": {
+          "default": {
+            "includeAll": true,
+            "map": {}
+          },
+          "type": "object",
+          "properties": {
+            "includeAll": {
+              "default": true,
+              "type": "boolean"
+            },
+            "map": {
+              "default": {},
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9-]*$"
+              },
+              "additionalProperties": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "agents": {
+      "default": {
+        "agentsMd": "AGENTS.md",
+        "designMd": "DESIGN.md",
+        "skillDir": ".agents/skills/youiyoux",
+        "claudeSkillLink": true
+      },
+      "type": "object",
+      "properties": {
+        "agentsMd": {
+          "default": "AGENTS.md",
+          "type": "string",
+          "minLength": 1
+        },
+        "designMd": {
+          "default": "DESIGN.md",
+          "type": "string",
+          "minLength": 1
+        },
+        "skillDir": {
+          "default": ".agents/skills/youiyoux",
+          "type": "string",
+          "minLength": 1
+        },
+        "claudeSkillLink": {
+          "default": true,
+          "type": "boolean"
+        }
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "id",
+    "system",
+    "source",
+    "include",
+    "componentsDir"
+  ]
+}

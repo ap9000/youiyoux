@@ -1,0 +1,29 @@
+{
+  "schema": "youi.project/v1",
+  "id": "expo-fixture",
+  "system": "signal",
+  "source": {
+    "path": "../../../../.."
+  },
+  "tsconfig": "tsconfig.json",
+  "include": [
+    "app/**/*.tsx",
+    "components/**/*.{ts,tsx}",
+    "styles/**/*.css"
+  ],
+  "exclude": [],
+  "componentsDir": "components/ui",
+  "tokenSources": [
+    "styles/tokens.css"
+  ],
+  "routes": {
+    "strategy": "expo-router",
+    "appDir": "app",
+    "map": [],
+    "shell": []
+  },
+  "outputs": {
+    "dir": "src/design",
+    "cssVarPrefix": "so"
+  }
+}

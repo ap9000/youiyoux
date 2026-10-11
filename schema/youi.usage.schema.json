@@ -1,0 +1,356 @@
+{
+  "$id": "https://design-language.local/schema/youi.usage.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "type": "string",
+      "const": "youi.usage/v1"
+    },
+    "project": {
+      "type": "string"
+    },
+    "system": {
+      "type": "string"
+    },
+    "commit": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "scanner": {
+      "type": "string"
+    },
+    "configDigest": {
+      "type": "string"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+    },
+    "durationMs": {
+      "type": "number"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "complete",
+        "partial"
+      ]
+    },
+    "coverage": {
+      "type": "object",
+      "properties": {
+        "filesMatched": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "filesScanned": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "failed": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "file": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "file",
+              "reason"
+            ]
+          }
+        }
+      },
+      "required": [
+        "filesMatched",
+        "filesScanned",
+        "failed"
+      ]
+    },
+    "usages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "column": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "element": {
+            "type": "string",
+            "pattern": "^youi:([a-z][a-z0-9-]*)\\/(token|component|rule|migration)\\/([a-z0-9][a-z0-9.\\-]*)$"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "render",
+              "variants",
+              "reference"
+            ]
+          },
+          "export": {
+            "type": "string"
+          },
+          "local": {
+            "type": "string"
+          },
+          "props": {
+            "default": {},
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "literal": {
+                      "type": [
+                        "string",
+                        "number",
+                        "boolean"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "literal"
+                  ]
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "dynamic": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "dynamic"
+                  ]
+                }
+              ]
+            }
+          },
+          "spread": {
+            "default": false,
+            "type": "boolean"
+          },
+          "routes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "routeSource": {
+            "type": "string",
+            "enum": [
+              "route-file",
+              "imported-by",
+              "shell",
+              "unrouted"
+            ]
+          },
+          "via": {
+            "type": "string"
+          },
+          "fingerprint": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "line",
+          "column",
+          "element",
+          "kind",
+          "export",
+          "local",
+          "routes",
+          "routeSource",
+          "fingerprint"
+        ]
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "column": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "name": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "unresolved-import",
+              "external-module",
+              "dynamic-component",
+              "namespace-member",
+              "parse-error",
+              "unresolved-export"
+            ]
+          },
+          "detail": {
+            "type": "string"
+          },
+          "candidate": {
+            "type": "string",
+            "pattern": "^youi:([a-z][a-z0-9-]*)\\/(token|component|rule|migration)\\/([a-z0-9][a-z0-9.\\-]*)$"
+          }
+        },
+        "required": [
+          "file",
+          "line",
+          "column",
+          "name",
+          "reason",
+          "detail"
+        ]
+      }
+    },
+    "suppressed": {
+      "default": 0,
+      "type": "integer",
+      "minimum": -9007199254740991,
+      "maximum": 9007199254740991
+    },
+    "lookalikes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "column": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "resembles": {
+            "type": "string",
+            "pattern": "^youi:([a-z][a-z0-9-]*)\\/(token|component|rule|migration)\\/([a-z0-9][a-z0-9.\\-]*)$"
+          },
+          "local": {
+            "type": "string"
+          },
+          "resolved": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "line",
+          "column",
+          "resembles",
+          "local",
+          "resolved"
+        ]
+      }
+    },
+    "violations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "column": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "rule": {
+            "type": "string",
+            "pattern": "^youi:([a-z][a-z0-9-]*)\\/(token|component|rule|migration)\\/([a-z0-9][a-z0-9.\\-]*)$"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "error",
+              "warn"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "suggestion": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "line",
+          "column",
+          "rule",
+          "severity",
+          "message",
+          "text"
+        ]
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "project",
+    "system",
+    "commit",
+    "scanner",
+    "configDigest",
+    "generatedAt",
+    "durationMs",
+    "status",
+    "coverage",
+    "usages",
+    "unknowns",
+    "lookalikes",
+    "violations"
+  ]
+}

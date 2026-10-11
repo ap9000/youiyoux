@@ -112,12 +112,13 @@ class Collector {
 
   classify(symbol: ResolvedSymbol, node: SgNode, local: string, name: string): ElementBinding | null {
     const where = { file: this.module.file, ...position(node) };
-    const candidate = this.elements.byName.get(name) ?? this.elements.byName.get(local);
+    const exported = symbol.kind === "symbol" || symbol.kind === "external" ? symbol.name.split(".").at(-1)! : name;
+    const candidate = this.elements.byName.get(exported) ?? this.elements.byName.get(name) ?? this.elements.byName.get(local);
     if (symbol.kind === "symbol") {
       const binding = this.elements.byCanonical.get(canonicalKey(symbol.file, symbol.name));
       if (binding) return binding;
       const definedHere = symbol.file === this.module.file && this.elements.implementationFiles.has(this.module.file);
-      if (candidate && !definedHere && /^[A-Z]/.test(local)) this.lookalikes.push({ resembles: candidate.element, local, resolved: canonicalKey(symbol.file, symbol.name), ...where });
+      if (candidate && candidate.role !== "variants" && !definedHere && /^[A-Z]/.test(local)) this.lookalikes.push({ resembles: candidate.element, local, resolved: canonicalKey(symbol.file, symbol.name), ...where });
       return null;
     }
     if (symbol.kind === "external") {

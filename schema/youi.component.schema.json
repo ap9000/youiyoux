@@ -1,0 +1,368 @@
+{
+  "$id": "https://design-language.local/schema/youi.component.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema": {
+      "type": "string",
+      "const": "youi.component/v1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^youi:([a-z][a-z0-9-]*)\\/(token|component|rule|migration)\\/([a-z0-9][a-z0-9.\\-]*)$"
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Za-z0-9]*$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "draft",
+        "beta",
+        "stable",
+        "deprecated"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "export": {
+          "type": "string",
+          "minLength": 1
+        },
+        "also": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "file",
+        "export"
+      ]
+    },
+    "platforms": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "web",
+          "ios",
+          "android"
+        ]
+      }
+    },
+    "props": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "enum"
+              },
+              "values": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "default": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "required": {
+                "default": false,
+                "type": "boolean"
+              },
+              "deprecated": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "values"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "string"
+              },
+              "default": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "required": {
+                "default": false,
+                "type": "boolean"
+              },
+              "deprecated": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "boolean"
+              },
+              "default": {
+                "type": "boolean"
+              },
+              "description": {
+                "type": "string"
+              },
+              "required": {
+                "default": false,
+                "type": "boolean"
+              },
+              "deprecated": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "number"
+              },
+              "default": {
+                "type": "number"
+              },
+              "description": {
+                "type": "string"
+              },
+              "required": {
+                "default": false,
+                "type": "boolean"
+              },
+              "deprecated": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "function"
+              },
+              "description": {
+                "type": "string"
+              },
+              "required": {
+                "default": false,
+                "type": "boolean"
+              },
+              "deprecated": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "node"
+              },
+              "description": {
+                "type": "string"
+              },
+              "required": {
+                "default": false,
+                "type": "boolean"
+              },
+              "deprecated": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          }
+        ]
+      }
+    },
+    "passthrough": {
+      "type": "string"
+    },
+    "tokens": {
+      "default": {},
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^youi:([a-z][a-z0-9-]*)\\/(token|component|rule|migration)\\/([a-z0-9][a-z0-9.\\-]*)$"
+      }
+    },
+    "a11y": {
+      "default": {
+        "notes": []
+      },
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string"
+        },
+        "minTouchTarget": {
+          "type": "number"
+        },
+        "notes": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "rules": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^youi:([a-z][a-z0-9-]*)\\/(token|component|rule|migration)\\/([a-z0-9][a-z0-9.\\-]*)$"
+      }
+    },
+    "guidance": {
+      "default": {
+        "do": [],
+        "dont": []
+      },
+      "type": "object",
+      "properties": {
+        "do": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dont": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "examples": {
+      "default": [],
+      "maxItems": 3,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "code"
+        ]
+      }
+    },
+    "aliases": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "owners": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "deprecation": {
+      "type": "object",
+      "properties": {
+        "replacement": {
+          "type": "string",
+          "pattern": "^youi:([a-z][a-z0-9-]*)\\/(token|component|rule|migration)\\/([a-z0-9][a-z0-9.\\-]*)$"
+        },
+        "removeIn": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z.-]+)?$"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "note"
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "id",
+    "name",
+    "version",
+    "status",
+    "summary",
+    "source",
+    "platforms",
+    "props"
+  ]
+}
