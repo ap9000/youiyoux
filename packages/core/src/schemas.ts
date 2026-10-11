@@ -87,8 +87,8 @@ export type OutputConfig = z.infer<typeof OutputConfig>;
 export const AgentConfig = z.object({
   agentsMd: RelPath.default("AGENTS.md"),
   designMd: RelPath.default("DESIGN.md"),
-  skillDir: RelPath.default(".agents/skills/design-language"),
-  /** Also expose the skill at `.claude/skills/design-language` (a symlink). */
+  skillDir: RelPath.default(".agents/skills/youiyoux"),
+  /** Also expose the skill at `.claude/skills/youiyoux` (a symlink). */
   claudeSkillLink: z.boolean().default(true),
 });
 
@@ -108,7 +108,7 @@ export const ProjectConfig = z.object({
   tokenSources: z.array(z.string()).default([]),
   routes: RouteConfig.default({ strategy: "none", appDir: "app", map: [], shell: [] }),
   outputs: OutputConfig.default({ dir: "src/design", cssVarPrefix: "youi", dark: DEFAULT_DARK_SELECTORS, targets: ["css-vars", "tailwind-v4", "ts"], tailwind: { includeAll: true, map: {} } }),
-  agents: AgentConfig.default({ agentsMd: "AGENTS.md", designMd: "DESIGN.md", skillDir: ".agents/skills/design-language", claudeSkillLink: true }),
+  agents: AgentConfig.default({ agentsMd: "AGENTS.md", designMd: "DESIGN.md", skillDir: ".agents/skills/youiyoux", claudeSkillLink: true }),
 });
 export type ProjectConfig = z.infer<typeof ProjectConfig>;
 
@@ -218,6 +218,8 @@ export const UsageSite = Position.extend({
   element: ElementId,
   /** render: `<Button>`; variants: `buttonVariants()` applied elsewhere; reference: passed as a value. */
   kind: z.enum(["render", "variants", "reference"]),
+  /** The canonical export used: the element itself, a sub-part (CardHeader) or its variants function. */
+  export: z.string(),
   local: z.string(),
   props: z.record(z.string(), PropValue).default({}),
   spread: z.boolean().default(false),

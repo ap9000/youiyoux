@@ -89,6 +89,9 @@ importers:
       '@youiyoux/core':
         specifier: workspace:*
         version: link:../core
+      '@youiyoux/tokens':
+        specifier: workspace:*
+        version: link:../tokens
       typescript:
         specifier: 6.0.3
         version: 6.0.3

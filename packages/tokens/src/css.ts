@@ -23,17 +23,29 @@ export function blankComments(css: string): string {
   return css.replace(/\/\*[\s\S]*?\*\//g, (comment) => comment.replace(/[^\n]/g, " "));
 }
 
-function lineAt(text: string, index: number): number {
-  let line = 1;
-  for (let i = 0; i < index; i++) if (text.charCodeAt(i) === 10) line++;
-  return line;
+/** Offsets of each line start, for O(log n) offset → line lookups. */
+function lineStarts(text: string): number[] {
+  const starts = [0];
+  for (let i = 0; i < text.length; i++) if (text.charCodeAt(i) === 10) starts.push(i + 1);
+  return starts;
 }
 
-function parseDeclarations(css: string, start: number, body: string): CssDeclaration[] {
+function lineAt(starts: readonly number[], index: number): number {
+  let low = 0;
+  let high = starts.length - 1;
+  while (low < high) {
+    const mid = (low + high + 1) >> 1;
+    if (starts[mid]! <= index) low = mid;
+    else high = mid - 1;
+  }
+  return low + 1;
+}
+
+function parseDeclarations(starts: readonly number[], start: number, body: string): CssDeclaration[] {
   const declarations: CssDeclaration[] = [];
   const pattern = /(--?[A-Za-z0-9_-]+|[a-z-]+)\s*:\s*([^;{}]+?)\s*(?:;|$)/g;
   for (const match of body.matchAll(pattern)) {
-    declarations.push({ property: match[1]!, value: match[2]!.trim(), line: lineAt(css, start + (match.index ?? 0)) });
+    declarations.push({ property: match[1]!, value: match[2]!.trim(), line: lineAt(starts, start + (match.index ?? 0)) });
   }
   return declarations;
 }
@@ -41,28 +53,25 @@ function parseDeclarations(css: string, start: number, body: string): CssDeclara
 /** Every rule with its own (non-nested) declarations, in source order. */
 export function readRules(source: string): CssRule[] {
   const css = blankComments(source);
+  const starts = lineStarts(css);
   const rules: CssRule[] = [];
-  const stack: Array<{ prelude: string; bodyStart: number; childText: string[] }> = [];
+  // Each open block collects its own declaration text in chunks; a nested block's prelude and
+  // body never land in its parent's chunks, so one linear pass is enough.
+  const stack: Array<{ prelude: string; chunks: Array<{ start: number; text: string }> }> = [];
   let segmentStart = 0;
   for (let i = 0; i < css.length; i++) {
     const ch = css[i];
     if (ch === "{") {
-      const prelude = css.slice(segmentStart, i).split(";").pop()!.trim();
-      stack.at(-1)?.childText.push(css.slice(segmentStart, i));
-      stack.push({ prelude, bodyStart: i + 1, childText: [] });
+      const segment = css.slice(segmentStart, i);
+      const cut = segment.lastIndexOf(";") + 1;
+      stack.at(-1)?.chunks.push({ start: segmentStart, text: segment.slice(0, cut) });
+      stack.push({ prelude: segment.slice(cut).trim(), chunks: [] });
       segmentStart = i + 1;
     } else if (ch === "}") {
       const frame = stack.pop();
       if (!frame) continue;
-      frame.childText.push(css.slice(segmentStart, i));
-      const own = css.slice(frame.bodyStart, i);
-      // Remove nested blocks from this rule's own text before reading declarations.
-      let flat = own;
-      for (let previous = ""; previous !== flat; ) {
-        previous = flat;
-        flat = flat.replace(/[^{};]*\{[^{}]*\}/g, (block) => block.replace(/[^\n]/g, " "));
-      }
-      const declarations = parseDeclarations(css, frame.bodyStart, flat);
+      frame.chunks.push({ start: segmentStart, text: css.slice(segmentStart, i) });
+      const declarations = frame.chunks.flatMap((chunk) => parseDeclarations(starts, chunk.start, chunk.text));
       if (declarations.length > 0) rules.push({ preludes: [...stack.map((f) => f.prelude), frame.prelude], declarations });
       segmentStart = i + 1;
     }

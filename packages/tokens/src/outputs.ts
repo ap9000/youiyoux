@@ -74,15 +74,30 @@ function tailwindEntries(token: ResolvedToken, prefix: string): Array<[string, s
   return namespace && name ? [[`${namespace}-${name}`, ref]] : [];
 }
 
-export function renderTailwind(tokens: readonly ResolvedToken[], output: OutputConfig, header: string): string {
+export interface ThemeEntry {
+  /** The CSS the theme variable reads. */
+  readonly css: string;
+  /** The token behind it, when there is one. */
+  readonly token?: string;
+}
+
+/** Tailwind theme variables (without `--`) for a project: every token's name plus the project's map, map wins. */
+export function tailwindTheme(tokens: readonly ResolvedToken[], output: OutputConfig): Map<string, ThemeEntry> {
   const byId = new Map(tokens.map((t) => [t.id, t]));
-  const entries = new Map<string, string>();
-  if (output.tailwind.includeAll) for (const token of tokens) for (const [key, value] of tailwindEntries(token, output.cssVarPrefix)) entries.set(key, value);
+  const entries = new Map<string, ThemeEntry>();
+  if (output.tailwind.includeAll) {
+    for (const token of tokens) for (const [key, css] of tailwindEntries(token, output.cssVarPrefix)) entries.set(key, { css, token: token.id });
+  }
   for (const [key, target] of Object.entries(output.tailwind.map)) {
     const token = byId.get(target);
-    entries.set(key, token ? `var(--${output.cssVarPrefix}-${token.cssName})` : target);
+    entries.set(key, token ? { css: `var(--${output.cssVarPrefix}-${token.cssName})`, token: token.id } : { css: target });
   }
-  const lines = [...entries].sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `  --${key}: ${value};`);
+  return entries;
+}
+
+export function renderTailwind(tokens: readonly ResolvedToken[], output: OutputConfig, header: string): string {
+  const entries = tailwindTheme(tokens, output);
+  const lines = [...entries].sort(([a], [b]) => a.localeCompare(b)).map(([key, value]) => `  --${key}: ${value.css};`);
   return `${header}\n/* Tailwind v4 theme: utilities read the design-language CSS variables, so light and dark follow tokens.css. */\n@theme inline {\n${lines.join("\n")}\n}\n`;
 }
 
