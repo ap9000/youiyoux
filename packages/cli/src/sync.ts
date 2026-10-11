@@ -9,9 +9,9 @@
  *   retired    a generated file no longer produced (a rule turned off) is removed, unless edited by hand
  */
 import { execFile } from "node:child_process";
-import { lstat, mkdir, mkdtemp, readdir, readlink, rm, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readdir, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { findFiles, LockFile, normalizeRelPath, readDefinition, readTextOrNull, sha256, writeFileAtomic, type ElementId, type LockEntry } from "@youiyoux/core";
 import { buildTokens } from "@youiyoux/tokens";
@@ -167,6 +167,10 @@ class Writer {
         this.record({ file, role: "agents", action: "skipped", detail: "no longer generated, but edited by hand: remove it yourself" });
         continue;
       }
+      if (!(await this.insideProject(file))) {
+        this.record({ file, role: "agents", action: "skipped", detail: "no longer generated, but resolves outside the project: remove it yourself" });
+        continue;
+      }
       if (!this.options.dryRun) await rm(this.path(file));
       this.record({ file, role: "agents", action: "removed", detail: "no longer generated" });
     }
@@ -180,6 +184,12 @@ class Writer {
     if (isAbsolute(file) || normalizeRelPath(file) !== file || file.split("/").includes("..")) return false;
     const { outputs, agents } = this.project.config;
     return file.startsWith("youi-rules/") || file.startsWith(`${outputs.dir}/`) || file === agents.designMd || file === `${agents.skillDir}/SKILL.md`;
+  }
+
+  /** The real location stays inside the project root, even through a symlinked directory. */
+  private async insideProject(file: string): Promise<boolean> {
+    const [root, parent] = await Promise.all([realpath(this.project.root), realpath(dirname(this.path(file))).catch(() => null)]);
+    return parent !== null && (parent === root || parent.startsWith(`${root}${sep}`));
   }
 
   async managedBlock(file: string, block: string): Promise<void> {

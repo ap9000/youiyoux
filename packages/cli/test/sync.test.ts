@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readFile, readlink, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { sha256 } from "@youiyoux/core";
@@ -249,5 +249,17 @@ describe("off is off everywhere", () => {
     await syncProject(await project());
     expect(await readFile(outside, "utf8")).toBe("keep me\n");
     expect(await read("app/(tabs)/index.tsx")).toContain("Button");
+  });
+
+  test("a retired file behind a symlinked directory outside the project is left alone", async () => {
+    await syncProject(await project());
+    const elsewhere = join(dir, "elsewhere");
+    await cp(join(app, "youi-rules"), elsewhere, { recursive: true });
+    await rm(join(app, "youi-rules"), { recursive: true });
+    await symlink(elsewhere, join(app, "youi-rules"));
+    await turnOff();
+    const { actions } = await syncProject(await project());
+    expect(actionFor(actions, "youi-rules/components.no-native-controls.yml")).toBe("skipped");
+    expect(await readFile(join(elsewhere, "components.no-native-controls.yml"), "utf8")).toContain("components.no-native-controls");
   });
 });
