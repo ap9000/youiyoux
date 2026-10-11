@@ -184,7 +184,7 @@ export function ScreenDetail({ model, screens, screen }: { model: Model; screens
   const image = <ScreenImage shot={screen.shot} scheme={scheme} size="full" label={`${screen.project} ${label}`} {...(ratio ? { ratio } : {})} />;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PaneHeader
         title={
           <span className="flex items-center gap-1.5">
@@ -205,7 +205,7 @@ export function ScreenDetail({ model, screens, screen }: { model: Model; screens
         </StepLink>
       </PaneHeader>
       <div className="flex min-h-0 flex-1 animate-enter max-xl:flex-col max-xl:overflow-y-auto">
-        <div className="min-w-0 flex-1 xl:overflow-y-auto">
+        <div className="min-w-0 xl:flex-1 xl:overflow-y-auto">
           <figure className="space-y-2.5 p-6 max-sm:p-4">
             <div className={clsx("overflow-hidden rounded-lg border border-line shadow-raise", !full && "border-dashed shadow-none")}>
               {full ? (
@@ -219,7 +219,7 @@ export function ScreenDetail({ model, screens, screen }: { model: Model; screens
             <figcaption className="flex flex-wrap items-center gap-x-3 gap-y-1 text-small text-muted">
               {screen.shot && (
                 <span>
-                  Captured at <code className="font-mono text-mono-sm text-ink-2">{screen.shot.path}</code>
+                  Captured at <code className="font-mono text-mono-sm break-all text-ink-2">{screen.shot.path}</code>
                   {screen.shot.note && <> · {screen.shot.note}</>}
                 </span>
               )}

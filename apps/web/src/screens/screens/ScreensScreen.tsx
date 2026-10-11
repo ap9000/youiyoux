@@ -68,7 +68,7 @@ function ScreenGrid({ model, index, screens }: { model: Model; index: UsageIndex
   const projects = [...new Set(screens.screens.map((s) => s.project))];
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <PaneHeader title="Screens" count={screens.screens.length} />
       <div ref={gridRef} data-list-pane onFocus={(event) => setFocused(cards().findIndex((card) => card === (event.target as Element)))} className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-6xl space-y-10 px-6 py-6 animate-enter max-sm:px-4">
