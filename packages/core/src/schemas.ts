@@ -177,12 +177,25 @@ export const RuleCheck = z.discriminatedUnion("engine", [
   z.object({ engine: z.literal("advisory") }),
 ]);
 
+/**
+ * A planned tightening: the rule ships as a warning now and becomes an error later. The
+ * severity never changes by itself; a person approves the tightening as its own change.
+ */
+export const RuleRollout = z.object({
+  to: z.literal("error"),
+  /** The date the team intends to tighten it (YYYY-MM-DD). */
+  after: z.iso.date().optional(),
+  note: z.string().optional(),
+});
+export type RuleRollout = z.infer<typeof RuleRollout>;
+
 export const RuleSpec = z.object({
   $schema: z.string().optional(),
   schema: z.literal("youi.rule/v1"),
   id: ElementId,
   title: z.string().min(1),
   severity: z.enum(["error", "warn", "off"]),
+  rollout: RuleRollout.optional(),
   statement: z.string().min(1),
   rationale: z.string().default(""),
   /** One imperative line for agent instructions (AGENTS.md, SKILL.md). */

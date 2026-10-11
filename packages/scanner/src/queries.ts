@@ -233,6 +233,7 @@ export function ruleRows(project: Project): Array<Record<string, unknown>> {
     id: r.id,
     title: r.title,
     severity: r.severity,
+    ...(r.rollout ? { becomes: `${r.rollout.to}${r.rollout.after ? ` after ${r.rollout.after}` : " later"}` } : {}),
     enforced: r.check.engine !== "advisory",
     do: r.agent,
     ...(r.examples.bad.length ? { bad: r.examples.bad[0] } : {}),

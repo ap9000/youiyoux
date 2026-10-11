@@ -1,9 +1,11 @@
 /** `youi`: the YouIyouX command line. */
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { homedir, userInfo } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
 import { parseArgs, type ParseArgsConfig } from "node:util";
 import { parse as parseYaml } from "yaml";
-import { DefinitionError, findFiles, getSystem, loadDesignRepo, MigrationSpec, OutputConfig, renderJsonSchemas, writeFileAtomic } from "@youiyoux/core";
+import { DefinitionError, findFiles, getSystem, shortHash, loadDesignRepo, MigrationSpec, OutputConfig, renderJsonSchemas, writeFileAtomic } from "@youiyoux/core";
 import { buildTokens, compareParity } from "@youiyoux/tokens";
 import { componentCard, findContract, loadProject, planChange, runMigration, scanProject, screenBom, whereUsed, type PlanInput, type Project } from "@youiyoux/scanner";
 import { runHub } from "./hub.ts";
@@ -31,6 +33,7 @@ ${style.bold("In a product repo")}
   plan --token <id> [--value v]           impact of a token change
   migrate <migration.yaml> [--write] [--diff]   gated codemod; dry run unless --write
   mcp                      stdio MCP server (read tools + plan)
+  editor [--port n] [--state dir]   local rule editor: drafts, impact preview, approval, review branch
 
 ${style.bold("The hub")}
   ui [--design dir] [--project dir] [--config file] [--port n]
@@ -78,6 +81,7 @@ const OPTIONS = {
   light: { type: "string" },
   port: { type: "string" },
   dark: { type: "string" },
+  state: { type: "string" },
   help: { type: "boolean", short: "h", default: false },
 } satisfies ParseArgsConfig["options"];
 
@@ -271,8 +275,28 @@ async function cmdMcp(values: Values): Promise<number> {
   return -1;
 }
 
+async function cmdEditor(values: Values): Promise<number> {
+  const { FileStore, RuleWorkflow, serveWorkflow } = await import("@youiyoux/workflow");
+  const projectRoot = resolve(values.project ?? process.cwd());
+  const loaded = await project(values);
+  const stateDir = resolve(values.state ?? join(homedir(), ".youi", "workflow", shortHash(`${loaded.repo.root}\0${loaded.root}`)));
+  const workflow = new RuleWorkflow({ projectRoot, store: new FileStore(stateDir), ...(values.config ? { configPath: values.config } : {}), ...(values.design ? { designRoot: values.design } : {}) });
+  const actor = { kind: "person" as const, name: userInfo().username };
+  const info = await workflow.info(actor);
+  const web = join(TOOL_ROOT, "apps/web/dist");
+  const webRoot = existsSync(join(web, "index.html")) ? web : null;
+  const service = await serveWorkflow({ workflow, actor, webRoot, port: Number(values.port ?? 4417) });
+  print(`${style.ok("rule editor")} ${service.url}${webRoot ? "/changes" : ""}`);
+  print(style.dim(`  design   ${info.design.root} (${info.design.branch} @ ${info.design.head.slice(0, 7)}${info.design.dirty ? ", working tree differs" : ""})`));
+  print(style.dim(`  project  ${info.project.id} at ${info.project.root}`));
+  print(style.dim(`  drafts   ${stateDir}`));
+  if (!webRoot) print(style.warn(`  no built hub at ${web}: run \`pnpm -C apps/web build\`, or \`pnpm -C apps/web dev\` (it proxies /api here)`));
+  print(style.dim("  approved changes become a local review branch; nothing is pushed. Ctrl-C to stop."));
+  return -1;
+}
+
 const COMMANDS: Record<string, (values: Values, positionals: string[]) => Promise<number>> = {
-  init: cmdInit, sync: cmdSync, scan: cmdScan, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, plan: cmdPlan, migrate: cmdMigrate, mcp: cmdMcp, ui: cmdUi, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+  init: cmdInit, sync: cmdSync, scan: cmdScan, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, plan: cmdPlan, migrate: cmdMigrate, mcp: cmdMcp, ui: cmdUi, editor: cmdEditor, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
 
 export async function main(argv: string[]): Promise<number> {

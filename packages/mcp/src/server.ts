@@ -31,23 +31,34 @@ const ok = (value: unknown): ToolResult => ({ content: [{ type: "text", text: JS
 const fail = (error: unknown): ToolResult => ({ content: [{ type: "text", text: JSON.stringify({ error: error instanceof Error ? error.message : String(error) }) }], isError: true });
 
 class State {
-  private project: Promise<Project> | null = null;
-  private scan: { at: number; result: Promise<ScanResult> } | null = null;
+  private project: { at: number; result: Promise<Project> } | null = null;
+  private scan: { at: number; project: Project; result: Promise<ScanResult> } | null = null;
   private readonly options: ServerOptions;
 
   constructor(options: ServerOptions) {
     this.options = options;
   }
 
+  private get ttl(): number {
+    return this.options.scanTtlMs ?? DEFAULT_TTL;
+  }
+
+  /** The definitions, re-read once they are older than the TTL: an approved, merged rule reaches a running agent without a restart. */
   loadProject(): Promise<Project> {
-    this.project ??= loadProject(this.options.projectRoot, { ...(this.options.configPath ? { configPath: this.options.configPath } : {}), ...(this.options.designRoot ? { designRoot: this.options.designRoot } : {}) });
-    return this.project;
+    if (!this.project || Date.now() - this.project.at > this.ttl) {
+      const result = loadProject(this.options.projectRoot, { ...(this.options.configPath ? { configPath: this.options.configPath } : {}), ...(this.options.designRoot ? { designRoot: this.options.designRoot } : {}) });
+      // A failed load (a half-written definition) is retried on the next call, not cached.
+      result.catch(() => {
+        if (this.project?.result === result) this.project = null;
+      });
+      this.project = { at: Date.now(), result };
+    }
+    return this.project.result;
   }
 
   async scanned(): Promise<{ project: Project; scan: ScanResult }> {
     const project = await this.loadProject();
-    const ttl = this.options.scanTtlMs ?? DEFAULT_TTL;
-    if (!this.scan || Date.now() - this.scan.at > ttl) this.scan = { at: Date.now(), result: scanProject(project) };
+    if (!this.scan || this.scan.project !== project || Date.now() - this.scan.at > this.ttl) this.scan = { at: Date.now(), project, result: scanProject(project) };
     return { project, scan: await this.scan.result };
   }
 }
