@@ -28,28 +28,20 @@ const FIXTURES_DIR = join(APP, "fixtures");
 const HASH_LENGTH = 10;
 const SIGNAL_PREFIX = "so";
 const HUB_PREFIX = "yx";
+/**
+ * The hub replaces Tailwind's own radius, font and easing scales (src/styles/theme-reset.css),
+ * so it maps those reserved names to its tokens explicitly.
+ */
+const HUB_TAILWIND_MAP: Record<string, string> = {
+  ...Object.fromEntries(["xs", "sm", "md", "lg", "xl", "full"].map((size) => [`radius-${size}`, `radius.${size}`])),
+  "font-sans": "font.sans",
+  "font-mono": "font.mono",
+  "ease-out": "easing.out",
+};
 
-interface ResolvedToken {
-  id: string;
-  type: string;
-  light: unknown;
-  dark: unknown;
-  aliasOf?: string;
-  cssName: string;
-  description?: string;
-}
-
-interface TokensModule {
-  buildTokens(root: string, system: unknown, output: unknown): Promise<{ tokens: ResolvedToken[]; files: Array<{ path: string; content: string }> }>;
-  cssValue(type: string, value: unknown): string;
-}
-
-interface CoreModule {
-  loadDesignRepo(root: string): Promise<{ systems: Array<{ config: Record<string, unknown> & { id: string; name: string; version: string; description: string; design?: string; components: string; support: string[] }; components: Array<{ contract: Record<string, unknown> & { id: string; source: { file: string } }; dir: string }>; rules: Array<Record<string, unknown> & { id: string }> }> }>;
-  OutputConfig: { parse(input: unknown): unknown };
-  SystemConfig: { parse(input: unknown): unknown };
-  ScanReport: { parse(input: unknown): unknown };
-}
+type CoreModule = typeof import("@youiyoux/core");
+type TokensModule = typeof import("@youiyoux/tokens");
+type ResolvedToken = Awaited<ReturnType<TokensModule["buildTokens"]>>["tokens"][number];
 
 const hash = (text: string): string => createHash("sha256").update(text).digest("hex").slice(0, HASH_LENGTH);
 const json = (value: unknown): string => `${JSON.stringify(value)}\n`;
@@ -60,9 +52,11 @@ function write(path: string, content: string): void {
   writeFileSync(path, content);
 }
 
-function gitCommit(root: string): string | null {
+/** The commit that last changed the definitions the snapshot reads (not whatever HEAD happens to be). */
+function definitionsCommit(root: string, paths: readonly string[]): string | null {
   try {
-    return execFileSync("git", ["-C", root, "rev-parse", "HEAD"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    const sha = execFileSync("git", ["-C", root, "log", "-1", "--format=%H", "--", ...paths], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    return sha || null;
   } catch {
     return null;
   }
@@ -79,7 +73,7 @@ function aliasChain(token: ResolvedToken, byId: Map<string, ResolvedToken>): str
   return chain;
 }
 
-function catalogTokens(system: string, tokens: ResolvedToken[], lib: TokensModule): unknown[] {
+function catalogTokens(system: string, tokens: readonly ResolvedToken[], lib: TokensModule): unknown[] {
   const byId = new Map(tokens.map((t) => [t.id, t]));
   const elementId = (path: string): string => `youi:${system}/token/${path}`;
   return tokens.map((token) => ({
@@ -102,7 +96,7 @@ function componentFiles(componentsRoot: string, sourceFile: string, support: str
 }
 
 /** Signal's variables scoped to `.signal-scope`, light by default and dark under data-scheme. */
-function scopedSignalCss(tokens: ResolvedToken[], lib: TokensModule): string {
+function scopedSignalCss(tokens: readonly ResolvedToken[], lib: TokensModule): string {
   const decl = (scheme: "light" | "dark"): string =>
     tokens
       .filter((t) => t.type !== "typography")
@@ -120,7 +114,7 @@ async function buildHubTokens(core: CoreModule, lib: TokensModule): Promise<void
     tokens: "design/youiyoux.resolver.json",
     themeModifier: { name: "theme", light: "light", dark: "dark" },
   });
-  const output = core.OutputConfig.parse({ cssVarPrefix: HUB_PREFIX, targets: ["css-vars", "tailwind-v4"] });
+  const output = core.OutputConfig.parse({ cssVarPrefix: HUB_PREFIX, targets: ["css-vars", "tailwind-v4"], tailwind: { includeAll: true, map: HUB_TAILWIND_MAP } });
   const built = await lib.buildTokens(APP, system, output);
   rmSync(STYLES_DIR, { recursive: true, force: true });
   for (const file of built.files) write(join(STYLES_DIR, file.path), file.content);
@@ -129,7 +123,7 @@ async function buildHubTokens(core: CoreModule, lib: TokensModule): Promise<void
 function writeUsage(core: CoreModule): Array<{ project: string; file: string }> {
   const fixtures = readdirSync(FIXTURES_DIR).filter((f) => f.endsWith(".usage.json")).sort();
   return fixtures.map((name) => {
-    const report = core.ScanReport.parse(JSON.parse(readFileSync(join(FIXTURES_DIR, name), "utf8"))) as { project: string };
+    const report = core.ScanReport.parse(JSON.parse(readFileSync(join(FIXTURES_DIR, name), "utf8")));
     const text = json(report);
     const file = `${report.project}.usage.${hash(text)}.json`;
     write(join(DATA_DIR, file), text);
@@ -173,7 +167,7 @@ async function main(): Promise<void> {
   write(join(DATA_DIR, catalogFile), catalogText);
   const usage = writeUsage(core);
 
-  const commit = values.commit ?? gitCommit(root);
+  const commit = values.commit ?? definitionsCommit(root, ["youi.config.json", signal.config.tokens.split("/")[0]!, signal.config.components, signal.config.rules, ...(signal.config.design ? [signal.config.design] : [])]);
   write(join(DATA_DIR, "manifest.json"), `${JSON.stringify({ schema: "youiyoux.manifest/v1", source: { commit }, systems: [{ id: signal.config.id, catalog: catalogFile, usage }] }, null, 2)}\n`);
 
   write(join(PREVIEW_DIR, "signal-scope.css"), scopedSignalCss(built.tokens, lib));

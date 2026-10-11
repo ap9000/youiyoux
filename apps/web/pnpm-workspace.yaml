@@ -1,5 +1,0 @@
-# apps/web installs on its own until the repository root workspace lists apps/*.
-packages:
-  - .
-onlyBuiltDependencies:
-  - esbuild

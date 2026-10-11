@@ -3,8 +3,8 @@
 The design language hub: find an element, see its contract, tokens and rules, preview the real component, and see exactly where it lives in each project. Local-only for now: no server, no accounts.
 
 ```sh
+pnpm install        # at the repository root (apps/* is in the workspace)
 cd apps/web
-pnpm install
 pnpm dev            # http://localhost:5173
 ```
 
@@ -24,10 +24,10 @@ Keyboard: `⌘K` palette, `/` search the list, `j`/`k` or arrows move, `g` then 
 
 ## Data
 
-`pnpm data [--from <design-language checkout>] [--commit <sha>]` rebuilds everything the app reads, using the `@youiyoux/core` and `@youiyoux/tokens` code from that checkout (default: this repository's root):
+`pnpm data [--from <design-language checkout>] [--commit <sha>]` rebuilds everything the app reads, using the `@youiyoux/core` and `@youiyoux/tokens` code from that checkout (default: this repository's root). The snapshot records the commit that last changed the definitions it read.
 
 - `public/data/manifest.json` plus content-hashed `signal.catalog.<hash>.json` (tokens resolved per scheme, component contracts and their owned files, rules, the design narrative) and `<project>.usage.<hash>.json` (every `fixtures/*.usage.json`, validated against `youi.usage/v1`). The browser keeps hashed files in Cache Storage, so repeat visits and offline work need only the manifest.
-- `src/styles/generated/`: the hub's own tokens (`design/youiyoux.*.json`, DTCG, built by `@youiyoux/tokens` exactly like Signal) as CSS variables and a Tailwind v4 theme. The hub uses no colour, radius, shadow or type style that is not a YouIyouX token.
+- `src/styles/generated/`: the hub's own tokens (`design/youiyoux.*.json`, DTCG, built by `@youiyoux/tokens` exactly like Signal) as CSS variables and a Tailwind v4 theme. The hub replaces Tailwind's colour, radius, shadow, type and easing scales with its tokens (the reserved names are mapped explicitly in `scripts/snapshot.ts`), so it uses no style that is not a YouIyouX token.
 - `src/preview/generated/`: Signal's variables scoped to `.signal-scope`, and Signal's owned component files, which the preview frame renders.
 
 `fixtures/toolroll.usage.json` is the real `youi scan` of Toolroll, written outside the Toolroll repo:
@@ -35,8 +35,6 @@ Keyboard: `⌘K` palette, `/` search the list, `j`/`k` or arrows move, `g` then 
 ```sh
 node packages/cli/bin/youi.js scan --project <toolroll> --config pilot/toolroll/youi.project.json --design . --out apps/web/fixtures/toolroll.usage.json
 ```
-
-The current snapshot was built from `fm/dl-phase0` @ `81f3333` (the CLI, scanner and schemas branch), since those packages are not on `main` yet.
 
 ## Previews
 
@@ -54,7 +52,7 @@ Budgets: search under 50 ms, navigation under 100 ms, initial download under 150
 design/            YouIyouX DTCG tokens (light base, dark overrides, resolver)
 scripts/           snapshot.ts (data), measure.ts (budgets), capture.sh (images)
 src/app/           shell, routes (preloadable chunks), theme
-src/data/          snapshot types (mirror @youiyoux/core), loading and cache, model, usage, contrast
+src/data/          snapshot types (@youiyoux/core types, type-only), loading and cache, model, usage, contrast
 src/search/        MiniSearch engine, Web Worker, client hook
 src/shell/         nav rail, keyboard layer, command palette, shortcuts sheet
 src/ui/            the hub's owned components
@@ -63,6 +61,4 @@ src/preview/       the isolated preview frame
 test/              unit tests (pnpm test)
 ```
 
-## Joining the workspace
-
-`apps/web` installs on its own (`pnpm-workspace.yaml` here) because the root workspace on `main` does not exist yet. Once `packages/*` lands, add `apps/*` to the root `pnpm-workspace.yaml`, delete this one, and replace `src/data/types.ts` with type imports from `@youiyoux/core` (the field names match).
+Contract, rule and usage types are imported type-only from `@youiyoux/core`, so zod and the loaders never reach the browser bundle. `src/data/ids.ts` keeps its own few-line id parser for the same reason (core's `ids.ts` imports zod at module load).

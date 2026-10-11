@@ -4,15 +4,15 @@
     "searchMs": 50
   },
   "initial": {
-    "jsKbGzip": 81.6,
+    "jsKbGzip": 81.8,
     "cssKbGzip": 8.3,
-    "totalKbGzip": 89.9,
-    "withSnapshotKbGzip": 112.8,
+    "totalKbGzip": 90.1,
+    "withSnapshotKbGzip": 113.2,
     "withinBudget": true,
     "assets": [
       {
-        "file": "assets/main-DrPUXnE1.js",
-        "kbGzip": 11.1
+        "file": "assets/main-D3xiv2_d.js",
+        "kbGzip": 11.3
       },
       {
         "file": "assets/react-yIOJJ3r4.js",
@@ -31,7 +31,7 @@
         "kbGzip": 0.5
       },
       {
-        "file": "assets/main-B1eBEqEY.css",
+        "file": "assets/main-CcT74QFJ.css",
         "kbGzip": 8.3
       }
     ]
@@ -58,24 +58,24 @@
       "kbGzip": 66.1
     },
     {
-      "file": "assets/preview-DeVMLKrA.js",
-      "kbRaw": 43.5,
+      "file": "assets/preview-DnwgL4F7.js",
+      "kbRaw": 43.6,
       "kbGzip": 13.6
     },
     {
-      "file": "assets/SearchField-B6SLzjaN.js",
+      "file": "assets/SearchField-Bjsz_ZM9.js",
       "kbRaw": 38.7,
       "kbGzip": 12.2
     },
     {
-      "file": "assets/main-DrPUXnE1.js",
-      "kbRaw": 28.6,
-      "kbGzip": 11.1
+      "file": "assets/main-D3xiv2_d.js",
+      "kbRaw": 29.5,
+      "kbGzip": 11.3
     },
     {
-      "file": "assets/CatalogScreen-C8KX0ut_.js",
-      "kbRaw": 34,
-      "kbGzip": 10
+      "file": "assets/CatalogScreen-DTcNcJZX.js",
+      "kbRaw": 34.5,
+      "kbGzip": 10.2
     },
     {
       "file": "assets/dist-CaTTiKnc.js",
@@ -83,12 +83,12 @@
       "kbGzip": 9
     },
     {
-      "file": "assets/main-B1eBEqEY.css",
+      "file": "assets/main-CcT74QFJ.css",
       "kbRaw": 42.9,
       "kbGzip": 8.3
     },
     {
-      "file": "assets/CommandPalette-NdYSsG_J.js",
+      "file": "assets/CommandPalette-DeflMDAw.js",
       "kbRaw": 18.3,
       "kbGzip": 7
     },
@@ -123,17 +123,17 @@
       "kbGzip": 3
     },
     {
-      "file": "assets/StubScreens-Bi5CzB4l.js",
+      "file": "assets/StubScreens-ChZdQFAK.js",
       "kbRaw": 5.7,
       "kbGzip": 2.3
     },
     {
-      "file": "assets/TokensScreen-a2xAHMpO.js",
-      "kbRaw": 4.9,
-      "kbGzip": 2.2
+      "file": "assets/TokensScreen-D8m7bt0G.js",
+      "kbRaw": 5,
+      "kbGzip": 2.3
     },
     {
-      "file": "assets/HomeScreen-BsmGH5A6.js",
+      "file": "assets/HomeScreen-BmEjbebB.js",
       "kbRaw": 6.4,
       "kbGzip": 2.2
     },
@@ -143,7 +143,7 @@
       "kbGzip": 1.3
     },
     {
-      "file": "assets/client-DzQ-GmYr.js",
+      "file": "assets/client-BU-EwCwt.js",
       "kbRaw": 2.1,
       "kbGzip": 1.1
     },
@@ -153,7 +153,7 @@
       "kbGzip": 0.8
     },
     {
-      "file": "assets/CheatSheet-BVn57yDE.js",
+      "file": "assets/CheatSheet-Bbn1bSnq.js",
       "kbRaw": 1.5,
       "kbGzip": 0.7
     },
@@ -191,18 +191,18 @@
   "search": {
     "signal": {
       "docs": 89,
-      "indexMs": 2.8,
-      "p50": 0.013,
-      "p95": 0.039,
-      "max": 0.348
+      "indexMs": 3.9,
+      "p50": 0.012,
+      "p95": 0.038,
+      "max": 0.149
     },
     "scaled": {
       "factor": 50,
       "docs": 4450,
-      "indexMs": 50,
-      "p50": 0.191,
-      "p95": 0.465,
-      "max": 5.135
+      "indexMs": 43.6,
+      "p50": 0.18,
+      "p95": 0.433,
+      "max": 0.655
     }
   }
 }
