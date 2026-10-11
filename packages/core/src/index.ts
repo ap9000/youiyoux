@@ -1,3 +1,4 @@
+export * from "./diff.ts";
 export * from "./files.ts";
 export * from "./hash.ts";
 export * from "./ids.ts";

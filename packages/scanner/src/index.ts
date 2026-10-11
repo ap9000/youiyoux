@@ -7,3 +7,5 @@ export * from "./resolve.ts";
 export * from "./routes.ts";
 export * from "./scan.ts";
 export * from "./usage.ts";
+export * from "./codemod.ts";
+export * from "./plan.ts";
