@@ -13,6 +13,7 @@
   ],
   "exclude": [],
   "componentsDir": "components/ui",
+  "importFrom": "@/components/ui",
   "tokenSources": [
     "styles/tokens.css"
   ],

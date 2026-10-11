@@ -104,6 +104,8 @@ export const ProjectConfig = z.object({
   exclude: z.array(z.string()).default([]),
   /** Where owned (vendored) components live; their files are the canonical implementations. */
   componentsDir: RelPath,
+  /** How code imports the owned components (e.g. "@/components/ui"); defaults to componentsDir. */
+  importFrom: z.string().optional(),
   /** Files allowed to define raw colour values (the token source of truth or its generated copy). */
   tokenSources: z.array(z.string()).default([]),
   routes: RouteConfig.default({ strategy: "none", appDir: "app", map: [], shell: [] }),
