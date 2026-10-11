@@ -44,7 +44,7 @@ export function agentsBlock(project: Project): string {
     `This project's UI follows ${system.config.name} v${system.config.version}. Exact contracts live in YouIyouX: look them up, never guess.`,
     "",
     `- Build UI from the owned components, imported from \`${from}\`: ${names}.`,
-    "- Before using a component's props, call `youi_get_component` (MCP server `youiyoux`) or read the skill; use only the listed values.",
+    "- Before using a component's props, call `youi_get_component` (MCP server `youiyoux`) or run `youi show <component>`; use only the listed values.",
     ...enforced(system.rules).map((r) => `- ${r.agent}`),
     `- Never edit files marked \`${GENERATED_MARK}\` (\`${config.outputs.dir}/*\`, ${config.agents.designMd}, the youiyoux skill). Change the design language and run \`youi sync\`.`,
     `- Owned component files in \`${config.componentsDir}\` may be edited; \`youi sync\` 3-way merges upstream changes into them and reports drift.`,
@@ -146,7 +146,7 @@ export function designMd(project: Project, build: TokenBuild, narrative: string 
 
 /* ------------------------------------------------------------------ SKILL.md */
 
-export function skillMd(project: Project): string {
+export function skillMd(project: Project, uncontracted: readonly string[] = []): string {
   const { config, system } = project;
   const from = config.importFrom ?? config.componentsDir;
   const description = `Build and fix UI with the ${system.config.name} design language (YouIyouX): owned components, tokens, rules, where-used lookups and change proposals. Use for any UI, styling, colour or component work in this project.`;
@@ -165,9 +165,9 @@ export function skillMd(project: Project): string {
     "## Build a screen",
     "",
     "1. Find what exists: `youi_search` (MCP) or the component list below. Prefer an existing component over new markup.",
-    "2. Read the contract before using props: `youi_get_component {\"name\": \"Button\"}`. Use only the listed values; `guidance` says when to use which.",
+    "2. Read the contract before using props: `youi_get_component {\"name\": \"Button\"}`, or `youi show button` without MCP. Use only the listed values; `guidance` says when to use which.",
     `3. Import from \`${from}\`. Never import a component of the same name from anywhere else.`,
-    "4. Colour, type, radius and shadow come from tokens: `youi_get_tokens {\"group\": \"color\"}` gives each token's CSS variable and Tailwind utility. Never write a hex, rgb() or a `[arbitrary]` value that copies a token.",
+    "4. Colour, type, radius and shadow come from tokens: `youi_get_tokens {\"group\": \"color\"}` gives each token's CSS variable and a Tailwind utility (a colour works with bg-, text- and border-). Never write a hex, rgb() or a `[arbitrary]` value that copies a token.",
     "5. Run `youi check` and fix every error; warnings need a reason if left.",
     "",
     "## Fix a violation",
@@ -192,6 +192,12 @@ export function skillMd(project: Project): string {
     "",
     ...components,
     "",
+    ...(uncontracted.length > 0
+      ? [
+          `Also in \`${config.componentsDir}\`, owned but without a contract yet (no checked props, not in the usage map): ${uncontracted.join(", ")}. Use them when they fit; ask for a contract before relying on their props.`,
+          "",
+        ]
+      : []),
   ].join("\n");
 }
 

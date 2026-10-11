@@ -67,6 +67,11 @@ describe("build", () => {
     expect(theme).toContain("--color-muted: var(--so-raised);");
     expect(theme).toContain("--radius-xl: 16px;");
     expect(theme).toContain("--text-label: var(--so-typography-label-font-size);");
+    // Tailwind's own names are never overridden by includeAll (only by an explicit map entry).
+    expect(theme).not.toContain("--spacing-md:");
+    expect(theme).not.toContain("--ease-out:");
+    expect(theme).not.toContain("--font-sans:");
+    expect(theme).toContain("--radius-card: var(--so-radius-card);");
     const native = built.files[3]!.content;
     expect(native).toContain("\"radius.md\": 8,");
   });

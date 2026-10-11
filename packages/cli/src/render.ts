@@ -74,7 +74,7 @@ export function renderCheck(violations: readonly Violation[], lockIssues: readon
     }
   }
   if (lockIssues && lockIssues.length > 0) {
-    lines.push(style.bold("youi.lock.json"));
+    lines.push(style.bold("setup (lockfile, generated files, theme wiring)"));
     for (const issue of lockIssues) lines.push(`  ${issue.severity === "error" ? style.error("error") : style.warn("warn ")}  ${issue.file}: ${issue.message}`);
   }
   const errors = violations.filter((v) => v.severity === "error").length + (lockIssues ?? []).filter((i) => i.severity === "error").length;
@@ -139,4 +139,22 @@ export function renderSync(actions: readonly SyncAction[], dryRun: boolean): str
   const counts = Map.groupBy(actions, (a) => a.action);
   const summary = [...counts].map(([action, list]) => `${list.length} ${action}`).join(" · ");
   return [...lines, lines.length ? "" : style.dim("everything up to date"), `${dryRun ? style.live("dry run · ") : ""}${summary}`].join("\n");
+}
+
+export function renderShow(card: Record<string, unknown>): string {
+  const props = card.props as Record<string, { values?: string[]; default?: string; note?: string; type?: string }>;
+  const lines = [`${style.accent(String(card.name))}  ${style.dim(`${String(card.id)} · v${String(card.version)} · ${String(card.status)}`)}`, String(card.summary), style.dim(String(card.import)), ""];
+  for (const [name, spec] of Object.entries(props)) {
+    lines.push(`${padEnd(style.bold(name), 12)} ${spec.values ? spec.values.map((v) => (v === spec.default ? style.bold(v) : v)).join(style.dim(" | ")) : style.dim(spec.type ?? "")}`);
+    if (spec.note) lines.push(style.dim(`             ${spec.note}`));
+  }
+  const list = (title: string, items: unknown): void => {
+    const values = (items as string[] | undefined) ?? [];
+    if (values.length) lines.push("", style.bold(title), ...values.map((v) => `  · ${v}`));
+  };
+  list("do", card.do);
+  list("don't", card.dont);
+  list("a11y", card.a11y);
+  for (const example of (card.examples as Array<{ title: string; code: string }> | undefined) ?? []) lines.push("", style.dim(example.title), `  ${example.code}`);
+  return lines.join("\n");
 }

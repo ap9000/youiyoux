@@ -150,7 +150,18 @@ function planEdits(migration: MigrationSpec, scan: ScanResult, rewriteValue: Non
     }
     if (edits.length > 0) outputs.set(file, module.root.root().commitEdits(edits));
   }
-  return { outputs, edited, residuals };
+  return { outputs, edited, residuals: mergeResiduals(residuals) };
+}
+
+/** One entry per site, reasons joined, so a person sees each site once. */
+function mergeResiduals(residuals: readonly Residual[]): Residual[] {
+  const bySite = new Map<string, Residual>();
+  for (const r of residuals) {
+    const key = `${r.file}:${r.line}:${r.column}`;
+    const seen = bySite.get(key);
+    bySite.set(key, seen ? { ...seen, reason: `${seen.reason}; ${r.reason}` } : r);
+  }
+  return [...bySite.values()];
 }
 
 function count(scan: ScanResult, element: string): number {

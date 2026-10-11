@@ -28,7 +28,7 @@
         "link"
       ],
       "default": "default",
-      "description": "default = ink act; attention = the single verb that resolves a wait (max one per screen); outline = row actions and secondary choices; ghost = toolbars; destructive = a confirmed destructive act."
+      "description": "default = ink act; attention = the single verb that resolves a wait (max one per screen); outline = row actions, page tools and secondary choices; ghost = toolbars and far-away destructive text buttons; destructive = a confirmed destructive act. secondary and link exist in code but Signal's DESIGN.md does not describe them: prefer outline (secondary choices) and a plain link (navigation)."
     },
     "size": {
       "type": "enum",

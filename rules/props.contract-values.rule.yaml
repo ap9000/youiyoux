@@ -5,7 +5,7 @@ title: Props use the contract's values
 severity: error
 statement: A literal value for an enumerated prop must be one of the values in the component's contract.
 rationale: class-variance-authority silently renders nothing for an unknown variant, so a typo or a value from another system ships as an unstyled control.
-agent: Call dl_get_component before using a component's props; use only the listed values.
+agent: Call youi_get_component before using a component's props; use only the listed values.
 check:
   engine: youi
   id: prop-values

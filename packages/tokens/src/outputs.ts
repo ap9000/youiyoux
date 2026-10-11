@@ -81,12 +81,29 @@ export interface ThemeEntry {
   readonly token?: string;
 }
 
-/** Tailwind theme variables (without `--`) for a project: every token's name plus the project's map, map wins. */
+const SIZES = ["3xs", "2xs", "xs", "sm", "md", "lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl", "7xl", "8xl", "9xl"];
+/**
+ * Names Tailwind v4 already gives a meaning. Emitting them silently changes existing classes:
+ * `--spacing-2xl` would turn `max-w-2xl` (a container width) into a 24px gap, and
+ * `--ease-out` would retime every `ease-out` transition. Only an explicit map entry may.
+ */
+const TAILWIND_RESERVED = new Set([
+  ...SIZES.flatMap((size) => [`spacing-${size}`, `radius-${size}`, `text-${size}`, `shadow-${size}`]),
+  "radius-full", "text-base", "shadow-inner", "ease-in", "ease-out", "ease-in-out", "ease-linear", "font-sans", "font-serif", "font-mono",
+]);
+
+export function isReservedTailwindKey(key: string): boolean {
+  return TAILWIND_RESERVED.has(key.replace(/--.*$/, ""));
+}
+
+/** Tailwind theme variables (without `--`) for a project: token names that do not collide with Tailwind's own, plus the project's map (which wins). */
 export function tailwindTheme(tokens: readonly ResolvedToken[], output: OutputConfig): Map<string, ThemeEntry> {
   const byId = new Map(tokens.map((t) => [t.id, t]));
   const entries = new Map<string, ThemeEntry>();
   if (output.tailwind.includeAll) {
-    for (const token of tokens) for (const [key, css] of tailwindEntries(token, output.cssVarPrefix)) entries.set(key, { css, token: token.id });
+    for (const token of tokens) {
+      for (const [key, css] of tailwindEntries(token, output.cssVarPrefix)) if (!isReservedTailwindKey(key)) entries.set(key, { css, token: token.id });
+    }
   }
   for (const [key, target] of Object.entries(output.tailwind.map)) {
     const token = byId.get(target);

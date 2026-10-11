@@ -1,0 +1,15 @@
+# Proposal, not a decision: align Button's variant names in code with the names
+# Signal's DESIGN.md uses ("Signal (attention)", "Danger"). Run as a dry run:
+#   youi migrate pilot/toolroll/proposals/button-vocabulary.migration.yaml --diff
+$schema: ../../../schema/youi.migration.schema.json
+schema: youi.migration/v1
+id: youi:signal/migration/button-2.0.0
+element: youi:signal/component/button
+from: 1.x
+to: 2.0.0
+changes:
+  - mapValues:
+      prop: variant
+      map:
+        attention: signal
+        destructive: danger

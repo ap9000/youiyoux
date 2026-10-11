@@ -41,8 +41,7 @@ describe("runMigration", () => {
     expect(result.sitesBefore).toBe(result.sitesAfter);
     expect(result.edited).toBe(5);
     expect(result.residuals.map((r) => `${r.file}:${r.line} ${r.reason}`)).toEqual([
-      "components/checkout-form.tsx:4 spread props may set a migrated prop; check by hand",
-      "components/checkout-form.tsx:4 non-literal tone={cta}",
+      "components/checkout-form.tsx:4 spread props may set a migrated prop; check by hand; non-literal tone={cta}",
     ]);
     const settings = result.changes.find((c) => c.file === "app/settings/index.tsx")!;
     expect(settings.diff).toContain("-    <ui.Button variant=\"outline\">Export</ui.Button>");
@@ -106,7 +105,7 @@ describe("planChange", () => {
     const scan = await scanProject(project);
     const button = project.system.components.find((c) => c.contract.name === "Button")!.contract;
     const values = (button.props.variant as { values: string[] }).values.filter((v) => v !== "ghost");
-    const plan = await planChange(project, scan, { element: "button", patch: { props: { ...button.props, variant: { ...button.props.variant, values } } } });
+    const plan = await planChange(project, scan, { element: "button", patch: { props: { variant: { ...button.props.variant, values } } } });
     expect(plan).toMatchObject({ class: "api-breaking", semver: "major", version: { current: "1.0.0", next: "2.0.0" } });
     expect(plan.reasons).toEqual(["variant loses ghost"]);
     expect(plan.callSites).toMatchObject({ affected: 2, auto: 1, residual: 1 });
@@ -117,10 +116,12 @@ describe("planChange", () => {
     const project = await load(FIXTURE);
     const scan = await scanProject(project);
     const button = project.system.components.find((c) => c.contract.name === "Button")!.contract;
-    const additive = await planChange(project, scan, { element: "button", patch: { props: { ...button.props, loading: { type: "boolean" } } } });
+    const additive = await planChange(project, scan, { element: "button", patch: { props: { loading: { type: "boolean" } } } });
     expect(additive).toMatchObject({ class: "api-additive", semver: "minor" });
     const docs = await planChange(project, scan, { element: "button", patch: { summary: "Every act a person can take." } });
     expect(docs).toMatchObject({ class: "docs", semver: "patch" });
+    const removal = await planChange(project, scan, { element: "button", patch: { props: { asChild: null } } });
+    expect(removal).toMatchObject({ class: "api-breaking", reasons: ["prop asChild removed"] });
   });
 
   test("a token change reaches the components bound to it and their screens", async () => {

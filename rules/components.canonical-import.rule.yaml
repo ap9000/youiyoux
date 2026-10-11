@@ -5,7 +5,7 @@ title: Render the design-system component, not a lookalike
 severity: error
 statement: A component named like a design-system element (Button, Badge, Input, …) must resolve to the owned implementation in the components directory. A second implementation with the same name splits the system in two.
 rationale: "Two Buttons drift apart: a fix to one never reaches the other, and the usage map cannot tell a reader which Button a screen shows."
-agent: Import components only from the owned components directory (see AGENTS.md); never define or import another Button, Badge or Input.
+agent: Import components only from the owned components directory; never define or import another Button, Badge or Input.
 check:
   engine: youi
   id: lookalike-component

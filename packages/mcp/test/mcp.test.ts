@@ -69,7 +69,9 @@ describe("youiyoux MCP server", () => {
 
   test("tokens, rules, search and screen BOM answer", async () => {
     const tokens = await call("youi_get_tokens", { group: "radius" });
-    expect((tokens.data.tokens as Array<{ id: string }>).map((t) => t.id)).toContain("radius.card");
+    expect(tokens.data.columns).toEqual(["id", "cssVar", "light", "dark", "utility"]);
+    expect((tokens.data.rows as string[][]).find((row) => row[0] === "radius.card")?.[4]).toBe("rounded-card");
+    expect((tokens.data.rows as string[][]).map((row) => row[0])).toContain("radius.card");
     const rules = await call("youi_get_rules");
     expect((rules.data.rules as Array<{ enforced: boolean }>).filter((r) => r.enforced)).toHaveLength(5);
     const search = await call("youi_search", { query: "destructive" });

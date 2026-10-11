@@ -5,10 +5,10 @@ import { parseArgs, type ParseArgsConfig } from "node:util";
 import { parse as parseYaml } from "yaml";
 import { DefinitionError, loadDesignRepo, MigrationSpec, OutputConfig, renderJsonSchemas, writeFileAtomic } from "@youiyoux/core";
 import { buildTokens, compareParity } from "@youiyoux/tokens";
-import { loadProject, planChange, runMigration, scanProject, screenBom, whereUsed, type PlanInput, type Project } from "@youiyoux/scanner";
+import { componentCard, findContract, loadProject, planChange, runMigration, scanProject, screenBom, whereUsed, type PlanInput, type Project } from "@youiyoux/scanner";
 import { initProject } from "./init.ts";
-import { renderBom, renderCheck, renderMigration, renderPlan, renderScan, renderSync, renderWhere } from "./render.ts";
-import { syncProject, verifyLock } from "./sync.ts";
+import { renderBom, renderCheck, renderMigration, renderPlan, renderScan, renderShow, renderSync, renderWhere } from "./render.ts";
+import { syncProject, verifyLock, verifyWiring } from "./sync.ts";
 import { ms, plural, style } from "./ui.ts";
 
 const DESIGN_ROOT = resolve(import.meta.dirname, "../../..");
@@ -21,6 +21,7 @@ ${style.bold("In a product repo")}
   init                     write youi.project.json, then sync
   sync [--dry-run] [--adopt]   tokens, DESIGN.md, skill, AGENTS.md block, owned components (3-way merge), lockfile
   scan [--out file]        build the usage map (default .youi/usage.json)
+  show <component>         the contract: import, legal prop values, guidance, examples
   where <component> [--route r] [--all]   where a component lives, screen by screen
   bom <route>              everything on one screen
   check [files…] [--rule id] [--quiet]   rule violations and lockfile drift; exits 1 on errors
@@ -107,6 +108,18 @@ async function cmdWhere(values: Values, positionals: string[]): Promise<number> 
   return 0;
 }
 
+async function cmdShow(values: Values, positionals: string[]): Promise<number> {
+  const query = positionals[0];
+  if (!query) throw new UsageError("youi show <component>");
+  const p = await project(values);
+  const contract = findContract(p, query);
+  if (!contract) throw new Error(`no component "${query}"; known: ${p.system.components.map((c) => c.contract.name).join(", ")}`);
+  const card = componentCard(p, contract, (await scanProject(p)).report);
+  if (values.json) json(card);
+  else print(renderShow(card));
+  return 0;
+}
+
 async function cmdBom(values: Values, positionals: string[]): Promise<number> {
   const route = positionals[0];
   if (!route) throw new UsageError("youi bom <route>");
@@ -122,7 +135,8 @@ async function cmdCheck(values: Values, positionals: string[]): Promise<number> 
   const { report } = await scanProject(p);
   const only = new Set(positionals.map((f) => f.replace(/^\.\//, "")));
   const violations = report.violations.filter((v) => (only.size === 0 || only.has(v.file)) && (!values.rule || v.rule.endsWith(`/rule/${values.rule}`)) && (!values.quiet || v.severity === "error"));
-  const lockIssues = await verifyLock(p);
+  const lock = await verifyLock(p);
+  const lockIssues = lock === null ? null : [...lock, ...(await verifyWiring(p))];
   const errors = violations.filter((v) => v.severity === "error").length + (lockIssues ?? []).filter((i) => i.severity === "error").length;
   if (values.json) json({ errors, violations, lock: lockIssues, suppressed: report.suppressed, coverage: report.coverage, status: report.status });
   else print(renderCheck(violations, lockIssues, report, report.suppressed));
@@ -220,7 +234,7 @@ async function cmdMcp(values: Values): Promise<number> {
 }
 
 const COMMANDS: Record<string, (values: Values, positionals: string[]) => Promise<number>> = {
-  init: cmdInit, sync: cmdSync, scan: cmdScan, where: cmdWhere, bom: cmdBom, check: cmdCheck, plan: cmdPlan, migrate: cmdMigrate, mcp: cmdMcp, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+  init: cmdInit, sync: cmdSync, scan: cmdScan, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, plan: cmdPlan, migrate: cmdMigrate, mcp: cmdMcp, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
 
 export async function main(argv: string[]): Promise<number> {

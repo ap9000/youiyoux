@@ -206,16 +206,26 @@ export function componentCard(project: Project, contract: ComponentContract, rep
   };
 }
 
-export function tokenRows(project: Project, tokens: TokenIndex, group?: string, limit = 60): { tokens: Array<Record<string, string>>; total: number; truncated: boolean } {
+const UTILITY_PREFIX: Record<string, string> = { color: "bg", radius: "rounded", text: "text", shadow: "shadow", spacing: "p", ease: "ease", font: "font" };
+
+/** A Tailwind theme key as a class an agent can write: color-primary → bg-primary (also text-, border-). */
+function utilityExample(key: string): string {
+  const [namespace = "", ...rest] = key.split("-");
+  return `${UTILITY_PREFIX[namespace] ?? namespace}-${rest.join("-")}`;
+}
+
+/** Tokens as a compact table (column names once, then rows); `dark` is empty when it equals `light`. */
+export function tokenRows(project: Project, tokens: TokenIndex, group?: string, limit = 60): { columns: string[]; rows: string[][]; total: number; truncated: boolean } {
   const rows = tokens.tokens
     .filter((t) => !group || t.id === group || t.id.startsWith(`${group}.`))
     .map((t) => {
       const light = cssValue(t.type, t.light);
       const dark = cssValue(t.type, t.dark);
-      const utilities = tokens.themeKeys.get(t.id)?.slice(0, 2).join(" ");
-      return { id: t.id, var: `var(--${tokens.prefix}-${t.cssName})`, light, ...(dark !== light ? { dark } : {}), ...(t.aliasOf ? { alias: t.aliasOf } : {}), ...(utilities ? { tailwind: utilities } : {}) };
+      const key = tokens.themeKeys.get(t.id)?.[0];
+      const utility = key ? utilityExample(key) : "";
+      return [t.id, `--${tokens.prefix}-${t.cssName}`, t.aliasOf ? `{${t.aliasOf}}` : light, dark === light || t.aliasOf ? "" : dark, utility];
     });
-  return { tokens: rows.slice(0, limit), total: rows.length, truncated: rows.length > limit };
+  return { columns: ["id", "cssVar", "light", "dark", "utility"], rows: rows.slice(0, limit), total: rows.length, truncated: rows.length > limit };
 }
 
 export function ruleRows(project: Project): Array<Record<string, unknown>> {

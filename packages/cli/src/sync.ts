@@ -8,11 +8,11 @@
  *   lock       youi.lock.json records every file's hash, so edits show up as drift
  */
 import { execFile } from "node:child_process";
-import { lstat, mkdir, mkdtemp, readlink, rm, symlink, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readdir, readlink, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
 import { promisify } from "node:util";
-import { LockFile, readDefinition, readTextOrNull, sha256, writeFileAtomic, type ElementId, type LockEntry } from "@youiyoux/core";
+import { findFiles, LockFile, readDefinition, readTextOrNull, sha256, writeFileAtomic, type ElementId, type LockEntry } from "@youiyoux/core";
 import { buildTokens } from "@youiyoux/tokens";
 import { vendoredPath, type Project } from "@youiyoux/scanner";
 import { agentsBlock, astGrepRules, designMd, GENERATED_MARK, skillMd, upsertBlock } from "./agents.ts";
@@ -197,7 +197,7 @@ export async function syncProject(project: Project, options: SyncOptions = {}): 
 
   const narrative = system.config.design ? await readTextOrNull(join(repo.root, system.config.design)) : null;
   await writer.generated(config.agents.designMd, designMd(project, build, narrative), "agents");
-  await writer.generated(`${config.agents.skillDir}/SKILL.md`, skillMd(project), "agents");
+  await writer.generated(`${config.agents.skillDir}/SKILL.md`, skillMd(project, await uncontractedFiles(project)), "agents");
   for (const rule of astGrepRules(project)) await writer.generated(`youi-rules/${rule.file}`, rule.content, "agents");
   await writer.managedBlock(config.agents.agentsMd, agentsBlock(project));
   if (config.agents.claudeSkillLink) await writer.link(".claude/skills/youiyoux", relative(join(project.root, ".claude/skills"), join(project.root, config.agents.skillDir)));
@@ -228,6 +228,13 @@ export async function syncProject(project: Project, options: SyncOptions = {}): 
   return { actions: writer.actions, lock };
 }
 
+/** Files in the owned components dir that no contract (or support entry) covers. */
+async function uncontractedFiles(project: Project): Promise<string[]> {
+  const covered = new Set([...project.system.components.map((c) => basename(c.contract.source.file)), ...project.system.config.support.map((s) => basename(s))]);
+  const entries = await readdir(join(project.root, project.config.componentsDir)).catch(() => [] as string[]);
+  return entries.filter((name) => /\.(tsx|ts)$/.test(name) && !/^index\./.test(name) && !covered.has(name)).sort();
+}
+
 export interface LockIssue {
   readonly file: string;
   readonly severity: "error" | "warn";
@@ -249,4 +256,22 @@ export async function verifyLock(project: Project): Promise<LockIssue[] | null> 
     }
   }
   return issues;
+}
+
+/**
+ * Is the generated Tailwind theme part of the build? If no stylesheet imports it, the token
+ * utilities that checks suggest (text-label, rounded-card, shadow-pill) silently do not exist.
+ */
+export async function verifyWiring(project: Project): Promise<LockIssue[]> {
+  if (!project.config.outputs.targets.includes("tailwind-v4")) return [];
+  const theme = `${project.config.outputs.dir}/theme.css`;
+  if ((await readTextOrNull(join(project.root, theme))) === null) return [];
+  const sheets = (await findFiles(project.root, project.config.include, project.config.exclude)).filter((f) => f.endsWith(".css") && f !== theme);
+  for (const sheet of sheets) {
+    const text = (await readTextOrNull(join(project.root, sheet))) ?? "";
+    for (const match of text.matchAll(/@import\s+["']([^"']+)["']/g)) {
+      if (join(dirname(join(project.root, sheet)), match[1]!) === join(project.root, theme)) return [];
+    }
+  }
+  return [{ file: theme, severity: "warn", message: `no stylesheet imports it, so token utilities (text-label, rounded-card, shadow-pill) do not exist in the build: add @import of ${theme} to your Tailwind entry, after tailwindcss/theme.css` }];
 }

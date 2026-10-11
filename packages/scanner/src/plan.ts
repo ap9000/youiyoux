@@ -143,6 +143,24 @@ function callSitesFor(sites: readonly UsageSite[], breaking: Map<string, Set<str
   return { affected: affected.length, auto: affected.length - residual.length, residual: residual.length, residualSites: residual.slice(0, 10).map((s) => `${s.file}:${s.line}`) };
 }
 
+const MERGED_FIELDS = new Set(["props", "tokens", "a11y", "guidance", "source", "deprecation"]);
+
+/**
+ * A patch merges into the contract one level deep for map-like fields (props, tokens, …),
+ * so `{"props": {"loading": {...}}}` adds one prop; `null` removes an entry or field.
+ */
+export function applyPatch(contract: ComponentContract, patch: Record<string, unknown>): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...contract };
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === null) delete next[key];
+    else if (MERGED_FIELDS.has(key) && typeof value === "object" && !Array.isArray(value)) {
+      const merged: Record<string, unknown> = { ...(next[key] as Record<string, unknown> | undefined), ...(value as Record<string, unknown>) };
+      next[key] = Object.fromEntries(Object.entries(merged).filter(([, v]) => v !== null));
+    } else next[key] = value;
+  }
+  return next;
+}
+
 function findContract(project: Project, query: string): ComponentContract {
   const match = project.system.components.find(({ contract }) => matchesQuery(contract.id, query) || contract.name.toLowerCase() === query.toLowerCase());
   if (!match) throw new Error(`no component "${query}" in ${project.system.config.id}; known: ${project.system.components.map((c) => c.contract.name).join(", ")}`);
@@ -186,7 +204,7 @@ export async function planChange(project: Project, scan: ScanResult, input: Plan
     };
   }
   const current = findContract(project, input.element);
-  const next = ComponentContract.parse({ ...current, ...input.patch, id: current.id, schema: current.schema });
+  const next = ComponentContract.parse({ ...applyPatch(current, input.patch), id: current.id, schema: current.schema });
   const { classes, reasons, breaking } = classifyContract(current, next);
   const top = RANK.find((c) => classes.includes(c)) ?? "docs";
   const sites = scan.report.usages.filter((u) => u.element === current.id);
