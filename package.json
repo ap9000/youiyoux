@@ -1,0 +1,27 @@
+{
+  "name": "design-language",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Company design language: definitions (DTCG tokens, dl.component/v1 contracts, rules, migrations) and the dl CLI, scanner and MCP server.",
+  "type": "module",
+  "packageManager": "pnpm@10.13.1",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dl": "node packages/cli/bin/dl.js",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
+    "schemas": "node packages/cli/bin/dl.js schema --write"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.3",
+    "typescript": "6.0.3",
+    "vitest": "5.0.1",
+    "@dl/cli": "workspace:*",
+    "@dl/core": "workspace:*",
+    "@dl/mcp": "workspace:*",
+    "@dl/scanner": "workspace:*",
+    "@dl/tokens": "workspace:*"
+  }
+}

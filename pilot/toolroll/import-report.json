@@ -1,0 +1,37 @@
+{
+  "source": "toolroll DESIGN.md + src/server/console.css",
+  "tokensFromCss": 49,
+  "tokenCount": 75,
+  "mismatches": [],
+  "documentedOnly": [
+    "ink-hover",
+    "on-ink"
+  ],
+  "undocumented": [
+    "accent",
+    "accent-hover",
+    "accent-text",
+    "attention",
+    "attention-soft",
+    "code-bg",
+    "ease-out",
+    "live",
+    "nav-current",
+    "nav-current-ink",
+    "on-accent",
+    "on-attention",
+    "overlay",
+    "phone-block",
+    "phone-card",
+    "phone-gap",
+    "phone-gutter",
+    "phone-row",
+    "pill-shadow",
+    "scroll",
+    "shadow-overlay",
+    "sheet-shadow",
+    "sidebar",
+    "user-bubble"
+  ],
+  "unparsed": []
+}

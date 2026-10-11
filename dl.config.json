@@ -1,0 +1,18 @@
+{
+  "$schema": "./schema/dl.config.schema.json",
+  "schema": "dl.config/v1",
+  "name": "design-language",
+  "systems": [
+    {
+      "id": "signal",
+      "name": "Signal",
+      "version": "1.0.0",
+      "description": "Toolroll's control-plane system: a neutral grey frame with paper sheets inset into it, ink for every act, an ink accent for what waits on a person, and colour kept for status.",
+      "tokens": "tokens/signal/signal.resolver.json",
+      "themeModifier": { "name": "theme", "light": "light", "dark": "dark" },
+      "components": "components",
+      "rules": "rules",
+      "design": "systems/signal/design.md"
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "name": "@dl/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "dl": "./bin/dl.js" },
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": { "@dl/core": "workspace:*", "@dl/scanner": "workspace:*", "@dl/tokens": "workspace:*", "@dl/mcp": "workspace:*", "yaml": "2.9.1" }
+}
