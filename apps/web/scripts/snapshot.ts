@@ -193,6 +193,15 @@ function writePreview(out: string, system: LoadedSystem, componentsRoot: string)
   return demos;
 }
 
+function previousSystemId(dataDir: string): string | undefined {
+  try {
+    const manifest = JSON.parse(readFileSync(join(dataDir, "manifest.json"), "utf8")) as { systems?: { id?: string }[] };
+    return manifest.systems?.[0]?.id;
+  } catch {
+    return undefined;
+  }
+}
+
 async function main(): Promise<void> {
   const { values } = parseArgs({ options: { design: { type: "string" }, project: { type: "string" }, config: { type: "string" }, out: { type: "string" }, commit: { type: "string" } } });
   const core = await load<CoreModule>("core");
@@ -210,7 +219,8 @@ async function main(): Promise<void> {
   const built = await lib.buildTokens(repo.root, config, source.output);
   const componentsRoot = join(repo.root, config.components);
 
-  // Captured thumbnails (public/previews) belong to the system and survive a refresh of its data.
+  // Captured thumbnails (public/previews) belong to the system: they survive a refresh of its data, not a switch to another system.
+  if (previousSystemId(dataDir) !== config.id) rmSync(join(out, "public/previews"), { recursive: true, force: true });
   rmSync(dataDir, { recursive: true, force: true });
   rmSync(previewDir, { recursive: true, force: true });
 
