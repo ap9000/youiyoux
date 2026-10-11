@@ -72,8 +72,21 @@ export interface Catalog {
 /** A rule with how youi check runs it, compiled when the snapshot was built (older snapshots lack it). */
 export type CatalogRule = RuleSpec & { execution?: RuleExecution };
 
+/** How a live snapshot (`youi ui --watch`) was produced; absent from one-off snapshots. */
+export interface LiveInfo {
+  /** Increases with every re-scan. */
+  generation: number;
+  /** `partial`: some files could not be analysed; `failed`: the latest run failed and older data is shown. */
+  status: "complete" | "partial" | "failed";
+  updatedAt: string;
+  /** The rules the usage map was checked against: system, definitions digest and revisions. */
+  rules?: string;
+  message?: string;
+}
+
 export interface Manifest {
   schema: "youiyoux.manifest/v1";
   source: { commit: string | null };
   systems: Array<{ id: string; catalog: string; usage: Array<{ project: string; file: string }> }>;
+  live?: LiveInfo;
 }

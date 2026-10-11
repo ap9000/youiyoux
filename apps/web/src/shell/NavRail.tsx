@@ -11,6 +11,7 @@ import { isActive, NAV_SECTIONS, navGroups, type NavGroup, type NavItem } from "
 import { cycleTheme, useTheme } from "../app/theme.tsx";
 import { Keys } from "../ui/Kbd.tsx";
 import { setOverlay } from "./keyboard.ts";
+import { LiveStatus } from "./LiveStatus.tsx";
 
 const ITEM = "group relative grid size-9 place-items-center rounded-md transition-colors duration-100 [&>svg]:size-4";
 const IDLE = "text-muted hover:bg-line/60 hover:text-ink";
@@ -90,6 +91,7 @@ export function NavRail() {
         </Fragment>
       ))}
       <div className="mt-auto flex flex-col items-center gap-1">
+        <LiveStatus />
         <RailButton label="Search" keys={["⌘", "K"]} onClick={() => setOverlay("palette")}>
           <Search />
         </RailButton>

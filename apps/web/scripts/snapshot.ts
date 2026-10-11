@@ -1,7 +1,7 @@
 /**
  * Builds everything the hub reads about one design system, from that system's own repo:
  *
- *   node scripts/snapshot.ts [--design <dir>] [--project <dir>] [--config <youi.project.json>] [--out <dir>] [--commit <sha>]
+ *   node scripts/snapshot.ts [--design <dir>] [--project <dir>] [--config <youi.project.json>] [--out <dir>] [--commit <sha>] [--watch]
  *
  * - <out>/public/data/*.json: the system catalog (tokens, contracts, rules, narrative)
  *   and the project's usage map, content-hashed so the browser can cache them forever.
@@ -12,6 +12,7 @@
  *
  * With no options it writes the committed default: the made-up demo system
  * (examples/demo-design) and a scan of examples/demo-app, into apps/web/snapshot.
+ * `--watch` (with `--out`) keeps that snapshot live: see watchSnapshot.
  * `--project` scans a product repo (read-only) for the usage map; its youi.project.json
  * (or `--config`) names the design repo and the CSS prefix and Tailwind names the
  * components use. `--design` overrides the design repo. `youi ui` runs this with
@@ -20,7 +21,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { pathToFileURL } from "node:url";
@@ -50,14 +51,24 @@ const HUB_TAILWIND_MAP: Record<string, string> = {
 
 type CoreModule = typeof import("@youiyoux/core");
 type TokensModule = typeof import("@youiyoux/tokens");
-/** The two scanner calls used here, typed locally so the hub's typecheck never pulls in the scanner's sources. */
+/** The scanner calls used here, typed locally so the hub's typecheck never pulls in the scanner's sources. */
 interface ScannerModule {
   loadProject(root: string, options: { configPath?: string; designRoot?: string }): Promise<ScannedProject>;
-  scanProject(project: ScannedProject): Promise<{ report: unknown }>;
   /** How youi check executes a rule; the scanner compiles ast-grep bodies, which the browser cannot. */
   ruleCapability(rule: import("@youiyoux/core").RuleSpec): unknown;
+  scanProject(project: ScannedProject, options?: { cache?: unknown }): Promise<{ report: unknown; identity: import("@youiyoux/core").CheckIdentity }>;
+  describeIdentity(identity: import("@youiyoux/core").CheckIdentity): string;
+  ProjectWatcher: {
+    start<R>(options: {
+      root: string;
+      load: { configPath?: string; designRoot?: string };
+      job: (project: ScannedProject, cache: unknown) => Promise<R>;
+      onUpdate: (update: { generation: number; status: "ok"; result: R } | { generation: number; status: "failed"; error: string }) => void;
+    }): Promise<{ close(): void }>;
+  };
 }
 interface ScannedProject {
+  readonly root: string;
   readonly config: import("@youiyoux/core").ProjectConfig;
   readonly repo: import("@youiyoux/core").DesignRepo;
 }
@@ -204,28 +215,34 @@ function previousSystemId(dataDir: string): string | undefined {
   }
 }
 
-async function main(): Promise<void> {
-  const { values } = parseArgs({ options: { design: { type: "string" }, project: { type: "string" }, config: { type: "string" }, out: { type: "string" }, commit: { type: "string" } } });
-  const core = await load<CoreModule>("core");
-  const lib = await load<TokensModule>("tokens");
-  const scanner = await load<ScannerModule>("scanner");
-  const out = resolve(values.out ?? DEFAULT_OUT);
-  const dataDir = join(out, "public/data");
-  const previewDir = join(out, "preview");
+/** Captured thumbnails (public/previews) belong to the system: they survive a refresh of its data, not a switch to another system. */
+function dropPreviewsOfOtherSystem(out: string, previousId: string | undefined, systemId: string): void {
+  if (previousId !== systemId) rmSync(join(out, "public/previews"), { recursive: true, force: true });
+}
 
-  const source = await readSource(values, core, scanner);
-  const repo = await core.loadDesignRepo(source.designRoot);
-  const system = core.getSystem(repo, source.systemId);
+interface Libraries {
+  readonly core: CoreModule;
+  readonly lib: TokensModule;
+  readonly scanner: ScannerModule;
+}
+
+type UsageRef = { project: string; file: string };
+type Live = { generation: number; status: "complete" | "partial" | "failed"; updatedAt: string; rules?: string; message?: string };
+
+interface WrittenSystem {
+  readonly id: string;
+  readonly catalogFile: string;
+  readonly commit: string | null;
+  readonly summary: string;
+}
+
+/** The catalog (content-hashed) and the preview frame's files for one system. */
+async function writeSystem(out: string, designRoot: string, systemId: string | undefined, output: OutputConfig, commitOverride: string | undefined, { core, lib, scanner }: Libraries): Promise<WrittenSystem> {
+  const repo = await core.loadDesignRepo(designRoot);
+  const system = core.getSystem(repo, systemId);
   const { config } = system;
-  const prefix = source.output.cssVarPrefix;
-  const built = await lib.buildTokens(repo.root, config, source.output);
+  const built = await lib.buildTokens(repo.root, config, output);
   const componentsRoot = join(repo.root, config.components);
-
-  // Captured thumbnails (public/previews) belong to the system: they survive a refresh of its data, not a switch to another system.
-  if (previousSystemId(dataDir) !== config.id) rmSync(join(out, "public/previews"), { recursive: true, force: true });
-  rmSync(dataDir, { recursive: true, force: true });
-  rmSync(previewDir, { recursive: true, force: true });
-
   const catalog = {
     schema: "youiyoux.catalog/v1",
     system: {
@@ -233,30 +250,118 @@ async function main(): Promise<void> {
       name: config.name,
       version: config.version,
       description: config.description,
-      cssPrefix: prefix,
+      cssPrefix: output.cssVarPrefix,
       design: config.design ? readFileSync(join(repo.root, config.design), "utf8") : "",
     },
-    tokens: catalogTokens(config.id, prefix, built.tokens, lib),
+    tokens: catalogTokens(config.id, output.cssVarPrefix, built.tokens, lib),
     components: system.components.map(({ contract }) => ({ contract, files: componentFiles(componentsRoot, contract.source.file, config.support) })),
     // Each rule with how youi check executes it, so the hub never shows an uncompilable rule as enforced.
     rules: system.rules.map((rule) => ({ ...rule, execution: scanner.ruleCapability(rule) })),
   };
   const catalogText = json(catalog);
   const catalogFile = `${config.id}.catalog.${hash(catalogText)}.json`;
-  write(join(dataDir, catalogFile), catalogText);
-  const usage = source.usage ? [{ project: source.usage.project, file: `${source.usage.project}.usage.${hash(json(source.usage))}.json` }] : [];
-  if (source.usage) write(join(dataDir, usage[0]!.file), json(source.usage));
-
-  const commit = values.commit ?? definitionsCommit(repo.root, ["youi.config.json", dirname(config.tokens), config.components, config.rules, ...(config.design ? [config.design] : [])]);
-  write(join(dataDir, "manifest.json"), `${JSON.stringify({ schema: "youiyoux.manifest/v1", source: { commit }, systems: [{ id: config.id, catalog: catalogFile, usage }] }, null, 2)}\n`);
-
-  write(join(previewDir, "system.css"), systemCss(config.name, built.tokens, source.output, lib));
+  write(join(out, "public/data", catalogFile), catalogText);
+  const previewDir = join(out, "preview");
+  rmSync(previewDir, { recursive: true, force: true });
+  write(join(previewDir, "system.css"), systemCss(config.name, built.tokens, output, lib));
   const demos = writePreview(previewDir, system, componentsRoot);
+  const commit = commitOverride ?? definitionsCommit(repo.root, ["youi.config.json", dirname(config.tokens), config.components, config.rules, ...(config.design ? [config.design] : [])]);
+  const summary = `${config.name} from ${repo.root} @ ${commit ?? "unknown"}: ${catalog.tokens.length} tokens, ${catalog.components.length} components (${demos} demos), ${catalog.rules.length} rules`;
+  return { id: config.id, catalogFile, commit, summary };
+}
 
-  if (out === DEFAULT_OUT) await buildHubTokens(core, lib);
-  process.stdout.write(
-    `snapshot of ${config.name} from ${repo.root} @ ${commit ?? "unknown"}: ${catalog.tokens.length} tokens, ${catalog.components.length} components (${demos} demos), ${catalog.rules.length} rules; ${usage.length ? `usage map of ${usage[0]!.project}` : "no usage map"} → ${relative(process.cwd(), out) || "."}\n`,
-  );
+function writeUsage(dataDir: string, report: ScanReport): UsageRef {
+  const text = json(report);
+  const file = `${report.project}.usage.${hash(text)}.json`;
+  write(join(dataDir, file), text);
+  return { project: report.project, file };
+}
+
+/** The manifest last: written to a temporary name and renamed, so a reader never sees half of it. */
+function writeManifest(dataDir: string, system: WrittenSystem, usage: readonly UsageRef[], live?: Live): void {
+  const manifest = { schema: "youiyoux.manifest/v1", source: { commit: system.commit }, systems: [{ id: system.id, catalog: system.catalogFile, usage }], ...(live ? { live } : {}) };
+  const file = join(dataDir, "manifest.json");
+  write(`${file}.tmp`, `${JSON.stringify(manifest, null, 2)}\n`);
+  renameSync(`${file}.tmp`, file);
+}
+
+/** Delete hashed data files that neither the current nor the previous generation names (an open page may still be loading the previous one). */
+function pruneData(dataDir: string, keep: ReadonlySet<string>): void {
+  for (const name of readdirSync(dataDir)) if (name !== "manifest.json" && !keep.has(name)) rmSync(join(dataDir, name), { force: true });
+}
+
+/**
+ * `--watch`: keep the snapshot live. Every change to the project's sources re-scans (only
+ * edited files and their importers are re-analysed) and writes a new usage map; a change
+ * to the design definitions also rewrites the catalog and previews. Each generation ends
+ * with an atomic manifest write, which the dev server announces to the open hub. A failed
+ * run keeps the last good data and marks the manifest failed.
+ */
+async function watchSnapshot(values: { design?: string; project?: string; config?: string; commit?: string }, out: string, libs: Libraries): Promise<void> {
+  const dataDir = join(out, "public/data");
+  mkdirSync(dataDir, { recursive: true });
+  const root = values.project ?? DEMO_PROJECT;
+  let previousId = previousSystemId(dataDir);
+  let system: WrittenSystem | null = null;
+  let systemOf: ScannedProject | null = null;
+  let usage: UsageRef[] = [];
+  let previous = new Set<string>();
+  const stamp = (): string => new Date().toISOString();
+  const watcher = await libs.scanner.ProjectWatcher.start({
+    root,
+    load: { ...(values.config ? { configPath: resolve(values.config) } : {}), ...(values.design ? { designRoot: resolve(values.design) } : {}) },
+    job: async (project, cache) => {
+      // A new project object means the definitions were (re)loaded: rebuild the catalog too.
+      if (project !== systemOf) {
+        system = await writeSystem(out, project.repo.root, project.config.system, project.config.outputs, values.commit, libs);
+        dropPreviewsOfOtherSystem(out, previousId, system.id);
+        previousId = system.id;
+        systemOf = project;
+      }
+      const scan = await libs.scanner.scanProject(project, { cache });
+      const report = libs.core.ScanReport.parse(scan.report);
+      return { report, rules: libs.scanner.describeIdentity(scan.identity) };
+    },
+    onUpdate: (update) => {
+      if (!system) return void process.stderr.write(`youi ui: ${update.status === "failed" ? update.error : "no system"}\n`);
+      if (update.status === "ok") usage = [writeUsage(dataDir, update.result.report)];
+      const live: Live =
+        update.status === "ok"
+          ? { generation: update.generation, status: update.result.report.status, updatedAt: stamp(), rules: update.result.rules }
+          : { generation: update.generation, status: "failed", updatedAt: stamp(), message: update.error };
+      writeManifest(dataDir, system, usage, live);
+      const current = new Set([system.catalogFile, ...usage.map((u) => u.file)]);
+      pruneData(dataDir, new Set([...current, ...previous]));
+      previous = current;
+      process.stdout.write(`youi ui: generation ${update.generation} ${live.status}${live.message ? `: ${live.message}` : ""}\n`);
+    },
+  });
+  const stop = (): void => {
+    watcher.close();
+    process.exit(0);
+  };
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+}
+
+async function main(): Promise<void> {
+  const { values } = parseArgs({ options: { design: { type: "string" }, project: { type: "string" }, config: { type: "string" }, out: { type: "string" }, commit: { type: "string" }, watch: { type: "boolean", default: false } } });
+  const libs: Libraries = { core: await load<CoreModule>("core"), lib: await load<TokensModule>("tokens"), scanner: await load<ScannerModule>("scanner") };
+  const out = resolve(values.out ?? DEFAULT_OUT);
+  if (values.watch) {
+    if (out === DEFAULT_OUT) throw new Error("--watch writes a live snapshot; pass --out (the committed default snapshot is never watched)");
+    return watchSnapshot(values, out, libs);
+  }
+  const dataDir = join(out, "public/data");
+  const source = await readSource(values, libs.core, libs.scanner);
+  const previousId = previousSystemId(dataDir);
+  rmSync(dataDir, { recursive: true, force: true });
+  const system = await writeSystem(out, source.designRoot, source.systemId, source.output, values.commit, libs);
+  dropPreviewsOfOtherSystem(out, previousId, system.id);
+  const usage = source.usage ? [writeUsage(dataDir, source.usage)] : [];
+  writeManifest(dataDir, system, usage);
+  if (out === DEFAULT_OUT) await buildHubTokens(libs.core, libs.lib);
+  process.stdout.write(`snapshot of ${system.summary}; ${usage.length ? `usage map of ${usage[0]!.project}` : "no usage map"} → ${relative(process.cwd(), out) || "."}\n`);
 }
 
 await main();

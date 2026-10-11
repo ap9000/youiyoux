@@ -109,7 +109,7 @@ describe("youi", () => {
       expect(await main(["schema", "--check"])).toBe(0);
       out = "";
       expect(await main(["schema", "--check", "--design", dir, "--json"])).toBe(1);
-      expect((JSON.parse(out) as { stale: string[] }).stale).toHaveLength(8);
+      expect((JSON.parse(out) as { stale: string[] }).stale).toHaveLength(9);
       expect(await main(["schema", "--write", "--design", dir])).toBe(0);
       out = "";
       expect(await main(["schema", "--check", "--design", dir])).toBe(0);
@@ -121,11 +121,15 @@ describe("youi", () => {
 
   test("ui shows the committed demo by default, and snapshots a named system into a gitignored dir", () => {
     const tool = "/opt/youi";
-    expect(hubPlan(tool, {})).toEqual({ web: "/opt/youi/apps/web", snapshot: null, env: {}, vite: ["/opt/youi/apps/web/node_modules/vite/bin/vite.js"] });
+    expect(hubPlan(tool, {})).toEqual({ web: "/opt/youi/apps/web", snapshot: null, env: {}, vite: ["/opt/youi/apps/web/node_modules/vite/bin/vite.js"], watch: null });
     const plan = hubPlan(tool, { design: "/data/acme-design", project: "/src/acme-app", port: "5180" });
     expect(plan.snapshot).toEqual(["/opt/youi/apps/web/scripts/snapshot.ts", "--out", "/opt/youi/apps/web/.hub", "--design", "/data/acme-design", "--project", "/src/acme-app"]);
     expect(plan.env).toEqual({ YOUI_HUB_SNAPSHOT: "/opt/youi/apps/web/.hub" });
     expect(plan.vite.slice(1)).toEqual(["--port", "5180", "--strictPort"]);
+    expect(plan.watch).toBeNull();
+    expect(hubPlan(tool, { project: "/src/acme-app", watch: true }).watch).toEqual(["/opt/youi/apps/web/scripts/snapshot.ts", "--out", "/opt/youi/apps/web/.hub", "--project", "/src/acme-app", "--watch"]);
+    // Watching with nothing named watches the demo project into .hub, never the committed snapshot.
+    expect(hubPlan(tool, { watch: true }).watch).toEqual(["/opt/youi/apps/web/scripts/snapshot.ts", "--out", "/opt/youi/apps/web/.hub", "--project", "/opt/youi/examples/demo-app", "--watch"]);
   });
 
   test("ui explains missing hub dependencies instead of crashing", async () => {

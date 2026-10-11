@@ -23,6 +23,14 @@ function snapshotFiles(): Plugin {
       outDir = resolve(config.root, config.build.outDir);
     },
     configureServer(server) {
+      // `youi ui --watch` rewrites the manifest (atomically) after every re-scan: tell the open hub to load it.
+      const manifest = join(snapshotPublic, "data/manifest.json");
+      server.watcher.add(manifest);
+      const announce = (file: string): void => {
+        if (file === manifest) server.ws.send({ type: "custom", event: "youi:snapshot" });
+      };
+      server.watcher.on("add", announce);
+      server.watcher.on("change", announce);
       server.middlewares.use((req, res, next) => {
         const path = decodeURIComponent((req.url ?? "").split("?")[0]!.replace(server.config.base, "/"));
         const file = join(snapshotPublic, path);

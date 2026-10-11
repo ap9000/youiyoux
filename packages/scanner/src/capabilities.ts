@@ -13,7 +13,8 @@ import { AST_GREP_LANGUAGES, BUILT_IN_CHECKS, RuleSpec, ruleExecution, type AstG
 import { runChecks, type CheckInput } from "./checks.ts";
 import type { ModuleInfo } from "./parse.ts";
 import type { Project } from "./project.ts";
-import { SCANNER_VERSION, type ScanResult } from "./scan.ts";
+import { SCANNER_VERSION } from "./identity.ts";
+import type { ScanResult } from "./scan.ts";
 
 /** The module kind each ast-grep language runs on. */
 export const AST_GREP_FILE_LANG: Readonly<Record<AstGrepLanguage, ModuleInfo["lang"]>> = { tsx: "tsx", typescript: "ts", css: "css" };

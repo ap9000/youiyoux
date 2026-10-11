@@ -1,6 +1,9 @@
+export * from "./baseline.ts";
+export * from "./cache.ts";
 export * from "./checks.ts";
 export * from "./elements.ts";
 export * from "./graph.ts";
+export * from "./identity.ts";
 export * from "./library.ts";
 export * from "./parse.ts";
 export * from "./project.ts";
@@ -13,3 +16,4 @@ export * from "./plan.ts";
 export * from "./queries.ts";
 export * from "./capabilities.ts";
 export * from "./token-impact.ts";
+export * from "./watch.ts";
