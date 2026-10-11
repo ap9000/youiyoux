@@ -105,7 +105,7 @@ function Usage({ model, index }: { model: Model; index: UsageIndex }) {
         <Section title="Most used components">
           <ul className="-mx-2 space-y-0.5">
             {components.map(({ contract, sites }) => (
-              <Bar key={contract.id} label={contract.name} value={sites} max={maxSites} href={elementHref(contract.id, "where")} />
+              <Bar key={contract.id} label={contract.name} value={sites} max={maxSites} href={elementHref(contract.id, "usage")} />
             ))}
           </ul>
         </Section>

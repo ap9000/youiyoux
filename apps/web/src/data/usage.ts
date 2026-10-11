@@ -143,26 +143,27 @@ export function groupByScreen(sites: readonly Site[]): ProjectGroup[] {
     }));
 }
 
-export interface ScreenBom {
-  readonly project: string;
-  readonly route: string;
-  readonly elements: ReadonlyMap<ElementId, number>;
-  readonly sites: number;
+export interface ElementIssues {
+  /** Local components named like the element that resolve elsewhere: candidates to replace. */
+  readonly lookalikes: number;
+  /** Sites the scanner could not resolve that might be the element. */
+  readonly unresolved: number;
+  /** Render sites that leave the element's main choice (its first enum prop, e.g. variant) unset. */
+  readonly unset: { readonly prop: string; readonly count: number } | null;
+  readonly total: number;
 }
 
-/** Every screen of every project with the elements it renders (a bill of materials). */
-export function screenBoms(index: UsageIndex): ScreenBom[] {
-  const boms = new Map<string, { project: string; route: string; elements: Map<ElementId, number>; sites: number }>();
-  for (const [element, sites] of index.sitesByElement) {
-    for (const site of sites) {
-      for (const route of site.routes.length > 0 ? site.routes : [UNROUTED]) {
-        const key = `${site.project}\u0000${route}`;
-        const bom = boms.get(key) ?? { project: site.project, route, elements: new Map<ElementId, number>(), sites: 0 };
-        bom.elements.set(element, (bom.elements.get(element) ?? 0) + 1);
-        bom.sites++;
-        boms.set(key, bom);
-      }
-    }
-  }
-  return [...boms.values()].sort((a, b) => a.project.localeCompare(b.project) || routeRank(a.route) - routeRank(b.route) || a.route.localeCompare(b.route));
+/** The enum prop a reader means by "which kind": `variant` when the contract has one, else its first enum. */
+export function mainChoice(contract: ComponentContract): string | null {
+  const enums = Object.entries(contract.props).filter(([, spec]) => spec.type === "enum").map(([name]) => name);
+  return enums.includes("variant") ? "variant" : (enums[0] ?? null);
+}
+
+export function elementIssues(index: UsageIndex, contract: ComponentContract): ElementIssues {
+  const lookalikes = index.lookalikesByElement.get(contract.id)?.length ?? 0;
+  const unresolved = index.unknownsByCandidate.get(contract.id)?.length ?? 0;
+  const prop = mainChoice(contract);
+  const count = prop ? (index.sitesByElement.get(contract.id) ?? []).filter((s) => s.kind === "render" && s.props[prop] === undefined).length : 0;
+  const unset = prop && count > 0 ? { prop, count } : null;
+  return { lookalikes, unresolved, unset, total: lookalikes + unresolved + count };
 }

@@ -2,7 +2,7 @@
 import { Boxes } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useParams } from "wouter";
-import { ELEMENT_TABS, type ElementTab, formatId } from "../../data/ids.ts";
+import { type ElementTab, formatId, tabOf } from "../../data/ids.ts";
 import { countByKind, type ElementSummary, type Model } from "../../data/model.ts";
 import { retryModel, useModelState } from "../../data/store.ts";
 import type { ElementKind } from "../../data/types.ts";
@@ -25,8 +25,7 @@ export function readSelection(rest: string): Selection {
   const [system, kind, name, tab] = rest.split("/");
   const validKind = KINDS.find((k) => k === kind);
   const id = system && validKind && name ? formatId(system, validKind, name) : null;
-  const validTab = ELEMENT_TABS.find((t) => t === tab) ?? "preview";
-  return { id, tab: validTab };
+  return { id, tab: tabOf(tab) };
 }
 
 export function CatalogScreen() {
