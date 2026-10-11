@@ -74,6 +74,14 @@ describe("preview server", () => {
     expect(await res.text()).toContain("<title>hub</title>");
   });
 
+  test("serves client routes that contain dots as index.html", async () => {
+    for (const route of ["/tokens/color.accent", "/tokens/space.md", "/elements/demo/rule/color.no-raw-color"]) {
+      const res = await fetch(`${base}${route}`);
+      expect(res.status, route).toBe(200);
+      expect(await res.text(), route).toContain("<title>hub</title>");
+    }
+  });
+
   test("caches hashed files for good and revalidates the manifest", async () => {
     expect((await fetch(`${base}/assets/index-abc123.js`)).headers.get("cache-control")).toContain("immutable");
     const manifest = await fetch(`${base}/data/manifest.json`);
@@ -84,6 +92,8 @@ describe("preview server", () => {
   test("answers the health check, 404s missing files and refuses writes and traversal", async () => {
     expect(await (await fetch(`${base}/healthz`)).text()).toBe("ok");
     expect((await fetch(`${base}/data/missing.json`)).status).toBe(404);
+    expect((await fetch(`${base}/assets/missing-chunk`)).status).toBe(404);
+    expect((await fetch(`${base}/missing.js`)).status).toBe(404);
     expect((await fetch(`${base}/`, { method: "POST" })).status).toBe(405);
     const escape = await fetch(`${base}/..%2fsecret.json`);
     expect(escape.status).toBe(404);

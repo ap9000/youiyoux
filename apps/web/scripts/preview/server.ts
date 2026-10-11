@@ -1,6 +1,6 @@
 /**
- * The preview deploy's web server: serves a built hub (dist/) with no dependencies. Unknown paths
- * without an extension get index.html, so client routes (/elements/…, /tokens/…) load directly.
+ * The preview deploy's web server: serves a built hub (dist/) with no dependencies. Paths that are
+ * not built files get index.html, so client routes (/elements/…, /tokens/color.accent) load directly.
  * Preview URLs are public but not meant to be found, so every response asks not to be indexed.
  */
 import { createReadStream, existsSync, statSync } from "node:fs";
@@ -12,6 +12,8 @@ const IMMUTABLE = "public, max-age=31536000, immutable";
 const REVALIDATE = "no-cache";
 /** Vite's hashed bundles, and the snapshot's content-hashed catalog and usage files. */
 const HASHED = /^\/assets\/|^\/data\/.+\.[0-9a-f]{10}\.json$/;
+/** The build's directories of files; anything missing there is a 404, never the hub. */
+const STATIC_DIRS = /^\/(?:assets|data|previews)\//;
 
 const TYPES: Readonly<Record<string, string>> = {
   ".html": "text/html; charset=utf-8",
@@ -47,6 +49,13 @@ function sendFile(req: IncomingMessage, res: ServerResponse, file: string, cache
     .pipe(res);
 }
 
+/**
+ * A path that names a built file rather than a client route. Routes may contain dots
+ * (/tokens/color.accent, /elements/demo/rule/color.no-raw-color), so an extension alone does
+ * not make a path static: only the build's own directories and file types do.
+ */
+const isStaticPath = (pathname: string): boolean => STATIC_DIRS.test(pathname) || extname(pathname) in TYPES;
+
 /** The file under `root` that `pathname` names, or null when it escapes `root` or is not a file. */
 function fileFor(root: string, pathname: string): string | null {
   const file = resolve(join(root, pathname));
@@ -70,8 +79,8 @@ export function handle(root: string, req: IncomingMessage, res: ServerResponse):
 
   const file = fileFor(root, pathname === "/" ? "/index.html" : pathname);
   if (file) return sendFile(req, res, file, HASHED.test(pathname) ? IMMUTABLE : REVALIDATE);
-  if (extname(pathname) === "") return sendFile(req, res, join(root, "index.html"), REVALIDATE);
-  return send(res, 404, "not found");
+  if (isStaticPath(pathname)) return send(res, 404, "not found");
+  return sendFile(req, res, join(root, "index.html"), REVALIDATE);
 }
 
 /** A server for the built hub in `dist`; it refuses to start on a directory with no index.html. */

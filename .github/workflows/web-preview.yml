@@ -1,8 +1,6 @@
-# The hub's preview deploys (apps/web/README.md, "Preview deploys").
-# - build: on every PR, the exact preview build Railway runs, including the check that the
-#   build serves only the committed demo snapshot. It needs no secrets.
-# - comment: when Railway reports a successful deploy for a commit, put that preview's link on
-#   the commit's open PRs as one comment, updated on every deploy.
+# The hub's preview deploys (apps/web/README.md, "Preview deploys"): on every PR, the exact
+# preview build Railway runs, including the check that the build serves only the committed demo
+# snapshot. It needs no secrets. Railway's own bot comments each PR's preview link.
 name: web preview
 
 on:
@@ -10,14 +8,12 @@ on:
     paths: ["apps/web/**", "packages/**", "pnpm-lock.yaml", "package.json", ".railway/**", ".github/workflows/web-preview.yml"]
   push:
     branches: [main]
-  deployment_status:
 
 permissions:
   contents: read
 
 jobs:
   build:
-    if: github.event_name != 'deployment_status'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,43 +24,3 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @youiyoux/web build:preview
-
-  comment:
-    if: >-
-      github.event_name == 'deployment_status' &&
-      github.event.deployment_status.state == 'success' &&
-      github.event.deployment_status.environment_url != '' &&
-      contains(github.event.deployment_status.creator.login, 'railway')
-    runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-    steps:
-      - uses: actions/github-script@v7
-        env:
-          PREVIEW_URL: ${{ github.event.deployment_status.environment_url }}
-          PREVIEW_ENV: ${{ github.event.deployment.environment }}
-          PREVIEW_SHA: ${{ github.event.deployment.sha }}
-        with:
-          script: |
-            const MARKER = "<!-- youiyoux-web-preview -->";
-            const { PREVIEW_URL: url, PREVIEW_ENV: environment, PREVIEW_SHA: sha } = process.env;
-            if (!/^https:\/\/[^\s"'<>]+$/.test(url)) return core.setFailed(`not an https preview URL: ${url}`);
-            const base = url.replace(/\/$/, "");
-            const { data: pulls } = await github.rest.repos.listPullRequestsAssociatedWithCommit({ ...context.repo, commit_sha: sha });
-            const open = pulls.filter((pull) => pull.state === "open");
-            if (open.length === 0) return core.info(`no open PR for ${sha} (${environment})`);
-            const body = [
-              MARKER,
-              `**Preview:** ${base}`,
-              "",
-              `Try it: [Elements](${base}/elements) · [Tokens](${base}/tokens) · [Screens](${base}/screens). The preview shows the made-up demo design system, never a product's data.`,
-              "",
-              `<sub>Deployed ${sha.slice(0, 7)} to Railway environment \`${environment}\`. Updated on every deploy.</sub>`,
-            ].join("\n");
-            for (const pull of open) {
-              const comments = await github.paginate(github.rest.issues.listComments, { ...context.repo, issue_number: pull.number, per_page: 100 });
-              const mine = comments.find((comment) => comment.body?.startsWith(MARKER));
-              if (mine) await github.rest.issues.updateComment({ ...context.repo, comment_id: mine.id, body });
-              else await github.rest.issues.createComment({ ...context.repo, issue_number: pull.number, body });
-              core.info(`preview link on #${pull.number}: ${base}`);
-            }
