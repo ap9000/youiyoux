@@ -36,6 +36,7 @@ A design repo is any directory with a `youi.config.json`. A product names it wit
 | `schema/` | JSON Schemas, emitted from the Zod definitions in `packages/core` (`youi schema --write`) |
 | `examples/demo-design/` | **Demo**, a made-up design system (Button, Input and Card; 19 tokens; 6 rules) used by the tests, these docs and the hub's default data |
 | `examples/demo-app/` | A made-up product that uses Demo, with a few deliberate violations |
+| `.railway/`, `.github/workflows/web-preview.yml` | Per-PR preview deploys of the hub on Railway, demo data only ([how](apps/web/README.md#preview-deploys)) |
 
 ## Use
 
@@ -97,6 +98,15 @@ Anywhere:
 - **Rewrites are gated.** A migration is written only if the rewritten files parse cleanly, the element's usage count is unchanged, no site became unknown, no non-residual site keeps the old API, and a second run changes nothing.
 - **Build with the System, browse the Library.** System elements (`youi:` ids) are approved: products and agents build only with them. Library items (`lib:` ids) are ingested references, kept to browse, categorize and propose as swaps; System lookups refuse them. An element moves `library → candidate → adopted → in-use`: an agent can only request adoption, a person approves it, and `in-use` is read off the usage map.
 - **Agents propose, people approve.** Agents get read tools and a planner; nothing in the agent surface can publish a change.
+
+## Roadmap (not built yet)
+
+- **Library ingestion from links**: GitHub repos, Figma files, component catalogs, Storybook and DESIGN.md files, each categorized and reviewed before it lands in the Library.
+- **Trial**: *Try alternatives* for an element, and *Try on a page* to see a candidate in a real screen before adopting it.
+- **Replace with…**: swap one element for another across all of its uses, as a planned, reviewed change.
+- **Screens, live**: screen snapshots with element positions, a live page view, and click-to-change on an element in place.
+- **Hosted server**: on Railway, with logins, per-scope permissions, the Access page and a GitHub App; per-PR preview links for every change.
+- **Public release prep**.
 
 ## License
 
