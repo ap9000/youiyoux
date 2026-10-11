@@ -8,8 +8,7 @@
  *   (manifest + catalog), and the Latin font files its stylesheet declares. HTML, JS, CSS and
  *   JSON count gzipped (-9); woff2 counts as is (already compressed). Route chunks preloaded on
  *   idle, the usage map and the preview frame load later and are reported separately.
- *   Fails when the total grows past perf/budget.json's ceiling (the last accepted size); the
- *   agreed target is reported alongside, met or not.
+ *   Fails when the total is over the budget in perf/budget.json.
  * - Search: query latency of the same engine the worker runs, on the default snapshot and on a 50×
  *   synthetic catalog to show headroom. Fails over the search budget.
  * - Navigation is measured in the browser (Home → Speed, src/lib/perf.ts), not here.
@@ -26,10 +25,8 @@ const APP = resolve(import.meta.dirname, "..");
 const DIST = join(APP, "dist");
 const DATA = join(APP, "snapshot/public/data");
 interface Budget {
-  /** The agreed first-route download target (KB). */
-  initialKbTarget: number;
-  /** The accepted size (KB): measuring above it fails. Raise it deliberately, in review, when growth is wanted. */
-  initialKbCeiling: number;
+  /** The agreed first-route download budget (KB), fonts included: measuring above it fails. */
+  initialKb: number;
   searchMs: number;
   navigationMs: number;
 }
@@ -60,16 +57,22 @@ function coversCodePoint(range: string, point: number): boolean {
   });
 }
 
-/** Font files the initial stylesheets declare for Latin text: what the first route downloads to render its text. */
+/**
+ * The font file per family the first route downloads for Latin text. Where several faces of a
+ * family cover the character, the browser uses the last one declared, so only that one counts.
+ */
 function initialFonts(stylesheets: readonly string[]): Array<{ file: string; bytes: number }> {
-  const files = stylesheets.flatMap((sheet) =>
-    [...readFileSync(join(DIST, sheet), "utf8").matchAll(/@font-face\s*\{([^}]*)\}/g)].flatMap(([, body = ""]) => {
-      const url = /url\(\/?(assets\/[^)]+\.woff2)\)/.exec(body)?.[1];
+  const chosen = new Map<string, string>();
+  for (const sheet of stylesheets) {
+    for (const [, body = ""] of readFileSync(join(DIST, sheet), "utf8").matchAll(/@font-face\s*\{([^}]*)\}/g)) {
+      const url = /url\(["']?\/?(assets\/[^)"']+\.woff2)["']?\)/.exec(body)?.[1];
       const range = /unicode-range:\s*([^;}]+)/.exec(body)?.[1];
-      return url && (!range || coversCodePoint(range, LATIN_PROBE)) ? [url] : [];
-    }),
-  );
-  return [...new Set(files)].map((file) => ({ file, bytes: statSync(join(DIST, file)).size }));
+      const family = /font-family:\s*([^;}]+)/.exec(body)?.[1]?.replace(/["']/g, "").trim() ?? "";
+      const style = /font-style:\s*([^;}]+)/.exec(body)?.[1]?.trim() ?? "normal";
+      if (url && style === "normal" && (!range || coversCodePoint(range, LATIN_PROBE))) chosen.set(family, url);
+    }
+  }
+  return [...new Set(chosen.values())].map((file) => ({ file, bytes: statSync(join(DIST, file)).size }));
 }
 
 function percentiles(times: number[]): { p50: number; p95: number; max: number } {
@@ -132,8 +135,7 @@ function main(): void {
       snapshotKbGzip: kb(data),
       fontsKb: kb(fonts),
       totalKb: total,
-      withinTarget: total <= BUDGET.initialKbTarget,
-      withinCeiling: total <= BUDGET.initialKbCeiling,
+      withinBudget: total <= BUDGET.initialKb,
       assets: assets.map((a) => ({ file: a.file, kbGzip: kb(a.gzip) })),
       fonts: fontFiles.map((f) => ({ file: f.file, kb: kb(f.bytes) })),
     },
@@ -146,13 +148,13 @@ function main(): void {
   writeFileSync(join(APP, "perf/report.json"), `${JSON.stringify(report, null, 2)}\n`);
   const { initial } = report;
   const failures = [
-    ...(initial.withinCeiling ? [] : [`initial download ${initial.totalKb} KB grew past the accepted ${BUDGET.initialKbCeiling} KB (perf/budget.json)`]),
+    ...(initial.withinBudget ? [] : [`initial download ${initial.totalKb} KB is over the ${BUDGET.initialKb} KB budget (perf/budget.json)`]),
     ...(search.system.p95 <= BUDGET.searchMs ? [] : [`search p95 ${search.system.p95} ms is over the ${BUDGET.searchMs} ms budget`]),
   ];
   process.stdout.write(
     [
       `initial (first route) ${initial.totalKb} KB = HTML ${initial.htmlKbGzip} + JS ${initial.jsKbGzip} + CSS ${initial.cssKbGzip} + snapshot ${initial.snapshotKbGzip} + fonts ${initial.fontsKb}`,
-      `  target ${BUDGET.initialKbTarget} KB: ${initial.withinTarget ? "met" : `NOT MET (over by ${kb((initial.totalKb - BUDGET.initialKbTarget) * 1024)} KB)`} · accepted ceiling ${BUDGET.initialKbCeiling} KB: ${initial.withinCeiling ? "OK" : "REGRESSION"}`,
+      `  budget ${BUDGET.initialKb} KB: ${initial.withinBudget ? `OK (${kb((BUDGET.initialKb - initial.totalKb) * 1024)} KB to spare)` : "OVER"}`,
       `search ${catalog.system.name} (${search.system.docs} docs): p50 ${search.system.p50} ms, p95 ${search.system.p95} ms, max ${search.system.max} ms (budget ${BUDGET.searchMs})`,
       `search ${SCALE}x (${search.scaled.docs} docs): index ${search.scaled.indexMs} ms, p50 ${search.scaled.p50} ms, p95 ${search.scaled.p95} ms`,
       "wrote perf/report.json",

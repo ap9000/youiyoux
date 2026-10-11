@@ -1,7 +1,6 @@
 {
   "budgets": {
-    "initialKbTarget": 150,
-    "initialKbCeiling": 166,
+    "initialKb": 150,
     "searchMs": 50,
     "navigationMs": 100,
     "navigationNote": "navigation is measured in the browser (Home → Speed), not by this script"
@@ -10,15 +9,14 @@
     "boundary": "first route: index.html + entry JS/CSS + modulepreloads + manifest + catalog + Latin font files (woff2 as is, the rest gzip -9)",
     "htmlKbGzip": 0.6,
     "jsKbGzip": 81.8,
-    "cssKbGzip": 8.3,
+    "cssKbGzip": 8.4,
     "snapshotKbGzip": 23,
-    "fontsKb": 51.3,
-    "totalKb": 165.1,
-    "withinTarget": false,
-    "withinCeiling": true,
+    "fontsKb": 29.2,
+    "totalKb": 143.1,
+    "withinBudget": true,
     "assets": [
       {
-        "file": "assets/main-CO-XRAHT.js",
+        "file": "assets/main-Ch8xcEY-.js",
         "kbGzip": 11.3
       },
       {
@@ -38,18 +36,18 @@
         "kbGzip": 0.5
       },
       {
-        "file": "assets/main-CkMXRO6h.css",
-        "kbGzip": 8.3
+        "file": "assets/main-DkI_p_0q.css",
+        "kbGzip": 8.4
       }
     ],
     "fonts": [
       {
-        "file": "assets/geist-latin-wght-normal-BgDaEnEv.woff2",
-        "kb": 28.7
+        "file": "assets/geist-latin-core-vkBVTr4s.woff2",
+        "kb": 16.5
       },
       {
-        "file": "assets/geist-mono-latin-wght-normal-XN7g48iV.woff2",
-        "kb": 22.6
+        "file": "assets/geist-mono-latin-core-DccGGzmg.woff2",
+        "kb": 12.7
       }
     ]
   },
@@ -69,19 +67,19 @@
       "kbGzip": 13.6
     },
     {
-      "file": "assets/SearchField-DYmb5FZF.js",
+      "file": "assets/SearchField-cCjVHdJ9.js",
       "kbRaw": 39,
       "kbGzip": 12.3
     },
     {
-      "file": "assets/main-CO-XRAHT.js",
+      "file": "assets/main-Ch8xcEY-.js",
       "kbRaw": 29.5,
       "kbGzip": 11.3
     },
     {
-      "file": "assets/CatalogScreen-WyLGDCRH.js",
-      "kbRaw": 35.7,
-      "kbGzip": 10.6
+      "file": "assets/CatalogScreen-Bly5AHad.js",
+      "kbRaw": 35.9,
+      "kbGzip": 10.7
     },
     {
       "file": "assets/dist-CaTTiKnc.js",
@@ -89,12 +87,12 @@
       "kbGzip": 9
     },
     {
-      "file": "assets/main-CkMXRO6h.css",
-      "kbRaw": 43,
-      "kbGzip": 8.3
+      "file": "assets/main-DkI_p_0q.css",
+      "kbRaw": 43.5,
+      "kbGzip": 8.4
     },
     {
-      "file": "assets/CommandPalette-CUUJ2j-r.js",
+      "file": "assets/CommandPalette-E0iyGkES.js",
       "kbRaw": 18.3,
       "kbGzip": 7
     },
@@ -129,17 +127,17 @@
       "kbGzip": 3
     },
     {
-      "file": "assets/StubScreens-B1ngNt8y.js",
+      "file": "assets/StubScreens-BaeGaQFh.js",
       "kbRaw": 5.7,
       "kbGzip": 2.3
     },
     {
-      "file": "assets/TokensScreen-DGZ8VtF5.js",
+      "file": "assets/TokensScreen-QJtc61fD.js",
       "kbRaw": 5,
       "kbGzip": 2.3
     },
     {
-      "file": "assets/HomeScreen-Bk8y0r9q.js",
+      "file": "assets/HomeScreen-kuO7Tcwa.js",
       "kbRaw": 6.4,
       "kbGzip": 2.2
     },
@@ -149,7 +147,7 @@
       "kbGzip": 1.3
     },
     {
-      "file": "assets/client-BVrP9Mhf.js",
+      "file": "assets/client-DGxN_Ai8.js",
       "kbRaw": 2.1,
       "kbGzip": 1.1
     },
@@ -159,7 +157,7 @@
       "kbGzip": 0.8
     },
     {
-      "file": "assets/CheatSheet-C7bjtJHf.js",
+      "file": "assets/CheatSheet-D-pemP99.js",
       "kbRaw": 1.5,
       "kbGzip": 0.7
     },
@@ -197,18 +195,18 @@
   "search": {
     "signal": {
       "docs": 89,
-      "indexMs": 7.1,
-      "p50": 0.023,
-      "p95": 0.094,
-      "max": 0.905
+      "indexMs": 4.7,
+      "p50": 0.013,
+      "p95": 0.045,
+      "max": 0.39
     },
     "scaled": {
       "factor": 50,
       "docs": 4450,
-      "indexMs": 113.4,
-      "p50": 0.247,
-      "p95": 2.297,
-      "max": 115.03
+      "indexMs": 79.5,
+      "p50": 0.211,
+      "p95": 0.704,
+      "max": 1.947
     }
   }
 }

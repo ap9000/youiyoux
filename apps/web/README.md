@@ -48,7 +48,7 @@ The element Preview tab shows a captured image (`<snapshot>/public/previews/<com
 
 ## Speed
 
-Budgets: search under 50 ms, navigation under 100 ms, initial download (first route, fonts included) under 150 KB, a target not met yet. `pnpm build && pnpm measure` writes `perf/report.json` and fails when the download grows past the accepted ceiling in `perf/budget.json`; [PERFORMANCE.md](PERFORMANCE.md) has the latest numbers and how they were taken. Home shows live search and navigation timings for the current tab.
+Budgets: search under 50 ms, navigation under 100 ms, initial download (first route, fonts included) under 150 KB. `pnpm build && pnpm measure` writes `perf/report.json` and fails over the budgets in `perf/budget.json`; [PERFORMANCE.md](PERFORMANCE.md) has the latest numbers and how they were taken. Home shows live search and navigation timings for the current tab.
 
 ## Code
 

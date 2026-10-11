@@ -1,6 +1,5 @@
 {
-  "initialKbTarget": 150,
-  "initialKbCeiling": 166,
+  "initialKb": 150,
   "searchMs": 50,
   "navigationMs": 100
 }
