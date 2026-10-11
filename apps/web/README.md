@@ -46,6 +46,32 @@ The element Preview tab shows a captured image (`<snapshot>/public/previews/<com
 
 `scripts/capture.sh [base-url] [previews|screens|all]` refreshes the thumbnails (into the running snapshot) and the review screenshots in `screenshots/` (light and dark) with `chrome-devtools-axi`. The committed screenshots show the demo system.
 
+## Preview deploys
+
+Every pull request can get its own link to the hub built from that branch, so a change is tested in the browser before it merges. The preview is public (unlisted, `noindex`), so it only ever shows the committed demo snapshot.
+
+```sh
+pnpm build:preview   # tsc + vite build on snapshot/, then check dist/
+pnpm serve:preview   # serve dist/ on $PORT (default 8080), health at /healthz
+```
+
+- `scripts/build-preview.ts` ignores `YOUI_HUB_SNAPSHOT` and fails unless every file under `dist/data` and `dist/previews` is byte-identical to `snapshot/public` and the manifest lists only the `demo` system. A real system's snapshot cannot reach a preview by accident.
+- `scripts/serve-preview.ts` is a dependency-free Node server: client routes fall back to `index.html`, hashed assets and data are cached for good, everything else revalidates, and it never serves outside `dist/`.
+- `.railway/railway.ts` (Railway Infrastructure as Code) declares one service, `youiyoux-web`, built by Railway's default builder from the repository root with `pnpm --filter @youiyoux/web build:preview` and started with `node apps/web/scripts/serve-preview.ts`.
+- `.github/workflows/web-preview.yml` runs the same preview build on every PR (no secrets), and when Railway reports a successful deploy it puts the preview link on the commit's open PRs as one comment, updated on every deploy. Railway's own bot also comments when a PR environment is ready.
+
+### Turning it on
+
+None of this touches an outside account until someone with access to the Railway workspace and the `ap9000/youiyoux` repository does these steps:
+
+1. In Railway, create a project (or pick one) and install the Railway GitHub App on `ap9000/youiyoux`. The repository is private, so a project member needs a connected GitHub account with access to it.
+2. From the repository root: `railway login`, `railway link` (that project, `production` environment), `railway config plan` to review, then `railway config apply`. This creates the `youiyoux-web` service from `main`.
+3. Give that service a Railway-provided domain (Service → Settings → Networking → Generate Domain). PR environments only get domains when the base service has one.
+4. Project Settings → Environments → **Enable PR Environments**. Leave Bot PR Environments off unless agent-opened PRs should get previews; PRs opened from accounts outside the workspace are never deployed.
+5. Open a PR. Within a few minutes Railway's bot and the `web preview` workflow comment with the link. If the workflow's comment does not appear, check that Railway created a GitHub deployment for the commit (the PR's Deployments section) and that its creator login contains `railway`, which is what the workflow filters on.
+
+No secrets are needed: the build reads only the repository, and the workflow uses the default `GITHUB_TOKEN`. Closing or merging a PR deletes its environment.
+
 ## Speed
 
 Budgets: search under 50 ms, navigation under 100 ms, initial download under 150 KB gzipped. `pnpm build && pnpm measure` writes `perf/report.json`; [PERFORMANCE.md](PERFORMANCE.md) has the latest numbers and how they were taken. Home shows live search and navigation timings for the current tab.
@@ -54,7 +80,8 @@ Budgets: search under 50 ms, navigation under 100 ms, initial download under 150
 
 ```
 design/            YouIyouX DTCG tokens (light base, dark overrides, resolver)
-scripts/           snapshot.ts (data), measure.ts (budgets), capture.sh (images)
+scripts/           snapshot.ts (data), measure.ts (budgets), capture.sh (images),
+                   build-preview.ts + serve-preview.ts + preview/ (preview deploys)
 src/app/           shell, routes (preloadable chunks), theme
 src/data/          snapshot types (@youiyoux/core types, type-only), loading and cache, model, usage, contrast
 src/search/        MiniSearch engine, Web Worker, client hook

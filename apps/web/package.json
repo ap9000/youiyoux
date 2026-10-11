@@ -15,7 +15,9 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "data": "node scripts/snapshot.ts",
-    "measure": "node scripts/measure.ts"
+    "measure": "node scripts/measure.ts",
+    "build:preview": "node scripts/build-preview.ts",
+    "serve:preview": "node scripts/serve-preview.ts"
   },
   "dependencies": {
     "@fontsource-variable/geist": "5.3.0",

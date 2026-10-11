@@ -35,6 +35,7 @@ A design repo is any directory with a `youi.config.json`. A product names it wit
 | `schema/` | JSON Schemas, emitted from the Zod definitions in `packages/core` (`youi schema --write`) |
 | `examples/demo-design/` | **Demo**, a made-up design system (Button, Input and Card; 19 tokens; 6 rules) used by the tests, these docs and the hub's default data |
 | `examples/demo-app/` | A made-up product that uses Demo, with a few deliberate violations |
+| `.railway/`, `.github/workflows/web-preview.yml` | Per-PR preview deploys of the hub on Railway, demo data only ([how](apps/web/README.md#preview-deploys)) |
 
 ## Use
 
