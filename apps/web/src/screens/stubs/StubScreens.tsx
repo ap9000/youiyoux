@@ -1,8 +1,8 @@
 /**
  * Screens that come next. Screens already reads the usage map (a bill of materials
- * per route); Changes and Access describe what they will hold.
+ * per route); Access describes what it will hold.
  */
-import { ClipboardCheck, Compass, Eye, GitPullRequestArrow, KeyRound, Monitor, Rocket } from "lucide-react";
+import { ClipboardCheck, Compass, KeyRound, Monitor } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Link } from "wouter";
 import { elementHref } from "../../data/ids.ts";
@@ -43,21 +43,6 @@ function Planned({ title, icon, intro, stages }: { title: string; icon: LucideIc
         </div>
       </div>
     </div>
-  );
-}
-
-export function ChangesScreen() {
-  return (
-    <Planned
-      title="Changes"
-      icon={GitPullRequestArrow}
-      intro="Every change to the design language becomes a typed change request: edit an element, see the blast radius before anything moves, then roll it out project by project with a visual review."
-      stages={[
-        { icon: Compass, title: "Plan", body: "Projects, sites and screens affected; which sites a codemod handles and which need a person; the version bump the change implies." },
-        { icon: Rocket, title: "Rollout", body: "One pull request per project, gated on type check, lint, the contract invariants and approval, with a canary first." },
-        { icon: Eye, title: "Visual review", body: "Before, after and diff for every affected screen, light and dark; expected changes accepted, unexpected ones stop the rollout." },
-      ]}
-    />
   );
 }
 

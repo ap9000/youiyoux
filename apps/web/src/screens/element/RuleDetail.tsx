@@ -11,6 +11,7 @@ import { CodeBlock } from "../../ui/CodeBlock.tsx";
 import { CopyButton } from "../../ui/CopyButton.tsx";
 import { ResourceState } from "../../ui/Pane.tsx";
 import { Facts, Section } from "../../ui/Section.tsx";
+import { EditRuleButton } from "../changes/EditRuleButton.tsx";
 import { checkLabel } from "./RulesTab.tsx";
 
 const MAX_LISTED = 40;
@@ -66,6 +67,9 @@ export function RuleDetail({ model, rule }: { model: Model; rule: RuleSpec }) {
           </div>
         </div>
         <p className="mt-3 max-w-2xl text-reading text-ink">{rule.statement}</p>
+        <div className="mt-3">
+          <EditRuleButton ruleId={rule.id} />
+        </div>
       </header>
       <div className="space-y-8 p-6">
         <div className="grid gap-8 lg:grid-cols-2">

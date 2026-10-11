@@ -38,9 +38,9 @@ export function preloadable<M, P extends object>(load: () => Promise<M>, pick: (
 const home = preloadable(() => import("../screens/home/HomeScreen.tsx"), (m) => m.HomeScreen);
 const catalog = preloadable(() => import("../screens/catalog/CatalogScreen.tsx"), (m) => m.CatalogScreen);
 const tokens = preloadable(() => import("../screens/tokens/TokensScreen.tsx"), (m) => m.TokensScreen);
+const changes = preloadable(() => import("../screens/changes/ChangesScreen.tsx"), (m) => m.ChangesScreen);
 const loadStubs = () => import("../screens/stubs/StubScreens.tsx");
 const screens = preloadable(loadStubs, (m) => m.ScreensScreen);
-const changes = preloadable(loadStubs, (m) => m.ChangesScreen);
 const access = preloadable(loadStubs, (m) => m.AccessScreen);
 const notFound = preloadable(loadStubs, (m) => m.NotFoundScreen);
 
@@ -56,7 +56,8 @@ const loaders = {
   home: home.preload,
   catalog: catalog.preload,
   tokens: tokens.preload,
-  stubs: () => Promise.all([screens, changes, access, notFound].map((s) => s.preload())).then(() => undefined),
+  changes: changes.preload,
+  stubs: () => Promise.all([screens, access, notFound].map((s) => s.preload())).then(() => undefined),
 } as const;
 
 export interface NavItem {
@@ -73,7 +74,7 @@ export const NAV: readonly NavItem[] = [
   { href: "/elements", label: "Elements", icon: Boxes, key: "e", loader: "catalog" },
   { href: "/tokens", label: "Tokens", icon: Palette, key: "t", loader: "tokens" },
   { href: "/screens", label: "Screens", icon: Monitor, key: "s", loader: "stubs" },
-  { href: "/changes", label: "Changes", icon: GitPullRequestArrow, key: "c", loader: "stubs" },
+  { href: "/changes", label: "Changes", icon: GitPullRequestArrow, key: "c", loader: "changes" },
   { href: "/access", label: "Access", icon: KeyRound, key: "a", loader: "stubs" },
 ];
 

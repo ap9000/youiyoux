@@ -40,6 +40,8 @@ function snapshotFiles(): Plugin {
 export default defineConfig({
   plugins: [react(), tailwindcss(), snapshotFiles()],
   resolve: { alias: { "@snapshot": snapshot } },
+  // The rule editor's live API: `youi editor` listens here (YOUI_API overrides it).
+  server: { proxy: { "/api": { target: process.env.YOUI_API ?? "http://127.0.0.1:4417", changeOrigin: true } } },
   build: {
     target: "es2022",
     modulePreload: { polyfill: false },

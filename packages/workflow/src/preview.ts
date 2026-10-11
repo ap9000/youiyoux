@@ -28,8 +28,9 @@ function finding(v: Violation, change: PreviewFinding["change"]): PreviewFinding
   return { file: v.file, line: v.line, column: v.column, text: v.text, message: v.message, ...(v.suggestion ? { suggestion: v.suggestion } : {}), severity: v.severity, change };
 }
 
-function limitsOf(rule: RuleSpec, scan: ScanResult, flagged: number): string[] {
+function limitsOf(rule: RuleSpec, baseline: RuleSpec | null, scan: ScanResult, flagged: number, kept: number): string[] {
   const limits: string[] = [];
+  if (baseline && baseline.severity !== rule.severity && rule.severity !== "off" && kept > 0) limits.push(`The ${kept} place(s) already flagged change from ${baseline.severity === "warn" ? "warnings" : `${baseline.severity}s`} to ${rule.severity === "warn" ? "warnings" : "errors"}.`);
   const { report } = scan;
   if (rule.check.engine === "advisory") limits.push("Advisory rules are not checked, so nothing can be flagged. Agents and people still see the guidance.");
   if (rule.severity === "off") limits.push("Severity is off: once published, this rule flags nothing anywhere.");
@@ -60,6 +61,6 @@ export function comparePreview(input: { project: Project; scan: ScanResult; exec
     files: new Set(next.violations.map((v) => v.file)).size,
     findings: all.slice(0, MAX_FINDINGS),
     truncated: all.length > MAX_FINDINGS,
-    limits: limitsOf(draft, scan, next.violations.length),
+    limits: limitsOf(draft, baseline, scan, next.violations.length, count("kept")),
   };
 }
