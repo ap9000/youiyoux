@@ -10,7 +10,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { isAbsolute } from "node:path";
 import { MigrationSpec, normalizeRelPath } from "@youiyoux/core";
-import { componentCard, findContract, formatProps, loadProject, planChange, ruleRows, scanProject, screenBom, searchElements, tokenRows, whereUsed, type PlanInput, type Project, type ScanResult } from "@youiyoux/scanner";
+import { componentCard, describeIdentity, findContract, ScanCache, formatProps, loadProject, planChange, ruleRows, scanProject, screenBom, searchElements, tokenRows, whereUsed, type PlanInput, type Project, type ScanResult } from "@youiyoux/scanner";
 import { z } from "zod";
 
 export interface ServerOptions {
@@ -30,25 +30,46 @@ type ToolResult = { content: Array<{ type: "text"; text: string }>; isError?: bo
 const ok = (value: unknown): ToolResult => ({ content: [{ type: "text", text: JSON.stringify(value) }] });
 const fail = (error: unknown): ToolResult => ({ content: [{ type: "text", text: JSON.stringify({ error: error instanceof Error ? error.message : String(error) }) }], isError: true });
 
+/**
+ * The project and its scan, both refreshed after the TTL. The project is reloaded through
+ * the normal loader, so an edited rule, contract or token is picked up; the shared scan
+ * cache keys everything by content and drops derived state when the definitions change.
+ */
 class State {
-  private project: Promise<Project> | null = null;
-  private scan: { at: number; result: Promise<ScanResult> } | null = null;
+  private project: { at: number; value: Promise<Project> } | null = null;
+  private scan: { at: number; project: Promise<Project>; result: Promise<ScanResult> } | null = null;
+  private readonly cache = new ScanCache();
   private readonly options: ServerOptions;
 
   constructor(options: ServerOptions) {
     this.options = options;
   }
 
+  private get ttl(): number {
+    return this.options.scanTtlMs ?? DEFAULT_TTL;
+  }
+
   loadProject(): Promise<Project> {
-    this.project ??= loadProject(this.options.projectRoot, { ...(this.options.configPath ? { configPath: this.options.configPath } : {}), ...(this.options.designRoot ? { designRoot: this.options.designRoot } : {}) });
-    return this.project;
+    if (!this.project || Date.now() - this.project.at > this.ttl) {
+      const value = loadProject(this.options.projectRoot, { ...(this.options.configPath ? { configPath: this.options.configPath } : {}), ...(this.options.designRoot ? { designRoot: this.options.designRoot } : {}) });
+      // A failed load is not cached: the next call retries.
+      value.catch(() => (this.project = null));
+      this.project = { at: Date.now(), value };
+    }
+    return this.project.value;
   }
 
   async scanned(): Promise<{ project: Project; scan: ScanResult }> {
-    const project = await this.loadProject();
-    const ttl = this.options.scanTtlMs ?? DEFAULT_TTL;
-    if (!this.scan || Date.now() - this.scan.at > ttl) this.scan = { at: Date.now(), result: scanProject(project) };
-    return { project, scan: await this.scan.result };
+    const current = this.loadProject();
+    if (!this.scan || this.scan.project !== current || Date.now() - this.scan.at > this.ttl) {
+      this.scan = { at: Date.now(), project: current, result: current.then((project) => scanProject(project, { cache: this.cache })) };
+    }
+    return { project: await current, scan: await this.scan.result };
+  }
+
+  /** A fresh, focused check through the shared cache (only changed files are re-analysed). */
+  async check(project: Project, options: { overrides?: Record<string, string>; focus: readonly string[] }): Promise<ScanResult> {
+    return scanProject(project, { ...options, cache: this.cache });
   }
 }
 
@@ -138,9 +159,9 @@ export function createServer(options: ServerOptions): McpServer {
       if (code === undefined && !files?.length) throw new Error("pass `code` (with `path`) or `files`");
       const target = normalizeRelPath(path ?? "__youi_check__.tsx");
       if (target.startsWith("..") || isAbsolute(path ?? "")) throw new Error("`path` must be relative to the project root and inside it");
-      // Always a fresh scan: a check right after an edit must not read a cached result.
-      const result = await scanProject(project, code !== undefined ? { overrides: { [target]: code } } : {});
+      // Always a fresh scan of the asked-about files: a check right after an edit must not read a cached result.
       const wanted = new Set(code !== undefined ? [target] : files!.map(normalizeRelPath));
+      const result = await state.check(project, { ...(code !== undefined ? { overrides: { [target]: code } } : {}), focus: [...wanted] });
       const checked = new Set(result.modules.keys());
       const unchecked = [...wanted].filter((f) => !checked.has(f));
       const violations = result.report.violations.filter((v) => wanted.has(v.file)).map(({ rule, severity, line, column, message, suggestion, file }) => ({ at: `${file}:${line}:${column}`, rule: rule.split("/rule/")[1], severity, message, ...(suggestion ? { suggestion } : {}) }));
@@ -153,6 +174,7 @@ export function createServer(options: ServerOptions): McpServer {
         lookalikes: result.report.lookalikes.filter((l) => wanted.has(l.file)).map((l) => `${l.file}:${l.line} ${l.local} → ${l.resolved}`),
         unknown: result.report.unknowns.filter((u) => wanted.has(u.file)).map((u) => `${u.file}:${u.line} ${u.name} (${u.reason})`),
         usages: usages.slice(0, 30),
+        rules: describeIdentity(result.identity),
       };
     }),
   );
