@@ -212,6 +212,11 @@ function classifyContract(current: ComponentContract, next: ComponentContract): 
     out.reasons.push(`drops platform ${dropped.join(", ")}`);
     out.limits.push(`which call sites run on ${dropped.join(", ")} is not analysed`);
   }
+  const gained = next.platforms.filter((p) => !current.platforms.includes(p));
+  if (gained.length > 0) {
+    out.classes.push("api-additive");
+    out.reasons.push(`adds platform ${gained.join(", ")}`);
+  }
   if (next.status === "deprecated" && current.status !== "deprecated") {
     out.classes.push("deprecation");
     out.reasons.push("status → deprecated");
@@ -381,7 +386,11 @@ async function migrationPlan(project: Project, scan: ScanResult, migration: Migr
   const result = await runMigration(project, migration, { write: false });
   const sites = scan.report.usages.filter((u) => u.element === contract.id);
   const impact = impactOf(sites, scan, new Set([contract.id]));
-  const limits = scanLimits(scan, impact.unknownCandidates, contract.name);
+  const limits = [
+    ...scanLimits(scan, impact.unknownCandidates, contract.name),
+    // Residuals are spreads and non-literal values: the codemod cannot tell whether they break.
+    ...(result.residuals.length > 0 ? [`${result.residuals.length} residual site(s) spread props or pass non-literal values: whether they break is unknown`] : []),
+  ];
   return {
     target: contract.id,
     class: "api-breaking",

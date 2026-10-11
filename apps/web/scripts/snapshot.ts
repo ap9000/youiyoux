@@ -54,6 +54,8 @@ type TokensModule = typeof import("@youiyoux/tokens");
 interface ScannerModule {
   loadProject(root: string, options: { configPath?: string; designRoot?: string }): Promise<ScannedProject>;
   scanProject(project: ScannedProject): Promise<{ report: unknown }>;
+  /** How youi check executes a rule; the scanner compiles ast-grep bodies, which the browser cannot. */
+  ruleCapability(rule: import("@youiyoux/core").RuleSpec): unknown;
 }
 interface ScannedProject {
   readonly config: import("@youiyoux/core").ProjectConfig;
@@ -236,7 +238,8 @@ async function main(): Promise<void> {
     },
     tokens: catalogTokens(config.id, prefix, built.tokens, lib),
     components: system.components.map(({ contract }) => ({ contract, files: componentFiles(componentsRoot, contract.source.file, config.support) })),
-    rules: system.rules,
+    // Each rule with how youi check executes it, so the hub never shows an uncompilable rule as enforced.
+    rules: system.rules.map((rule) => ({ ...rule, execution: scanner.ruleCapability(rule) })),
   };
   const catalogText = json(catalog);
   const catalogFile = `${config.id}.catalog.${hash(catalogText)}.json`;

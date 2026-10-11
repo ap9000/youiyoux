@@ -103,7 +103,8 @@ function bindingContracts(project: Project, affected: ReadonlySet<string>): Map<
 export function tokenImpact(project: Project, scan: ScanResult, tokenId: string): TokenImpact {
   const affected = tokenClosure(scan.tokens.tokens, tokenId);
   const names = scan.tokens.tokens.filter((t) => affected.has(t.id)).flatMap((t) => useNames(t, scan.tokens.prefix, scan.tokens.themeKeys.get(t.id) ?? []));
-  const pattern = new RegExp(`(?<![\\w-])(?:${[...new Set(names)].map(escape).join("|")})(?![\\w-])`, "g");
+  // `-?` admits negative utilities (-mt-4); `.` after a name means a different scale step (p-1 vs p-1.5).
+  const pattern = new RegExp(`(?<![\\w-])-?(?:${[...new Set(names)].map(escape).join("|")})(?![\\w.-])`, "g");
   const implementedBy = new Map<string, string[]>();
   for (const { contract } of project.system.components) {
     const file = vendoredPath(project, contract.source.file);

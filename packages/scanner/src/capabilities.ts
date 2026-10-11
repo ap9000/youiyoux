@@ -37,9 +37,27 @@ export function astGrepProblem(language: AstGrepLanguage, rule: Record<string, u
   return compiled.get(cacheKey)!;
 }
 
-/** How this rule executes in this youi: the declared model, with ast-grep bodies compiled. */
+/** Options each built-in check reads; any other key is a typo the check would silently ignore. */
+const BUILT_IN_OPTIONS: Readonly<Record<string, readonly string[]>> = { "native-element": ["elements", "allowInputTypes"] };
+
+/** Why a built-in check's options would make it check nothing (or something else than declared), or null. */
+export function builtInProblem(id: string, options: Record<string, unknown>): string | null {
+  const known = BUILT_IN_OPTIONS[id] ?? [];
+  const unknown = Object.keys(options).filter((key) => !known.includes(key));
+  if (unknown.length > 0) return `${id} does not read option ${unknown.join(", ")}${known.length ? ` (it reads ${known.join(", ")})` : " (it takes none)"}`;
+  if (id !== "native-element") return null;
+  const elements = options.elements;
+  if (typeof elements !== "object" || elements === null || Array.isArray(elements) || Object.keys(elements).length === 0) return "native-element needs options.elements (tag → component id); without it nothing is checked";
+  if (Object.values(elements).some((v) => typeof v !== "string")) return "native-element options.elements values must be component ids";
+  const allow = options.allowInputTypes;
+  if (allow !== undefined && (!Array.isArray(allow) || allow.some((v) => typeof v !== "string"))) return "native-element options.allowInputTypes must be a list of input types";
+  return null;
+}
+
+/** How this rule executes in this youi: the declared model, with ast-grep bodies compiled and built-in options checked. */
 export function ruleCapability(rule: Pick<RuleSpec, "severity" | "check">): RuleExecution {
-  const problem = rule.severity !== "off" && rule.check.engine === "ast-grep" ? astGrepProblem(rule.check.language, rule.check.rule) : null;
+  if (rule.severity === "off") return ruleExecution(rule);
+  const problem = rule.check.engine === "ast-grep" ? astGrepProblem(rule.check.language, rule.check.rule) : rule.check.engine === "youi" ? builtInProblem(rule.check.id, rule.check.options) : null;
   return ruleExecution(rule, problem);
 }
 

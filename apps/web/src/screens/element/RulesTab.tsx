@@ -1,5 +1,5 @@
 /** Rules: what the component promises to obey, how each rule is checked, and where projects break it. */
-import { executionLabel, ruleExecution } from "@youiyoux/core/rules";
+import { executionLabel, ruleExecution, type RuleExecution } from "@youiyoux/core/rules";
 import { Link } from "wouter";
 import { elementHref } from "../../data/ids.ts";
 import type { Model } from "../../data/model.ts";
@@ -8,8 +8,18 @@ import type { ComponentContract, RuleSpec } from "../../data/types.ts";
 import { Badge, SeverityBadge } from "../../ui/Badge.tsx";
 import { Section } from "../../ui/Section.tsx";
 
+/**
+ * How youi check runs this rule: compiled by the snapshot when it says so. The browser cannot compile
+ * an ast-grep body, so without that answer an ast-grep rule is shown as unverified, never as enforced.
+ */
+export function executionOf(rule: RuleSpec & { execution?: RuleExecution }): RuleExecution {
+  if (rule.execution) return rule.execution;
+  if (rule.severity !== "off" && rule.check.engine === "ast-grep") return { state: "unsupported", reason: "not verified: this snapshot predates compiled rule checks (run pnpm data)" };
+  return ruleExecution(rule);
+}
+
 export function checkLabel(rule: RuleSpec): string {
-  return executionLabel(ruleExecution(rule));
+  return executionLabel(executionOf(rule));
 }
 
 export function RulesTab({ model, contract }: { model: Model; contract: ComponentContract }) {

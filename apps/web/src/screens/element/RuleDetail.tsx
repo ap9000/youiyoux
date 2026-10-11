@@ -1,18 +1,18 @@
 /** A rule's page: the statement, why it exists, examples, who declares it, and where projects break it. */
-import { ruleExecution, type RuleExecution } from "@youiyoux/core/rules";
+import type { RuleExecution } from "@youiyoux/core/rules";
 import { ShieldCheck } from "lucide-react";
 import { useMemo } from "react";
 import { Link } from "wouter";
 import { elementHref } from "../../data/ids.ts";
 import type { Model } from "../../data/model.ts";
 import { retryUsage, useUsageState } from "../../data/store.ts";
-import type { RuleSpec, ScanReport } from "../../data/types.ts";
+import type { CatalogRule, RuleSpec, ScanReport } from "../../data/types.ts";
 import { Badge, SeverityBadge } from "../../ui/Badge.tsx";
 import { CodeBlock } from "../../ui/CodeBlock.tsx";
 import { CopyButton } from "../../ui/CopyButton.tsx";
 import { ResourceState } from "../../ui/Pane.tsx";
 import { Facts, Section } from "../../ui/Section.tsx";
-import { checkLabel } from "./RulesTab.tsx";
+import { checkLabel, executionOf } from "./RulesTab.tsx";
 
 const MAX_LISTED = 40;
 
@@ -33,10 +33,10 @@ function notRunIn(reports: readonly ScanReport[], rule: RuleSpec): string[] {
   });
 }
 
-function Violations({ rule }: { rule: RuleSpec }) {
+function Violations({ rule }: { rule: CatalogRule }) {
   const usage = useUsageState();
   const violations = useMemo(() => (usage.status === "ready" ? (usage.value.violationsByRule.get(rule.id) ?? []) : []), [usage, rule.id]);
-  const execution = ruleExecution(rule);
+  const execution = executionOf(rule);
   if (execution.state !== "enforced") return <p className="text-body text-muted">Not checked, so no project is measured against it.</p>;
   if (usage.status !== "ready") return <ResourceState state={usage} onRetry={retryUsage} what="the usage map" />;
   const notRun = notRunIn(usage.value.reports, rule);
@@ -78,7 +78,7 @@ function Violations({ rule }: { rule: RuleSpec }) {
   );
 }
 
-export function RuleDetail({ model, rule }: { model: Model; rule: RuleSpec }) {
+export function RuleDetail({ model, rule }: { model: Model; rule: CatalogRule }) {
   const components = model.ruleComponents.get(rule.id) ?? [];
   return (
     <article className="min-h-0 flex-1 overflow-y-auto animate-enter">
@@ -93,7 +93,7 @@ export function RuleDetail({ model, rule }: { model: Model; rule: RuleSpec }) {
                 {rule.title}
               </h2>
               <SeverityBadge severity={rule.severity} />
-              <Badge tone="outline">{BADGE[ruleExecution(rule).state]}</Badge>
+              <Badge tone="outline">{BADGE[executionOf(rule).state]}</Badge>
             </div>
             <div className="flex min-w-0 items-center gap-0.5 font-mono text-mono-sm text-muted">
               <span className="truncate">{rule.id}</span>

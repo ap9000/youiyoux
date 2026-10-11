@@ -103,7 +103,12 @@ function main(): void {
   if (!system) throw new Error("the snapshot has no system: run `pnpm data` first");
   const data = gz(join(DATA, "manifest.json")) + gz(join(DATA, system.catalog));
   const usage = system.usage.reduce((sum, u) => sum + gz(join(DATA, u.file)), 0);
-  const fontFiles = initialFonts(assets.filter((a) => a.file.endsWith(".css")).map((a) => a.file));
+  const stylesheets = assets.filter((a) => a.file.endsWith(".css")).map((a) => a.file);
+  const fontFiles = initialFonts(stylesheets);
+  // Fonts declared but none resolved means the accounting broke (a changed URL shape), not that fonts are free.
+  if (fontFiles.length === 0 && stylesheets.some((sheet) => readFileSync(join(DIST, sheet), "utf8").includes("@font-face"))) {
+    throw new Error("the initial stylesheets declare @font-face but no Latin font file was resolved: fix initialFonts before trusting the total");
+  }
   const fonts = fontFiles.reduce((sum, f) => sum + f.bytes, 0);
   const total = kb(html + js + css + data + fonts);
 

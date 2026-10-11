@@ -3,7 +3,7 @@
  * enforced that never ran, a digest blind to rule bodies, and token plans that read "0 affected".
  */
 import { join } from "node:path";
-import { RuleSpec, ScanReport, type ComponentContract } from "@youiyoux/core";
+import { MigrationSpec, RuleSpec, ScanReport, type ComponentContract } from "@youiyoux/core";
 import type { ResolvedToken } from "@youiyoux/tokens";
 import { beforeAll, describe, expect, test } from "vitest";
 import { checkCapabilities, evaluateRule, loadProject, planChange, ruleCapability, ruleRows, scanProject, tokenClosure, type Project, type ScanResult } from "../src/index.ts";
@@ -78,6 +78,22 @@ describe("planner classification", () => {
   });
 });
 
+describe("plan completeness", () => {
+  test("adding a platform is additive, not docs", async () => {
+    const web = withButton((c) => ({ ...c, platforms: ["web"] }));
+    const plan = await planChange(web, scan, { element: "button", patch: { platforms: ["web", "android"] } });
+    expect(plan).toMatchObject({ class: "api-additive", reasons: ["adds platform android"] });
+  });
+
+  test("a migration with residual sites is never presented as exact", async () => {
+    const migration = MigrationSpec.parse({ schema: "youi.migration/v1", id: "youi:signal/migration/button-2.0.0", element: "youi:signal/component/button", from: "1.x", to: "2.0.0", changes: [{ renameProp: { from: "variant", to: "tone" } }] });
+    const plan = await planChange(project, scan, { migration });
+    expect(plan.callSites?.residual).toBeGreaterThan(0);
+    expect(plan.completeness.exact).toBe(false);
+    expect(plan.completeness.limits.some((l) => l.includes("residual site(s)"))).toBe(true);
+  });
+});
+
 describe("token impact", () => {
   const token = (id: string, fields: Partial<ResolvedToken> = {}): ResolvedToken => ({ id, type: "color", light: null, dark: null, cssName: id.replace(/\./g, "-"), ...fields });
 
@@ -130,6 +146,15 @@ describe("rule execution", () => {
     expect(result.report.checks[0]).toMatchObject({ state: "unsupported" });
     expect(result.report.status).toBe("partial");
     expect(ruleRows(custom)[0]).toMatchObject({ enforced: false, execution: "unsupported" });
+  });
+
+  test("a built-in check whose options would make it check nothing is unsupported, not a clean run", async () => {
+    const empty = rule({ check: { engine: "youi", id: "native-element", options: {} } });
+    const typo = rule({ check: { engine: "youi", id: "raw-color", options: { allow: ["#fff"] } } });
+    expect(ruleCapability(empty)).toMatchObject({ state: "unsupported", reason: expect.stringContaining("needs options.elements") });
+    expect(ruleCapability(typo)).toMatchObject({ state: "unsupported", reason: expect.stringContaining("does not read option allow") });
+    expect(evaluateRule(project, scan, empty)).toMatchObject({ ok: true, findings: null });
+    expect((await scanProject(withRules([empty]))).report.status).toBe("partial");
   });
 
   test("off is off: not run, not listed for agents", async () => {
