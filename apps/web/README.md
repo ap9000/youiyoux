@@ -19,7 +19,7 @@ youi ui --project ~/src/acme-app --config ~/src/acme-design/acme-app.youi.json  
 
 The hub shows one design system at a time, read from a snapshot directory. The committed default (`snapshot/`) is the made-up demo system, so `pnpm dev` works on its own and the tool repo holds no product's data. `youi ui` with a system named writes its snapshot to `.hub/` (gitignored) and starts the dev server on that instead, so pointing the hub at a real system never changes the checkout.
 
-Changes is live rather than a snapshot: it needs `youi editor` running (`pnpm dev` proxies `/api` to it).
+Rules and Changes are live rather than a snapshot when `youi editor` runs (`pnpm dev` proxies `/api` to it).
 
 ## Screens
 
@@ -29,7 +29,8 @@ Changes is live rather than a snapshot: it needs `youi editor` running (`pnpm de
 | `/elements[/<system>/<kind>/<name>[/<tab>]]` | Catalog (search, kind filter) beside the element page: Preview, Contract, Tokens, Rules, Where it lives. Tokens and rules open their own detail. |
 | `/tokens[/<path>]` | Token explorer: palette overview, light and dark values, alias chain, WCAG contrast, consumers |
 | `/screens` | Each project screen and the elements it renders (from the usage map) |
-| `/changes[/<draft>]` | The rule editor: published rules, drafts, the rule form, impact preview, approval and review branch. Live, from `youi editor` ([guide](../../packages/workflow/README.md)) |
+| `/rules[/<name>]`, `/rules/draft/<id>` | Every rule: what it checks, its level, where it is broken (counts and places). Edit and New rule open a draft on the rule's page: form, impact preview, approval, review branch. Live from `youi editor` ([guide](../../packages/workflow/README.md)); read-only from the snapshot without it |
+| `/changes` | The review queue for every change: draft, waiting for approval, approved, sent for review, rolled out |
 | `/access` | Planned: access |
 
 Keyboard: `⌘K` palette, `/` search the list, `j`/`k` or arrows move, `g` then `h e t s c a` to jump, `?` for all shortcuts.

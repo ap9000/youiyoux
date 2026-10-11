@@ -35,6 +35,9 @@ export function RulesTab({ model, contract }: { model: Model; contract: Componen
                       {violations} {violations === 1 ? "violation" : "violations"} in projects
                     </Badge>
                   )}
+                  <Link href={`/rules/${id.slice(id.indexOf("/rule/") + 6)}`} className={`${violations ? "" : "ml-auto "}text-small text-accent hover:underline`}>
+                    Edit rule
+                  </Link>
                 </div>
                 <p className="text-body text-ink-2">{rule.statement}</p>
                 <p className="text-small text-muted">{checkLabel(rule)}</p>

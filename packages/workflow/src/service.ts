@@ -9,18 +9,19 @@
  * default branch or the working tree.
  */
 import { randomBytes } from "node:crypto";
-import { loadProject, scanProject, SCANNER_VERSION, type LoadProjectOptions, type Project } from "@youiyoux/scanner";
+import { loadProject, scanProject, SCANNER_VERSION, type LoadProjectOptions, type Project, type ScanResult } from "@youiyoux/scanner";
 import { parseId, shortHash, stableStringify } from "@youiyoux/core";
-import type { Actor, Draft, DraftContent, DraftEvent, DraftView, Preview, PublishedRule, SnapshotIdentity, WorkflowInfo } from "./api.ts";
+import type { Actor, Draft, DraftContent, DraftEvent, DraftView, Preview, PublishedRules, SnapshotIdentity, WorkflowInfo } from "./api.ts";
 import { DesignFiles } from "./design-files.ts";
 import { contentDigest, draftStatus, fieldsFromRule, newRuleFields, toRuleSpec, validateContent } from "./drafts.ts";
 import { builtinExecution, type RuleExecution } from "./execution.ts";
-import { branchTip, changesDigest, createReviewBranch, defaultBranch, hasChanges, headCommit, locate, type RepoLocation } from "./git.ts";
+import { branchTip, changesDigest, createReviewBranch, defaultBranch, hasChanges, headCommit, isAncestor, locate, type RepoLocation } from "./git.ts";
 import { authorize, WorkflowError, type Action } from "./policy.ts";
 import { comparePreview } from "./preview.ts";
 import type { WorkflowStore } from "./store.ts";
 
 export const WORKFLOW_VERSION = "0.1.0";
+const MAX_PLACES = 200;
 
 export interface WorkflowOptions extends LoadProjectOptions {
   readonly projectRoot: string;
@@ -47,6 +48,8 @@ export class RuleWorkflow {
   private readonly options: WorkflowOptions;
   private readonly execution: RuleExecution;
   private readonly locks = new Map<string, Promise<unknown>>();
+  /** The last scan for the rules list, reused while the design repo and project are unchanged. */
+  private scanned: { digest: string; at: string; result: Promise<ScanResult> } | null = null;
 
   constructor(options: WorkflowOptions) {
     this.options = options;
@@ -152,9 +155,10 @@ export class RuleWorkflow {
     return next;
   }
 
-  private view(draft: Draft, current: Current): DraftView {
-    const status = draftStatus(draft);
-    const open = status !== "discarded" && status !== "handed-off";
+  private async view(draft: Draft, current: Current): Promise<DraftView> {
+    const merged = draft.handoff !== null && (await isAncestor(current.repo.top, draft.handoff.commit, current.tip));
+    const status = draftStatus(draft, merged);
+    const open = status !== "discarded" && status !== "handed-off" && status !== "rolled-out";
     // A closed draft is history: judging it against today's definitions (where its rule may now exist) would only mislead.
     const problems = open ? this.problems(draft, current) : [];
     const previewStale = open ? this.previewStale(draft, current) : [];
@@ -204,17 +208,30 @@ export class RuleWorkflow {
     };
   }
 
-  async published(actor: Actor): Promise<PublishedRule[]> {
+  /** Every published rule, with where the project breaks it today. */
+  async published(actor: Actor): Promise<PublishedRules> {
     authorize(actor, "read");
     const current = await this.current();
+    if (this.scanned?.digest !== current.snapshot.digest) this.scanned = { digest: current.snapshot.digest, at: this.now(), result: scanProject(current.project) };
+    const cached = this.scanned;
+    const scan = await cached.result.catch((error: unknown) => {
+      if (this.scanned === cached) this.scanned = null;
+      throw error;
+    });
     const files = await current.files.ruleFiles(current.tip);
-    return Promise.all(
-      current.project.system.rules.map(async (rule) => ({
-        rule,
-        file: files.get(rule.id)?.path ?? (await current.files.rulePath(current.tip, rule.id)),
-        components: current.project.system.components.filter((c) => c.contract.rules.includes(rule.id)).map((c) => c.contract.id),
-      })),
+    const rules = await Promise.all(
+      current.project.system.rules.map(async (rule) => {
+        const places = scan.report.violations.filter((v) => v.rule === rule.id);
+        return {
+          rule,
+          file: files.get(rule.id)?.path ?? (await current.files.rulePath(current.tip, rule.id)),
+          components: current.project.system.components.filter((c) => c.contract.rules.includes(rule.id)).map((c) => c.contract.id),
+          flagged: places.length,
+          places: places.slice(0, MAX_PLACES).map(({ file, line, column, text, message }) => ({ file, line, column, text, message })),
+        };
+      }),
     );
+    return { rules, project: current.project.config.id, scannedAt: cached.at, scan: { status: scan.report.status, files: scan.report.coverage.filesScanned } };
   }
 
   async list(actor: Actor): Promise<{ drafts: DraftView[]; unreadable: ReadonlyArray<{ file: string; reason: string }> }> {

@@ -128,7 +128,7 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string, opti
   const { workflow, actor } = options;
   const method = req.method ?? "GET";
   if (path === "/api/info" && method === "GET") return send(res, 200, await workflow.info(actor));
-  if (path === "/api/rules" && method === "GET") return send(res, 200, { rules: await workflow.published(actor) });
+  if (path === "/api/rules" && method === "GET") return send(res, 200, await workflow.published(actor));
   if (path === "/api/drafts" && method === "GET") return send(res, 200, await workflow.list(actor));
   if (path === "/api/drafts" && method === "POST") return send(res, 201, await workflow.create(actor, parse(CreateInput, await readJson(req))));
   const match = /^\/api\/drafts\/(d-[0-9a-f]{10})(?:\/(preview|approve|rebase|handoff))?$/.exec(path);
@@ -159,8 +159,8 @@ async function staticFile(res: ServerResponse, root: string, path: string): Prom
   let file = wanted;
   const info = await stat(file).catch(() => null);
   if (!info?.isFile()) {
-    // Client-side routes (no extension) get the app; a missing asset is a 404.
-    if (extname(path)) throw new HttpError(404, "not found");
+    // Client-side routes get the app (rule names contain dots); a missing asset is a 404.
+    if (extname(path) in TYPES || /\.(?:map|txt)$/.test(path)) throw new HttpError(404, "not found");
     file = join(base, "index.html");
   }
   const body = await readFile(file);

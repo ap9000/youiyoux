@@ -149,7 +149,7 @@ export interface Draft {
   readonly events: readonly DraftEvent[];
 }
 
-export type DraftStatus = "draft" | "previewed" | "approved" | "handed-off" | "discarded";
+export type DraftStatus = "draft" | "previewed" | "approved" | "handed-off" | "rolled-out" | "discarded";
 
 /** A draft plus what is true about it right now. */
 export interface DraftView extends Draft {
@@ -166,10 +166,28 @@ export interface DraftView extends Draft {
   readonly canHandoff: boolean;
 }
 
+export interface RulePlace {
+  readonly file: string;
+  readonly line: number;
+  readonly column: number;
+  readonly text: string;
+  readonly message: string;
+}
+
 export interface PublishedRule {
   readonly rule: RuleSpec;
   readonly file: string;
   readonly components: readonly ElementId[];
+  /** Places it flags in the project's current scan (suppressed places excluded). */
+  readonly flagged: number;
+  readonly places: readonly RulePlace[];
+}
+
+export interface PublishedRules {
+  readonly rules: readonly PublishedRule[];
+  readonly project: string;
+  readonly scannedAt: string;
+  readonly scan: { readonly status: "complete" | "partial"; readonly files: number };
 }
 
 export interface WorkflowInfo {

@@ -16,7 +16,7 @@ export function EditRuleButton({ ruleId }: { ruleId: string }) {
     try {
       const { drafts } = await workflowApi.drafts();
       const existing = drafts.find((d) => d.ruleId === ruleId && OPEN.has(d.status));
-      navigate(`/changes/${(existing ?? (await workflowApi.edit(ruleId))).id}`);
+      navigate(`/rules/draft/${(existing ?? (await workflowApi.edit(ruleId))).id}`);
     } catch (failure: unknown) {
       setError(asRequestError(failure));
     }
@@ -26,7 +26,7 @@ export function EditRuleButton({ ruleId }: { ruleId: string }) {
       <Button size="sm" onClick={() => void edit()}>
         <PencilLine /> Edit rule
       </Button>
-      {error && <span className="text-small text-muted">{error.offline ? "Start the rule editor first; Changes shows how." : error.message}</span>}
+      {error && <span className="text-small text-muted">{error.offline ? "Start the rule editor first; Rules shows how." : error.message}</span>}
     </span>
   );
 }

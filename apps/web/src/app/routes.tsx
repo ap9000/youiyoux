@@ -1,5 +1,5 @@
 /** Route table: every screen is its own chunk, preloaded on hover/focus and on idle after first paint. */
-import { Boxes, House, KeyRound, type LucideIcon, Monitor, Palette, GitPullRequestArrow } from "lucide-react";
+import { Boxes, GitPullRequestArrow, House, KeyRound, type LucideIcon, Monitor, Palette, ShieldCheck } from "lucide-react";
 import { type ComponentType, createElement } from "react";
 
 /**
@@ -38,6 +38,7 @@ export function preloadable<M, P extends object>(load: () => Promise<M>, pick: (
 const home = preloadable(() => import("../screens/home/HomeScreen.tsx"), (m) => m.HomeScreen);
 const catalog = preloadable(() => import("../screens/catalog/CatalogScreen.tsx"), (m) => m.CatalogScreen);
 const tokens = preloadable(() => import("../screens/tokens/TokensScreen.tsx"), (m) => m.TokensScreen);
+const rules = preloadable(() => import("../screens/rules/RulesScreen.tsx"), (m) => m.RulesScreen);
 const changes = preloadable(() => import("../screens/changes/ChangesScreen.tsx"), (m) => m.ChangesScreen);
 const loadStubs = () => import("../screens/stubs/StubScreens.tsx");
 const screens = preloadable(loadStubs, (m) => m.ScreensScreen);
@@ -48,6 +49,7 @@ export const HomeScreen = home.Component;
 export const CatalogScreen = catalog.Component;
 export const TokensScreen = tokens.Component;
 export const ScreensScreen = screens.Component;
+export const RulesScreen = rules.Component;
 export const ChangesScreen = changes.Component;
 export const AccessScreen = access.Component;
 export const NotFoundScreen = notFound.Component;
@@ -56,6 +58,7 @@ const loaders = {
   home: home.preload,
   catalog: catalog.preload,
   tokens: tokens.preload,
+  rules: rules.preload,
   changes: changes.preload,
   stubs: () => Promise.all([screens, access, notFound].map((s) => s.preload())).then(() => undefined),
 } as const;
@@ -73,6 +76,7 @@ export const NAV: readonly NavItem[] = [
   { href: "/", label: "Home", icon: House, key: "h", loader: "home" },
   { href: "/elements", label: "Elements", icon: Boxes, key: "e", loader: "catalog" },
   { href: "/tokens", label: "Tokens", icon: Palette, key: "t", loader: "tokens" },
+  { href: "/rules", label: "Rules", icon: ShieldCheck, key: "r", loader: "rules" },
   { href: "/screens", label: "Screens", icon: Monitor, key: "s", loader: "stubs" },
   { href: "/changes", label: "Changes", icon: GitPullRequestArrow, key: "c", loader: "changes" },
   { href: "/access", label: "Access", icon: KeyRound, key: "a", loader: "stubs" },

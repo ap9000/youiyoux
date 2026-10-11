@@ -153,9 +153,9 @@ export function renderContract(text: string, ruleId: string, listed: boolean): s
   return `${JSON.stringify(next, null, 2)}\n`;
 }
 
-export function draftStatus(draft: Draft): DraftStatus {
+export function draftStatus(draft: Draft, merged = false): DraftStatus {
   if (draft.discarded) return "discarded";
-  if (draft.handoff) return "handed-off";
+  if (draft.handoff) return merged ? "rolled-out" : "handed-off";
   if (draft.approval) return "approved";
   if (draft.preview && draft.preview.draftDigest === draft.digest) return "previewed";
   return "draft";

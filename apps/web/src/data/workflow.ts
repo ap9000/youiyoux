@@ -4,9 +4,9 @@
  * state, so nothing here is cached.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ApiError, DraftContent, DraftView, PublishedRule, WorkflowInfo } from "@youiyoux/workflow/api";
+import type { ApiError, DraftContent, DraftView, PublishedRules, WorkflowInfo } from "@youiyoux/workflow/api";
 
-export type { CheckCapability, DraftContent, DraftView, Preview, PreviewFinding, PublishedRule, RuleFields, WorkflowInfo } from "@youiyoux/workflow/api";
+export type { CheckCapability, DraftContent, DraftView, Preview, PreviewFinding, PublishedRule, PublishedRules, RuleFields, RulePlace, WorkflowInfo } from "@youiyoux/workflow/api";
 
 const API = `${import.meta.env.BASE_URL}api`;
 const KEY_STORE = "youiyoux.editor-key";
@@ -68,7 +68,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
 
 export const workflowApi = {
   info: () => call<WorkflowInfo>("GET", "/info"),
-  rules: () => call<{ rules: PublishedRule[] }>("GET", "/rules").then((r) => r.rules),
+  rules: () => call<PublishedRules>("GET", "/rules"),
   drafts: () => call<{ drafts: DraftView[]; unreadable: Array<{ file: string; reason: string }> }>("GET", "/drafts"),
   draft: (id: string) => call<DraftView>("GET", `/drafts/${id}`),
   edit: (ruleId: string) => call<DraftView>("POST", "/drafts", { mode: "edit", ruleId }),

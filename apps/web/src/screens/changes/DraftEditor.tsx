@@ -16,16 +16,33 @@ import { RuleForm } from "./RuleForm.tsx";
 
 type Busy = null | "save" | "preview" | "approve" | "handoff" | "rebase" | "discard";
 
-const STATUS: Record<DraftView["status"], { label: string; tone: BadgeTone }> = {
+/** Where a change stands: the statuses the Changes queue uses. */
+export type Stage = "draft" | "waiting" | "approved" | "review" | "rolled-out" | "discarded";
+
+export const STAGE: Record<Stage, { label: string; tone: BadgeTone }> = {
   draft: { label: "Draft", tone: "neutral" },
-  previewed: { label: "Previewed", tone: "neutral" },
+  waiting: { label: "Waiting for approval", tone: "warning" },
   approved: { label: "Approved", tone: "success" },
-  "handed-off": { label: "In review", tone: "accent" },
+  review: { label: "Sent for review", tone: "accent" },
+  "rolled-out": { label: "Rolled out", tone: "success" },
   discarded: { label: "Discarded", tone: "outline" },
 };
 
-export function DraftStatusBadge({ status }: { status: DraftView["status"] }) {
-  return <Badge tone={STATUS[status].tone}>{STATUS[status].label}</Badge>;
+export function stageOf(draft: DraftView): Stage {
+  switch (draft.status) {
+    case "previewed":
+      // A preview only counts while it still describes the draft, the design repo and the project.
+      return draft.previewStale.length > 0 || draft.problems.length > 0 || draft.needsRebase ? "draft" : "waiting";
+    case "handed-off":
+      return "review";
+    default:
+      return draft.status;
+  }
+}
+
+export function DraftStatusBadge({ draft }: { draft: DraftView }) {
+  const stage = STAGE[stageOf(draft)];
+  return <Badge tone={stage.tone}>{stage.label}</Badge>;
 }
 
 const same = (a: DraftContent, b: DraftContent): boolean => JSON.stringify(a) === JSON.stringify(b);
@@ -38,7 +55,7 @@ export function DraftEditor({ draft, info, onUpdate }: { draft: DraftView; info:
   const { id, revision } = draft;
   useEffect(() => setContent(draft.content), [id, revision]);
   const dirty = !same(content, draft.content);
-  const open = draft.status !== "handed-off" && draft.status !== "discarded";
+  const open = draft.status !== "handed-off" && draft.status !== "rolled-out" && draft.status !== "discarded";
 
   const run = useCallback(
     async (kind: Exclude<Busy, null>, action: () => Promise<DraftView>): Promise<void> => {
@@ -84,7 +101,7 @@ export function DraftEditor({ draft, info, onUpdate }: { draft: DraftView; info:
           <h2 data-detail-heading tabIndex={-1} className="text-title outline-none">
             {rule.title || "New rule"}
           </h2>
-          <DraftStatusBadge status={draft.status} />
+          <DraftStatusBadge draft={draft} />
           <Badge tone="outline">{draft.mode === "edit" ? "Edit" : "New rule"}</Badge>
           {open && (
             <Button variant="ghost" size="sm" className="ml-auto" disabled={busy !== null} onClick={() => void run("discard", () => workflowApi.discard(id))}>

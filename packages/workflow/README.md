@@ -27,7 +27,7 @@ pnpm install && pnpm -C apps/web build
 pnpm youi editor --project ~/Documents/firstmate/projects/toolroll \
   --design ~/youi-rule-test/toolroll-design \
   --config ~/youi-rule-test/toolroll-design/pilot/toolroll/youi.project.json
-# open the link it prints: http://127.0.0.1:4417/changes#key=…
+# open the link it prints: http://127.0.0.1:4417/changes#key=…, then Rules
 ```
 
 The link carries this run's key. Every change (save, preview, approve, hand-off) needs it, so another program on the machine cannot approve by calling the service; a tab opened without it can read but not change anything.
@@ -36,11 +36,11 @@ For hub development, run `pnpm -C apps/web dev` beside it instead and open `http
 
 ## Guided test (about 10 minutes)
 
-1. **Edit an existing rule.** In Changes, under Published rules, press **Edit** on *Use the owned controls, not native elements* (or open the rule from Elements and press **Edit rule**). Switch severity from Warning to **Error** and press **Save draft** (⌘S). The draft is now at revision 2. Nothing has changed in the design repo: `git -C ~/youi-rule-test/toolroll-design status` is clean.
+1. **Edit an existing rule.** Open **Rules** (System → Rules): every rule with its check, level and the places Toolroll breaks it. Open *Use the owned controls, not native elements* and press **Edit rule** (element pages link here too). The draft opens on the rule's own page. Switch severity from Warning to **Error** and press **Save draft** (⌘S). The draft is now at revision 2. Nothing has changed in the design repo: `git -C ~/youi-rule-test/toolroll-design status` is clean.
 2. **See the impact on Toolroll.** Press **Run preview**. Expect *Would flag 24 places in 9 files*, 24 *already flagged*, and a note that those 24 change from warnings to errors. Each place is listed with its file and line.
 3. **Watch an approval go stale.** Press **Approve revision 2**, then change the title by one letter and save. The approval is withdrawn: History says *approval invalidated: the draft changed*, and the preview is marked out of date. Undo the edit, save, run the preview again and approve again.
 4. **Send it for review.** Press **Create review branch**. You get the branch, its one-line diff (`-severity: warn` / `+severity: error`) and the `git push` / `gh pr create` commands. `git -C ~/youi-rule-test/toolroll-design log --oneline -1 main` is unchanged.
-5. **Create a new rule.** Press **New rule**. Title *Views use token utilities*; the id fills itself in. Write a statement, a why and an agent instruction. Pick the check **Arbitrary values that copy a token** and set Files to `src/browser/views/**/*.tsx`. Leave *Plan to tighten it to an error* ticked and tick a component under *Components that follow it*. Preview: it flags only places in the views, all *new*, with a note about the later tightening. Approve and create the review branch: the diff adds the rule file and one line in the component's contract.
+5. **Create a new rule.** In Rules, press **New rule**. Title *Views use token utilities*; the id fills itself in. Write a statement, a why and an agent instruction. Pick the check **Arbitrary values that copy a token** and set Files to `src/browser/views/**/*.tsx`. Leave *Plan to tighten it to an error* ticked and tick a component under *Components that follow it*. Preview: it flags only places in the views, all *new*, with a note about the later tightening. Approve and create the review branch: the diff adds the rule file and one line in the component's contract.
 6. **Watch an agent pick it up.** In this test clone only, merge the branch from step 4 as a review would (`git -C ~/youi-rule-test/toolroll-design merge --ff-only <branch>`). Then:
 
    ```sh
@@ -55,7 +55,7 @@ For hub development, run `pnpm -C apps/web dev` beside it instead and open `http
    ```
 
    A running agent session sees the merge within five seconds: the MCP server re-reads the definitions on the same freshness window as its scans. Back in Changes, the published list shows the new severity, and any other open draft says the default branch moved (**Rebase** to continue).
-7. **Restart safety.** Stop the service (Ctrl-C) and start it again. Every draft, preview, approval and hand-off is still there.
+7. **Restart safety.** Stop the service (Ctrl-C) and start it again. Every draft, preview, approval and hand-off is still there. **Changes** lists them all as a queue: draft, waiting for approval, approved, sent for review, and rolled out (once the review branch is merged); opening one returns to its editor.
 
 ## API
 

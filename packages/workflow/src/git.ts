@@ -101,6 +101,16 @@ export async function readAt(top: string, commit: string, path: string): Promise
   return git(top, ["cat-file", "blob", `${commit}:${path}`]);
 }
 
+/** True when `commit` is already part of `tip` (merged). */
+export async function isAncestor(top: string, commit: string, tip: string): Promise<boolean> {
+  try {
+    await git(top, ["merge-base", "--is-ancestor", commit, tip]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** File names directly under `dir` at a commit. */
 export async function listAt(top: string, commit: string, dir: string): Promise<string[]> {
   const out = await gitOrNull(top, ["ls-tree", "--name-only", `${commit}:${dir}`]);
