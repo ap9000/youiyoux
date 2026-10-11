@@ -14,7 +14,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { isAbsolute } from "node:path";
 import { loadLibrary, MigrationSpec, normalizeRelPath, type Library, type McpTool } from "@youiyoux/core";
-import { adoptionRequest, componentCard, findContract, formatProps, loadProject, planChange, ruleRows, scanProject, screenBom, searchElements, searchLibrary, tokenRows, whereUsed, type PlanInput, type Project, type ScanResult } from "@youiyoux/scanner";
+import { adoptionRequest, componentCard, failedChecks, findContract, formatProps, loadProject, planChange, ruleRows, scanProject, screenBom, searchElements, searchLibrary, tokenRows, whereUsed, type PlanInput, type Project, type ScanResult } from "@youiyoux/scanner";
 import { z } from "zod";
 
 export interface ServerOptions {
@@ -113,7 +113,7 @@ export function createServer(options: ServerOptions): McpServer {
 
   server.registerTool(
     "system_get_rules" satisfies McpTool,
-    { title: "Get System rules", description: "Every rule: severity, whether `youi check` enforces it, the instruction to follow, and a bad/good example.", inputSchema: {}, annotations: READ_ONLY },
+    { title: "Get System rules", description: "Every System rule that is on: severity, whether `youi check` enforces it (execution: enforced, advisory or unsupported), the instruction to follow, and a bad/good example. Follow advisory and unsupported rules yourself: nothing checks them.", inputSchema: {}, annotations: READ_ONLY },
     guard(async () => ({ rules: ruleRows(await state.loadProject()) })),
   );
 
@@ -156,9 +156,11 @@ export function createServer(options: ServerOptions): McpServer {
       const violations = result.report.violations.filter((v) => wanted.has(v.file)).map(({ rule, severity, line, column, message, suggestion, file }) => ({ at: `${file}:${line}:${column}`, rule: rule.split("/rule/")[1], severity, message, ...(suggestion ? { suggestion } : {}) }));
       const usages = result.report.usages.filter((u) => wanted.has(u.file)).map((u) => `${u.file}:${u.line} ${u.export} ${formatProps(u.props, u.spread)}`.trim());
       const failed = result.report.coverage.failed.filter((f) => wanted.has(f.file)).map((f) => `${f.file}: ${f.reason}`);
+      // A rule that should have run and did not leaves its findings unknown, never zero.
+      const notRun = failedChecks(result.report.checks).map((c) => `${c.rule.split("/rule/")[1]}: ${c.reason ?? c.state}`);
       return {
         errors: violations.filter((v) => v.severity === "error").length,
-        ...(unchecked.length || failed.length ? { incomplete: true, unchecked, failed } : {}),
+        ...(unchecked.length || failed.length || notRun.length ? { incomplete: true, unchecked, failed, notRun } : {}),
         violations,
         lookalikes: result.report.lookalikes.filter((l) => wanted.has(l.file)).map((l) => `${l.file}:${l.line} ${l.local} → ${l.resolved}`),
         unknown: result.report.unknowns.filter((u) => wanted.has(u.file)).map((u) => `${u.file}:${u.line} ${u.name} (${u.reason})`),
@@ -171,7 +173,7 @@ export function createServer(options: ServerOptions): McpServer {
     "system_plan" satisfies McpTool,
     {
       title: "Plan a System change",
-      description: "Read-only impact plan. Give {element, patch} (partial contract, e.g. {\"status\":\"deprecated\"} or new props), {token, value}, or {migration} (a youi.migration/v1 spec). Returns the computed change class, semver bump, affected screens, and automatic versus by-hand call sites. It never applies or publishes anything.",
+      description: "Read-only impact plan. Give {element, patch} (partial contract, e.g. {\"status\":\"deprecated\"} or new props), {token, value}, or {migration} (a youi.migration/v1 spec). Returns the computed change class, semver bump, affected screens, automatic versus by-hand call sites, sites to review, and `completeness`: when `exact` is false the counts are a lower bound and `limits` says what is missing, so zero affected is not proof of no effect. It never applies or publishes anything.",
       inputSchema: { element: z.string().optional(), patch: z.record(z.string(), z.unknown()).optional(), token: z.string().optional(), value: z.string().optional(), migration: z.record(z.string(), z.unknown()).optional() },
       annotations: READ_ONLY,
     },

@@ -101,6 +101,7 @@ describe("youiyoux MCP server", () => {
     expect((space.data.rows as string[][]).find((row) => row[0] === "space.md")?.[4]).toBe("");
     const rules = await call("system_get_rules");
     expect((rules.data.rules as Array<{ enforced: boolean }>).filter((r) => r.enforced)).toHaveLength(5);
+    expect((rules.data.rules as Array<{ id: string; execution: string }>).find((r) => r.id.endsWith("components.one-primary-action"))?.execution).toBe("advisory");
     const search = await call("system_search", { query: "destructive" });
     expect((search.data.hits as Array<{ name: string }>)[0]?.name).toBe("Button");
     const bom = await call("system_screen_bom", { route: "/settings" });

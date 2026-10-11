@@ -5,4 +5,5 @@ export * from "./hierarchy.ts";
 export * from "./ids.ts";
 export * from "./json-schema.ts";
 export * from "./load.ts";
+export * from "./rules.ts";
 export * from "./schemas.ts";

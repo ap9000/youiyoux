@@ -20,6 +20,7 @@ const report: ScanReport = {
   durationMs: 1,
   status: "complete",
   coverage: { filesMatched: 3, filesScanned: 3, failed: [] },
+  checks: [],
   usages: [
     site({ props: { variant: { literal: "outline" } }, routes: ["/projects", "/settings"], file: "src/b.tsx", line: 9 }),
     site({ props: { variant: { dynamic: "tone" } }, routes: [EVERY_SCREEN], routeSource: "shell", file: "src/app.tsx" }),

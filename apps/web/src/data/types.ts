@@ -5,6 +5,7 @@
  * The hub's snapshot shapes follow.
  */
 import type { ComponentContract, ElementId, RuleSpec, UsageSite } from "@youiyoux/core";
+import type { RuleExecution } from "@youiyoux/core/rules";
 
 export type {
   ComponentContract,
@@ -65,8 +66,11 @@ export interface Catalog {
   system: SystemInfo;
   tokens: TokenEntry[];
   components: ComponentEntry[];
-  rules: RuleSpec[];
+  rules: CatalogRule[];
 }
+
+/** A rule with how youi check runs it, compiled when the snapshot was built (older snapshots lack it). */
+export type CatalogRule = RuleSpec & { execution?: RuleExecution };
 
 export interface Manifest {
   schema: "youiyoux.manifest/v1";

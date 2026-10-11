@@ -25,6 +25,44 @@
     "configDigest": {
       "type": "string"
     },
+    "content": {
+      "type": "object",
+      "properties": {
+        "digest": {
+          "type": "string"
+        },
+        "dirty": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "dirtyCount": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": -9007199254740991,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "overrides": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "digest",
+        "dirty",
+        "dirtyCount",
+        "overrides"
+      ]
+    },
     "generatedAt": {
       "type": "string",
       "format": "date-time",
@@ -333,6 +371,41 @@
           "severity",
           "message",
           "text"
+        ]
+      }
+    },
+    "checks": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "rule": {
+            "type": "string",
+            "pattern": "^youi:([a-z][a-z0-9-]*)\\/(token|component|rule|migration)\\/([a-z0-9][a-z0-9.\\-]*)$"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "ran",
+              "off",
+              "advisory",
+              "unsupported",
+              "error"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "findings": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "rule",
+          "state"
         ]
       }
     }

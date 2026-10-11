@@ -1,6 +1,6 @@
 /** The in-memory catalog model: one ordered element list plus the lookups every screen needs. */
 import { parseId } from "./ids.ts";
-import type { Catalog, ComponentEntry, ComponentStatus, ElementId, ElementKind, Manifest, RuleSeverity, RuleSpec, TokenEntry } from "./types.ts";
+import type { Catalog, CatalogRule, ComponentEntry, ComponentStatus, ElementId, ElementKind, Manifest, RuleSeverity, RuleSpec, TokenEntry } from "./types.ts";
 
 export interface ElementSummary {
   readonly id: ElementId;
@@ -31,7 +31,7 @@ export interface Model {
   readonly tokens: ReadonlyMap<ElementId, TokenEntry>;
   readonly tokenByPath: ReadonlyMap<string, TokenEntry>;
   readonly components: ReadonlyMap<ElementId, ComponentEntry>;
-  readonly rules: ReadonlyMap<ElementId, RuleSpec>;
+  readonly rules: ReadonlyMap<ElementId, CatalogRule>;
   /** Token id → the components whose contracts bind it, and under which role. */
   readonly tokenConsumers: ReadonlyMap<ElementId, readonly TokenConsumer[]>;
   /** Rule id → the components that declare it. */

@@ -1,10 +1,12 @@
 /**
- * The built-in rule checks (`check.engine: youi`). Each returns raw findings;
- * runChecks applies rule severity, file globs and `youi-ignore` comments.
+ * The rule checks: the built-ins (`check.engine: youi`) and plain ast-grep rules
+ * (`check.engine: ast-grep`). Each returns raw findings; runChecks applies rule
+ * severity, file globs and `youi-ignore` comments, and reports how every rule ran.
  */
 import type { SgNode } from "@ast-grep/napi";
-import { matchesAny, type ElementId, type OutputConfig, type RuleSpec, type Violation } from "@youiyoux/core";
+import { matchesAny, type ElementId, type OutputConfig, type RuleRun, type RuleSpec, type Violation } from "@youiyoux/core";
 import { parseCssColor, readRules, sameColor, tailwindTheme, type DtcgColor, type ResolvedToken } from "@youiyoux/tokens";
+import { AST_GREP_FILE_LANG, ruleCapability } from "./capabilities.ts";
 import type { ElementIndex } from "./elements.ts";
 import type { ModuleInfo } from "./parse.ts";
 import type { LocalUsage, ModuleAnalysis } from "./usage.ts";
@@ -246,7 +248,19 @@ function suppressed(module: ModuleInfo, line: number, ruleId: string): boolean {
   });
 }
 
+const MAX_MATCH_TEXT = 120;
+
+function astGrepFindings(rule: RuleSpec, module: ModuleInfo): Finding[] {
+  if (rule.check.engine !== "ast-grep" || module.lang !== AST_GREP_FILE_LANG[rule.check.language]) return [];
+  return module.root.root().findAll({ rule: rule.check.rule }).map((node) => {
+    const { line, column } = node.range().start;
+    const text = node.text().split("\n")[0]!;
+    return { file: module.file, line: line + 1, column: column + 1, text: text.length > MAX_MATCH_TEXT ? `${text.slice(0, MAX_MATCH_TEXT - 1)}…` : text, message: rule.title, suggestion: rule.agent };
+  });
+}
+
 function findingsFor(rule: RuleSpec, module: ModuleInfo, input: CheckInput): Finding[] {
+  if (rule.check.engine === "ast-grep") return astGrepFindings(rule, module);
   if (rule.check.engine !== "youi") return [];
   const analysis = input.analyses.get(module.file);
   const options = rule.check.options as NativeOptions;
@@ -265,18 +279,45 @@ function findingsFor(rule: RuleSpec, module: ModuleInfo, input: CheckInput): Fin
   }
 }
 
-export function runChecks(input: CheckInput): { violations: Violation[]; suppressed: number } {
-  const violations: Violation[] = [];
-  let silenced = 0;
+export interface CheckOutput {
+  readonly violations: Violation[];
+  readonly suppressed: number;
+  /** How each rule ran: a rule that should have run but could not makes the result incomplete. */
+  readonly checks: RuleRun[];
+}
+
+/** Runs one rule over every module its globs match. A check that throws is reported, never read as clean. */
+function runRule(rule: RuleSpec, input: CheckInput, out: { violations: Violation[]; suppressed: number }): RuleRun {
+  const execution = ruleCapability(rule);
+  if (execution.state === "off" || execution.state === "advisory") return { rule: rule.id, state: execution.state };
+  if (execution.state === "unsupported") return { rule: rule.id, state: "unsupported", reason: execution.reason };
+  let findings = 0;
   for (const module of input.modules.values()) {
-    if (module.file.startsWith(`${input.generatedDir}/`)) continue;
-    for (const rule of input.rules) {
-      if (rule.severity === "off" || !matchesAny(module.file, rule.files)) continue;
-      for (const finding of findingsFor(rule, module, input)) {
-        if (suppressed(module, finding.line, rule.id)) silenced++;
-        else violations.push({ rule: rule.id, severity: rule.severity, ...finding });
+    if (module.file.startsWith(`${input.generatedDir}/`) || !matchesAny(module.file, rule.files)) continue;
+    let found: Finding[];
+    try {
+      found = findingsFor(rule, module, input);
+    } catch (error: unknown) {
+      return { rule: rule.id, state: "error", reason: `${module.file}: ${error instanceof Error ? error.message : String(error)}` };
+    }
+    for (const finding of found) {
+      if (suppressed(module, finding.line, rule.id)) out.suppressed++;
+      else {
+        out.violations.push({ rule: rule.id, severity: rule.severity as Violation["severity"], ...finding });
+        findings++;
       }
     }
   }
-  return { violations, suppressed: silenced };
+  return { rule: rule.id, state: "ran", findings };
+}
+
+export function runChecks(input: CheckInput): CheckOutput {
+  const out = { violations: [] as Violation[], suppressed: 0 };
+  const checks = input.rules.map((rule) => runRule(rule, input, out));
+  return { violations: out.violations, suppressed: out.suppressed, checks };
+}
+
+/** True when a rule that should have run did not: its zero findings are not a pass. */
+export function failedChecks(checks: readonly RuleRun[]): RuleRun[] {
+  return checks.filter((c) => c.state === "unsupported" || c.state === "error");
 }

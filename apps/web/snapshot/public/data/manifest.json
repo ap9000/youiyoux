@@ -1,16 +1,16 @@
 {
   "schema": "youiyoux.manifest/v1",
   "source": {
-    "commit": "ad9e210f2d8d59ba0ecf7ed85130291e03a44177"
+    "commit": "5eb82ddad5a67ba0efa51dbe57af1f59714b8701"
   },
   "systems": [
     {
       "id": "demo",
-      "catalog": "demo.catalog.1e2fb579a5.json",
+      "catalog": "demo.catalog.b5be9c6c2c.json",
       "usage": [
         {
           "project": "demo-app",
-          "file": "demo-app.usage.57b2a67225.json"
+          "file": "demo-app.usage.1336f928f7.json"
         }
       ]
     }
