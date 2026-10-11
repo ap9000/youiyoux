@@ -12,6 +12,7 @@ import { CodeBlock } from "../../ui/CodeBlock.tsx";
 import { CopyButton } from "../../ui/CopyButton.tsx";
 import { ResourceState } from "../../ui/Pane.tsx";
 import { Facts, Section } from "../../ui/Section.tsx";
+import { EditRuleButton } from "../changes/EditRuleButton.tsx";
 import { checkLabel, executionOf } from "./RulesTab.tsx";
 
 const MAX_LISTED = 40;
@@ -22,7 +23,7 @@ const BADGE: Record<RuleExecution["state"], string> = { enforced: "Enforced", ad
  * Projects whose scan did not run this rule, with why. Scans from before rules reported how they ran
  * never ran ast-grep rules, so for those only the built-in checks are known to have run.
  */
-function notRunIn(reports: readonly ScanReport[], rule: RuleSpec): string[] {
+export function notRunIn(reports: readonly ScanReport[], rule: RuleSpec): string[] {
   return reports.flatMap((report) => {
     // Snapshots are read as JSON without validation, so an older map has no `checks` at all.
     const checks = report.checks ?? [];
@@ -102,6 +103,9 @@ export function RuleDetail({ model, rule }: { model: Model; rule: CatalogRule })
           </div>
         </div>
         <p className="mt-3 max-w-2xl text-reading text-ink">{rule.statement}</p>
+        <div className="mt-3">
+          <EditRuleButton ruleId={rule.id} />
+        </div>
       </header>
       <div className="space-y-8 p-6">
         <div className="grid gap-8 lg:grid-cols-2">

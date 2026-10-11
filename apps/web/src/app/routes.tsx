@@ -38,12 +38,12 @@ export function preloadable<M, P extends object>(load: () => Promise<M>, pick: (
 const home = preloadable(() => import("../screens/home/HomeScreen.tsx"), (m) => m.HomeScreen);
 const catalog = preloadable(() => import("../screens/catalog/CatalogScreen.tsx"), (m) => m.CatalogScreen);
 const tokens = preloadable(() => import("../screens/tokens/TokensScreen.tsx"), (m) => m.TokensScreen);
-const library = preloadable(() => import("../screens/library/LibraryScreen.tsx"), (m) => m.LibraryScreen);
+const rules = preloadable(() => import("../screens/rules/RulesScreen.tsx"), (m) => m.RulesScreen);
 const screens = preloadable(() => import("../screens/screens/ScreensScreen.tsx"), (m) => m.ScreensScreen);
+const library = preloadable(() => import("../screens/library/LibraryScreen.tsx"), (m) => m.LibraryScreen);
+const changes = preloadable(() => import("../screens/changes/ChangesScreen.tsx"), (m) => m.ChangesScreen);
 const loadStubs = () => import("../screens/stubs/StubScreens.tsx");
-const rules = preloadable(loadStubs, (m) => m.RulesScreen);
 const sources = preloadable(loadStubs, (m) => m.SourcesScreen);
-const changes = preloadable(loadStubs, (m) => m.ChangesScreen);
 const access = preloadable(loadStubs, (m) => m.AccessScreen);
 const notFound = preloadable(loadStubs, (m) => m.NotFoundScreen);
 
@@ -62,9 +62,11 @@ const loaders = {
   home: home.preload,
   catalog: catalog.preload,
   tokens: tokens.preload,
-  library: library.preload,
+  rules: rules.preload,
   screens: screens.preload,
-  stubs: () => Promise.all([rules, sources, changes, access, notFound].map((s) => s.preload())).then(() => undefined),
+  library: library.preload,
+  changes: changes.preload,
+  stubs: () => Promise.all([sources, access, notFound].map((s) => s.preload())).then(() => undefined),
 } as const;
 
 /**
@@ -94,11 +96,11 @@ export const NAV: readonly NavItem[] = [
   { href: "/", label: "Overview", icon: LayoutGrid, key: "o", loader: "home", section: "system" },
   { href: "/elements", label: "Components", icon: Boxes, key: "c", loader: "catalog", section: "system" },
   { href: "/tokens", label: "Tokens", icon: Palette, key: "t", loader: "tokens", section: "system" },
-  { href: "/rules", label: "Rules", icon: Scale, key: "r", loader: "stubs", section: "system" },
+  { href: "/rules", label: "Rules", icon: Scale, key: "r", loader: "rules", section: "system" },
   { href: "/screens", label: "Screens", icon: Monitor, key: "s", loader: "screens", section: "system" },
   { href: "/library", label: "Browse", icon: Library, key: "l", loader: "library", section: "library" },
   { href: "/library/sources", label: "Sources", icon: PlugZap, key: "i", loader: "stubs", section: "library" },
-  { href: "/changes", label: "Changes", icon: GitPullRequestArrow, key: "w", loader: "stubs", section: "work" },
+  { href: "/changes", label: "Changes", icon: GitPullRequestArrow, key: "w", loader: "changes", section: "work" },
 ];
 
 export interface NavGroup {

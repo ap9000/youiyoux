@@ -31,7 +31,7 @@ A design repo is any directory with a `youi.config.json`. A product names it wit
 
 | Path | Contents |
 | --- | --- |
-| `packages/` | `core` (schemas, loader), `tokens` (Terrazzo build, import, parity), `scanner` (usage map, checks, migrations, plans), `cli`, `mcp` |
+| `packages/` | `core` (schemas, loader), `tokens` (Terrazzo build, import, parity), `scanner` (usage map, checks, migrations, plans), `cli`, `mcp`, `workflow` (rule-editor service) |
 | `apps/web/` | The hub: find an element, see its contract, tokens and rules, preview it, see where it lives ([README](apps/web/README.md)) |
 | `schema/` | JSON Schemas, emitted from the Zod definitions in `packages/core` (`youi schema --write`) |
 | `examples/demo-design/` | **Demo**, a made-up design system (Button, Input and Card; 19 tokens; 6 rules) used by the tests, these docs and the hub's default data |
@@ -70,6 +70,7 @@ In a product repo:
 | `youi plan` / `youi migrate` | Classify a change and its impact; run a gated codemod (dry run unless `--write`) |
 | `youi library search <query>` / `youi library request <id> --reason …` | Browse the Library; draft a request to adopt an item into the System |
 | `youi mcp` | stdio MCP server: `system_*` tools (build with these, plus `system_plan`) and `library_*` tools (browse, draft a request); no publish, approve or merge tools |
+| `youi ui --project <dir>` | The hub on that product, with the local rule editor: drafts, impact preview against the project, approval, and a review branch in the design repo ([guide](packages/workflow/README.md)) |
 
 `show`, `where`, `bom`, `check`, `plan` and `migrate` work on the System.
 

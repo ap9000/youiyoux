@@ -11,7 +11,8 @@ import { baselinePath, exitCodeOf, runCheck, writeBaseline, type CheckResult } f
 import { actionable, githubAnnotations, githubSummary, renderCheckText } from "./check-render.ts";
 import { runClaudeHook, runPreCommitHook, type HookTarget } from "./hooks.ts";
 import { hookCommand, installClaudeHook, installPreCommit, installWorkflow, repoRootOf } from "./hooks-install.ts";
-import { runHub } from "./hub.ts";
+import { startRuleEditor, type RuleEditor } from "./editor.ts";
+import { DEFAULT_HUB_PORT, runHub } from "./hub.ts";
 import { initProject } from "./init.ts";
 import { renderAdoptionRequest, renderLibrarySearch } from "./library.ts";
 import { renderBom, renderMigration, renderPlan, renderRulePreview, renderRules, renderScan, renderShow, renderSync, renderWhere } from "./render.ts";
@@ -58,9 +59,11 @@ ${style.bold("Library")}  ${style.dim("ingested references: browse and request a
   library request <id> --reason <text>   draft an adoption request for a person to approve
 
 ${style.bold("The hub")}
-  ui [--design dir] [--project dir] [--config file] [--port n] [--watch]
+  ui [--design dir] [--project dir] [--config file] [--port n] [--watch] [--state dir]
                            open the web hub on a design system (default: the demo system);
-                           --project adds that product's usage map (read-only scan);
+                           --project adds that product's usage map (read-only scan) and the
+                           rule editor (System > Rules, Work > Changes): drafts, impact preview,
+                           approval, a review branch in the design repo (drafts kept in --state);
                            --watch re-scans on every save and updates the open hub
 
 ${style.bold("In a design repo")} ${style.dim("(the current directory, or --design)")}
@@ -114,6 +117,7 @@ const OPTIONS = {
   port: { type: "string" },
   watch: { type: "boolean", default: false },
   dark: { type: "string" },
+  state: { type: "string" },
   help: { type: "boolean", short: "h", default: false },
 } satisfies ParseArgsConfig["options"];
 
@@ -422,8 +426,33 @@ async function cmdWatch(values: Values): Promise<number> {
   return 0;
 }
 
+/** The rule editor beside the hub: only for a named product, whose design repo the review branches go to. */
+async function startEditor(values: Values, port: string): Promise<RuleEditor | null> {
+  if (!values.project) return null;
+  try {
+    const editor = await startRuleEditor({ project: values.project, ...(values.config ? { config: values.config } : {}), ...(values.design ? { design: values.design } : {}), ...(values.state ? { state: values.state } : {}) });
+    const { design, project: product } = editor.info;
+    print(`${style.ok("rule editor")} http://localhost:${port}/#key=${editor.sessionKey}`);
+    print(style.dim(`  design   ${design.root} (${design.branch} @ ${design.head.slice(0, 7)}${design.dirty ? ", working tree differs" : ""})`));
+    print(style.dim(`  project  ${product.id} at ${product.root}`));
+    print(style.dim(`  drafts   ${editor.stateDir}`));
+    print(style.dim("  open the link above: it carries this run's key, which every change needs (nothing else can approve)"));
+    print(style.dim("  approved changes become a local review branch; nothing is pushed"));
+    return editor;
+  } catch (error: unknown) {
+    print(style.warn(`! no rule editor: ${error instanceof Error ? error.message : String(error)}; Rules and Changes stay read-only`));
+    return null;
+  }
+}
+
 async function cmdUi(values: Values): Promise<number> {
-  return runHub(TOOL_ROOT, { ...(values.design ? { design: values.design } : {}), ...(values.project ? { project: values.project } : {}), ...(values.config ? { config: values.config } : {}), ...(values.port ? { port: values.port } : {}), watch: values.watch });
+  const port = values.port ?? DEFAULT_HUB_PORT;
+  const editor = await startEditor(values, port);
+  try {
+    return await runHub(TOOL_ROOT, { ...(values.design ? { design: values.design } : {}), ...(values.project ? { project: values.project } : {}), ...(values.config ? { config: values.config } : {}), ...(values.port || editor ? { port } : {}), ...(editor ? { api: editor.url } : {}), watch: values.watch });
+  } finally {
+    await editor?.close();
+  }
 }
 
 async function cmdMcp(values: Values): Promise<number> {

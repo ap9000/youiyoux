@@ -1,6 +1,6 @@
 # YouIyouX web
 
-The design language hub: find an element, see its contract, tokens and rules, preview the real component, and see exactly where it lives in each project. Local-only for now: no server, no accounts.
+The design language hub: find an element, see its contract, tokens and rules, preview the real component, and see exactly where it lives in each project. Local-only for now: no accounts. Everything reads a static snapshot except Rules and Changes, which talk to the local rule editor that `youi ui --project` starts.
 
 ```sh
 pnpm install        # at the repository root (apps/* is in the workspace)
@@ -19,6 +19,8 @@ youi ui --project ~/src/acme-app --config ~/src/acme-design/acme-app.youi.json  
 
 The hub shows one design system at a time, read from a snapshot directory. The committed default (`snapshot/`) is the made-up demo system, so `pnpm dev` works on its own and the tool repo holds no product's data. `youi ui` with a system named writes its snapshot to `.hub/` (gitignored) and starts the dev server on that instead, so pointing the hub at a real system never changes the checkout.
 
+Rules and Changes are live rather than a snapshot when the rule editor runs: `youi ui --project <dir>` starts it beside the dev server, which proxies `/api` to it.
+
 ## Screens
 
 The nav rail has three labelled groups: **System** (Overview, Components, Tokens, Rules, Screens: approved elements, their rules and live usage; what products build with), **Library** (Browse, Sources: what is ingested from outside, to browse and propose; never built with) and **Work** (Changes). Access stays reachable at `/access`.
@@ -28,9 +30,11 @@ The nav rail has three labelled groups: **System** (Overview, Components, Tokens
 | `/` | Home: the system, where it lives, rule health, live speed numbers |
 | `/elements[/<system>/<kind>/<name>[/<tab>]]` | Catalog (search, kind filter) beside the element page: Overview (live preview, uses, screens, what to look at), Usage, Contract & tokens, Rules. Tokens and rules open their own detail. |
 | `/tokens[/<path>]` | Token explorer: palette overview, light and dark values, alias chain, WCAG contrast, consumers |
+| `/rules[/<name>]`, `/rules/draft/<id>` | Every rule: what it checks, its level, where it is broken (counts and places). Edit and New rule open a draft on the rule's page: form, impact preview, approval, review branch. Live from the rule editor (`youi ui --project`, [guide](../../packages/workflow/README.md)); read-only from the snapshot without it |
 | `/screens[/<project>/<screen>]` | Each project screen as a screenshot with its element and issue counts; a screen opens with its full screenshot, the elements it renders and the rule issues in its files (`j`/`k` step between screens) |
-| `/library`, `/library/sources` | The Library (Browse): ingested candidates. Empty for now: explains the sources to come, the `library → candidate → adopted → in-use` path and what agents may do |
-| `/rules`, `/library/sources`, `/changes`, `/access` | Planned: the rule list and editor (draft, impact preview, approval), Library sources, change requests (plan, rollout, visual review) and access |
+| `/library`, `/library/sources` | The Library (Browse): ingested candidates. Empty for now: explains the sources to come, the `library → candidate → adopted → in-use` path and what agents may do. Sources is planned |
+| `/changes` | Work: the review queue for every change: draft, waiting for approval, approved, sent for review, rolled out |
+| `/access` | Planned: access |
 
 Keyboard: `⌘K` palette, `/` search the list, `j`/`k` or arrows move, `g` then `o c t r s l i w` to jump, `?` for all shortcuts.
 

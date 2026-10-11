@@ -54,11 +54,14 @@ class State {
     return this.options.scanTtlMs ?? DEFAULT_TTL;
   }
 
+  /** The definitions, re-read once they are older than the TTL: an approved, merged rule reaches a running agent without a restart. */
   loadProject(): Promise<Project> {
     if (!this.project || Date.now() - this.project.at > this.ttl) {
       const value = loadProject(this.options.projectRoot, { ...(this.options.configPath ? { configPath: this.options.configPath } : {}), ...(this.options.designRoot ? { designRoot: this.options.designRoot } : {}) });
-      // A failed load is not cached: the next call retries.
-      value.catch(() => (this.project = null));
+      // A failed load (a half-written definition) is retried on the next call, not cached.
+      value.catch(() => {
+        if (this.project?.value === value) this.project = null;
+      });
       this.project = { at: Date.now(), value };
     }
     return this.project.value;

@@ -83,7 +83,7 @@ export function App() {
                 <Route path="/" component={HomeScreen} />
                 <Route path="/elements/*?" component={CatalogScreen} />
                 <Route path="/tokens/*?" component={TokensScreen} />
-                <Route path="/rules" component={RulesScreen} />
+                <Route path="/rules/*?" component={RulesScreen} />
                 <Route path="/screens/*?" component={ScreensScreen} />
                 <Route path="/library" component={LibraryScreen} />
                 <Route path="/library/sources" component={SourcesScreen} />

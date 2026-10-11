@@ -1,5 +1,5 @@
-/** Screens that come next: Rules, Sources, Changes and Access describe what they will hold. Also the not-found page. */
-import { ClipboardCheck, Compass, Eye, FilePenLine, GitPullRequestArrow, KeyRound, Layers, Monitor, PlugZap, Replace, Rocket, Scale } from "lucide-react";
+/** Screens that come next: Sources and Access describe what they will hold. Also the not-found page. */
+import { ClipboardCheck, Compass, KeyRound, Layers, Monitor, PlugZap, Replace } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Link } from "wouter";
 import { Badge } from "../../ui/Badge.tsx";
@@ -39,21 +39,6 @@ function Planned({ title, icon, intro, stages }: { title: string; icon: LucideIc
   );
 }
 
-export function RulesScreen() {
-  return (
-    <Planned
-      title="Rules"
-      icon={Scale}
-      intro="Every rule in the System in one place: what it says, the instruction agents follow, how it is checked and where it is broken. Editing comes here next, with a draft, a preview of its impact and an approval before it applies."
-      stages={[
-        { icon: FilePenLine, title: "Draft", body: "Change a rule's statement, agent instruction, severity or check, saved as a draft that nothing reads yet." },
-        { icon: Compass, title: "Preview impact", body: "Run the draft against live projects: new and resolved violations, file by file, before it applies." },
-        { icon: ClipboardCheck, title: "Approve", body: "A person approves; agents and checks pick up the new rule on their next sync." },
-      ]}
-    />
-  );
-}
-
 export function SourcesScreen() {
   return (
     <Planned
@@ -64,21 +49,6 @@ export function SourcesScreen() {
         { icon: PlugZap, title: "Connect", body: "Point at a source; its elements are ingested with where they came from and when." },
         { icon: Layers, title: "Categorize", body: "Each element is filed by category and linked to the System elements it could replace." },
         { icon: Replace, title: "Propose a swap", body: "Request adoption; a person approves it into the System before anything is built with it." },
-      ]}
-    />
-  );
-}
-
-export function ChangesScreen() {
-  return (
-    <Planned
-      title="Changes"
-      icon={GitPullRequestArrow}
-      intro="Every change to the design language becomes a typed change request: edit an element, see the blast radius before anything moves, then roll it out project by project with a visual review."
-      stages={[
-        { icon: Compass, title: "Plan", body: "Projects, sites and screens affected; which sites a codemod handles and which need a person; the version bump the change implies." },
-        { icon: Rocket, title: "Rollout", body: "One pull request per project, gated on type check, lint, the contract invariants and approval, with a canary first." },
-        { icon: Eye, title: "Visual review", body: "Before, after and diff for every affected screen, light and dark; expected changes accepted, unexpected ones stop the rollout." },
       ]}
     />
   );
