@@ -1,9 +1,13 @@
-/** The nav rail: the mark, one icon per screen, and search / theme / shortcuts at the foot. */
+/**
+ * The nav rail: the mark, one icon per screen, and search / theme / shortcuts at the foot.
+ * Screens are grouped by the half of the tool they belong to, each group labelled, so the
+ * System (what products build with) never reads as the same place as the Library.
+ */
 import { clsx } from "clsx";
 import { Keyboard, Moon, Search, Sun, SunMoon } from "lucide-react";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { isActive, NAV, type NavItem } from "../app/routes.tsx";
+import { isActive, NAV_SECTIONS, navGroups, type NavGroup, type NavItem } from "../app/routes.tsx";
 import { cycleTheme, useTheme } from "../app/theme.tsx";
 import { Keys } from "../ui/Kbd.tsx";
 import { setOverlay } from "./keyboard.ts";
@@ -53,6 +57,20 @@ function RailButton({ label, keys, onClick, children }: { label: string; keys?: 
   );
 }
 
+function RailGroup({ group, location }: { group: NavGroup; location: string }) {
+  const links = group.items.map((item) => <RailLink key={item.href} item={item} active={isActive(item, location)} />);
+  const { label, hint } = NAV_SECTIONS[group.section];
+  const id = `rail-${group.section}`;
+  return (
+    <div role="group" aria-labelledby={id} className="flex flex-col items-center gap-1">
+      <span id={id} title={hint} className="pt-1 text-caption font-medium text-muted select-none">
+        {label}
+      </span>
+      {links}
+    </div>
+  );
+}
+
 const THEME_ICON = { system: SunMoon, light: Sun, dark: Moon } as const;
 const THEME_LABEL = { system: "Theme: follows the system", light: "Theme: light", dark: "Theme: dark" } as const;
 
@@ -65,8 +83,11 @@ export function NavRail() {
       <Link href="/" aria-label="YouIyouX home" className="mb-3 grid size-9 place-items-center rounded-md">
         <Logo />
       </Link>
-      {NAV.map((item) => (
-        <RailLink key={item.href} item={item} active={isActive(item, location)} />
+      {navGroups().map((group, i) => (
+        <Fragment key={group.section}>
+          {i > 0 && <span aria-hidden className="my-1 h-px w-6 shrink-0 bg-line" />}
+          <RailGroup group={group} location={location} />
+        </Fragment>
       ))}
       <div className="mt-auto flex flex-col items-center gap-1">
         <RailButton label="Search" keys={["⌘", "K"]} onClick={() => setOverlay("palette")}>

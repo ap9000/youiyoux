@@ -1,7 +1,11 @@
 /**
- * The YouIyouX MCP server (stdio). Read tools plus `youi_plan`, and nothing
- * else: there is no propose, publish, approve or merge tool, so an agent can
- * look things up and plan a change but never ship one.
+ * The YouIyouX MCP server (stdio). Two families of read tools, named for the
+ * side of the tool they read:
+ *   system_*   approved elements: build with these (contracts, tokens, rules,
+ *              where-used, check) and plan a change to them.
+ *   library_*  ingested references: browse and draft an adoption request only.
+ * There is no publish, approve or merge tool, so an agent can look things up,
+ * plan a change and draft a request, but never ship one.
  *
  * Responses are compact JSON (no pretty-printing) and bounded: lists paginate
  * and site lists default to 10, which keeps a typical lookup near 2 KB.
@@ -9,8 +13,8 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { isAbsolute } from "node:path";
-import { MigrationSpec, normalizeRelPath } from "@youiyoux/core";
-import { componentCard, findContract, formatProps, loadProject, planChange, ruleRows, scanProject, screenBom, searchElements, tokenRows, whereUsed, type PlanInput, type Project, type ScanResult } from "@youiyoux/scanner";
+import { loadLibrary, MigrationSpec, normalizeRelPath, type Library, type McpTool } from "@youiyoux/core";
+import { adoptionRequest, componentCard, findContract, formatProps, loadProject, planChange, ruleRows, scanProject, screenBom, searchElements, searchLibrary, tokenRows, whereUsed, type PlanInput, type Project, type ScanResult } from "@youiyoux/scanner";
 import { z } from "zod";
 
 export interface ServerOptions {
@@ -32,6 +36,7 @@ const fail = (error: unknown): ToolResult => ({ content: [{ type: "text", text: 
 
 class State {
   private project: Promise<Project> | null = null;
+  private library: Promise<Library> | null = null;
   private scan: { at: number; result: Promise<ScanResult> } | null = null;
   private readonly options: ServerOptions;
 
@@ -42,6 +47,11 @@ class State {
   loadProject(): Promise<Project> {
     this.project ??= loadProject(this.options.projectRoot, { ...(this.options.configPath ? { configPath: this.options.configPath } : {}), ...(this.options.designRoot ? { designRoot: this.options.designRoot } : {}) });
     return this.project;
+  }
+
+  async loadLibrary(): Promise<Library> {
+    this.library ??= this.loadProject().then((project) => loadLibrary(project.repo.root));
+    return this.library;
   }
 
   async scanned(): Promise<{ project: Project; scan: ScanResult }> {
@@ -68,13 +78,13 @@ export function createServer(options: ServerOptions): McpServer {
     { name: "youiyoux", version: VERSION },
     {
       instructions:
-        "YouIyouX design-language lookups for this project. Call youi_get_component before using a component's props, youi_get_tokens instead of writing colours or sizes, and youi_check on code before finishing. youi_plan shows the impact of a change to the system; there are no tools to publish or approve one.",
+        "YouIyouX design-language lookups for this project. Build only with System elements: call system_get_component before using a component's props, system_get_tokens instead of writing colours or sizes, and system_check on code before finishing. system_plan shows the impact of a change to the System. The Library (library_* tools, lib: ids) holds ingested references that are not approved: browse them with library_search, never import, copy or build with them, and use library_request to draft an adoption request for a person to approve. There are no tools to publish or approve anything.",
     },
   );
 
   server.registerTool(
-    "youi_search",
-    { title: "Search the design language", description: "Find components, tokens and rules by words (e.g. \"destructive button\", \"hairline\").", inputSchema: { query: z.string().min(1), limit: z.number().int().min(1).max(50).optional() }, annotations: READ_ONLY },
+    "system_search" satisfies McpTool,
+    { title: "Search the System", description: "Find approved components, tokens and rules by words (e.g. \"destructive button\", \"hairline\"). These are what you build with.", inputSchema: { query: z.string().min(1), limit: z.number().int().min(1).max(50).optional() }, annotations: READ_ONLY },
     guard(async ({ query, limit }) => {
       const { project, scan } = await state.scanned();
       return { hits: searchElements(project, scan.tokens, query, limit ?? 12) };
@@ -82,8 +92,8 @@ export function createServer(options: ServerOptions): McpServer {
   );
 
   server.registerTool(
-    "youi_get_component",
-    { title: "Get a component contract", description: "The contract for one component: import line, legal prop values, do/don't, a11y notes, examples and usage counts. Call this before using its props.", inputSchema: { name: z.string().min(1).describe("Component name or id, e.g. Button or youi:demo/component/button") }, annotations: READ_ONLY },
+    "system_get_component" satisfies McpTool,
+    { title: "Get a System component contract", description: "The contract for one System component: import line, legal prop values, do/don't, a11y notes, examples, stage (adopted or in-use) and usage counts. Call this before using its props.", inputSchema: { name: z.string().min(1).describe("Component name or id, e.g. Button or youi:demo/component/button") }, annotations: READ_ONLY },
     guard(async ({ name }) => {
       const { project, scan } = await state.scanned();
       const contract = findContract(project, name);
@@ -93,8 +103,8 @@ export function createServer(options: ServerOptions): McpServer {
   );
 
   server.registerTool(
-    "youi_get_tokens",
-    { title: "Get design tokens", description: "Tokens with their CSS variable, light and dark values, alias and Tailwind utility. Filter by group (color, typography, radius, space, shadow, font, easing) or a full id.", inputSchema: { group: z.string().optional(), limit: z.number().int().min(1).max(200).optional() }, annotations: READ_ONLY },
+    "system_get_tokens" satisfies McpTool,
+    { title: "Get System tokens", description: "Tokens with their CSS variable, light and dark values, alias and Tailwind utility. Filter by group (color, typography, radius, space, shadow, font, easing) or a full id.", inputSchema: { group: z.string().optional(), limit: z.number().int().min(1).max(200).optional() }, annotations: READ_ONLY },
     guard(async ({ group, limit }) => {
       const { project, scan } = await state.scanned();
       return tokenRows(project, scan.tokens, group, limit ?? 40);
@@ -102,14 +112,14 @@ export function createServer(options: ServerOptions): McpServer {
   );
 
   server.registerTool(
-    "youi_get_rules",
-    { title: "Get design rules", description: "Every rule: severity, whether `youi check` enforces it, the instruction to follow, and a bad/good example.", inputSchema: {}, annotations: READ_ONLY },
+    "system_get_rules" satisfies McpTool,
+    { title: "Get System rules", description: "Every rule: severity, whether `youi check` enforces it, the instruction to follow, and a bad/good example.", inputSchema: {}, annotations: READ_ONLY },
     guard(async () => ({ rules: ruleRows(await state.loadProject()) })),
   );
 
   server.registerTool(
-    "youi_where_used",
-    { title: "Where a component is used", description: "Usage sites by screen (file:line, design props), prop-value counts, unresolved sites that may be it (never counted) and same-named lookalikes. Paginate with offset.", inputSchema: { element: z.string().min(1), route: z.string().optional(), limit: z.number().int().min(1).max(50).optional(), offset: z.number().int().min(0).optional() }, annotations: READ_ONLY },
+    "system_where_used" satisfies McpTool,
+    { title: "Where a System component is used", description: "Usage sites by screen (file:line, design props), prop-value counts, unresolved sites that may be it (never counted) and same-named lookalikes. Paginate with offset.", inputSchema: { element: z.string().min(1), route: z.string().optional(), limit: z.number().int().min(1).max(50).optional(), offset: z.number().int().min(0).optional() }, annotations: READ_ONLY },
     guard(async ({ element, route, limit, offset }) => {
       const { project, scan } = await state.scanned();
       return whereUsed(project, scan.report, element, { ...(route ? { route } : {}), limit: limit ?? 10, offset: offset ?? 0 });
@@ -117,8 +127,8 @@ export function createServer(options: ServerOptions): McpServer {
   );
 
   server.registerTool(
-    "youi_screen_bom",
-    { title: "Everything on one screen", description: "The design-system elements, lookalikes and rule violations on a route.", inputSchema: { route: z.string().min(1) }, annotations: READ_ONLY },
+    "system_screen_bom" satisfies McpTool,
+    { title: "Everything on one screen", description: "The System elements, lookalikes and rule violations on a route.", inputSchema: { route: z.string().min(1) }, annotations: READ_ONLY },
     guard(async ({ route }) => {
       const { project, scan } = await state.scanned();
       return screenBom(project, scan.report, route);
@@ -126,9 +136,9 @@ export function createServer(options: ServerOptions): McpServer {
   );
 
   server.registerTool(
-    "youi_check",
+    "system_check" satisfies McpTool,
     {
-      title: "Check code against the rules",
+      title: "Check code against the System rules",
       description: "Run the design rules on code you are about to write (pass `code` and the `path` it will live at, so imports resolve) or on existing project files (pass `files`). Returns violations with suggestions, lookalikes and unresolved components.",
       inputSchema: { code: z.string().optional(), path: z.string().optional(), files: z.array(z.string()).max(50).optional() },
       annotations: READ_ONLY,
@@ -158,9 +168,9 @@ export function createServer(options: ServerOptions): McpServer {
   );
 
   server.registerTool(
-    "youi_plan",
+    "system_plan" satisfies McpTool,
     {
-      title: "Plan a design-system change",
+      title: "Plan a System change",
       description: "Read-only impact plan. Give {element, patch} (partial contract, e.g. {\"status\":\"deprecated\"} or new props), {token, value}, or {migration} (a youi.migration/v1 spec). Returns the computed change class, semver bump, affected screens, and automatic versus by-hand call sites. It never applies or publishes anything.",
       inputSchema: { element: z.string().optional(), patch: z.record(z.string(), z.unknown()).optional(), token: z.string().optional(), value: z.string().optional(), migration: z.record(z.string(), z.unknown()).optional() },
       annotations: READ_ONLY,
@@ -173,6 +183,21 @@ export function createServer(options: ServerOptions): McpServer {
       else if (element && patch) input = { element, patch };
       else throw new Error("pass {element, patch}, {token, value} or {migration}");
       return planChange(project, scan, input);
+    }),
+  );
+
+  server.registerTool(
+    "library_search" satisfies McpTool,
+    { title: "Browse the Library", description: "Search ingested Library items (lib: ids) by words, with their source, categories and the System elements each could swap in for. Browse only: never import, copy or build with a Library item.", inputSchema: { query: z.string().min(1), limit: z.number().int().min(1).max(50).optional() }, annotations: READ_ONLY },
+    guard(async ({ query, limit }) => searchLibrary(await state.loadLibrary(), query, limit ?? 12)),
+  );
+
+  server.registerTool(
+    "library_request" satisfies McpTool,
+    { title: "Draft a Library adoption request", description: "Draft a request to adopt a Library item into the System (library → candidate), with the live usage of the System elements it would swap in for. Nothing is filed or changed: put the draft in your summary or PR for a person to approve.", inputSchema: { item: z.string().min(1).describe("Library id (lib:<source>/<kind>/<name>) or name"), reason: z.string().min(1).describe("Why the System needs it") }, annotations: READ_ONLY },
+    guard(async ({ item, reason }) => {
+      const { project, scan } = await state.scanned();
+      return adoptionRequest(project, await state.loadLibrary(), item, reason, scan);
     }),
   );
 

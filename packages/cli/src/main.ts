@@ -3,11 +3,12 @@ import { readFile } from "node:fs/promises";
 import { join, relative, resolve, sep } from "node:path";
 import { parseArgs, type ParseArgsConfig } from "node:util";
 import { parse as parseYaml } from "yaml";
-import { DefinitionError, findFiles, getSystem, loadDesignRepo, MigrationSpec, OutputConfig, renderJsonSchemas, writeFileAtomic } from "@youiyoux/core";
+import { DefinitionError, findFiles, getSystem, loadDesignRepo, loadLibrary, MigrationSpec, OutputConfig, renderJsonSchemas, writeFileAtomic } from "@youiyoux/core";
 import { buildTokens, compareParity } from "@youiyoux/tokens";
-import { componentCard, findContract, loadProject, planChange, runMigration, scanProject, screenBom, whereUsed, type PlanInput, type Project } from "@youiyoux/scanner";
+import { adoptionRequest, componentCard, findContract, loadProject, planChange, runMigration, scanProject, screenBom, searchLibrary, whereUsed, type PlanInput, type Project } from "@youiyoux/scanner";
 import { runHub } from "./hub.ts";
 import { initProject } from "./init.ts";
+import { renderAdoptionRequest, renderLibrarySearch } from "./library.ts";
 import { renderBom, renderCheck, renderMigration, renderPlan, renderScan, renderShow, renderSync, renderWhere } from "./render.ts";
 import { syncProject, verifyLock, verifyWiring } from "./sync.ts";
 import { ms, plural, style } from "./ui.ts";
@@ -23,6 +24,9 @@ ${style.bold("In a product repo")}
   init --design <dir>      write youi.project.json pointing at a design repo checkout, then sync
   sync [--dry-run] [--adopt]   tokens, DESIGN.md, skill, AGENTS.md block, owned components (3-way merge), lockfile
   scan [--out file]        build the usage map (default .youi/usage.json)
+  mcp                      stdio MCP server: system_* tools (build with) and library_* tools (browse, request)
+
+${style.bold("System")}  ${style.dim("approved elements: build only with these")}
   show <component>         the contract: import, legal prop values, guidance, examples
   where <component> [--route r] [--all]   where a component lives, screen by screen
   bom <route>              everything on one screen
@@ -30,7 +34,10 @@ ${style.bold("In a product repo")}
   plan <component> --patch <json|file>    classify a contract change and show its impact
   plan --token <id> [--value v]           impact of a token change
   migrate <migration.yaml> [--write] [--diff]   gated codemod; dry run unless --write
-  mcp                      stdio MCP server (read tools + plan)
+
+${style.bold("Library")}  ${style.dim("ingested references: browse and request adoption, never build with")}
+  library search <query>   Library items (lib: ids) and the System elements each could swap in for
+  library request <id> --reason <text>   draft an adoption request for a person to approve
 
 ${style.bold("The hub")}
   ui [--design dir] [--project dir] [--config file] [--port n]
@@ -65,6 +72,7 @@ const OPTIONS = {
   patch: { type: "string" },
   token: { type: "string" },
   value: { type: "string" },
+  reason: { type: "string" },
   write: { type: "boolean", default: false },
   check: { type: "boolean", default: false },
   diff: { type: "boolean", default: false },
@@ -190,11 +198,31 @@ async function cmdMigrate(values: Values, positionals: string[]): Promise<number
   return result.status === "rejected" ? 1 : 0;
 }
 
+async function cmdLibrary(values: Values, positionals: string[]): Promise<number> {
+  const [action, query] = positionals;
+  if (action === "search" && query) {
+    const p = await project(values);
+    const words = positionals.slice(1).join(" ");
+    const result = searchLibrary(await loadLibrary(p.repo.root), words, Number(values.limit ?? 20));
+    if (values.json) json(result);
+    else print(renderLibrarySearch(result, words));
+    return 0;
+  }
+  if (action === "request" && query && values.reason) {
+    const p = await project(values);
+    const request = adoptionRequest(p, await loadLibrary(p.repo.root), query, values.reason, await scanProject(p));
+    if (values.json) json(request);
+    else print(renderAdoptionRequest(request));
+    return 0;
+  }
+  throw new UsageError("youi library search <query>   or   youi library request <id> --reason <text>");
+}
+
 async function cmdSync(values: Values): Promise<number> {
   const p = await project(values);
   const result = await syncProject(p, { dryRun: values["dry-run"], adopt: values.adopt });
   if (values.json) json(result);
-  else print(renderSync(result.actions, values["dry-run"]));
+  else print(renderSync(result, values["dry-run"]));
   return result.actions.some((a) => a.action === "conflict") ? 1 : 0;
 }
 
@@ -271,8 +299,10 @@ async function cmdMcp(values: Values): Promise<number> {
   return -1;
 }
 
-const COMMANDS: Record<string, (values: Values, positionals: string[]) => Promise<number>> = {
-  init: cmdInit, sync: cmdSync, scan: cmdScan, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, plan: cmdPlan, migrate: cmdMigrate, mcp: cmdMcp, ui: cmdUi, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+type Command = (values: Values, positionals: string[]) => Promise<number>;
+
+const COMMANDS: Record<string, Command> = {
+  show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
 
 export async function main(argv: string[]): Promise<number> {

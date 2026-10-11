@@ -1,7 +1,7 @@
 /** Human output for each command. Every command also has --json for scripts and agents. */
 import type { ScanReport, Violation } from "@youiyoux/core";
 import type { ChangePlan, MigrationResult, ScreenBom, WhereResult } from "@youiyoux/scanner";
-import type { LockIssue, SyncAction } from "./sync.ts";
+import type { LockIssue, SyncAction, SyncResult } from "./sync.ts";
 import { bar, ms, padEnd, padStart, plural, rule, style, truncate } from "./ui.ts";
 
 const SHELL_NOTE = style.dim("app shell: on every screen");
@@ -134,11 +134,12 @@ const ACTION_STYLE: Record<SyncAction["action"], (s: string) => string> = {
   created: style.ok, updated: style.live, unchanged: style.dim, adopted: style.ok, merged: style.live, "kept-local": style.warn, conflict: style.error, skipped: style.warn,
 };
 
-export function renderSync(actions: readonly SyncAction[], dryRun: boolean): string {
+export function renderSync({ actions, unknownTools }: Pick<SyncResult, "actions" | "unknownTools">, dryRun: boolean): string {
   const lines = actions.filter((a) => a.action !== "unchanged").map((a) => `${padEnd(ACTION_STYLE[a.action](a.action), 11)} ${a.file}${a.detail ? style.dim(`  ${a.detail}`) : ""}`);
+  const warnings = unknownTools.map((m) => `${style.warn("warning")}  ${m.rule} tells agents to call ${m.tool}, which the youiyoux MCP server does not expose; update the rule's agent text`);
   const counts = Map.groupBy(actions, (a) => a.action);
   const summary = [...counts].map(([action, list]) => `${list.length} ${action}`).join(" · ");
-  return [...lines, lines.length ? "" : style.dim("everything up to date"), `${dryRun ? style.live("dry run · ") : ""}${summary}`].join("\n");
+  return [...lines, lines.length ? "" : style.dim("everything up to date"), ...(warnings.length ? [...warnings, ""] : []), `${dryRun ? style.live("dry run · ") : ""}${summary}`].join("\n");
 }
 
 export function renderShow(card: Record<string, unknown>): string {

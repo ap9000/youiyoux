@@ -15,7 +15,7 @@ import { promisify } from "node:util";
 import { findFiles, LockFile, readDefinition, readTextOrNull, sha256, writeFileAtomic, type ElementId, type LockEntry } from "@youiyoux/core";
 import { buildTokens } from "@youiyoux/tokens";
 import { PROJECT_FILE, vendoredPath, type Project } from "@youiyoux/scanner";
-import { agentsBlock, astGrepRules, designMd, GENERATED_MARK, skillMd, upsertBlock } from "./agents.ts";
+import { agentsBlock, astGrepRules, designMd, GENERATED_MARK, skillMd, unknownToolMentions, upsertBlock, type UnknownToolMention } from "./agents.ts";
 
 export const LOCK_FILE = "youi.lock.json";
 const BASE_DIR = ".youi/base";
@@ -43,6 +43,8 @@ export interface SyncOptions {
 export interface SyncResult {
   readonly actions: readonly SyncAction[];
   readonly lock: LockFile;
+  /** Rules whose agent instructions name an MCP tool the server does not expose. */
+  readonly unknownTools: readonly UnknownToolMention[];
 }
 
 const run = promisify(execFile);
@@ -233,7 +235,7 @@ export async function syncProject(project: Project, options: SyncOptions = {}): 
     files: Object.fromEntries(Object.entries(writer.files).sort(([a], [b]) => a.localeCompare(b))),
   };
   if (!options.dryRun) await writeFileAtomic(join(project.root, LOCK_FILE), `${JSON.stringify(lock, null, 2)}\n`);
-  return { actions: writer.actions, lock };
+  return { actions: writer.actions, lock, unknownTools: unknownToolMentions(project) };
 }
 
 /** How the project's MCP server finds what this sync used: a config kept elsewhere and an overridden design repo are passed explicitly. */

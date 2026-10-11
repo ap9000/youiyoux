@@ -4,6 +4,7 @@
  */
 import { posix } from "node:path";
 import { z } from "zod";
+import { LibraryEntry } from "./hierarchy.ts";
 import { ElementId } from "./ids.ts";
 
 const SemVer = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, "expected semver x.y.z");
@@ -326,6 +327,7 @@ export const PUBLISHED_SCHEMAS = {
   "youi.migration.schema.json": MigrationSpec,
   "youi.usage.schema.json": ScanReport,
   "youi.lock.schema.json": LockFile,
+  "youi.library.schema.json": LibraryEntry,
 } as const;
 
 /** Project config with every path normalized, so comparisons with scanned paths are exact. Loaders call this. */

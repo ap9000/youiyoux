@@ -50,7 +50,24 @@ describe("first sync", () => {
     // The MCP entry runs this tool's CLI, which lives apart from the design repo.
     expect(resolve(app, mcp.args[0]!)).toBe(join(import.meta.dirname, "../bin/youi.js"));
     expect(lock.files["components/ui/utils.ts"]).toMatchObject({ kind: "vendored", elements: ["youi:demo/component/button", "youi:demo/component/card", "youi:demo/component/input"] });
+    // The System vs Library rule is stated plainly, and every tool named is a current one.
+    expect(agents).toMatch(/\*\*Build only with the System\.\*\*.*never import, copy or restyle code from one.*library_request/);
+    const skill = await read(".agents/skills/youiyoux/SKILL.md");
+    expect(skill).toContain("## System and Library");
+    expect(skill).toContain("`library → candidate → adopted → in-use`");
+    for (const text of [agents, skill, await read("DESIGN.md")]) expect(text).not.toMatch(/\byoui_[a-z]/);
     expect(await readLock(app)).toEqual(lock);
+  });
+
+  test("rules that tell agents to call a tool the MCP server does not expose are reported", async () => {
+    expect((await syncProject(await project(), { dryRun: true })).unknownTools).toEqual([]);
+    const file = join(design, "rules/color.no-raw-color.rule.yaml");
+    await writeFile(file, (await readFile(file, "utf8")).replace("look up the role with system_get_tokens", "look up the role with youi_get_tokens or system_get_palette"));
+    const { unknownTools } = await syncProject(await project(), { dryRun: true });
+    expect(unknownTools).toEqual([
+      { rule: "youi:demo/rule/color.no-raw-color", tool: "youi_get_tokens" },
+      { rule: "youi:demo/rule/color.no-raw-color", tool: "system_get_palette" },
+    ]);
   });
 
   test("a second sync changes nothing", async () => {

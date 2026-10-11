@@ -2,7 +2,7 @@
  * Screens that come next. Screens already reads the usage map (a bill of materials
  * per route); Changes and Access describe what they will hold.
  */
-import { ClipboardCheck, Compass, Eye, GitPullRequestArrow, KeyRound, Monitor, Rocket } from "lucide-react";
+import { ClipboardCheck, Compass, Eye, FilePenLine, GitPullRequestArrow, KeyRound, Layers, Monitor, PlugZap, Replace, Rocket, Scale } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Link } from "wouter";
 import { elementHref } from "../../data/ids.ts";
@@ -43,6 +43,36 @@ function Planned({ title, icon, intro, stages }: { title: string; icon: LucideIc
         </div>
       </div>
     </div>
+  );
+}
+
+export function RulesScreen() {
+  return (
+    <Planned
+      title="Rules"
+      icon={Scale}
+      intro="Every rule in the System in one place: what it says, the instruction agents follow, how it is checked and where it is broken. Editing comes here next, with a draft, a preview of its impact and an approval before it applies."
+      stages={[
+        { icon: FilePenLine, title: "Draft", body: "Change a rule's statement, agent instruction, severity or check, saved as a draft that nothing reads yet." },
+        { icon: Compass, title: "Preview impact", body: "Run the draft against live projects: new and resolved violations, file by file, before it applies." },
+        { icon: ClipboardCheck, title: "Approve", body: "A person approves; agents and checks pick up the new rule on their next sync." },
+      ]}
+    />
+  );
+}
+
+export function SourcesScreen() {
+  return (
+    <Planned
+      title="Sources"
+      icon={PlugZap}
+      intro="Sources feed the Library: other design systems, UI kits and references. None are connected yet; each one will add its elements to the Library, where they are browsed and proposed but never built with."
+      stages={[
+        { icon: PlugZap, title: "Connect", body: "Point at a source; its elements are ingested with where they came from and when." },
+        { icon: Layers, title: "Categorize", body: "Each element is filed by category and linked to the System elements it could replace." },
+        { icon: Replace, title: "Propose a swap", body: "Request adoption; a person approves it into the System before anything is built with it." },
+      ]}
+    />
   );
 }
 

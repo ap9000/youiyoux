@@ -34,6 +34,7 @@ SCREENS=(
   "token-color:/tokens/color.accent"
   "token-typography:/tokens/typography.label"
   "screens:/screens"
+  "library:/library"
   "changes:/changes"
   "access:/access"
 )

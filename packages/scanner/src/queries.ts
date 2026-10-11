@@ -3,12 +3,15 @@
  * server so a person and an agent get the same facts. Results are compact and
  * bounded (pagination, top-N) so an agent lookup stays around 2 KB.
  */
-import { matchesQuery, type ComponentContract, type PropValue, type ScanReport, type UsageSite } from "@youiyoux/core";
+import { matchesQuery, systemStage, type ComponentContract, type PropValue, type ScanReport, type UsageSite } from "@youiyoux/core";
 import { cssValue } from "@youiyoux/tokens";
 import type { TokenIndex } from "./checks.ts";
+import { assertSystemQuery } from "./library.ts";
 import type { Project } from "./project.ts";
 
+/** A System contract by id, name or part name. A Library id (`lib:…`) is refused, never looked up. */
 export function findContract(project: Project, query: string): ComponentContract | null {
+  assertSystemQuery(query);
   const q = query.trim();
   return project.system.components.find(({ contract }) => matchesQuery(contract.id, q) || contract.name.toLowerCase() === q.toLowerCase() || contract.source.also.some((p) => p.toLowerCase() === q.toLowerCase()))?.contract ?? null;
 }
@@ -202,7 +205,7 @@ export function componentCard(project: Project, contract: ComponentContract, rep
     a11y: contract.a11y.notes,
     examples: contract.examples,
     rules: contract.rules,
-    ...(sites ? { usage: { sites: sites.length, screens: new Set(sites.flatMap((s) => s.routes)).size } } : {}),
+    ...(sites ? { ...(report?.status === "complete" ? { stage: systemStage(sites.length) } : {}), usage: { sites: sites.length, screens: new Set(sites.flatMap((s) => s.routes)).size } } : {}),
   };
 }
 

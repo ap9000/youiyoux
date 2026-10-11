@@ -1,6 +1,7 @@
 export * from "./checks.ts";
 export * from "./elements.ts";
 export * from "./graph.ts";
+export * from "./library.ts";
 export * from "./parse.ts";
 export * from "./project.ts";
 export * from "./resolve.ts";
