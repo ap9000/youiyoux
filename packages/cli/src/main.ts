@@ -9,6 +9,8 @@ import { buildTokens, compareParity } from "@youiyoux/tokens";
 import { componentCard, describeIdentity, findContract, loadProject, planChange, runMigration, scanProject, screenBom, whereUsed, type PlanInput, type Project } from "@youiyoux/scanner";
 import { baselinePath, exitCodeOf, runCheck, writeBaseline } from "./check.ts";
 import { githubAnnotations, githubSummary, renderCheckText } from "./check-render.ts";
+import { runClaudeHook, runPreCommitHook, type HookTarget } from "./hooks.ts";
+import { hookCommand, installClaudeHook, installPreCommit, installWorkflow, repoRootOf } from "./hooks-install.ts";
 import { runHub } from "./hub.ts";
 import { initProject } from "./init.ts";
 import { renderBom, renderMigration, renderPlan, renderScan, renderShow, renderSync, renderWhere } from "./render.ts";
@@ -35,6 +37,11 @@ ${style.bold("In a product repo")}
                            --format github annotates PR lines and writes the job summary
   baseline [--force]       record existing violations (youi.baseline.json beside the config);
                            later runs only remove fixed ones; --force accepts current ones as debt
+  hooks install [--claude] [--git] [--ci] [--strict]
+                           live checks, existing config kept (default: --claude --git):
+                           Claude Code PostToolUse (advisory context after each edit),
+                           git pre-commit (advisory on staged files; --strict blocks new errors),
+                           CI workflow (authoritative, pinned rules version, PR annotations)
   plan <component> --patch <json|file>    classify a contract change and show its impact
   plan --token <id> [--value v]           impact of a token change
   migrate <migration.yaml> [--write] [--diff]   gated codemod; dry run unless --write
@@ -78,6 +85,10 @@ const OPTIONS = {
   diff: { type: "boolean", default: false },
   "dry-run": { type: "boolean", default: false },
   baseline: { type: "boolean", default: false },
+  claude: { type: "boolean", default: false },
+  git: { type: "boolean", default: false },
+  ci: { type: "boolean", default: false },
+  strict: { type: "boolean", default: false },
   "baseline-file": { type: "string" },
   format: { type: "string" },
   adopt: { type: "boolean", default: false },
@@ -291,6 +302,37 @@ async function cmdSchema(values: Values): Promise<number> {
   return 0;
 }
 
+function hookTarget(values: Values): HookTarget {
+  return { ...(values.project ? { project: values.project } : {}), ...(values.config ? { config: values.config } : {}), ...(values.design ? { design: values.design } : {}) };
+}
+
+async function readStdin(): Promise<string> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+async function cmdHooks(values: Values, positionals: string[]): Promise<number> {
+  const [action, kind] = positionals;
+  if (action === "run" && (kind === "claude" || kind === "pre-commit")) {
+    const outcome = kind === "claude" ? await runClaudeHook(await readStdin(), hookTarget(values)) : await runPreCommitHook(hookTarget(values), { strict: values.strict });
+    process.stdout.write(outcome.stdout);
+    return outcome.exitCode;
+  }
+  if (action !== "install") throw new UsageError("youi hooks install [--claude] [--git] [--ci] [--strict]   or   youi hooks run claude|pre-commit");
+  const p = await project(values);
+  const target = { ...hookTarget(values), project: p.root };
+  const all = !values.claude && !values.git && !values.ci;
+  const results = [];
+  if (values.claude || all) results.push({ kind: "Claude Code", ...(await installClaudeHook(await repoRootOf(p.root), hookCommand(TOOL_ROOT, "claude", target))) });
+  if (values.git || all) results.push({ kind: "git pre-commit", ...(await installPreCommit(p.root, hookCommand(TOOL_ROOT, "pre-commit", target, values.strict ? ["--strict"] : []), values.strict)) });
+  if (values.ci) results.push({ kind: "CI", ...(await installWorkflow(p, TOOL_ROOT, target, values.force)) });
+  if (values.json) json(results);
+  else for (const r of results) print(`${r.action === "unchanged" ? style.dim("unchanged") : style.ok(r.action)} ${r.kind}: ${r.file}
+  ${style.dim(r.guarantee)}`);
+  return 0;
+}
+
 async function cmdUi(values: Values): Promise<number> {
   return runHub(TOOL_ROOT, { ...(values.design ? { design: values.design } : {}), ...(values.project ? { project: values.project } : {}), ...(values.config ? { config: values.config } : {}), ...(values.port ? { port: values.port } : {}) });
 }
@@ -302,7 +344,7 @@ async function cmdMcp(values: Values): Promise<number> {
 }
 
 const COMMANDS: Record<string, (values: Values, positionals: string[]) => Promise<number>> = {
-  init: cmdInit, sync: cmdSync, scan: cmdScan, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, plan: cmdPlan, migrate: cmdMigrate, mcp: cmdMcp, ui: cmdUi, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+  init: cmdInit, sync: cmdSync, scan: cmdScan, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, hooks: cmdHooks, plan: cmdPlan, migrate: cmdMigrate, mcp: cmdMcp, ui: cmdUi, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
 
 export async function main(argv: string[]): Promise<number> {
