@@ -21,7 +21,7 @@ The hub shows one design system at a time, read from a snapshot directory. The c
 
 ## Screens
 
-The nav rail is split into the tool's two halves, each labelled: **System** (Elements, Tokens, Screens: approved elements, their rules and live usage; what products build with) and **Library** (what is ingested from outside, to browse and propose; never built with).
+The nav rail has three labelled groups: **System** (Overview, Components, Tokens, Rules, Screens: approved elements, their rules and live usage; what products build with), **Library** (Browse, Sources: what is ingested from outside, to browse and propose; never built with) and **Work** (Changes). Access stays reachable at `/access`.
 
 | Route | What it is |
 | --- | --- |
@@ -29,10 +29,10 @@ The nav rail is split into the tool's two halves, each labelled: **System** (Ele
 | `/elements[/<system>/<kind>/<name>[/<tab>]]` | Catalog (search, kind filter) beside the element page: Preview, Contract, Tokens, Rules, Where it lives. Tokens and rules open their own detail. |
 | `/tokens[/<path>]` | Token explorer: palette overview, light and dark values, alias chain, WCAG contrast, consumers |
 | `/screens` | Each project screen and the elements it renders (from the usage map) |
-| `/library` | The Library: ingested candidates. Empty for now: explains the sources to come, the `library → candidate → adopted → in-use` path and what agents may do |
-| `/changes`, `/access` | Planned: change requests (plan, rollout, visual review) and access |
+| `/library`, `/library/sources` | The Library (Browse): ingested candidates. Empty for now: explains the sources to come, the `library → candidate → adopted → in-use` path and what agents may do |
+| `/rules`, `/library/sources`, `/changes`, `/access` | Planned: the rule list and editor (draft, impact preview, approval), Library sources, change requests (plan, rollout, visual review) and access |
 
-Keyboard: `⌘K` palette, `/` search the list, `j`/`k` or arrows move, `g` then `h e t s l c a` to jump, `?` for all shortcuts.
+Keyboard: `⌘K` palette, `/` search the list, `j`/`k` or arrows move, `g` then `o c t r s l i w` to jump, `?` for all shortcuts.
 
 ## Data
 

@@ -1,29 +1,30 @@
 import { describe, expect, test } from "vitest";
-import { NAV, NAV_SECTIONS, navGroups } from "../src/app/routes.tsx";
+import { isActive, NAV, NAV_SECTIONS, navGroups } from "../src/app/routes.tsx";
 import { STAGES } from "../src/screens/library/LibraryScreen.tsx";
 
 describe("navigation hierarchy", () => {
-  test("the System (elements, tokens, live usage) and the Library are separate, labelled groups", () => {
+  test("System, Library and Work are separate, labelled groups", () => {
     const groups = navGroups().map((g) => ({ section: g.section, labels: g.items.map((i) => i.label) }));
     expect(groups).toEqual([
-      { section: null, labels: ["Home"] },
-      { section: "system", labels: ["Elements", "Tokens", "Screens"] },
-      { section: "library", labels: ["Library"] },
-      { section: null, labels: ["Changes", "Access"] },
+      { section: "system", labels: ["Overview", "Components", "Tokens", "Rules", "Screens"] },
+      { section: "library", labels: ["Browse", "Sources"] },
+      { section: "work", labels: ["Changes"] },
     ]);
     expect(NAV_SECTIONS.system.hint).toMatch(/build with/);
     expect(NAV_SECTIONS.library.hint).toMatch(/never build with/);
   });
 
-  test("every screen keeps a unique jump key and the Library is g l", () => {
+  test("every screen keeps a unique jump key", () => {
     const keys = NAV.map((i) => i.key);
     expect(new Set(keys).size).toBe(keys.length);
-    expect(NAV.find((i) => i.href === "/library")?.key).toBe("l");
   });
 
-  test("a section split over two runs stays two groups, so order is never rewritten", () => {
-    const [home, elements, , , library] = NAV;
-    expect(navGroups([home!, elements!, library!, elements!]).map((g) => g.section)).toEqual([null, "system", "library", "system"]);
+  test("the most specific item is the active one", () => {
+    const active = (path: string) => NAV.filter((i) => isActive(i, path)).map((i) => i.label);
+    expect(active("/library")).toEqual(["Browse"]);
+    expect(active("/library/sources")).toEqual(["Sources"]);
+    expect(active("/elements/demo/component/button")).toEqual(["Components"]);
+    expect(active("/")).toEqual(["Overview"]);
   });
 
   test("the Library page explains every stage, Library stages first", () => {

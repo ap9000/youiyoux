@@ -59,7 +59,6 @@ function RailButton({ label, keys, onClick, children }: { label: string; keys?: 
 
 function RailGroup({ group, location }: { group: NavGroup; location: string }) {
   const links = group.items.map((item) => <RailLink key={item.href} item={item} active={isActive(item, location)} />);
-  if (!group.section) return <>{links}</>;
   const { label, hint } = NAV_SECTIONS[group.section];
   const id = `rail-${group.section}`;
   return (
@@ -85,7 +84,7 @@ export function NavRail() {
         <Logo />
       </Link>
       {navGroups().map((group, i) => (
-        <Fragment key={group.section ?? `plain-${i}`}>
+        <Fragment key={group.section}>
           {i > 0 && <span aria-hidden className="my-1 h-px w-6 shrink-0 bg-line" />}
           <RailGroup group={group} location={location} />
         </Fragment>
