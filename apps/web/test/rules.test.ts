@@ -4,7 +4,7 @@ import { checkLabel, executionOf } from "../src/screens/element/RulesTab.tsx";
 
 const rule = (fields: Partial<CatalogRule>): CatalogRule => ({
   schema: "youi.rule/v1",
-  id: "youi:signal/rule/test.probe",
+  id: "youi:demo/rule/test.probe",
   title: "Probe",
   severity: "error",
   statement: "Probe rule",

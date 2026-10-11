@@ -24,7 +24,7 @@ const withButton = (edit: (contract: ComponentContract) => ComponentContract): P
   system: { ...project.system, components: project.system.components.map((c) => (c.contract.name === "Button" ? { ...c, contract: edit(c.contract) } : c)) },
 });
 const rule = (fields: Record<string, unknown>): RuleSpec =>
-  RuleSpec.parse({ schema: "youi.rule/v1", id: "youi:signal/rule/test.probe", title: "Probe", severity: "error", statement: "Probe rule", agent: "Do not do the probed thing", ...fields });
+  RuleSpec.parse({ schema: "youi.rule/v1", id: "youi:demo/rule/test.probe", title: "Probe", severity: "error", statement: "Probe rule", agent: "Do not do the probed thing", ...fields });
 
 describe("planner classification", () => {
   test("an optional prop becoming required is breaking, with the sites that omit it", async () => {
@@ -86,7 +86,7 @@ describe("plan completeness", () => {
   });
 
   test("a migration with residual sites is never presented as exact", async () => {
-    const migration = MigrationSpec.parse({ schema: "youi.migration/v1", id: "youi:signal/migration/button-2.0.0", element: "youi:signal/component/button", from: "1.x", to: "2.0.0", changes: [{ renameProp: { from: "variant", to: "tone" } }] });
+    const migration = MigrationSpec.parse({ schema: "youi.migration/v1", id: "youi:demo/migration/button-2.0.0", element: "youi:demo/component/button", from: "1.x", to: "2.0.0", changes: [{ renameProp: { from: "variant", to: "tone" } }] });
     const plan = await planChange(project, scan, { migration });
     expect(plan.callSites?.residual).toBeGreaterThan(0);
     expect(plan.completeness.exact).toBe(false);
@@ -110,14 +110,14 @@ describe("token impact", () => {
   });
 
   test("direct CSS-variable and Tailwind uses count; a stylesheet makes every screen a target", async () => {
-    const probe = await scanProject(project, { overrides: { "app/settings/token-use.tsx": 'export const T = () => <div className="hover:bg-paper/50 text-ink" />;\n' } });
-    const plan = await planChange(project, probe, { token: "color.paper" });
-    expect(plan.token?.direct.sites.map((s) => `${s.file} ${s.text}`)).toEqual(expect.arrayContaining(["styles/app.css --so-paper", "app/settings/token-use.tsx bg-paper"]));
+    const probe = await scanProject(project, { overrides: { "app/settings/token-use.tsx": 'export const T = () => <div className="hover:bg-background/50 text-ink" />;\n' } });
+    const plan = await planChange(project, probe, { token: "color.background" });
+    expect(plan.token?.direct.sites.map((s) => `${s.file} ${s.text}`)).toEqual(expect.arrayContaining(["styles/app.css --demo-color-background", "app/settings/token-use.tsx bg-background"]));
     expect(plan.impact.everyScreen).toBe(true);
   });
 
   test("no use found is reported as a lower bound, never as proof of no effect", async () => {
-    const plan = await planChange(project, scan, { token: "color.ink" });
+    const plan = await planChange(project, scan, { token: "color.muted" });
     expect(plan.impact.sites).toBe(0);
     expect(plan.completeness.exact).toBe(false);
     expect(plan.completeness.limits[0]).toContain("a lower bound");
@@ -167,7 +167,7 @@ describe("rule execution", () => {
 
   test("the report with rule runs and content identity validates against youi.usage/v1", () => {
     expect(ScanReport.safeParse(scan.report).success).toBe(true);
-    expect(scan.report.checks.find((c) => c.rule.endsWith("components.one-signal-verb"))).toEqual({ rule: "youi:signal/rule/components.one-signal-verb", state: "advisory" });
+    expect(scan.report.checks.find((c) => c.rule.endsWith("components.one-primary-action"))).toEqual({ rule: "youi:demo/rule/components.one-primary-action", state: "advisory" });
   });
 });
 
@@ -195,10 +195,10 @@ describe("scan identity", () => {
 describe("rule editor capability API", () => {
   /** Every editable check, with code it must flag and code it must pass. */
   const CASES: Array<{ name: string; check: Record<string, unknown>; bad: string; good: string; css?: boolean }> = [
-    { name: "raw-color", check: { engine: "youi", id: "raw-color" }, bad: 'export const A = () => <div className="bg-[#171717]" />;', good: 'export const A = () => <div className="bg-paper" />;' },
-    { name: "raw-color in css", check: { engine: "youi", id: "raw-color" }, bad: ".row { border-color: #e6e6e6; }", good: ".row { border-color: var(--so-line); }", css: true },
-    { name: "arbitrary-value", check: { engine: "youi", id: "arbitrary-value" }, bad: 'export const A = () => <div className="rounded-[10px]" />;', good: 'export const A = () => <div className="rounded-card" />;' },
-    { name: "native-element", check: { engine: "youi", id: "native-element", options: { elements: { button: "youi:signal/component/button" } } }, bad: "export const A = () => <button>Save</button>;", good: 'import { Button } from "@/components/ui";\nexport const A = () => <Button>Save</Button>;' },
+    { name: "raw-color", check: { engine: "youi", id: "raw-color" }, bad: 'export const A = () => <div className="bg-[#171717]" />;', good: 'export const A = () => <div className="bg-background" />;' },
+    { name: "raw-color in css", check: { engine: "youi", id: "raw-color" }, bad: ".row { border-color: #e6e6e6; }", good: ".row { border-color: var(--demo-color-line); }", css: true },
+    { name: "arbitrary-value", check: { engine: "youi", id: "arbitrary-value" }, bad: 'export const A = () => <div className="rounded-[12px]" />;', good: 'export const A = () => <div className="rounded-card" />;' },
+    { name: "native-element", check: { engine: "youi", id: "native-element", options: { elements: { button: "youi:demo/component/button" } } }, bad: "export const A = () => <button>Save</button>;", good: 'import { Button } from "@/components/ui";\nexport const A = () => <Button>Save</Button>;' },
     { name: "prop-values", check: { engine: "youi", id: "prop-values" }, bad: 'import { Button } from "@/components/ui";\nexport const A = () => <Button variant="primary">Save</Button>;', good: 'import { Button } from "@/components/ui";\nexport const A = () => <Button variant="outline">Save</Button>;' },
     { name: "lookalike-component", check: { engine: "youi", id: "lookalike-component" }, bad: 'import { Button } from "@/components/legacy/button";\nexport const A = () => <Button>Save</Button>;', good: 'import { Button } from "@/components/ui";\nexport const A = () => <Button>Save</Button>;' },
     { name: "ast-grep", check: { engine: "ast-grep", language: "tsx", rule: { pattern: "console.log($$$A)" } }, bad: "export const A = () => { console.log(1); return null; };", good: "export const A = () => null;" },

@@ -121,11 +121,11 @@ describe("youi", () => {
   test("rules lists how each rule is checked; plan --token reports a lower bound", async () => {
     expect(await main(["rules", "--project", FIXTURE, "--json"])).toBe(0);
     const { rules, capabilities } = JSON.parse(out) as { rules: Array<{ id: string; state: string }>; capabilities: { builtIn: unknown[] } };
-    expect(rules.find((r) => r.id.endsWith("components.one-signal-verb"))?.state).toBe("advisory");
+    expect(rules.find((r) => r.id.endsWith("components.one-primary-action"))?.state).toBe("advisory");
     expect(rules.filter((r) => r.state === "enforced")).toHaveLength(5);
     expect(capabilities.builtIn).toHaveLength(5);
     out = "";
-    expect(await main(["plan", "--token", "color.ink", "--project", FIXTURE])).toBe(0);
+    expect(await main(["plan", "--token", "color.muted", "--project", FIXTURE])).toBe(0);
     expect(out).toContain("none found (not proof of none: see limits)");
     expect(out).toContain("counts are a lower bound");
   });
