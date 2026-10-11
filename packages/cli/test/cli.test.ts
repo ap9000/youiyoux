@@ -134,13 +134,13 @@ describe("youi", () => {
     const dir = await mkdtemp(join(tmpdir(), "youi-rules-"));
     try {
       const design = join(dir, "design");
-      for (const part of ["youi.config.json", "tokens", "components", "rules", "systems"]) await cp(join(REPO, part), join(design, part), { recursive: true });
-      const broken = ["schema: youi.rule/v1", "id: youi:signal/rule/test.broken", "title: Broken", "severity: error", "statement: Never matches", "agent: Nothing", "check:", "  engine: ast-grep", "  language: tsx", "  rule:", "    kind: not_a_kind", ""].join("\n");
+      await cp(DEMO, design, { recursive: true });
+      const broken = ["schema: youi.rule/v1", "id: youi:demo/rule/test.broken", "title: Broken", "severity: error", "statement: Never matches", "agent: Nothing", "check:", "  engine: ast-grep", "  language: tsx", "  rule:", "    kind: not_a_kind", ""].join("\n");
       await writeFile(join(design, "rules/test.broken.rule.yaml"), broken);
       expect(await main(["check", "--project", FIXTURE, "--design", design, "--json"])).toBe(1);
       const check = JSON.parse(out) as { incomplete: boolean; notRun: Array<{ rule: string; state: string }> };
       expect(check.incomplete).toBe(true);
-      expect(check.notRun).toEqual([expect.objectContaining({ rule: "youi:signal/rule/test.broken", state: "unsupported" })]);
+      expect(check.notRun).toEqual([expect.objectContaining({ rule: "youi:demo/rule/test.broken", state: "unsupported" })]);
       out = "";
       expect(await main(["rules", "--project", FIXTURE, "--design", design, "--preview", join(design, "rules/test.broken.rule.yaml")])).toBe(1);
       expect(out).toContain("this is not a clean result");
