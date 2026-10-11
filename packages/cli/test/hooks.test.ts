@@ -152,11 +152,11 @@ describe("hooks install", () => {
   });
 
   test("the CI workflow pins the tool and the rules version and runs the baseline check", () => {
-    expect(githubSlug("https://github.com/ap9000/toolroll-design.git")).toBe("ap9000/toolroll-design");
-    expect(githubSlug("git@github.com:ap9000/youiyoux.git")).toBe("ap9000/youiyoux");
+    expect(githubSlug("https://github.com/acme/acme-design.git")).toBe("acme/acme-design");
+    expect(githubSlug("git@github.com:acme/youiyoux.git")).toBe("acme/youiyoux");
     expect(githubSlug("https://gitlab.com/a/b")).toBeNull();
-    const text = workflowText({ tool: { slug: "ap9000/youiyoux", commit: "a".repeat(40) }, design: { slug: "ap9000/toolroll-design", commit: "b".repeat(40) }, projectDir: ".", configPath: ".youi-ci/design/pilot/toolroll/youi.project.json" });
+    const text = workflowText({ tool: { slug: "acme/youiyoux", commit: "a".repeat(40) }, design: { slug: "acme/acme-design", commit: "b".repeat(40) }, projectDir: ".", configPath: ".youi-ci/design/pilots/acme-app/youi.project.json" });
     expect(text).toContain(`ref: ${"b".repeat(40)}`);
-    expect(text).toContain("check --baseline --format github --project . --design .youi-ci/design --config .youi-ci/design/pilot/toolroll/youi.project.json");
+    expect(text).toContain("check --baseline --format github --project . --design .youi-ci/design --config .youi-ci/design/pilots/acme-app/youi.project.json");
   });
 });

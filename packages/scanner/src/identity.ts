@@ -61,7 +61,7 @@ export function checkIdentity(project: Project, definitions: string, design: Git
   };
 }
 
-/** A short label for people: `signal@1.0.0 · defs 59c2e32d7916 · design 1a2b3c4 · project 5d6e7f8+dirty`. */
+/** A short label for people: `demo@1.0.0 · defs 59c2e32d7916 · design 1a2b3c4 · project 5d6e7f8+dirty`. */
 export function describeIdentity(identity: CheckIdentity): string {
   const rev = (state: GitState): string => (state.commit ? `${state.commit.slice(0, 7)}${state.dirty ? "+dirty" : ""}` : "no commit");
   return `${identity.system.id}@${identity.system.version} · defs ${identity.definitions} · design ${rev(identity.design)} · project ${rev(identity.project)}`;
