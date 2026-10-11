@@ -153,11 +153,12 @@ export class RuleWorkflow {
   }
 
   private view(draft: Draft, current: Current): DraftView {
-    const problems = this.problems(draft, current);
-    const previewStale = this.previewStale(draft, current);
-    const baseStale = this.baseStale(draft, current);
     const status = draftStatus(draft);
     const open = status !== "discarded" && status !== "handed-off";
+    // A closed draft is history: judging it against today's definitions (where its rule may now exist) would only mislead.
+    const problems = open ? this.problems(draft, current) : [];
+    const previewStale = open ? this.previewStale(draft, current) : [];
+    const baseStale = open ? this.baseStale(draft, current) : [];
     const previewFresh = draft.preview !== null && previewStale.length === 0;
     return {
       ...draft,
@@ -165,6 +166,7 @@ export class RuleWorkflow {
       problems,
       previewStale,
       baseStale,
+      needsRebase: open && draft.base.commit !== current.tip,
       canApprove: open && !draft.approval && problems.length === 0 && previewFresh && baseStale.length === 0,
       canHandoff: open && draft.approval !== null && problems.length === 0 && baseStale.length === 0 && this.approvalLapsed(draft, current).length === 0,
     };
@@ -197,6 +199,7 @@ export class RuleWorkflow {
         `One design repository and one project (${current.project.config.id}).`,
         `Approved changes become a local review branch in the design repository; nothing is pushed or merged for you.`,
         `Only checks this editor can run are offered (${this.execution.name}).`,
+        ...(current.snapshot.projectCommit === null ? [`${current.project.config.id} is not a git repository, so edits to it cannot be detected: approvals are not withdrawn when its code changes.`] : []),
       ],
     };
   }
@@ -217,7 +220,8 @@ export class RuleWorkflow {
   async list(actor: Actor): Promise<{ drafts: DraftView[]; unreadable: ReadonlyArray<{ file: string; reason: string }> }> {
     authorize(actor, "read");
     const [current, stored] = await Promise.all([this.current(), this.options.store.list()]);
-    const drafts = await Promise.all(stored.drafts.map((draft) => this.locked(draft.id, () => this.refreshed(draft, current))));
+    // Each draft is re-read under its lock: a save that finished while we waited must not be overwritten by the copy listed earlier.
+    const drafts = await Promise.all(stored.drafts.map((draft) => this.locked(draft.id, async () => this.refreshed(await this.load(draft.id), current))));
     return { drafts: drafts.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)), unreadable: stored.unreadable };
   }
 
@@ -309,7 +313,10 @@ export class RuleWorkflow {
       const after = await this.current();
       if (after.snapshot.digest !== before.snapshot.digest) throw new WorkflowError("stale", "the project or design repository changed while the preview ran; run it again");
       const { report } = scan;
-      const designLimits = before.designDirty ? ["The design repository has uncommitted changes or another branch checked out; this preview reads the working tree."] : [];
+      const designLimits = [
+        ...(before.designDirty ? ["The design repository has uncommitted changes or another branch checked out; this preview reads the working tree."] : []),
+        ...(before.snapshot.projectCommit === null ? [`${report.project} is not a git repository: later edits to it cannot be detected, so this preview cannot go stale.`] : []),
+      ];
       const preview: Preview = {
         id: this.id("p"),
         at: this.now(),
@@ -329,11 +336,12 @@ export class RuleWorkflow {
   }
 
   /** A person approves exactly the revision and preview they saw. */
-  async approve(actor: Actor, id: string, input: { revision: number }): Promise<DraftView> {
+  async approve(actor: Actor, id: string, input: { revision: number; previewId: string }): Promise<DraftView> {
     return this.locked(id, async () => {
       const draft = await this.load(id);
       this.guard(actor, "approve", draft);
       if (input.revision !== draft.revision) throw new WorkflowError("conflict", `you are approving revision ${input.revision}, but the draft is at revision ${draft.revision}. Review the current revision first.`);
+      if (input.previewId !== draft.preview?.id) throw new WorkflowError("conflict", "the preview changed since you looked at it (it was run again elsewhere). Review the current preview first.");
       const current = await this.current();
       const view = await this.refreshed(draft, current);
       if (view.approval) return view;
@@ -409,6 +417,7 @@ export class RuleWorkflow {
       });
       const patchFile = await this.options.store.putArtifact(`${draft.id}.patch`, created.diff);
       const top = shellQuote(current.repo.top);
+      const [base, head] = [shellQuote(current.branch), shellQuote(branch)];
       const handoff = {
         at: this.now(),
         by: actor,
@@ -418,10 +427,10 @@ export class RuleWorkflow {
         files: Object.keys(files),
         diff: created.diff,
         patchFile,
-        next: [`git -C ${top} push -u origin ${branch}`, `cd ${top} && gh pr create --base ${current.branch} --head ${branch} --fill`],
+        next: [`git -C ${top} push -u origin ${head}`, `cd ${top} && gh pr create --base ${base} --head ${head} --fill`],
       };
       const settled = stored(view);
-      const next: Draft = { ...settled, handoff, updatedAt: this.now(), events: [...settled.events, this.event(actor, "handed-off", `Review branch ${branch} at ${created.commit.slice(0, 7)}, on ${current.branch}@${draft.base.commit.slice(0, 7)}.`)] };
+      const next: Draft = { ...settled, handoff, updatedAt: this.now(), events: [...settled.events, this.event(actor, "handed-off", `Review branch ${branch} at ${created.commit.slice(0, 7)}, on ${current.branch}@${draft.base.commit.slice(0, 7)}${created.adopted ? " (completing an interrupted hand-off)" : ""}.`)] };
       await this.options.store.put(next);
       return this.view(next, current);
     });
@@ -440,7 +449,7 @@ export class RuleWorkflow {
 
 /** A view's stored part: drop the computed fields before persisting. */
 function stored(view: Draft | DraftView): Draft {
-  const { status: _s, problems: _p, previewStale: _ps, baseStale: _bs, canApprove: _ca, canHandoff: _ch, ...draft } = view as DraftView;
+  const { status: _s, problems: _p, previewStale: _ps, baseStale: _bs, needsRebase: _nr, canApprove: _ca, canHandoff: _ch, ...draft } = view as DraftView;
   return draft;
 }
 

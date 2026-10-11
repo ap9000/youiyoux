@@ -44,8 +44,15 @@ export function newRuleFields(system: string): RuleFields {
   };
 }
 
-function issues(error: { issues: ReadonlyArray<{ path: PropertyKey[]; message: string }> }): string[] {
-  return error.issues.map((issue) => `${issue.path.length ? issue.path.map(String).join(".") : "rule"}: ${issue.message}`);
+/** Plain words for the schema's messages on the fields people type. */
+const REQUIRED: Record<string, string> = { title: "give the rule a title", statement: "say what the rule is", agent: "write the one-line instruction agents follow" };
+
+function issues(error: { issues: ReadonlyArray<{ path: PropertyKey[]; message: string; code: string }> }, id: string): string[] {
+  return error.issues.map((issue) => {
+    const field = issue.path.length ? issue.path.map(String).join(".") : "rule";
+    if (field === "id") return id.endsWith("/rule/") ? "id: name the rule after the prefix" : "id: use lowercase letters, digits, dots and dashes, starting with a letter or digit";
+    return `${field}: ${(issue.code === "too_small" && REQUIRED[field]) || issue.message}`;
+  });
 }
 
 /** The published form of the fields, or why it cannot be published as it stands. */
@@ -64,7 +71,7 @@ export function toRuleSpec(fields: RuleFields): { rule: RuleSpec | null; problem
     examples: { bad: fields.examples.bad.filter((e) => e.trim()), good: fields.examples.good.filter((e) => e.trim()) },
   };
   const parsed = RuleSpec.safeParse(candidate);
-  return parsed.success ? { rule: parsed.data, problems: [] } : { rule: null, problems: issues(parsed.error) };
+  return parsed.success ? { rule: parsed.data, problems: [] } : { rule: null, problems: issues(parsed.error, candidate.id) };
 }
 
 export interface ValidationContext {
@@ -83,6 +90,7 @@ export function validateContent(content: DraftContent, context: ValidationContex
   const parsed = parseId(id);
   if (parsed && parsed.kind !== "rule") problems.push(`id: ${id} is not a rule id`);
   if (parsed && parsed.system !== context.system) problems.push(`id: rules here belong to system "${context.system}"`);
+  if (parsed && (parsed.name.includes("..") || /(?:\.|\.lock)$/.test(parsed.name))) problems.push("id: a rule name cannot contain \"..\" or end with \".\" or \".lock\"");
   if (context.mode === "edit" && id !== context.ruleId) problems.push(`id: renaming a rule is not supported; it stays ${context.ruleId}`);
   if (context.mode === "create" && context.existingRuleIds.has(id)) problems.push(`id: ${id} already exists`);
   if (!context.execution.isSupported(content.rule.check)) problems.push(`check: ${describeCheck(content.rule.check)} cannot run yet; choose a supported check or advisory`);

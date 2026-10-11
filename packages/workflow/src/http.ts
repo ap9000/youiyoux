@@ -1,11 +1,13 @@
 /**
  * The loopback HTTP service: the workflow under /api, and (optionally) the built hub at /.
  *
- * It listens on 127.0.0.1 only. Requests must name a loopback Host (no DNS rebinding);
- * writes must carry `X-Youi-Client` and, when the browser sends an Origin, a loopback one,
- * so another website cannot drive it from a person's browser.
+ * It listens on 127.0.0.1 only. Requests must name a loopback Host (no DNS rebinding) and
+ * may not come cross-site; writes must carry this run's session key (printed only in the
+ * terminal that started the service, in the link that opens the hub) and, from a browser, a
+ * loopback Origin. Pages may not be framed, so nothing can trick a click on Approve.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { timingSafeEqual } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { z } from "zod";
@@ -14,7 +16,7 @@ import type { Actor, ApiError } from "./api.ts";
 import { WorkflowError } from "./policy.ts";
 import type { RuleWorkflow } from "./service.ts";
 
-export const CLIENT_HEADER = "x-youi-client";
+export const SESSION_HEADER = "x-youi-session";
 const MAX_BODY = 1024 * 1024;
 
 const RuleFieldsInput = z.object({
@@ -32,7 +34,7 @@ const RuleFieldsInput = z.object({
 const DraftContentInput = z.object({ rule: RuleFieldsInput, components: z.array(ElementId).max(200) });
 const CreateInput = z.discriminatedUnion("mode", [z.object({ mode: z.literal("edit"), ruleId: ElementId }), z.object({ mode: z.literal("create") })]);
 const SaveInput = z.object({ revision: z.number().int().positive(), content: DraftContentInput });
-const ApproveInput = z.object({ revision: z.number().int().positive() });
+const ApproveInput = z.object({ revision: z.number().int().positive(), previewId: z.string().min(1).max(40) });
 
 const STATUS: Record<ApiError["code"], number> = { "bad-request": 400, forbidden: 403, "not-found": 404, conflict: 409, stale: 409, invalid: 422, internal: 500 };
 
@@ -56,7 +58,12 @@ export interface HandlerOptions {
   readonly actor: Actor;
   /** The built hub (apps/web/dist) to serve at /, if any. */
   readonly webRoot?: string | null;
+  /** The secret every write must carry in `x-youi-session`. */
+  readonly sessionKey: string;
 }
+
+/** Every response: never framed, never sniffed. */
+const BASE_HEADERS = { "x-content-type-options": "nosniff", "x-frame-options": "DENY", "content-security-policy": "frame-ancestors 'none'" };
 
 class HttpError extends Error {
   readonly status: number;
@@ -67,7 +74,7 @@ class HttpError extends Error {
 }
 
 function send(res: ServerResponse, status: number, body: unknown): void {
-  res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
+  res.writeHead(status, { ...BASE_HEADERS, "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
   res.end(JSON.stringify(body));
 }
 
@@ -95,18 +102,26 @@ function parse<T extends z.ZodType>(schema: T, value: unknown): z.infer<T> {
 
 function fail(res: ServerResponse, error: unknown): void {
   if (error instanceof WorkflowError) return send(res, STATUS[error.code], { error: error.message, code: error.code, ...(error.problems.length ? { problems: error.problems } : {}) } satisfies ApiError);
-  if (error instanceof HttpError) return send(res, error.status, { error: error.message, code: error.status === 403 ? "forbidden" : error.status === 404 ? "not-found" : "bad-request" } satisfies ApiError);
+  if (error instanceof HttpError) return send(res, error.status, { error: error.message, code: error.status === 401 || error.status === 403 ? "forbidden" : error.status === 404 ? "not-found" : "bad-request" } satisfies ApiError);
   if (error instanceof DefinitionError) return send(res, 422, { error: `invalid definition ${error.file}`, code: "invalid", problems: error.issues } satisfies ApiError);
   send(res, 500, { error: error instanceof Error ? error.message : String(error), code: "internal" } satisfies ApiError);
 }
 
+function sameSecret(given: string, expected: string): boolean {
+  const a = Buffer.from(given);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
 /** Reject requests a loopback service must never act on. */
-function screen(req: IncomingMessage): void {
+function screen(req: IncomingMessage, sessionKey: string): void {
   if (!LOOPBACK_HOST.test(req.headers.host ?? "")) throw new HttpError(421, "this service answers loopback hosts only");
+  if (req.headers["sec-fetch-site"] === "cross-site") throw new HttpError(403, "cross-site requests are refused");
   if (req.method === "GET" || req.method === "HEAD") return;
-  if (req.headers[CLIENT_HEADER] === undefined) throw new HttpError(403, `writes need the ${CLIENT_HEADER} header`);
   const origin = req.headers.origin;
   if (origin !== undefined && !LOOPBACK_ORIGIN.test(origin)) throw new HttpError(403, "cross-site requests are refused");
+  const key = req.headers[SESSION_HEADER];
+  if (typeof key !== "string" || !sameSecret(key, sessionKey)) throw new HttpError(401, "this change needs the session key: open the hub from the link `youi editor` printed");
 }
 
 async function api(req: IncomingMessage, res: ServerResponse, path: string, options: HandlerOptions): Promise<void> {
@@ -133,7 +148,13 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string, opti
 
 async function staticFile(res: ServerResponse, root: string, path: string): Promise<void> {
   const base = resolve(root);
-  const wanted = resolve(base, `.${normalize(decodeURIComponent(path))}`);
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(path);
+  } catch {
+    throw new HttpError(400, "malformed path");
+  }
+  const wanted = resolve(base, `.${normalize(decoded)}`);
   if (wanted !== base && !wanted.startsWith(`${base}${sep}`)) throw new HttpError(404, "not found");
   let file = wanted;
   const info = await stat(file).catch(() => null);
@@ -144,7 +165,7 @@ async function staticFile(res: ServerResponse, root: string, path: string): Prom
   }
   const body = await readFile(file);
   const immutable = file.includes(`${sep}assets${sep}`);
-  res.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream", "cache-control": immutable ? "public, max-age=31536000, immutable" : "no-cache", "x-content-type-options": "nosniff" });
+  res.writeHead(200, { ...BASE_HEADERS, "content-type": TYPES[extname(file)] ?? "application/octet-stream", "cache-control": immutable ? "public, max-age=31536000, immutable" : "no-cache" });
   res.end(body);
 }
 
@@ -153,7 +174,7 @@ export function createHandler(options: HandlerOptions): (req: IncomingMessage, r
     void (async () => {
       try {
         const path = new URL(req.url ?? "/", "http://loopback").pathname;
-        screen(req);
+        screen(req, options.sessionKey);
         if (path === "/api" || path.startsWith("/api/")) return await api(req, res, path, options);
         if (!options.webRoot || (req.method !== "GET" && req.method !== "HEAD")) throw new HttpError(404, "not found");
         await staticFile(res, options.webRoot, path);

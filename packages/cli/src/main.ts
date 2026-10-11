@@ -1,6 +1,7 @@
 /** `youi`: the YouIyouX command line. */
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
 import { homedir, userInfo } from "node:os";
 import { join, relative, resolve, sep } from "node:path";
 import { parseArgs, type ParseArgsConfig } from "node:util";
@@ -285,12 +286,15 @@ async function cmdEditor(values: Values): Promise<number> {
   const info = await workflow.info(actor);
   const web = join(TOOL_ROOT, "apps/web/dist");
   const webRoot = existsSync(join(web, "index.html")) ? web : null;
-  const service = await serveWorkflow({ workflow, actor, webRoot, port: Number(values.port ?? 4417) });
-  print(`${style.ok("rule editor")} ${service.url}${webRoot ? "/changes" : ""}`);
+  // Writes need this key; it travels only in the link printed here (as a URL fragment, which no request carries).
+  const sessionKey = randomBytes(24).toString("base64url");
+  const service = await serveWorkflow({ workflow, actor, webRoot, sessionKey, port: Number(values.port ?? 4417) });
+  print(`${style.ok("rule editor")} ${webRoot ? `${service.url}/changes#key=${sessionKey}` : service.url}`);
   print(style.dim(`  design   ${info.design.root} (${info.design.branch} @ ${info.design.head.slice(0, 7)}${info.design.dirty ? ", working tree differs" : ""})`));
   print(style.dim(`  project  ${info.project.id} at ${info.project.root}`));
   print(style.dim(`  drafts   ${stateDir}`));
-  if (!webRoot) print(style.warn(`  no built hub at ${web}: run \`pnpm -C apps/web build\`, or \`pnpm -C apps/web dev\` (it proxies /api here)`));
+  if (!webRoot) print(style.warn(`  no built hub at ${web}: run \`pnpm -C apps/web build\`, or \`pnpm -C apps/web dev\` and open http://localhost:5173/changes#key=${sessionKey}`));
+  print(style.dim("  open the link above: it carries this run's key, which every change needs (nothing else can approve)"));
   print(style.dim("  approved changes become a local review branch; nothing is pushed. Ctrl-C to stop."));
   return -1;
 }

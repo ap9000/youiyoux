@@ -1,5 +1,6 @@
 /** The rule form: what people read, what agents follow, how hard it bites, and how it is checked. */
 import { Plus, X } from "lucide-react";
+import { useState } from "react";
 import type { CheckCapability, DraftContent, RuleFields, WorkflowInfo } from "../../data/workflow.ts";
 import { Button } from "../../ui/Button.tsx";
 import { Checkbox, Field, Select, TextArea, TextInput } from "../../ui/Field.tsx";
@@ -156,6 +157,30 @@ export function RuleForm({ value, onChange, info, mode, readOnly, problems }: Ru
   );
 }
 
+const parseTypes = (text: string): string[] => text.split(",").map((t) => t.trim()).filter(Boolean);
+
+/** Keeps what was typed (a trailing comma included) while the parsed list goes up on every keystroke. */
+function InputTypes({ value, onChange }: { value: readonly string[]; onChange: (types: string[]) => void }) {
+  const [text, setText] = useState(value.join(", "));
+  const shown = parseTypes(text).join(",") === value.join(",") ? text : value.join(", ");
+  return (
+    <Field label="Input types that stay native" hint="Comma-separated, e.g. hidden, checkbox, file.">
+      {(id, describedBy) => (
+        <TextInput
+          id={id}
+          aria-describedby={describedBy}
+          value={shown}
+          onChange={(e) => {
+            setText(e.target.value);
+            onChange(parseTypes(e.target.value));
+          }}
+          className="font-mono text-mono-sm"
+        />
+      )}
+    </Field>
+  );
+}
+
 function NativeElements({ options, info, onChange }: { options: Partial<NativeOptions>; info: WorkflowInfo; onChange: (options: NativeOptions) => void }) {
   const elements = options.elements ?? {};
   const allow = options.allowInputTypes ?? [];
@@ -196,18 +221,7 @@ function NativeElements({ options, info, onChange }: { options: Partial<NativeOp
           <Plus /> Add a tag
         </Button>
       )}
-      <Field label="Input types that stay native" hint="Comma-separated, e.g. hidden, checkbox, file. Applied when the field loses focus.">
-        {(id, describedBy) => (
-          <TextInput
-            id={id}
-            aria-describedby={describedBy}
-            key={allow.join(",")}
-            defaultValue={allow.join(", ")}
-            onBlur={(e) => update(elements, e.target.value.split(",").map((t) => t.trim()).filter(Boolean))}
-            className="font-mono text-mono-sm"
-          />
-        )}
-      </Field>
+      <InputTypes value={allow} onChange={(types) => update(elements, types)} />
     </div>
   );
 }

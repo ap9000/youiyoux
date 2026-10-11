@@ -9,6 +9,25 @@ import type { ApiError, DraftContent, DraftView, PublishedRule, WorkflowInfo } f
 export type { CheckCapability, DraftContent, DraftView, Preview, PreviewFinding, PublishedRule, RuleFields, WorkflowInfo } from "@youiyoux/workflow/api";
 
 const API = `${import.meta.env.BASE_URL}api`;
+const KEY_STORE = "youiyoux.editor-key";
+
+/**
+ * This run's session key. `youi editor` prints a link carrying it in the fragment (never
+ * sent in a request); the hub keeps it for the tab and takes it out of the address bar.
+ */
+function sessionKey(): string | null {
+  const match = /(?:^#|&)key=([\w-]+)/.exec(location.hash);
+  try {
+    if (match) {
+      sessionStorage.setItem(KEY_STORE, match[1]!);
+      history.replaceState(history.state, "", location.pathname + location.search);
+    }
+    return sessionStorage.getItem(KEY_STORE);
+  } catch {
+    return match?.[1] ?? null;
+  }
+}
+sessionKey();
 
 /** A failed call, with the service's reasons when it gave any. */
 export class WorkflowRequestError extends Error {
@@ -30,7 +49,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   try {
     response = await fetch(`${API}${path}`, {
       method,
-      headers: { "x-youi-client": "hub", ...(body === undefined ? {} : { "content-type": "application/json" }) },
+      headers: { ...(method === "GET" ? {} : { "x-youi-session": sessionKey() ?? "" }), ...(body === undefined ? {} : { "content-type": "application/json" }) },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
   } catch {
@@ -41,6 +60,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   const data = (await response.json()) as T | ApiError;
   if (!response.ok) {
     const error = data as ApiError;
+    if (response.status === 401) throw new WorkflowRequestError("This tab cannot make changes: open the hub from the link `youi editor` printed in its terminal (it carries this run's key).", 401);
     throw new WorkflowRequestError(error.error ?? `HTTP ${response.status}`, response.status, error.problems ?? []);
   }
   return data as T;
@@ -55,7 +75,7 @@ export const workflowApi = {
   create: () => call<DraftView>("POST", "/drafts", { mode: "create" }),
   save: (id: string, revision: number, content: DraftContent) => call<DraftView>("PUT", `/drafts/${id}`, { revision, content }),
   preview: (id: string) => call<DraftView>("POST", `/drafts/${id}/preview`),
-  approve: (id: string, revision: number) => call<DraftView>("POST", `/drafts/${id}/approve`, { revision }),
+  approve: (id: string, revision: number, previewId: string) => call<DraftView>("POST", `/drafts/${id}/approve`, { revision, previewId }),
   rebase: (id: string) => call<DraftView>("POST", `/drafts/${id}/rebase`),
   handoff: (id: string) => call<DraftView>("POST", `/drafts/${id}/handoff`),
   discard: (id: string) => call<DraftView>("DELETE", `/drafts/${id}`),

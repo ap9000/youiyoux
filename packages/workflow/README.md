@@ -13,7 +13,7 @@ save draft ─▶ impact preview ─▶ approve (a person) ─▶ review branch 
 - **Drafts** are files under the state directory (default `~/.youi/workflow/<hash>`), written atomically, so they survive restarts. Each is bound to the commit of the design repo's default branch it started from and to a digest of its content.
 - **Preview** scans the project once and runs both the draft and today's rule over that snapshot: new places, places already flagged, places no longer flagged, plus what it cannot promise (unparsed files, advisory or off rules).
 - **Approval** is a separate act. It records who approved, the revision, the preview and the exact design and project state. If any of those moves, the approval is withdrawn and the history says why.
-- **Hand-off** creates `youi/rules/<rule>-<id>` in the design repository with git plumbing. The default branch, the checked-out branch and the working tree are never touched, and nothing is pushed. The patch is kept beside the draft.
+- **Hand-off** creates `youi/rules/<rule>-<id>` in the design repository with git plumbing, based on the default branch (origin's HEAD, else main or master; never whatever is checked out). The default branch, the checked-out branch and the working tree are never touched, and nothing is pushed. The patch is kept beside the draft. A hand-off interrupted after creating the branch completes on retry.
 - **Checks**: the form offers only checks the scanner runs today (`raw-color`, `arbitrary-value`, `native-element`, `prop-values`, `lookalike-component`) or advisory. `RuleExecution` in `src/execution.ts` is the seam where the shared rule execution model plugs in.
 - **Severity** can follow the plan "warn now, error later": `rollout: { to: error, after: YYYY-MM-DD }` in the rule file. Tightening is a later, separately approved edit.
 
@@ -27,10 +27,12 @@ pnpm install && pnpm -C apps/web build
 pnpm youi editor --project ~/Documents/firstmate/projects/toolroll \
   --design ~/youi-rule-test/toolroll-design \
   --config ~/youi-rule-test/toolroll-design/pilot/toolroll/youi.project.json
-# open http://127.0.0.1:4417/changes
+# open the link it prints: http://127.0.0.1:4417/changes#key=…
 ```
 
-For hub development, run `pnpm -C apps/web dev` beside it instead; it proxies `/api` to the service (`YOUI_API` overrides the address).
+The link carries this run's key. Every change (save, preview, approve, hand-off) needs it, so another program on the machine cannot approve by calling the service; a tab opened without it can read but not change anything.
+
+For hub development, run `pnpm -C apps/web dev` beside it instead and open `http://localhost:5173/changes#key=…` with the key it printed; the dev server proxies `/api` to the service (`YOUI_API` overrides the address).
 
 ## Guided test (about 10 minutes)
 
@@ -57,4 +59,4 @@ For hub development, run `pnpm -C apps/web dev` beside it instead; it proxies `/
 
 ## API
 
-`GET /api/info`, `GET /api/rules`, `GET|POST /api/drafts`, `GET|PUT|DELETE /api/drafts/:id`, `POST /api/drafts/:id/{preview,approve,rebase,handoff}`. Loopback only: requests must name a loopback host, and writes need an `X-Youi-Client` header and, from a browser, a loopback origin. `src/policy.ts` is the single authorization point: approving and handing off are a person's actions, and the MCP server has no tool for either.
+`GET /api/info`, `GET /api/rules`, `GET|POST /api/drafts`, `GET|PUT|DELETE /api/drafts/:id`, `POST /api/drafts/:id/{preview,approve,rebase,handoff}`. Loopback only: requests must name a loopback host and may not come cross-site; writes need this run's key in `X-Youi-Session` and, from a browser, a loopback origin; pages cannot be framed. `src/policy.ts` is the single authorization point: approving and handing off are a person's actions, and the MCP server has no tool for either. Same-user limits: a process that can read the terminal the service printed to, or write its state directory, can act as that person; hosted accounts replace this boundary.

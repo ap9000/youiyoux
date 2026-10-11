@@ -29,6 +29,7 @@ export interface WorkflowStore {
 }
 
 const FORMAT = "youiyoux.draft/v1";
+const COMMIT = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 
 function decode(text: string, file: string): Draft {
   const parsed = JSON.parse(text) as { schema?: unknown; draft?: Partial<Draft> };
@@ -36,6 +37,9 @@ function decode(text: string, file: string): Draft {
   if (parsed.schema !== FORMAT || !draft || typeof draft.id !== "string" || !DRAFT_ID.test(draft.id) || typeof draft.revision !== "number" || !draft.content || !draft.base) {
     throw new Error(`${file} is not a ${FORMAT} document`);
   }
+  // Commit ids reach git as arguments: anything but a full object id is refused.
+  const commits = [draft.base.commit, draft.approval?.baseCommit, draft.handoff?.base, draft.handoff?.commit].filter((c) => c !== undefined);
+  if (!commits.every((c) => typeof c === "string" && COMMIT.test(c))) throw new Error(`${file} names a commit that is not a git object id`);
   return draft as Draft;
 }
 

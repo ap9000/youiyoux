@@ -21,7 +21,9 @@ export function plural(count: number, word: string, many = `${word}s`): string {
 }
 
 export function ImpactPreview({ preview, project, stale }: { preview: Preview; project: string; stale: boolean }) {
-  const [filter, setFilter] = useState<Filter>("all");
+  const [chosen, setFilter] = useState<Filter>("all");
+  // A re-run can drop the chosen kind entirely; fall back to all rather than show an empty list.
+  const filter: Filter = chosen === "all" || preview.findings.some((f) => f.change === chosen) ? chosen : "all";
   const shown = useMemo(() => (filter === "all" ? preview.findings : preview.findings.filter((f) => f.change === filter)), [preview, filter]);
   const options = [
     { value: "all" as const, label: "All", count: preview.findings.length },

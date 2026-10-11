@@ -7,7 +7,7 @@ import { RuleSpec } from "@youiyoux/core";
 import { loadProject, scanProject } from "@youiyoux/scanner";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { createServer as createMcpServer } from "@youiyoux/mcp";
-import { builtinExecution, FileStore, renderRuleYaml, RuleWorkflow, toRuleSpec, type Actor, type DraftContent, type DraftView } from "../src/index.ts";
+import { builtinExecution, createReviewBranch, FileStore, renderRuleYaml, RuleWorkflow, toRuleSpec, type Actor, type DraftContent, type DraftView } from "../src/index.ts";
 import { git, sandbox, type Sandbox } from "./helpers.ts";
 
 const PERSON: Actor = { kind: "person", name: "captain" };
@@ -35,7 +35,7 @@ function withRule(draft: DraftView, patch: Partial<DraftContent["rule"]>, compon
 
 async function approved(id: string): Promise<DraftView> {
   const previewed = await workflow.preview(PERSON, id);
-  return workflow.approve(PERSON, id, { revision: previewed.revision });
+  return workflow.approve(PERSON, id, { revision: previewed.revision, previewId: previewed.preview!.id });
 }
 
 describe("drafts", () => {
@@ -123,11 +123,12 @@ describe("impact preview", () => {
 describe("approval", () => {
   test("is a person's decision, of the revision they saw, after a current preview", async () => {
     const draft = await workflow.create(PERSON, { mode: "edit", ruleId: RAW_COLOR });
-    await expect(workflow.approve(PERSON, draft.id, { revision: 1 })).rejects.toMatchObject({ code: "stale", problems: ["Run the impact preview first."] });
-    await workflow.preview(PERSON, draft.id);
-    await expect(workflow.approve(AGENT, draft.id, { revision: 1 })).rejects.toMatchObject({ code: "forbidden" });
-    await expect(workflow.approve(PERSON, draft.id, { revision: 2 })).rejects.toMatchObject({ code: "conflict" });
-    const ok = await workflow.approve(PERSON, draft.id, { revision: 1 });
+    await expect(workflow.approve(PERSON, draft.id, { revision: 1, previewId: "p-0" })).rejects.toMatchObject({ code: "conflict" });
+    const { preview } = await workflow.preview(PERSON, draft.id);
+    const seen = { revision: 1, previewId: preview!.id };
+    await expect(workflow.approve(AGENT, draft.id, seen)).rejects.toMatchObject({ code: "forbidden" });
+    await expect(workflow.approve(PERSON, draft.id, { ...seen, revision: 2 })).rejects.toMatchObject({ code: "conflict" });
+    const ok = await workflow.approve(PERSON, draft.id, seen);
     expect(ok).toMatchObject({ status: "approved", approval: { by: PERSON, draftRevision: 1 }, canHandoff: true });
   });
 
@@ -156,6 +157,15 @@ describe("approval", () => {
   });
 });
 
+describe("approval of what was seen", () => {
+  test("a preview re-run elsewhere cannot be approved unseen", async () => {
+    const draft = await workflow.create(PERSON, { mode: "edit", ruleId: RAW_COLOR });
+    const first = await workflow.preview(PERSON, draft.id);
+    await workflow.preview(PERSON, draft.id);
+    await expect(workflow.approve(PERSON, draft.id, { revision: 1, previewId: first.preview!.id })).rejects.toMatchObject({ code: "conflict" });
+  });
+});
+
 describe("hand-off", () => {
   test("creates a review branch with only the edit, leaving main and the working tree alone", async () => {
     const draft = await workflow.create(PERSON, { mode: "edit", ruleId: RAW_COLOR });
@@ -173,6 +183,30 @@ describe("hand-off", () => {
     expect(published).toMatchObject({ severity: "warn", rollout: { to: "error", after: "2026-11-01" } });
     expect(await readFile(done.handoff!.patchFile, "utf8")).toBe(done.handoff!.diff);
     await expect(workflow.save(PERSON, draft.id, { revision: 2, content: draft.content })).rejects.toMatchObject({ code: "conflict" });
+  });
+
+  test("an interrupted hand-off is completed by adopting the identical branch; a different one is refused", async () => {
+    const created = await workflow.create(PERSON, { mode: "edit", ruleId: RAW_COLOR });
+    await workflow.save(PERSON, created.id, { revision: 1, content: withRule(created, { severity: "warn" }) });
+    const draft = await approved(created.id);
+    const branch = `youi/rules/color.no-raw-color-${draft.id.slice(2, 8)}`;
+    const main = git(box.design, "rev-parse", "main");
+    git(box.design, "branch", branch, main);
+    await expect(workflow.handoff(PERSON, draft.id)).rejects.toThrow(/already exists with other content/);
+    git(box.design, "branch", "-D", branch);
+    // As if the service died right after creating the branch: the same commit content exists, nothing was recorded.
+    const path = "rules/color.no-raw-color.rule.yaml";
+    const text = await readFile(join(box.design, path), "utf8");
+    await createReviewBranch(box.design, { base: main, branch, protectedBranch: "main", files: { [path]: text.replace("severity: error", "severity: warn") }, message: "interrupted" });
+    const done = await workflow.handoff(PERSON, draft.id);
+    expect(done.handoff).toMatchObject({ branch, commit: git(box.design, "rev-parse", branch) });
+    expect(done.events.at(-1)?.note).toContain("completing an interrupted hand-off");
+  });
+
+  test("never bases a draft on a checked-out feature branch", async () => {
+    git(box.design, "checkout", "--quiet", "-b", "feature/x");
+    git(box.design, "branch", "-m", "main", "trunk");
+    await expect(workflow.create(PERSON, { mode: "edit", ruleId: RAW_COLOR })).rejects.toThrow(/cannot tell the design repository's default branch/);
   });
 
   test("a new rule lands as a new file plus the contracts that declare it, and agents see it once merged", async () => {

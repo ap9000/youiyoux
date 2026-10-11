@@ -56,7 +56,12 @@ export function DraftEditor({ draft, info, onUpdate }: { draft: DraftView; info:
   );
 
   const save = useCallback(() => run("save", () => workflowApi.save(id, revision, content)), [run, id, revision, content]);
-  const preview = (): Promise<void> => run("preview", async () => workflowApi.preview((dirty ? await workflowApi.save(id, revision, content) : draft).id));
+  // Save first when needed, and record that save even if the preview then fails, so the next save sends the right revision.
+  const preview = (): Promise<void> =>
+    run("preview", async () => {
+      if (dirty) onUpdate(await workflowApi.save(id, revision, content));
+      return workflowApi.preview(id);
+    });
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -96,7 +101,7 @@ export function DraftEditor({ draft, info, onUpdate }: { draft: DraftView; info:
         <Banner
           tone="warning"
           action={
-            draft.base.commit !== info.design.head ? (
+            draft.needsRebase ? (
               <Button size="sm" disabled={busy !== null} onClick={() => void run("rebase", () => workflowApi.rebase(id))}>
                 Rebase
               </Button>
@@ -150,7 +155,7 @@ export function DraftEditor({ draft, info, onUpdate }: { draft: DraftView; info:
             )}
             {draft.preview && previewStale.length > 0 && <StaleNote reasons={previewStale} />}
             {open && (
-              <Button variant={draft.preview && previewStale.length === 0 ? "outline" : "primary"} disabled={busy !== null} onClick={() => void preview()}>
+              <Button variant={draft.preview && previewStale.length === 0 ? "outline" : "primary"} disabled={busy !== null || (!dirty && draft.problems.length > 0)} onClick={() => void preview()}>
                 <RotateCw className={clsx(busy === "preview" && "animate-spin")} /> {busy === "preview" ? "Scanning…" : draft.preview ? "Run again" : "Run preview"}
               </Button>
             )}
@@ -168,7 +173,7 @@ export function DraftEditor({ draft, info, onUpdate }: { draft: DraftView; info:
               </p>
             )}
             {open && !draft.approval && (
-              <Button variant="primary" disabled={!draft.canApprove || dirty || busy !== null} onClick={() => void run("approve", () => workflowApi.approve(id, revision))}>
+              <Button variant="primary" disabled={!draft.canApprove || dirty || busy !== null} onClick={() => void run("approve", () => workflowApi.approve(id, revision, draft.preview!.id))}>
                 <ShieldCheck /> Approve revision {revision}
               </Button>
             )}
@@ -249,8 +254,8 @@ function Handoff({ draft }: { draft: DraftView }) {
         ))}
       </div>
       <p className="text-small text-muted">
-        Once merged, agents get it on their next lookup: <code className="font-mono text-mono-sm">youi_get_rules</code> and <code className="font-mono text-mono-sm">youi check</code> read the design repository, and{" "}
-        <code className="font-mono text-mono-sm">youi sync</code> refreshes the AGENTS.md block. Agents will read:
+        Once merged into the design checkout agents use, they get it on their next lookup: <code className="font-mono text-mono-sm">youi_get_rules</code> and <code className="font-mono text-mono-sm">youi check</code> read that checkout, and{" "}
+        <code className="font-mono text-mono-sm">youi sync</code> refreshes the project's AGENTS.md block. Agents will read:
       </p>
       <blockquote className="rounded-md border-l-2 border-line-strong bg-sunken px-3 py-2 text-body text-ink-2">{draft.content.rule.agent}</blockquote>
       <CodeBlock code={handoff.diff} title={`${handoff.files.length} file(s) changed`} maxHeight="sm" />

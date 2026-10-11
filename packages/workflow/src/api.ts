@@ -160,6 +160,8 @@ export interface DraftView extends Draft {
   readonly previewStale: readonly string[];
   /** Why the base no longer matches the design repository (rebase to continue). */
   readonly baseStale: readonly string[];
+  /** The default branch moved past the draft's base: rebase before approving. */
+  readonly needsRebase: boolean;
   readonly canApprove: boolean;
   readonly canHandoff: boolean;
 }
