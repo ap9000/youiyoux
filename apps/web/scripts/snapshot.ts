@@ -76,7 +76,7 @@ interface ScannerModule {
 type LoadOptions = { configPath?: string; designRoot?: string; productRoot?: string };
 
 /** --config, --design and --root, as the scanner's loader options. */
-const loadOptions = (values: { config?: string; design?: string; root?: string }): LoadOptions => ({ ...(values.config ? { configPath: resolve(values.config) } : {}), ...(values.design ? { designRoot: resolve(values.design) } : {}), ...(values.root ? { productRoot: resolve(values.root) } : {}) });
+const loadOptions = (values: { config?: string; design?: string; root?: string }): LoadOptions => ({ ...(values.config ? { configPath: resolve(values.config) } : {}), ...(values.design ? { designRoot: resolve(values.design) } : {}), ...(values.root !== undefined ? { productRoot: resolve(values.root) } : {}) });
 
 interface ScannedProject {
   readonly root: string;
@@ -186,10 +186,19 @@ interface Source {
   readonly usage: ScanReport | null;
 }
 
+/**
+ * The directory the scanner loads the project from: --project, else a --config's own directory
+ * when --root names its product (the config's `root` and --root win over it), else the demo.
+ */
+function projectArg(values: { design?: string; project?: string; config?: string; root?: string }): string | undefined {
+  if (values.project) return values.project;
+  if (values.config) return values.root !== undefined ? dirname(resolve(values.config)) : undefined;
+  return values.design ? undefined : DEMO_PROJECT;
+}
+
 /** Where the system comes from, and the project whose scan and outputs go with it. */
-async function readSource(values: { design?: string; project?: string; config?: string; root?: string }, core: CoreModule, scanner: ScannerModule): Promise<Source> {
-  const defaults = !values.design && !values.project && !values.config;
-  const projectDir = values.project ?? (defaults ? DEMO_PROJECT : undefined);
+export async function readSource(values: { design?: string; project?: string; config?: string; root?: string }, core: CoreModule, scanner: ScannerModule): Promise<Source> {
+  const projectDir = projectArg(values);
   if (projectDir) {
     const project = await scanner.loadProject(projectDir, loadOptions(values));
     const { report } = await scanner.scanProject(project);
@@ -378,7 +387,7 @@ function pruneData(dataDir: string, keep: ReadonlySet<string>): void {
 async function watchSnapshot(values: { design?: string; project?: string; config?: string; root?: string; commit?: string; screens?: string }, out: string, libs: Libraries): Promise<void> {
   const dataDir = join(out, "public/data");
   mkdirSync(dataDir, { recursive: true });
-  const root = values.project ?? DEMO_PROJECT;
+  const root = projectArg(values) ?? (values.config ? dirname(resolve(values.config)) : DEMO_PROJECT);
   let previousId = previousSystemId(dataDir);
   let system: WrittenSystem | null = null;
   let systemOf: ScannedProject | null = null;
@@ -431,9 +440,14 @@ async function watchSnapshot(values: { design?: string; project?: string; config
   process.once("SIGTERM", stop);
 }
 
+/** The workspace packages this script uses, loaded from their sources. */
+export async function libraries(): Promise<Libraries> {
+  return { core: await load<CoreModule>("core"), lib: await load<TokensModule>("tokens"), scanner: await load<ScannerModule>("scanner") };
+}
+
 async function main(): Promise<void> {
   const { values } = parseArgs({ options: { design: { type: "string" }, project: { type: "string" }, config: { type: "string" }, root: { type: "string" }, out: { type: "string" }, commit: { type: "string" }, screens: { type: "string" }, watch: { type: "boolean", default: false } } });
-  const libs: Libraries = { core: await load<CoreModule>("core"), lib: await load<TokensModule>("tokens"), scanner: await load<ScannerModule>("scanner") };
+  const libs = await libraries();
   const out = resolve(values.out ?? DEFAULT_OUT);
   if (values.watch) {
     if (out === DEFAULT_OUT) throw new Error("--watch writes a live snapshot; pass --out (the committed default snapshot is never watched)");
@@ -453,4 +467,5 @@ async function main(): Promise<void> {
   process.stdout.write(`snapshot of ${system.summary}; ${usage.length ? `usage map of ${usage[0]!.project}${shots ? ` with ${shots.screens.length} screens` : ""}` : "no usage map"} → ${relative(process.cwd(), out) || "."}\n`);
 }
 
-await main();
+// Run as a script, not when a test imports readSource.
+if (import.meta.main) await main();

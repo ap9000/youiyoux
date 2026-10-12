@@ -3,6 +3,7 @@ import { access, readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { getSystem, loadDesignRepo, OutputConfig, ProjectConfig, readTextOrNull, writeFileAtomic } from "@youiyoux/core";
 import { PROJECT_FILE } from "@youiyoux/scanner";
+import { buildTokens } from "@youiyoux/tokens";
 import { GENERATED_MARK } from "./agents.ts";
 
 export interface InitOptions {
@@ -36,16 +37,21 @@ async function readJson(path: string): Promise<Record<string, unknown> | null> {
 
 /**
  * The variable prefix of a tokens.css youi already generated here (`--so-accent` → `so`), or null.
- * Syncing with another prefix would rename every variable the product's CSS uses.
+ * Syncing with another prefix would rename every variable the product's CSS uses. The prefix is
+ * what is left of each variable once the system's own token name (`cssNames`, without `--` or a
+ * prefix) is stripped from its end, so tokens all in one group (`--acme-color-bg`,
+ * `--acme-color-fg`) still give `acme`. The prefix most variables agree on wins; no match is null.
  */
-export function generatedPrefix(css: string | null): string | null {
+export function generatedPrefix(css: string | null, cssNames: readonly string[]): string | null {
   if (css === null || !css.slice(0, 400).includes(GENERATED_MARK)) return null;
-  const names = [...css.matchAll(/^\s*--([a-z][a-z0-9-]*)\s*:/gm)].map((m) => m[1]!);
-  if (names.length === 0) return null;
-  let common = names[0]!;
-  for (const name of names) while (!name.startsWith(common)) common = common.slice(0, -1);
-  const prefix = common.slice(0, common.lastIndexOf("-"));
-  return /^[a-z][a-z0-9-]*$/.test(prefix) ? prefix : null;
+  const votes = new Map<string, number>();
+  for (const [, variable] of css.matchAll(/^\s*--([a-z][a-z0-9-]*)\s*:/gm)) {
+    // The longest token name that ends this variable: `accent-hover` before `hover`.
+    const name = cssNames.filter((n) => variable!.endsWith(`-${n}`)).sort((a, b) => b.length - a.length)[0];
+    const prefix = name === undefined ? "" : variable!.slice(0, -name.length - 1);
+    if (/^[a-z][a-z0-9-]*$/.test(prefix)) votes.set(prefix, (votes.get(prefix) ?? 0) + 1);
+  }
+  return [...votes].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
 }
 
 export async function initProject(options: InitOptions): Promise<InitResult> {
@@ -90,7 +96,9 @@ export async function initProject(options: InitOptions): Promise<InitResult> {
   ).filter((g): g is string => g !== null);
 
   const outputDir = OutputConfig.parse({}).dir;
-  const prefix = generatedPrefix(await readTextOrNull(join(root, outputDir, "tokens.css")));
+  const tokensCss = await readTextOrNull(join(root, outputDir, "tokens.css"));
+  const cssNames = tokensCss === null ? [] : (await buildTokens(design, system, OutputConfig.parse({}))).tokens.map((t) => t.cssName);
+  const prefix = generatedPrefix(tokensCss, cssNames);
   if (prefix) notes.push(`${outputDir}/tokens.css was generated with the prefix "${prefix}": kept, so the product's --${prefix}-* variables keep their names`);
 
   const config = ProjectConfig.parse({

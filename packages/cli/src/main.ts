@@ -132,9 +132,9 @@ const run = promisify(execFile);
 const print = (text: string): void => void process.stdout.write(`${text}\n`);
 const json = (value: unknown): void => print(JSON.stringify(value, null, 2));
 
-/** --config, --design and --root, as loader options. */
-function loadOptions(values: Values): LoadProjectOptions {
-  return { ...(values.config ? { configPath: values.config } : {}), ...(values.design ? { designRoot: values.design } : {}), ...(values.root ? { productRoot: values.root } : {}) };
+/** --config, --design and --root, as loader options. An empty --root (`--root ''`) is the current directory, not unset. */
+export function loadOptions(values: Pick<Values, "config" | "design" | "root">): LoadProjectOptions {
+  return { ...(values.config ? { configPath: values.config } : {}), ...(values.design ? { designRoot: values.design } : {}), ...(values.root !== undefined ? { productRoot: values.root || "." } : {}) };
 }
 
 async function project(values: Values): Promise<Project> {
@@ -383,7 +383,7 @@ async function cmdHooks(values: Values, positionals: string[]): Promise<number> 
   if (action !== "install") throw new UsageError("youi hooks install [--claude] [--git] [--ci] [--strict]   or   youi hooks run claude|pre-commit");
   const p = await project(values);
   // The hook finds the config it was installed with, even when --project named the config's directory and --root the product.
-  const target = { ...hookTarget(values), project: p.root, ...(p.configFile && p.configFile !== join(p.root, PROJECT_FILE) ? { config: p.configFile } : {}), ...(values.root ? { root: p.root } : {}) };
+  const target = { ...hookTarget(values), project: p.root, ...(p.configFile && p.configFile !== join(p.root, PROJECT_FILE) ? { config: p.configFile } : {}), ...(values.root !== undefined ? { root: p.root } : {}) };
   const all = !values.claude && !values.git && !values.ci;
   const results = [];
   if (values.claude || all) results.push({ kind: "Claude Code", ...(await installClaudeHook(await repoRootOf(p.root), hookCommand(TOOL_ROOT, "claude", target))) });

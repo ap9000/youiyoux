@@ -176,4 +176,10 @@ describe("hooks install", () => {
     expect(text).toContain(`ref: ${"b".repeat(40)}`);
     expect(text).toContain("check --baseline --format github --project . --design .youi-ci/design --config .youi-ci/design/pilots/acme-app/youi.project.json --root .");
   });
+
+  test("for a product at its repo root the CI workflow passes --root ., never an empty argument", () => {
+    const text = workflowText({ tool: { slug: "acme/youiyoux", commit: "a".repeat(40) }, design: { slug: "acme/acme-design", commit: "b".repeat(40) }, projectDir: "", configPath: ".youi-ci/design/pilots/acme-app/youi.project.json" });
+    expect(text).toContain("check --baseline --format github --project . --design .youi-ci/design --config .youi-ci/design/pilots/acme-app/youi.project.json --root .\n");
+    expect(text).not.toContain("''");
+  });
 });

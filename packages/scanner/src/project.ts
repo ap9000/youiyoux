@@ -43,11 +43,11 @@ export async function loadProject(root: string, options: LoadProjectOptions = {}
   const configFile = resolve(options.configPath ?? join(resolve(root), PROJECT_FILE));
   const config = normalizeProjectConfig(await readDefinition(configFile, ProjectConfig));
   const fromConfig = (path: string): string => resolve(dirname(configFile), path);
-  const productRoot = options.productRoot ? resolve(options.productRoot) : config.root ? fromConfig(config.root) : resolve(root);
+  const productRoot = options.productRoot !== undefined ? resolve(options.productRoot || ".") : config.root ? fromConfig(config.root) : resolve(root);
   if (!(await isDirectory(productRoot))) throw new ProjectRootError(`product root ${productRoot} is not a directory (config ${configFile}); ${ROOT_HINT}`);
   const designRoot = options.designRoot ? resolve(options.designRoot) : fromConfig(config.source.path);
   const repo = await loadDesignRepo(designRoot);
-  return { root: productRoot, config, repo, system: getSystem(repo, config.system), configFile, designOverride: Boolean(options.designRoot), rootOverride: Boolean(options.productRoot) };
+  return { root: productRoot, config, repo, system: getSystem(repo, config.system), configFile, designOverride: Boolean(options.designRoot), rootOverride: options.productRoot !== undefined };
 }
 
 async function isDirectory(path: string): Promise<boolean> {

@@ -148,7 +148,9 @@ export interface WorkflowInput {
 
 export function workflowText(input: WorkflowInput): string {
   // A config from elsewhere may name its product with "root"; in CI the product is this checkout, so --root says so.
-  const checkArgs = ["--baseline", "--format", "github", "--project", input.projectDir, "--design", ".youi-ci/design", ...(input.configPath ? ["--config", input.configPath, "--root", input.projectDir] : [])].map(shellQuote).join(" ");
+  // Never an empty argument: `--root ''` would read as unset, and the config's own root would win.
+  const dir = input.projectDir || ".";
+  const checkArgs = ["--baseline", "--format", "github", "--project", dir, "--design", ".youi-ci/design", ...(input.configPath ? ["--config", input.configPath, "--root", dir] : [])].map(shellQuote).join(" ");
   return `${WORKFLOW_HEADER}
 # The authoritative design-system check: it fails on violations the baseline does not
 # accept, annotates them on the PR's lines, and states the rules version (design commit

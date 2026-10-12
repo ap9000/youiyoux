@@ -1,6 +1,0 @@
-
-✓ 0 errors · 0 warnings
-  no youi.lock.json yet: generated-file and drift checks start after `youi sync`
-scanned 42 files at 3768e41c2195 in 393 ms · complete
-baseline /Users/alekseypelletier/.config/standing-orders/worktrees/youiyoux/toolroll-youi-real-world-e750ffce/.scratch/toolroll.baseline.json: 143 known violations accepted · 0 new · 0 regressed
-rules signal@1.0.0 · defs b5bd1a239a45 · design 86ab35b · project 3768e41+dirty
