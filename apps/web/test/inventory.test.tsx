@@ -257,6 +257,17 @@ describe("Inventory page: a family opened (c4)", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  test("closing the drawer gives focus back to the Open button that opened it", async () => {
+    const { container } = render(<InventoryView inventory={memorySource(inventory)} />);
+    const open = within(familyOf(container, "button-1")).getByRole("button", { name: /^Open / });
+    open.focus();
+    fireEvent.click(open);
+    const drawer = screen.getByRole("dialog", { name: "10 uses across 2 projects" });
+    fireEvent.keyDown(drawer, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(open));
+  });
+
   test("clicking anywhere on a tile opens it too", () => {
     const { container } = render(<InventoryView inventory={memorySource(inventory)} />);
     fireEvent.click(familyOf(container, "badge-2").querySelector("h3")!);

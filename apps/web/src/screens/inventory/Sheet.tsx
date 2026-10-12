@@ -7,7 +7,7 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { clsx } from "clsx";
 import { X } from "lucide-react";
-import { useRef, useState, useSyncExternalStore, type PointerEvent, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, useSyncExternalStore, type PointerEvent, type ReactNode } from "react";
 import { shouldDismiss } from "../../data/inventory-view.ts";
 
 const WIDE = "(min-width: 768px)";
@@ -45,6 +45,12 @@ export function Sheet({ open, onOpenChange, variant, title, description, childre
   const [offset, setOffset] = useState(0);
   const [settling, setSettling] = useState(false);
   const sheet = variant === "sheet";
+  // The element that opened the sheet. The sheet is controlled (no Dialog.Trigger), so Radix has
+  // nothing to return focus to; remember the opener and give focus back to it on close.
+  const opener = useRef<HTMLElement | null>(null);
+  useLayoutEffect(() => {
+    if (open && document.activeElement instanceof HTMLElement && document.activeElement !== document.body) opener.current = document.activeElement;
+  }, [open]);
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>): void => {
     if (!sheet || (event.pointerType === "mouse" && event.button !== 0)) return;
@@ -89,6 +95,14 @@ export function Sheet({ open, onOpenChange, variant, title, description, childre
           )}
           style={offset > 0 || settling ? { transform: `translate3d(0, ${offset}px, 0)` } : undefined}
           onTransitionEnd={() => setSettling(false)}
+          onCloseAutoFocus={(event) => {
+            const target = opener.current;
+            opener.current = null;
+            if (target?.isConnected) {
+              event.preventDefault();
+              target.focus();
+            }
+          }}
         >
           <div className={clsx("shrink-0 border-b border-line", sheet && "touch-none select-none")} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} data-testid={sheet ? "sheet-handle" : undefined}>
             {sheet && <div aria-hidden className="mx-auto mt-2 h-1 w-9 rounded-full bg-line-strong" />}
