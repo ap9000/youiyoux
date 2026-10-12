@@ -79,8 +79,15 @@ export interface ScreenIndex {
   readonly byHref: ReadonlyMap<string, Screen>;
   /** Issues in files the usage map puts on no screen. */
   readonly unattributed: IssueCounts;
+  readonly unattributedFiles: readonly UnattributedFile[];
   /** Capture details per project, when its screens were captured. */
   readonly shots: ReadonlyMap<string, ProjectShots>;
+}
+
+export interface UnattributedFile {
+  readonly project: string;
+  readonly file: string;
+  readonly reason: string;
 }
 
 const routeRank = (route: string): number => (route === EVERY_SCREEN ? 0 : route === UNROUTED ? 2 : 1);
@@ -114,20 +121,13 @@ class ScreenDraft {
   }
 }
 
-/** File → the routes its element sites reach. */
-function fileRoutes(sites: readonly Site[]): Map<string, Set<string>> {
-  const files = new Map<string, Set<string>>();
-  for (const site of sites) {
-    const routes = files.get(site.file) ?? new Set<string>();
-    for (const route of routesOfSite(site)) routes.add(route);
-    files.set(site.file, routes);
-  }
-  return files;
-}
-
 /** One project's screens, plus what could not be placed on any of them. */
-function projectScreens(report: ScanReport, sites: readonly Site[], shots: ProjectShots | undefined): { screens: Screen[]; unattributed: IssueCounts } {
+function projectScreens(report: ScanReport, sites: readonly Site[], shots: ProjectShots | undefined): { screens: Screen[]; unattributed: IssueCounts; unattributedFiles: UnattributedFile[] } {
   const { project } = report;
+  const unattributedFiles = new Map<string, UnattributedFile>();
+  const unplaced = (file: string, reason?: string): void => {
+    unattributedFiles.set(file, { project, file, reason: report.fileRoutes?.[file]?.routeReason ?? reason ?? "This scan has no route information for this file. Scan the project again." });
+  };
   const drafts = new Map<string, ScreenDraft>();
   const draft = (route: string): ScreenDraft => {
     const existing = drafts.get(route);
@@ -138,6 +138,7 @@ function projectScreens(report: ScanReport, sites: readonly Site[], shots: Proje
   };
 
   for (const site of sites) {
+    if (site.routes.length === 0) unplaced(site.file, site.routeReason);
     for (const route of routesOfSite(site)) {
       const d = draft(route);
       d.sites++;
@@ -145,19 +146,22 @@ function projectScreens(report: ScanReport, sites: readonly Site[], shots: Proje
     }
   }
 
-  const files = fileRoutes(sites);
   const lost = { violations: [] as ProjectViolation[], lookalikes: [] as ProjectLookalike[], unresolved: [] as ProjectUnknown[] };
   for (const violation of report.violations) {
     const entry = { ...violation, project };
-    const routes = files.get(violation.file);
-    if (!routes) lost.violations.push(entry);
-    else for (const route of routes) draft(route).violations.push(entry);
+    const routes = report.fileRoutes?.[violation.file]?.routes ?? violation.routes;
+    if (!routes?.length) {
+      lost.violations.push(entry);
+      unplaced(violation.file, violation.routeReason);
+    } else for (const route of routes) draft(route).violations.push(entry);
   }
   for (const lookalike of report.lookalikes) {
     const entry = { ...lookalike, project };
-    const routes = files.get(lookalike.file);
-    if (!routes) lost.lookalikes.push(entry);
-    else
+    const routes = report.fileRoutes?.[lookalike.file]?.routes ?? lookalike.routes;
+    if (!routes?.length) {
+      lost.lookalikes.push(entry);
+      unplaced(lookalike.file, lookalike.routeReason);
+    } else
       for (const route of routes) {
         draft(route).lookalikes.push(entry);
         draft(route).element(lookalike.resembles).lookalikes.push(entry);
@@ -165,9 +169,11 @@ function projectScreens(report: ScanReport, sites: readonly Site[], shots: Proje
   }
   for (const unknown of report.unknowns) {
     const entry = { ...unknown, project };
-    const routes = files.get(unknown.file);
-    if (!routes) lost.unresolved.push(entry);
-    else
+    const routes = report.fileRoutes?.[unknown.file]?.routes ?? unknown.routes;
+    if (!routes?.length) {
+      lost.unresolved.push(entry);
+      unplaced(unknown.file, unknown.routeReason);
+    } else
       for (const route of routes) {
         draft(route).unresolved.push(entry);
         if (unknown.candidate) draft(route).element(unknown.candidate).unresolved.push(entry);
@@ -188,7 +194,7 @@ function projectScreens(report: ScanReport, sites: readonly Site[], shots: Proje
       issues: countIssues(d.violations, d.lookalikes, d.unresolved),
       shot: shots?.screens.find((s) => s.route === route) ?? null,
     }));
-  return { screens, unattributed: countIssues(lost.violations, lost.lookalikes, lost.unresolved) };
+  return { screens, unattributed: countIssues(lost.violations, lost.lookalikes, lost.unresolved), unattributedFiles: [...unattributedFiles.values()].sort((a, b) => a.file.localeCompare(b.file)) };
 }
 
 /** Every screen of every project, by project, app shell first, then routes by name. */
@@ -209,6 +215,7 @@ export function buildScreens(index: UsageIndex, manifest: Manifest): ScreenIndex
     screens,
     byHref: new Map(screens.map((s) => [screenHref(s.project, s.route), s])),
     unattributed: built.reduce((sum, b) => addIssues(sum, b.unattributed), NO_ISSUES),
+    unattributedFiles: built.flatMap((b) => b.unattributedFiles),
     shots,
   };
 }

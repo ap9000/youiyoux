@@ -238,7 +238,20 @@ export type PropValue = z.infer<typeof PropValue>;
 
 export const Position = z.object({ file: z.string(), line: z.number().int().positive(), column: z.number().int().positive() });
 
-export const UsageSite = Position.extend({
+export const RouteAttribution = z.object({
+  routes: z.array(z.string()),
+  /** The file is a route, is reached through imports, wraps routes, or has no known route. */
+  routeSource: z.enum(["route-file", "imported-by", "shell", "unrouted"]),
+  via: z.string().optional(),
+  /** Why the file could not be placed on a screen. */
+  routeReason: z.string().min(1).optional(),
+});
+export type RouteAttribution = z.infer<typeof RouteAttribution>;
+
+// Older usage maps and checks run without a project have no route attribution.
+const FindingPosition = Position.extend(RouteAttribution.partial().shape);
+
+export const UsageSite = Position.extend(RouteAttribution.shape).extend({
   element: ElementId,
   /** render: `<Button>`; variants: `buttonVariants()` applied elsewhere; reference: passed as a value. */
   kind: z.enum(["render", "variants", "reference"]),
@@ -247,15 +260,11 @@ export const UsageSite = Position.extend({
   local: z.string(),
   props: z.record(z.string(), PropValue).default({}),
   spread: z.boolean().default(false),
-  routes: z.array(z.string()),
-  /** How the routes were attributed: the file is a route, or reaches one through imports, or neither. */
-  routeSource: z.enum(["route-file", "imported-by", "shell", "unrouted"]),
-  via: z.string().optional(),
   fingerprint: z.string(),
 });
 export type UsageSite = z.infer<typeof UsageSite>;
 
-export const UnknownSite = Position.extend({
+export const UnknownSite = FindingPosition.extend({
   name: z.string(),
   reason: z.enum(["unresolved-import", "external-module", "dynamic-component", "namespace-member", "parse-error", "unresolved-export"]),
   detail: z.string(),
@@ -264,7 +273,7 @@ export const UnknownSite = Position.extend({
 });
 export type UnknownSite = z.infer<typeof UnknownSite>;
 
-export const Lookalike = Position.extend({
+export const Lookalike = FindingPosition.extend({
   /** The design-system element whose name this shares. */
   resembles: ElementId,
   local: z.string(),
@@ -272,7 +281,7 @@ export const Lookalike = Position.extend({
 });
 export type Lookalike = z.infer<typeof Lookalike>;
 
-export const Violation = Position.extend({
+export const Violation = FindingPosition.extend({
   rule: ElementId,
   severity: z.enum(["error", "warn"]),
   message: z.string(),
@@ -323,6 +332,8 @@ export const ScanReport = z.object({
     failed: z.array(z.object({ file: z.string(), reason: z.string() })),
   }),
   usages: z.array(UsageSite),
+  /** Every scanned file, including files with no element sites. Absent in older usage maps. */
+  fileRoutes: z.record(z.string(), RouteAttribution).optional(),
   unknowns: z.array(UnknownSite),
   /** Violations silenced by a `youi-ignore` comment (counted so silence stays visible). */
   suppressed: z.number().int().default(0),

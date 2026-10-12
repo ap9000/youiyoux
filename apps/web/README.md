@@ -70,7 +70,16 @@ node scripts/capture-screens.ts --dir ~/src/acme-app/.youi/screens --base http:/
 youi ui --project ~/src/acme-app        # or: pnpm data --project ~/src/acme-app --out .hub
 ```
 
-Issues reach a screen through files: a violation, lookalike or unresolved site counts on every route its file's element sites reach. Issues in files that render no element (shared helpers, stylesheets) are reported as not on any screen rather than guessed.
+Issues reach a screen through the scanner's file-to-route map, even when a file renders no system element. A violation, lookalike or unresolved site counts on every route that reaches its file through scanned imports. Files with no known route appear under **Not on any screen**, with a reason. Older snapshots need a new scan to place their issues.
+
+| Project routes config | How files reach screens |
+| --- | --- |
+| `expo-router` | Route files under `appDir`, their layouts and imported files |
+| `map` | Files matched by each map entry and their imported files |
+| `shell` | Matching files and their imports belong to the app shell (`*`) |
+| `none` | No routes inferred; explicit shell entries still apply |
+
+The usage map saves `fileRoutes` for every scanned file and route details on each finding. Static imports (including stylesheets) and re-exports are followed within the scan's include/exclude set; type-only imports are left out. Focused scans explain that routes were not checked.
 
 ## Preview deploys
 

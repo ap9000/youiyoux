@@ -107,7 +107,7 @@ export async function scanProject(project: Project, options: ScanOptions = {}): 
   const graph = new ModuleGraph(project.root, resolver, modules, new Map(Object.entries(overrides)), parse);
   const elements = buildElementIndex(project);
   const tokens = buildTokenIndex(build.tokens, project.config.outputs);
-  const routes = focus ? new RouteIndex() : RouteIndex.build(graph, modules, project.config.routes);
+  const routes = focus ? new RouteIndex("Routes are not checked in a focused scan. Run a full scan to place this file.") : RouteIndex.build(graph, modules, project.config.routes);
 
   const scanned = new Map<string, ModuleInfo>();
   for (const file of files) {
@@ -123,8 +123,8 @@ export async function scanProject(project: Project, options: ScanOptions = {}): 
   const lookalikes: Lookalike[] = [];
   for (const analysis of analyses.values()) {
     for (const usage of analysis.usages) usages.push({ ...usage, ...routes.of(usage.file) });
-    unknowns.push(...analysis.unknowns);
-    lookalikes.push(...analysis.lookalikes);
+    for (const unknown of analysis.unknowns) unknowns.push({ ...unknown, ...routes.of(unknown.file) });
+    for (const lookalike of analysis.lookalikes) lookalikes.push({ ...lookalike, ...routes.of(lookalike.file) });
   }
   const { violations, suppressed, checks } = runChecks(checkInputFor(project, { modules: scanned, analyses, elements, tokens }, project.system.rules));
 
@@ -143,9 +143,10 @@ export async function scanProject(project: Project, options: ScanOptions = {}): 
     status: failed.length > 0 || failedChecks(checks).length > 0 ? "partial" : "complete",
     coverage: { filesMatched: files.length, filesScanned: scanned.size, failed: failed.sort((a, b) => a.file.localeCompare(b.file)) },
     usages: usages.sort(byPosition),
+    fileRoutes: Object.fromEntries(files.map((file) => [file, routes.of(file)])),
     unknowns: unknowns.sort(byPosition),
     lookalikes: lookalikes.sort(byPosition),
-    violations: (violations as Violation[]).sort(byPosition),
+    violations: violations.map((violation): Violation => ({ ...violation, ...routes.of(violation.file) })).sort(byPosition),
     suppressed,
     checks,
   };

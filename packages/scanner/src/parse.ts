@@ -34,6 +34,8 @@ export interface ModuleInfo {
   readonly source: string;
   readonly root: SgRoot;
   readonly imports: readonly ImportBinding[];
+  /** Static imports and re-exports that can run, including side-effect imports; no type-only edges. */
+  readonly runtimeSpecifiers: readonly string[];
   readonly exports: readonly ExportEntry[];
   /** `export * from "…"` specifiers, in order. */
   readonly starExports: readonly string[];
@@ -86,6 +88,21 @@ function importsOf(root: SgNode): ImportBinding[] {
     }
   }
   return bindings;
+}
+
+function runtimeSpecifiersOf(root: SgNode): string[] {
+  const specifiers = new Set<string>();
+  for (const statement of root.children()) {
+    if (statement.kind() !== "import_statement" && statement.kind() !== "export_statement") continue;
+    const source = statement.field("source");
+    if (!source || /^(?:import|export)\s+type\b/.test(statement.text())) continue;
+    const bindings = statement.findAll({ rule: { any: [{ kind: "import_specifier" }, { kind: "export_specifier" }] } });
+    const clause = statement.find({ rule: { kind: "import_clause" } });
+    const hasDefault = clause?.children().some((c) => c.kind() === "identifier");
+    if (!hasDefault && bindings.length > 0 && bindings.every((b) => /^type\s/.test(b.text()))) continue;
+    specifiers.add(unquote(source.text()));
+  }
+  return [...specifiers];
 }
 
 function declaredNames(node: SgNode): string[] {
@@ -164,7 +181,7 @@ export async function parseModule(file: string, source: string): Promise<ModuleI
     // Stylesheets are read by youi's custom-property reader (tokens/css.ts); tree-sitter-css
     // rejects Tailwind at-rules (@theme, @custom-variant), so its errors say nothing here.
     const parseErrors = 0;
-    return { file, lang, source, root, imports: [], exports: [], starExports: [], declarations: new Set(), jsx: [], parseErrors };
+    return { file, lang, source, root, imports: [], runtimeSpecifiers: [], exports: [], starExports: [], declarations: new Set(), jsx: [], parseErrors };
   }
   const parseErrors = top.findAll({ rule: { kind: "ERROR" } }).length;
   const { exports, starExports } = exportsOf(top);
@@ -174,6 +191,7 @@ export async function parseModule(file: string, source: string): Promise<ModuleI
     source,
     root,
     imports: importsOf(top),
+    runtimeSpecifiers: runtimeSpecifiersOf(top),
     exports,
     starExports,
     declarations: topLevelDeclarations(top),

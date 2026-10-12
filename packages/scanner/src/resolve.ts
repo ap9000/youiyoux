@@ -67,8 +67,15 @@ export class ModuleResolver {
     if (hit) return hit;
     const result = this.ts.resolveModuleName(specifier, fromFile, this.options, this.ts.sys, this.cache).resolvedModule;
     let resolution: ModuleResolution;
+    // TypeScript does not resolve plain CSS files. Let its own alias/path resolution
+    // probe a virtual .css.ts file, then return the existing stylesheet it stands for.
+    const css = !result && specifier.endsWith(".css") ? this.ts.resolveModuleName(specifier, fromFile, this.options, {
+      ...this.ts.sys,
+      fileExists: (file) => file.endsWith(".css.ts") && this.ts.sys.fileExists(file.slice(0, -3)),
+    }).resolvedModule : undefined;
     // Relative paths and project aliases (@/x, ~/x, #x) that do not resolve are unknown, never "external".
-    if (!result) resolution = /^(?:[./]|@\/|~\/|#)/.test(specifier) ? { kind: "unresolved", specifier } : { kind: "external", module: specifier };
+    if (css && !css.isExternalLibraryImport && !css.resolvedFileName.includes("/node_modules/")) resolution = { kind: "file", file: css.resolvedFileName.slice(0, -3) };
+    else if (!result) resolution = /^(?:[./]|@\/|~\/|#)/.test(specifier) ? { kind: "unresolved", specifier } : { kind: "external", module: specifier };
     else if (result.isExternalLibraryImport || result.resolvedFileName.includes("/node_modules/")) resolution = { kind: "external", module: specifier };
     else resolution = { kind: "file", file: result.resolvedFileName };
     this.memo.set(key, resolution);

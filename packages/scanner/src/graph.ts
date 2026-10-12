@@ -63,8 +63,8 @@ export class ModuleGraph {
   }
 
   /** Project files this module depends on (imports, re-exports, `export *`). */
-  dependencies(module: ModuleInfo): string[] {
-    const specifiers = new Set([...module.imports.map((i) => i.specifier), ...module.starExports, ...module.exports.flatMap((e) => (e.kind === "reexport" ? [e.specifier] : []))]);
+  dependencies(module: ModuleInfo, options: { runtimeOnly?: boolean } = {}): string[] {
+    const specifiers = new Set(options.runtimeOnly ? module.runtimeSpecifiers : [...module.runtimeSpecifiers, ...module.imports.map((i) => i.specifier), ...module.starExports, ...module.exports.flatMap((e) => (e.kind === "reexport" ? [e.specifier] : []))]);
     const files = new Set<string>();
     for (const specifier of specifiers) {
       const resolved = this.resolveSpecifier(specifier, module.file);

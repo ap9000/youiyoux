@@ -4,11 +4,11 @@
  * route file reaches it through imports; otherwise it is `unrouted`, which a
  * reader sees, rather than a guess.
  */
-import { matchesAny, type RouteConfig, type UsageSite } from "@youiyoux/core";
+import { matchesAny, type RouteAttribution, type RouteConfig } from "@youiyoux/core";
 import type { ModuleGraph } from "./graph.ts";
 import type { ModuleInfo } from "./parse.ts";
 
-export type RouteAttribution = Pick<UsageSite, "routes" | "routeSource" | "via">;
+export type { RouteAttribution } from "@youiyoux/core";
 
 const SHELL_ROUTE = "*";
 
@@ -54,10 +54,16 @@ function routeEntries(files: readonly string[], config: RouteConfig): Map<string
 
 export class RouteIndex {
   private readonly attribution = new Map<string, RouteAttribution>();
+  private readonly unroutedReason: string;
+
+  constructor(unroutedReason = "No route or app shell reaches this file through scanned imports.") {
+    this.unroutedReason = unroutedReason;
+  }
 
   static build(graph: ModuleGraph, modules: ReadonlyMap<string, ModuleInfo | null>, config: RouteConfig): RouteIndex {
-    const index = new RouteIndex();
-    if (config.strategy === "none" && config.shell.length === 0) return index;
+    const disabled = config.strategy === "none" && config.shell.length === 0;
+    const index = disabled ? new RouteIndex("Route mapping is disabled in the project config.") : new RouteIndex();
+    if (disabled) return index;
     // Sorted: the map fills in parse-completion order, and route lists must not depend on it.
     const files = [...modules.keys()].sort();
     const scanned = new Set(files);
@@ -73,21 +79,21 @@ export class RouteIndex {
         const file = stack.pop()!;
         if (visited.has(file)) continue;
         visited.add(file);
-        if (file !== entryFile && entries.has(file) && !entries.get(file)!.shell) continue;
+        if (entry.shell && file !== entryFile && entries.has(file) && !entries.get(file)!.shell) continue;
         if (file !== entryFile) {
           const record = reached.get(file) ?? { routes: new Set<string>(), via: entryFile, shellOnly: true };
           for (const route of entry.routes) record.routes.add(route);
           if (!entry.shell) record.shellOnly = false;
           reached.set(file, record);
         }
-        // Stay inside the scanned set: screens are made of scanned files, and walking into the
-        // rest of the codebase (server modules a view imports types from) costs parses, not facts.
+        // Keep route attribution within the configured scan boundary, even when symbol
+        // resolution later loads other files on demand.
         const module = scanned.has(file) ? modules.get(file) : null;
-        if (module) stack.push(...graph.dependencies(module));
+        if (module) stack.push(...graph.dependencies(module, { runtimeOnly: true }));
       }
     }
     for (const [file, entry] of entries) {
-      index.attribution.set(file, { routes: [...entry.routes], routeSource: entry.shell ? "shell" : "route-file" });
+      index.attribution.set(file, { routes: [...new Set([...entry.routes, ...(reached.get(file)?.routes ?? [])])].sort(), routeSource: entry.shell ? "shell" : "route-file" });
     }
     for (const [file, record] of reached) {
       if (index.attribution.has(file)) continue;
@@ -97,6 +103,6 @@ export class RouteIndex {
   }
 
   of(file: string): RouteAttribution {
-    return this.attribution.get(file) ?? { routes: [], routeSource: "unrouted" };
+    return this.attribution.get(file) ?? { routes: [], routeSource: "unrouted", routeReason: this.unroutedReason };
   }
 }
