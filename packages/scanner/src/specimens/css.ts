@@ -1,9 +1,12 @@
 /**
  * A project's real CSS for its specimens, built the way its own pages get it. The stylesheets a
  * page loads, in page order (findStylesheets): an explicit `specimens.css` list in
- * youi.project.json when there is one; else the `<link rel="stylesheet">`s of its index.html,
- * other HTML and server templates (a link to a Tailwind CLI output maps back to the entry the CLI
- * builds), then what its layouts and components import, then any Tailwind entry nothing imports.
+ * youi.project.json (or in a config kept outside the product) when there is one; else the sheets
+ * its server or source code reads and inlines (`readFileSync`, `readFile`, `new URL(…,
+ * import.meta.url)`, `?raw` and `?inline` imports: tokens a server puts in a `<style>` come
+ * first), then the `<link rel="stylesheet">`s of its index.html, other HTML and server templates
+ * (a link to a Tailwind CLI output maps back to the entry the CLI builds), then what its layouts
+ * and components import, then any Tailwind entry nothing imports.
  * Each Tailwind v4 entry is compiled with the project's own installed Tailwind (`@tailwindcss/node`
  * compile, candidates from the oxide Scanner over its sources, then optimize, as
  * `@tailwindcss/vite` does) in a worker that is stopped after a timeout; fonts it loads from
@@ -49,6 +52,8 @@ export interface CssOptions {
   readonly tsconfig?: string;
   /** youi.project.json `specimens.css`: exactly these sheets, in this order. */
   readonly override?: readonly string[] | null;
+  /** Where the override comes from, for a reader: youi.project.json, or a config kept outside the product. */
+  readonly overrideFrom?: string;
   /** HTML and server templates (index.html first), project-relative. */
   readonly templates?: readonly string[];
   /** How long one Tailwind compile and scan may take. */
@@ -62,7 +67,16 @@ export const limitOf = (ms: number): string => (ms >= 1000 && ms % 1000 === 0 ? 
 
 /** A Tailwind entry: v4's `@import "tailwindcss"` (or its layers), v3's `@tailwind` directives. */
 const TAILWIND_ENTRY = /@import\s+(?:url\()?["']tailwindcss(?:\/[\w.-]+)?["']|@tailwind\s+(?:base|components|utilities)\b/;
-const CSS_IMPORT = /^\s*import\s+(?:[\w*{}\s,]+\s+from\s+)?["']([^"']+\.css)(?:\?[^"']*)?["']/gm;
+/** A module's CSS import; `?raw` and `?inline` ones are read as text (SOURCE_READ), not applied. */
+const CSS_IMPORT = /^\s*import\s+(?:[\w*{}\s,]+\s+from\s+)?["']([^"']+\.css)(?:\?(?!(?:raw|inline)\b)[^"']*)?["']/gm;
+/**
+ * Code that reads a stylesheet as text, to inline it: a `readFileSync(`/`readFile(` call (fs,
+ * fs/promises, fs.promises), `new URL("./x.css", import.meta.url)`, and `?raw`/`?inline` imports.
+ */
+const SOURCE_READ = /\b(readFileSync|readFile)\s*\(|\bnew\s+URL\s*\(\s*(["'`])([^"'`$]+?\.css)(?:\?[^"'`]*)?\2\s*,\s*import\.meta\.url\s*\)|(?:^\s*import\s+[\w*{}\s,]+\s+from\s*|\bimport\s*\(\s*)["']([^"']+\.css)\?(raw|inline)\b[^"']*["']/gm;
+/** An argument resolved from the module's own directory, not the working directory (the project root). */
+const FILE_RELATIVE = /__dirname|import\.meta\.(?:dirname|url)|fileURLToPath/;
+const STRING = /(["'`])((?:(?!\1)[^\\\n]|\\.)*)\1/g;
 const AT_IMPORT = /@import\s+(?:url\(\s*)?["']([^"']+)["']\s*\)?\s*([^;]*);/g;
 const LINK = /<link\b[^>]*>/gi;
 /** Files that set up every page: Next.js and Expo layouts, Astro layouts, app entry points. */
@@ -170,6 +184,71 @@ function importedSheets(root: string, files: readonly string[], tsconfig: string
   return found;
 }
 
+/** The first argument of the call whose `(` is just before `from` (or a declaration's value): up to its top-level `,`, `)` or `;`, strings skipped. */
+function firstArgument(source: string, from: number): string {
+  let depth = 0;
+  for (let i = from; i < source.length; i++) {
+    const c = source[i]!;
+    if (c === '"' || c === "'" || c === "`") {
+      for (i++; i < source.length && source[i] !== c; i++) if (source[i] === "\\") i++;
+    } else if (c === "(" || c === "[" || c === "{") depth++;
+    else if ((c === ")" || c === "]" || c === "}") && depth > 0) depth--;
+    else if ((c === ")" || c === "," || c === ";") && depth === 0) return source.slice(from, i);
+  }
+  return "";
+}
+
+/**
+ * The path a read call's argument names, joined from its string literals (`join(root, "src",
+ * "x.css")`, a template's text after its last `${…}`); a bare identifier is followed to its
+ * `const`. Null unless it ends in `.css`.
+ */
+function readPath(source: string, argument: string): { path: string; fileRelative: boolean } | null {
+  let expression = argument.trim();
+  const named = /^[A-Za-z_$][\w$]*$/.test(expression) ? new RegExp(`\\b(?:const|let|var)\\s+${expression.replace(/\$/g, "\\$")}\\s*=\\s*`).exec(source) : null;
+  if (named) expression = firstArgument(source, named.index + named[0].length);
+  const pieces = [...expression.matchAll(STRING)].map(([, quote, text]) => (quote === "`" && text!.includes("${") ? text!.slice(text!.lastIndexOf("}") + 1).replace(/^\/+/, "") : text!)).filter(Boolean);
+  const path = pieces.length > 0 ? posix.join(...pieces).replace(/[?#].*$/, "") : "";
+  return path.endsWith(".css") ? { path, fileRelative: FILE_RELATIVE.test(expression) } : null;
+}
+
+/**
+ * The stylesheets server or source code reads as text to inline them (a server's `<style>` of
+ * design tokens, a `?raw` import), in module order then source order. A path is taken from the
+ * module's directory when the code says so (`__dirname`, `import.meta.url`, a relative import),
+ * else from the working directory, the project root; the other is the fallback. Only files whose
+ * real path is inside the root.
+ */
+function sourceReadSheets(root: string, files: readonly string[], warnings: string[]): Found[] {
+  const found: Found[] = [];
+  for (const file of files.filter((f) => MODULE.test(f)).sort()) {
+    const source = readInside(root, file);
+    if (source === null || !/readFile|import\.meta\.url|\.css\?(?:raw|inline)/.test(source)) continue;
+    for (const match of source.matchAll(SOURCE_READ)) {
+      const [, call, , urlPath, importPath, query] = match;
+      const read = call ? readPath(source, firstArgument(source, match.index + match[0].length)) : { path: (urlPath ?? importPath)!, fileRelative: true };
+      if (!read) continue;
+      const via = call ? `${call} in ${file}` : urlPath ? `new URL in ${file}` : `?${query} import in ${file}`;
+      const fromFile = posix.join(posix.dirname(file), read.path);
+      const candidates = read.path.startsWith("/") ? [read.path] : read.fileRelative ? [fromFile, read.path] : [read.path, fromFile];
+      let refused: string | null = null;
+      let sheet: string | null = null;
+      for (const candidate of candidates) {
+        const inside = relativeInside(root, candidate);
+        if ("refused" in inside) refused ??= inside.refused;
+        else if (isFile(join(root, inside.ok))) {
+          sheet = inside.ok;
+          break;
+        }
+      }
+      if (sheet !== null) {
+        if (!found.some((f) => realOf(f.path) === realOf(join(root, sheet)))) found.push({ path: join(root, sheet), sheet, via });
+      } else if (refused !== null) warnings.push(`${file}: refused ${call ?? (urlPath ? "new URL" : `?${query} import`)} of "${read.path}": ${refused}`);
+    }
+  }
+  return found;
+}
+
 /** The stylesheets modules import, in page order, project-relative (see importedSheets). */
 export function pageStylesheets(root: string, files: readonly string[], tsconfig = "tsconfig.json", warnings: string[] = []): string[] {
   return importedSheets(root, files, tsconfig, warnings).map((f) => f.sheet);
@@ -245,8 +324,10 @@ const isTailwindEntry = (path: string): boolean => {
 
 /**
  * The stylesheets a page loads, in page order, and how it gets each. With an override, exactly
- * that list. Else: links in index.html, then other HTML and templates, then template strings in
- * modules; then module imports (importedSheets); then Tailwind entries nothing links or imports.
+ * that list. Else: sheets server or source code reads and inlines (sourceReadSheets), ahead of
+ * the Tailwind output so the tokens it uses are defined; then links in index.html, then other
+ * HTML and templates, then template strings in modules; then module imports (importedSheets);
+ * then Tailwind entries nothing links or imports.
  * Remote links are kept as `@import url()`s.
  */
 export function findStylesheets(root: string, files: readonly string[], options: CssOptions = {}): { found: Found[]; remote: string[]; warnings: string[] } {
@@ -257,14 +338,16 @@ export function findStylesheets(root: string, files: readonly string[], options:
     if (!found.some((f) => realOf(f.path) === realOf(sheet.path))) found.push(sheet);
   };
   if (options.override) {
+    const from = options.overrideFrom ?? "youi.project.json";
     for (const entry of options.override) {
       const inside = relativeInside(root, entry);
-      if ("refused" in inside) warnings.push(`youi.project.json specimens.css: refused ${inside.refused}`);
-      else if (!isFile(join(root, inside.ok))) warnings.push(`youi.project.json specimens.css: ${entry} does not exist`);
-      else add({ path: join(root, inside.ok), sheet: inside.ok, via: "specimens.css in youi.project.json" });
+      if ("refused" in inside) warnings.push(`${from} specimens.css: refused ${inside.refused}`);
+      else if (!isFile(join(root, inside.ok))) warnings.push(`${from} specimens.css: ${entry} does not exist`);
+      else add({ path: join(root, inside.ok), sheet: inside.ok, via: `specimens.css in ${from}` });
     }
     return { found, remote, warnings };
   }
+  for (const sheet of sourceReadSheets(root, files, warnings)) add(sheet);
   const builds = tailwindCliBuilds(root);
   const sheetsInProject = files.filter((f) => f.endsWith(".css"));
   const entries = sheetsInProject.filter((f) => "ok" in relativeInside(root, f) && isTailwindEntry(join(root, f)));
@@ -449,7 +532,7 @@ export function describeSources(sources: readonly SheetSource[], tailwindVersion
 export async function buildProjectCss(root: string, files: readonly string[], stats: SpecimenStats, options: CssOptions = {}): Promise<ProjectCss & { fonts: string[]; tailwindVersion: string | null }> {
   const { found, remote, warnings } = findStylesheets(root, files, options);
   const sheets = found.map((f) => f.sheet);
-  if (found.length === 0) return { light: null, dark: null, warnings: [...warnings, "no stylesheet a page loads: none is linked from HTML, imported by a module, or a Tailwind entry"], sheets, sources: [], tailwind: "not needed", fonts: [], tailwindVersion: null };
+  if (found.length === 0) return { light: null, dark: null, warnings: [...warnings, "no stylesheet a page loads: none is read by its code, linked from HTML, imported by a module, or a Tailwind entry"], sheets, sources: [], tailwind: "not needed", fonts: [], tailwindVersion: null };
   const needsTailwind = found.some((s) => isTailwindEntry(s.path));
   const tailwind = needsTailwind ? projectTailwind(root) : null;
   if (tailwind && !tailwind.node) warnings.push(tailwind.note);

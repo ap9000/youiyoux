@@ -4,13 +4,14 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { InventoryReport } from "@youiyoux/core";
-import { buildInventory, buildProjectCss, defaultCacheDir, escapingLinks, forScheme, loadInventoryTarget, markupOf, newStats, pageStylesheets, projectSpecimens, projectTailwind, relativeInside, SpecimenCache, stylesheetLinks, tailwindCliBuilds, within, type ProjectSpecimens } from "../src/index.ts";
+import { buildInventory, buildProjectCss, defaultCacheDir, escapingLinks, findStylesheets, forScheme, loadInventoryTarget, markupOf, newStats, pageStylesheets, projectSpecimens, projectTailwind, relativeInside, SpecimenCache, stylesheetLinks, tailwindCliBuilds, within, type ProjectSpecimens } from "../src/index.ts";
 import { renderComponents, type ComponentRecipe } from "../src/specimens/render.ts";
 
 const FIXTURES = join(import.meta.dirname, "fixtures/inventory");
 const CONSOLE = join(FIXTURES, "console");
 const SITE = join(FIXTURES, "site");
 const WIDGETS = join(FIXTURES, "widgets");
+const SERVED = join(FIXTURES, "served");
 const SCANNER_MODULES = join(import.meta.dirname, "../node_modules");
 
 /** Every file under a directory: path, size, mtime and content hash; a symlink by its target (not followed). */
@@ -46,14 +47,15 @@ const specimenOf = (project: string, file: string, line: number): string => {
 };
 
 beforeAll(async () => {
-  for (const root of [CONSOLE, SITE, WIDGETS]) digests.set(root, treeDigest(root).join("\n"));
-  report = InventoryReport.parse(await buildInventory([CONSOLE, SITE, WIDGETS], { cwd: FIXTURES }));
+  for (const root of [CONSOLE, SITE, WIDGETS, SERVED]) digests.set(root, treeDigest(root).join("\n"));
+  report = InventoryReport.parse(await buildInventory([CONSOLE, SITE, WIDGETS, SERVED], { cwd: FIXTURES }));
   cacheDir = mkdtempSync(join(tmpdir(), "youi-specimens-"));
   const cache = new SpecimenCache(cacheDir);
   built.set("console", await projectSpecimens(projectOf("console", CONSOLE), { cache }));
   built.set("site", await projectSpecimens(projectOf("site", SITE), { cache }));
   built.set("widgets", await projectSpecimens(projectOf("widgets", WIDGETS), { cache }));
-}, 60_000);
+  built.set("served", await projectSpecimens(projectOf("served", SERVED), { cache }));
+}, 90_000);
 
 afterAll(() => rmSync(cacheDir, { recursive: true, force: true }));
 
@@ -204,7 +206,7 @@ describe("specimen cache and the read-only guarantee (c2)", () => {
     try {
       writeFileSync(join(empty, "a.tsx"), "export const A = () => <button className=\"x\">a</button>;\n");
       const css = await buildProjectCss(empty, ["a.tsx"], newStats());
-      expect(css).toMatchObject({ light: null, dark: null, warnings: ["no stylesheet a page loads: none is linked from HTML, imported by a module, or a Tailwind entry"] });
+      expect(css).toMatchObject({ light: null, dark: null, warnings: ["no stylesheet a page loads: none is read by its code, linked from HTML, imported by a module, or a Tailwind entry"] });
     } finally {
       rmSync(empty, { recursive: true, force: true });
     }
@@ -280,6 +282,82 @@ describe("stylesheets the way the page gets them (c6)", () => {
     } finally {
       rmSync(copy, { recursive: true, force: true });
     }
+  });
+});
+
+describe("stylesheets server or source code reads and inlines", () => {
+  test("a console whose tokens only its server reads: they come first, ahead of the CLI-built Tailwind output", () => {
+    const served = built.get("served")!;
+    expect(served.sources).toEqual([
+      { sheet: "src/design/tokens.css", via: "readFileSync in src/server/chrome.ts", as: "plain" },
+      { sheet: "src/browser/ui.css", via: "readFile in src/server/chrome.ts", as: "plain" },
+      { sheet: "src/browser/tailwind.css", via: 'link /assets/tailwind.css in src/server/chrome.ts, built by package.json "build:css"', as: "tailwind" },
+    ]);
+    expect(served.used[0]).toBe("inlined: src/design/tokens.css (readFileSync in src/server/chrome.ts)");
+    expect(served.warnings).toEqual([]);
+    const css = served.css!.light;
+    expect(css).toMatch(/:root \{\s*--so-accent: #2563eb;/);
+    expect(css).toMatch(/\.bg-accent \{\s*background-color: var\(--so-accent\);/);
+    expect(css).toMatch(/\.ui-button \{[^}]*background: var\(--so-accent\);/);
+    expect(css.indexOf("--so-accent: #2563eb")).toBeLessThan(css.indexOf("/* src/browser/tailwind.css"));
+    expect(served.css!.dark).toMatch(/@media \(min-width: 0px\) \{\s*:root \{\s*--so-accent: #60a5fa;/);
+    expect(specimenOf("served", "src/browser/toolbar.tsx", 8)).toBe('<button class="inline-flex items-center justify-center rounded-md text-sm font-medium bg-accent text-accent-foreground hover:bg-accent/90 h-8 px-3">Run</button>');
+  });
+
+  test("every way code reads a sheet, in module then source order: root- and file-relative paths, joined pieces, a named path, new URL, ?raw and ?inline", async () => {
+    const copy = copyFixture(SERVED, mkdtempSync(join(tmpdir(), "youi-served-")));
+    try {
+      for (const name of ["a", "b", "c", "d", "e", "f", "g"]) writeFileSync(join(copy, `src/design/${name}.css`), `.${name} { color: red; }\n`);
+      writeFileSync(
+        join(copy, "src/server/reads.ts"),
+        [
+          'import fs from "node:fs";',
+          'import path from "node:path";',
+          'import inlined from "../design/b.css?inline";',
+          'const A = fs.readFileSync("src/design/a.css", "utf8");',
+          'const C = await fs.promises.readFile(path.join(process.cwd(), "src", "design", "c.css"), "utf8");',
+          'const named = path.resolve(__dirname, "../design/d.css");',
+          "const D = fs.readFileSync(named);",
+          'const E = new URL("../design/e.css", import.meta.url);',
+          'const F = await import("../design/f.css?raw");',
+          "const G = fs.readFileSync(`${process.cwd()}/src/design/g.css`);",
+          'const NOT_CSS = fs.readFileSync("package.json", "utf8");',
+          "export { A, C, D, E, F, G, inlined, NOT_CSS };",
+        ].join("\n"),
+      );
+      const target = await loadInventoryTarget(copy);
+      const { found, warnings } = findStylesheets(copy, target.files, { templates: target.templates });
+      expect(found.map((f) => [f.sheet, f.via])).toEqual([
+        ["src/design/tokens.css", "readFileSync in src/server/chrome.ts"],
+        ["src/browser/ui.css", "readFile in src/server/chrome.ts"],
+        ["src/design/b.css", "?inline import in src/server/reads.ts"],
+        ["src/design/a.css", "readFileSync in src/server/reads.ts"],
+        ["src/design/c.css", "readFile in src/server/reads.ts"],
+        ["src/design/d.css", "readFileSync in src/server/reads.ts"],
+        ["src/design/e.css", "new URL in src/server/reads.ts"],
+        ["src/design/f.css", "?raw import in src/server/reads.ts"],
+        ["src/design/g.css", "readFileSync in src/server/reads.ts"],
+        ["src/browser/tailwind.css", 'link /assets/tailwind.css in src/server/chrome.ts, built by package.json "build:css"'],
+      ]);
+      expect(warnings).toEqual([]);
+      // A ?raw import is text, not a stylesheet the module applies.
+      expect(pageStylesheets(copy, target.files)).toEqual([]);
+    } finally {
+      rmSync(copy, { recursive: true, force: true });
+    }
+  });
+
+  test("specimens.css in a config kept outside the product: exactly its list, named by that config", async () => {
+    const stats = newStats();
+    const from = "/pilots/toolroll/youi.project.json";
+    const specimens = await projectSpecimens({ id: "served", root: SERVED, commit: "o", looks: [] }, { cache: new SpecimenCache(mkdtempSync(join(tmpdir(), "youi-specimens-"))), stats, css: { sheets: ["src/design/tokens.css", "src/browser/ui.css", "../elsewhere.css"], from } });
+    expect(specimens.sources).toEqual([
+      { sheet: "src/design/tokens.css", via: `specimens.css in ${from}`, as: "plain" },
+      { sheet: "src/browser/ui.css", via: `specimens.css in ${from}`, as: "plain" },
+    ]);
+    expect(specimens.warnings).toContain(`${from} specimens.css: refused ../elsewhere.css is outside the project root`);
+    expect(stats.tailwindCompiles).toBe(0);
+    expect(specimens.key).not.toBe(built.get("served")!.key);
   });
 });
 
@@ -469,6 +547,36 @@ describe("specimen builds read and run nothing outside the project root (c4)", (
       expect(built.warnings).toContain("refused src/components/ui/linked.tsx: a symlink that leads outside the project root");
       expect(built.warnings.join("\n")).toMatch(/refused import "\.\/linked" resolves outside the project root \(from src\/components\/ui\/uses-linked\.tsx\)/);
       expect(built.specimens[built.looks["uses-look"]!]!.kind).toBe("markup");
+    } finally {
+      box.dispose();
+    }
+  });
+
+  test("vector: code that reads a sheet outside the root (readFileSync, new URL, ?raw, a symlink)", async () => {
+    const box = sandbox();
+    try {
+      mkdirSync(join(box.root, "src/server"), { recursive: true });
+      symlinkSync(join(box.outside, "x.css"), join(box.root, "src/linked.css"));
+      writeFileSync(
+        join(box.root, "src/server/leak.ts"),
+        [
+          'import { readFileSync } from "node:fs";',
+          'import raw from "../../../outside/x.css?raw";',
+          'export const a = readFileSync("../outside/x.css", "utf8");',
+          'export const b = readFileSync(new URL("../../../outside/x.css", import.meta.url), "utf8");',
+          `export const c = readFileSync(${JSON.stringify(join(box.outside, "x.css"))}, "utf8");`,
+          'export const d = readFileSync("src/linked.css", "utf8");',
+          "export { raw };",
+        ].join("\n"),
+      );
+      const built = await box.build();
+      expectContained(box, built, /src\/server\/leak\.ts: refused readFileSync of "\.\.\/outside\/x\.css"/);
+      const warnings = built.warnings.join("\n");
+      expect(warnings).toMatch(/src\/server\/leak\.ts: refused \?raw import of "\.\.\/\.\.\/\.\.\/outside\/x\.css": .* is outside the project root/);
+      expect(warnings).toMatch(/src\/server\/leak\.ts: refused new URL of "\.\.\/\.\.\/\.\.\/outside\/x\.css"/);
+      expect(warnings).toMatch(/src\/server\/leak\.ts: refused readFileSync of ".*\/outside\/x\.css": .* is an absolute path/);
+      expect(warnings).toMatch(/src\/server\/leak\.ts: refused readFileSync of "src\/linked\.css": .* \(a symlink\)/);
+      expect(built.sheets.some((s) => s.includes("outside") || s.includes("linked"))).toBe(false);
     } finally {
       box.dispose();
     }

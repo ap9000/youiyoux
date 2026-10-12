@@ -124,7 +124,7 @@ export const ProjectConfig = z.object({
   routes: RouteConfig.default({ strategy: "none", appDir: "app", map: [], shell: [] }),
   outputs: OutputConfig.default({ dir: "src/design", cssVarPrefix: "youi", dark: DEFAULT_DARK_SELECTORS, targets: ["css-vars", "tailwind-v4", "ts"], tailwind: { includeAll: true, map: {} } }),
   agents: AgentConfig.default({ agentsMd: "AGENTS.md", designMd: "DESIGN.md", skillDir: ".agents/skills/youiyoux", claudeSkillLink: true }),
-  /** Hub specimens. css: the stylesheets a page loads, exactly and in this order, when finding them from its HTML and imports gets them wrong. */
+  /** Hub specimens. css: the stylesheets a page loads, relative to the product root, exactly and in this order, when finding them from its code, HTML and imports gets them wrong; also read from a config kept outside the product (--config with root). */
   specimens: z.object({ css: z.array(RelPath).optional() }).optional(),
 });
 export type ProjectConfig = z.infer<typeof ProjectConfig>;

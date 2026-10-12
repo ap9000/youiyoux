@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, test } from "vitest";
-import { libraries, readInventory, readSource, writeDetect, writeInventory } from "../scripts/snapshot.ts";
+import { buildSpecimens, configuredSpecimenCss, libraries, readInventory, readSource, sheetReport, writeDetect, writeInventory } from "../scripts/snapshot.ts";
 import type { InventoryChunk, InventoryIndex } from "../src/data/types.ts";
 
 const TOOL = resolve(import.meta.dirname, "../../..");
@@ -59,6 +59,54 @@ describe("snapshot source", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+});
+
+describe("snapshot specimens: stylesheets and their order", () => {
+  const SERVED = join(TOOL, "packages/scanner/test/fixtures/inventory/served");
+
+  // `youi ui --config C` with `root`: the product's stylesheets listed beside the design repo, the product never edited.
+  test("specimens.css in a --config kept outside the product is used for the product its root names, and the order is printed", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "youi-pilot-css-"));
+    const previous = process.env.YOUI_SPECIMEN_CACHE;
+    process.env.YOUI_SPECIMEN_CACHE = join(dir, "cache");
+    try {
+      const config = { ...(JSON.parse(await readFile(join(DEMO_APP, "youi.project.json"), "utf8")) as Record<string, unknown>), source: { path: DEMO_DESIGN }, root: SERVED, specimens: { css: ["src/design/tokens.css", "src/browser/ui.css"] } };
+      const configFile = join(dir, "youi.project.json");
+      await writeFile(configFile, JSON.stringify(config));
+      const libs = await libraries();
+      const configured = configuredSpecimenCss({ config: configFile }, libs.core);
+      expect(configured).toEqual({ root: SERVED, sheets: ["src/design/tokens.css", "src/browser/ui.css"], from: configFile });
+      // --root wins over the config's root.
+      expect(configuredSpecimenCss({ config: configFile, root: DEMO_APP }, libs.core)!.root).toBe(DEMO_APP);
+      const inventory = libs.core.InventoryReport.parse(await libs.scanner.buildInventory([SERVED]));
+      const roots = new Map([["served", SERVED]]);
+
+      const logged: string[] = [];
+      const found = await buildSpecimens(inventory, roots, libs.scanner, null, (line) => logged.push(line));
+      expect(logged).toEqual([
+        "specimens served: 3 stylesheets, in page order",
+        "  1. inlined: src/design/tokens.css (readFileSync in src/server/chrome.ts)",
+        "  2. inlined: src/browser/ui.css (readFile in src/server/chrome.ts)",
+        expect.stringMatching(/^ {2}3\. built: src\/browser\/tailwind\.css \(link \/assets\/tailwind\.css in src\/server\/chrome\.ts, built by package\.json "build:css", Tailwind 4\.\d+\.\d+\)$/),
+      ]);
+      expect(found.served!.notes).toContain("inlined: src/design/tokens.css (readFileSync in src/server/chrome.ts)");
+
+      const listed: string[] = [];
+      const fromConfig = await buildSpecimens(inventory, roots, libs.scanner, configured, (line) => listed.push(line));
+      expect(listed).toEqual(sheetReport("served", [`inlined: src/design/tokens.css (specimens.css in ${configFile})`, `inlined: src/browser/ui.css (specimens.css in ${configFile})`]));
+      expect(fromConfig.served!.css!.light).toContain("--so-accent: #2563eb");
+
+      // A config whose product is not in the inventory says so, and changes nothing.
+      const elsewhere: string[] = [];
+      await buildSpecimens(inventory, roots, libs.scanner, { ...configured!, root: DEMO_APP }, (line) => elsewhere.push(line));
+      expect(elsewhere.at(-1)).toBe(`specimens.css in ${configFile}: its product ${DEMO_APP} is not an inventoried project on this machine; not used`);
+      expect(elsewhere[0]).toBe("specimens served: 3 stylesheets, in page order");
+    } finally {
+      if (previous === undefined) delete process.env.YOUI_SPECIMEN_CACHE;
+      else process.env.YOUI_SPECIMEN_CACHE = previous;
+      await rm(dir, { recursive: true, force: true });
+    }
+  }, 120_000);
 });
 
 describe("snapshot --detect", () => {

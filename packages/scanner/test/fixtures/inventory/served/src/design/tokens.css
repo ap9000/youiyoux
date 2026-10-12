@@ -1,0 +1,13 @@
+/* The console's tokens: the server reads this file and inlines it into every page; nothing imports or links it. */
+:root {
+  --so-accent: #2563eb;
+  --so-accent-ink: #ffffff;
+  --so-radius: 6px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --so-accent: #60a5fa;
+    --so-accent-ink: #0b1220;
+  }
+}

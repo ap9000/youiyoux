@@ -1,0 +1,8 @@
+/* Built by `pnpm build:css` (the Tailwind CLI) into public/assets/tailwind.css. It uses the tokens but does not import them. */
+@import "tailwindcss";
+
+@theme inline {
+  --color-accent: var(--so-accent);
+  --color-accent-foreground: var(--so-accent-ink);
+  --radius-md: var(--so-radius);
+}

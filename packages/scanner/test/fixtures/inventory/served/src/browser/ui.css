@@ -1,0 +1,12 @@
+/* The console's in-browser kit, inlined by the server after the Tailwind link. */
+.ui-button {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: var(--so-radius);
+  background: var(--so-accent);
+  color: var(--so-accent-ink);
+  font: 500 14px/20px system-ui, sans-serif;
+}

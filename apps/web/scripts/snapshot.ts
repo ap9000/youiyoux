@@ -18,7 +18,9 @@
  *   real CSS (and, in its chunks, static HTML per look), built here, never by `youi inventory`,
  *   from the project's own Tailwind and components, read-only, and cached by commit and content
  *   outside the project (scanner/src/specimens). A project root the inventory names that is not
- *   on this machine gets no specimens; its looks show their shape.
+ *   on this machine gets no specimens; its looks show their shape. `specimens.css` in a
+ *   `--config` kept outside the product names that product's stylesheets, so it is never edited;
+ *   the stylesheets each project used, in page order, are printed.
  * - <out>/public/data/detect.<hash>.json and detect.shot.<hash>.png: a `youi detect` report
  *   (`--detect`, validated as youi.detect/v1) and its element screenshots, for Library > Stack.
  *   Like screens, it belongs to whoever ran it and never lives in this repo.
@@ -38,7 +40,7 @@
  */
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { pathToFileURL } from "node:url";
@@ -81,7 +83,7 @@ interface ScannerModule {
   scanProject(project: ScannedProject, options?: { cache?: unknown }): Promise<{ report: unknown; identity: import("@youiyoux/core").CheckIdentity }>;
   describeIdentity(identity: import("@youiyoux/core").CheckIdentity): string;
   buildInventory(dirs: readonly string[], options?: { cwd?: string }): Promise<unknown>;
-  projectSpecimens(project: { id: string; root: string; commit: string | null; looks: ReadonlyArray<Pick<import("@youiyoux/core").InventoryLook, "id" | "role" | "recipe">> }): Promise<{ css: { light: string; dark: string } | null; specimens: SplitSpecimens["specimens"]; looks: Record<string, string>; warnings: readonly string[]; tailwind: string; used: readonly string[]; cached: boolean }>;
+  projectSpecimens(project: { id: string; root: string; commit: string | null; looks: ReadonlyArray<Pick<import("@youiyoux/core").InventoryLook, "id" | "role" | "recipe">> }, options?: { css?: { sheets: readonly string[]; from: string } }): Promise<{ css: { light: string; dark: string } | null; specimens: SplitSpecimens["specimens"]; looks: Record<string, string>; warnings: readonly string[]; tailwind: string; used: readonly string[]; cached: boolean }>;
   ProjectWatcher: {
     start<R>(options: {
       root: string;
@@ -425,28 +427,72 @@ export function inventoryRoots(inventory: InventoryReport, path: string | undefi
   return roots;
 }
 
-/** Each project's specimens (scanner/src/specimens: cached, read-only); a project not on this machine gets none. */
-export async function buildSpecimens(inventory: InventoryReport, roots: ReadonlyMap<string, string>, scanner: ScannerModule): Promise<Record<string, SplitSpecimens>> {
+/** `specimens.css` from a config kept outside its product: the product's root, the sheets, and the config that names them. */
+export interface ConfiguredCss {
+  readonly root: string;
+  readonly sheets: readonly string[];
+  readonly from: string;
+}
+
+/**
+ * `--config`'s `specimens.css`, for the product it names (--root, else the config's `root`
+ * relative to it, else the config's directory); null when it lists none.
+ */
+export function configuredSpecimenCss(values: { config?: string; root?: string }, core: CoreModule): ConfiguredCss | null {
+  if (!values.config) return null;
+  const configFile = resolve(values.config);
+  const config = core.ProjectConfig.parse(JSON.parse(readFileSync(configFile, "utf8")));
+  const sheets = config.specimens?.css;
+  if (!sheets?.length) return null;
+  const root = values.root !== undefined ? resolve(values.root || ".") : config.root ? resolve(dirname(configFile), config.root) : dirname(configFile);
+  return { root, sheets, from: configFile };
+}
+
+const realOr = (path: string): string => {
+  try {
+    return realpathSync(path);
+  } catch {
+    return resolve(path);
+  }
+};
+
+/** The stylesheets a project's specimens used, in page order, for the snapshot's output. */
+export function sheetReport(id: string, used: readonly string[]): string[] {
+  if (used.length === 0) return [`specimens ${id}: no stylesheet`];
+  return [`specimens ${id}: ${used.length} stylesheet${used.length === 1 ? "" : "s"}, in page order`, ...used.map((line, i) => `  ${i + 1}. ${line}`)];
+}
+
+/**
+ * Each project's specimens (scanner/src/specimens: cached, read-only); a project not on this
+ * machine gets none. The product a `--config` kept outside it names uses that config's
+ * `specimens.css`. Each project's stylesheets, in order, go to `log`.
+ */
+export async function buildSpecimens(inventory: InventoryReport, roots: ReadonlyMap<string, string>, scanner: ScannerModule, configured: ConfiguredCss | null = null, log: (line: string) => void = (line) => process.stdout.write(`${line}\n`)): Promise<Record<string, SplitSpecimens>> {
   const out: Record<string, SplitSpecimens> = {};
+  let matched = false;
   for (const project of inventory.projects) {
     const root = roots.get(project.id);
     if (!root) {
       out[project.id] = { css: null, specimens: {}, looks: {}, notes: [`${project.root} is not on this machine: looks show their shape`] };
       continue;
     }
+    const css = configured && realOr(configured.root) === realOr(root) ? { sheets: configured.sheets, from: configured.from } : null;
+    matched ||= css !== null;
     try {
-      const built = await scanner.projectSpecimens({ id: project.id, root, commit: project.commit, looks: inventory.looks.filter((l) => l.project === project.id) });
+      const built = await scanner.projectSpecimens({ id: project.id, root, commit: project.commit, looks: inventory.looks.filter((l) => l.project === project.id) }, css ? { css } : {});
       out[project.id] = { css: built.css, specimens: built.specimens, looks: built.looks, notes: [`CSS: ${built.tailwind}`, ...built.used, ...built.warnings] };
+      for (const line of sheetReport(project.id, built.used)) log(line);
     } catch (error: unknown) {
       out[project.id] = { css: null, specimens: {}, looks: {}, notes: [`specimens failed: ${error instanceof Error ? error.message : String(error)}`] };
     }
   }
+  if (configured && !matched) log(`specimens.css in ${configured.from}: its product ${configured.root} is not an inventoried project on this machine; not used`);
   return out;
 }
 
 /** Specimens for an inventory, then its split files. */
-async function writeInventoryWithSpecimens(dataDir: string, inventory: InventoryReport, path: string | undefined, scanner: ScannerModule): Promise<WrittenInventory> {
-  return writeInventory(dataDir, inventory, await buildSpecimens(inventory, inventoryRoots(inventory, path), scanner));
+async function writeInventoryWithSpecimens(dataDir: string, inventory: InventoryReport, path: string | undefined, libs: Pick<Libraries, "core" | "scanner">, values: { config?: string; root?: string }): Promise<WrittenInventory> {
+  return writeInventory(dataDir, inventory, await buildSpecimens(inventory, inventoryRoots(inventory, path), libs.scanner, configuredSpecimenCss(values, libs.core)));
 }
 
 /**
@@ -513,7 +559,7 @@ async function watchSnapshot(values: { design?: string; project?: string; config
   mkdirSync(dataDir, { recursive: true });
   // The inventory and the detect report are files someone produced, not views of the watched sources: written once.
   const read = await readInventory(values.inventory, false, libs);
-  const inventory = read ? await writeInventoryWithSpecimens(dataDir, read, values.inventory, libs.scanner) : null;
+  const inventory = read ? await writeInventoryWithSpecimens(dataDir, read, values.inventory, libs, values) : null;
   const detect = values.detect ? writeDetect(values.detect, dataDir, libs.core) : null;
   const root = projectArg(values) ?? (values.config ? dirname(resolve(values.config)) : DEMO_PROJECT);
   let previousId = previousSystemId(dataDir);
@@ -593,7 +639,7 @@ async function main(): Promise<void> {
   const shots = source.usage && shotsDir ? writeScreens(shotsDir, dataDir, source.usage.project) : null;
   const usage = source.usage ? [writeUsage(dataDir, source.usage, shots)] : [];
   const read = await readInventory(values.inventory, out === DEFAULT_OUT, libs);
-  const inventory = read ? await writeInventoryWithSpecimens(dataDir, read, values.inventory, libs.scanner) : null;
+  const inventory = read ? await writeInventoryWithSpecimens(dataDir, read, values.inventory, libs, values) : null;
   const detect = values.detect ? writeDetect(values.detect, dataDir, libs.core) : null;
   writeManifest(dataDir, system, usage, undefined, inventory, detect);
   if (out === DEFAULT_OUT) await buildHubTokens(libs.core, libs.lib);

@@ -59,6 +59,12 @@ export interface SpecimenOptions {
   readonly stats?: SpecimenStats;
   /** Time limits for Tailwind and rendering (defaults in css.ts and render.ts). */
   readonly timeouts?: RenderOptions & { readonly tailwindMs?: number };
+  /**
+   * `specimens.css` from a project config kept outside the product (`--config <file>` with its
+   * `root`): exactly these sheets, project-relative, in this order, instead of the product's own
+   * youi.project.json; `from` names that config for a reader.
+   */
+  readonly css?: { readonly sheets: readonly string[]; readonly from: string };
 }
 
 /** What a look with no text of its own shows, so a card or a tab list is not an empty box. */
@@ -95,14 +101,15 @@ export async function projectSpecimens(project: SpecimenProject, options: Specim
     looks[look.id] = id;
   }
   const recipes = [...byId].sort(([a], [b]) => a.localeCompare(b));
-  const key = specimenKey(project.root, project.commit, [...files, ...templates], { recipes, css: target.specimenCss });
+  const override = options.css ? { override: options.css.sheets, overrideFrom: options.css.from } : { override: target.specimenCss };
+  const key = specimenKey(project.root, project.commit, [...files, ...templates], { recipes, css: override.override, ...(options.css ? { from: options.css.from } : {}) });
   const hit = cache.read<ProjectSpecimens>(project.id, key);
   if (hit?.format === SPECIMEN_FORMAT) {
     stats.hits++;
     return { ...hit, looks, cached: true };
   }
   stats.misses++;
-  const css = await buildProjectCss(project.root, files, stats, { tsconfig: target.tsconfig, override: target.specimenCss, templates, ...(options.timeouts?.tailwindMs ? { tailwindTimeoutMs: options.timeouts.tailwindMs } : {}) });
+  const css = await buildProjectCss(project.root, files, stats, { tsconfig: target.tsconfig, ...override, templates, ...(options.timeouts?.tailwindMs ? { tailwindTimeoutMs: options.timeouts.tailwindMs } : {}) });
   const warnings = [...outside.map((f) => `refused ${f}: a symlink that leads outside the project root`), ...css.warnings];
   // A recipe that names a file outside the root is never bundled: its look is drawn from its classes.
   const jobs: RenderJob[] = [];

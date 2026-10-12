@@ -1,0 +1,8 @@
+{
+  "name": "served",
+  "private": true,
+  "description": "Inventory fixture shaped like the Toolroll console as it ships: its design tokens (src/design/tokens.css) reach the page only through server code, read by src/server/chrome.ts and inlined into a <style>, as is its plain kit (src/browser/ui.css); its Tailwind entry is built by the Tailwind CLI and linked; the CVA Button and Badge and the .ui-button all paint with var(--so-accent).",
+  "scripts": { "build:css": "tailwindcss -i ./src/browser/tailwind.css -o ./public/assets/tailwind.css" },
+  "dependencies": { "class-variance-authority": "*", "react": "*", "react-dom": "*", "tailwindcss": "^4" },
+  "devDependencies": { "@tailwindcss/cli": "^4" }
+}
