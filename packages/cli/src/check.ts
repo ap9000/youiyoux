@@ -48,7 +48,7 @@ export const toProjectPath = (project: Project, file: string): string => relativ
 
 /** The baseline file for a project: next to its config (which may live outside the project). */
 export function baselinePath(project: Project, configPath?: string): string {
-  return join(dirname(resolve(configPath ?? join(project.root, PROJECT_FILE))), BASELINE_FILE);
+  return join(dirname(resolve(configPath ?? project.configFile ?? join(project.root, PROJECT_FILE))), BASELINE_FILE);
 }
 
 export async function readBaseline(file: string): Promise<Baseline | null> {

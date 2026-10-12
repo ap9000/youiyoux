@@ -292,6 +292,7 @@ export function mcpArgs(project: Project): string[] {
     ".",
     ...(project.configFile && project.configFile !== join(project.root, PROJECT_FILE) ? ["--config", rel(project.configFile)] : []),
     ...(project.designOverride ? ["--design", rel(project.repo.root)] : []),
+    ...(project.rootOverride ? ["--root", "."] : []),
   ];
 }
 

@@ -15,6 +15,8 @@ export interface RuleEditorOptions {
   readonly project: string;
   readonly config?: string;
   readonly design?: string;
+  /** The product root, when the config names another (or none). */
+  readonly root?: string;
   /** Where drafts live; default ~/.youi/workflow/<design repo + project>. */
   readonly state?: string;
 }
@@ -31,7 +33,7 @@ export interface RuleEditor {
 export async function startRuleEditor(options: RuleEditorOptions): Promise<RuleEditor> {
   const { FileStore, RuleWorkflow, serveWorkflow } = await import("@youiyoux/workflow");
   const projectRoot = resolve(options.project);
-  const load = { ...(options.config ? { configPath: resolve(options.config) } : {}), ...(options.design ? { designRoot: resolve(options.design) } : {}) };
+  const load = { ...(options.config ? { configPath: resolve(options.config) } : {}), ...(options.design ? { designRoot: resolve(options.design) } : {}), ...(options.root ? { productRoot: resolve(options.root) } : {}) };
   const project = await loadProject(projectRoot, load);
   const stateDir = resolve(options.state ?? join(homedir(), ".youi", "workflow", shortHash(`${project.repo.root}\0${project.root}`)));
   const workflow = new RuleWorkflow({ projectRoot, store: new FileStore(stateDir), ...load });

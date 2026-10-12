@@ -6,7 +6,7 @@ import { parseArgs, promisify, type ParseArgsConfig } from "node:util";
 import { parse as parseYaml } from "yaml";
 import { DefinitionError, getSystem, loadDesignRepo, loadLibrary, MigrationSpec, OutputConfig, renderJsonSchemas, writeFileAtomic } from "@youiyoux/core";
 import { buildTokens, compareParity } from "@youiyoux/tokens";
-import { adoptionRequest, checkCapabilities, componentCard, describeIdentity, evaluateRule, findContract, loadProject, planChange, ProjectWatcher, ruleCapability, runMigration, scanProject, screenBom, searchLibrary, whereUsed, type CacheStats, type PlanInput, type Project, type WatchUpdate } from "@youiyoux/scanner";
+import { adoptionRequest, checkCapabilities, componentCard, describeIdentity, evaluateRule, findContract, loadProject, planChange, PROJECT_FILE, type LoadProjectOptions, ProjectWatcher, ruleCapability, runMigration, scanProject, screenBom, searchLibrary, whereUsed, type CacheStats, type PlanInput, type Project, type WatchUpdate } from "@youiyoux/scanner";
 import { baselinePath, exitCodeOf, runCheck, writeBaseline, type CheckResult } from "./check.ts";
 import { actionable, githubAnnotations, githubSummary, renderCheckText } from "./check-render.ts";
 import { runClaudeHook, runPreCommitHook, type HookTarget } from "./hooks.ts";
@@ -59,7 +59,7 @@ ${style.bold("Library")}  ${style.dim("ingested references: browse and request a
   library request <id> --reason <text>   draft an adoption request for a person to approve
 
 ${style.bold("The hub")}
-  ui [--design dir] [--project dir] [--config file] [--port n] [--watch] [--state dir]
+  ui [--design dir] [--project dir] [--config file] [--root dir] [--port n] [--watch] [--state dir]
                            open the web hub on a design system (default: the demo system);
                            --project adds that product's usage map (read-only scan) and the
                            rule editor (System > Rules, Work > Changes): drafts, impact preview,
@@ -76,6 +76,8 @@ ${style.bold("In this tool's repo")}
 ${style.bold("Options")}
   --project <dir>   project root (default: current directory)
   --config <file>   project config (default: <project>/youi.project.json)
+  --root <dir>      product root, for a config kept outside the product
+                    (default: "root" in the config, relative to it; else --project)
   --design <dir>    design repo checkout, the directory holding youi.config.json
                     (default: source.path from the project config; the current directory for build and parity)
   --json            machine-readable output`;
@@ -83,6 +85,7 @@ ${style.bold("Options")}
 const OPTIONS = {
   project: { type: "string" },
   config: { type: "string" },
+  root: { type: "string" },
   design: { type: "string" },
   json: { type: "boolean", default: false },
   out: { type: "string" },
@@ -129,8 +132,13 @@ const run = promisify(execFile);
 const print = (text: string): void => void process.stdout.write(`${text}\n`);
 const json = (value: unknown): void => print(JSON.stringify(value, null, 2));
 
+/** --config, --design and --root, as loader options. An empty --root (`--root ''`) is the current directory, not unset. */
+export function loadOptions(values: Pick<Values, "config" | "design" | "root">): LoadProjectOptions {
+  return { ...(values.config ? { configPath: values.config } : {}), ...(values.design ? { designRoot: values.design } : {}), ...(values.root !== undefined ? { productRoot: values.root || "." } : {}) };
+}
+
 async function project(values: Values): Promise<Project> {
-  return loadProject(values.project ?? process.cwd(), { ...(values.config ? { configPath: values.config } : {}), ...(values.design ? { designRoot: values.design } : {}) });
+  return loadProject(values.project ?? process.cwd(), loadOptions(values));
 }
 
 async function readJsonOrFile(value: string): Promise<Record<string, unknown>> {
@@ -356,7 +364,7 @@ async function cmdSchema(values: Values): Promise<number> {
 }
 
 function hookTarget(values: Values): HookTarget {
-  return { ...(values.project ? { project: values.project } : {}), ...(values.config ? { config: values.config } : {}), ...(values.design ? { design: values.design } : {}) };
+  return { ...(values.project ? { project: values.project } : {}), ...(values.config ? { config: values.config } : {}), ...(values.design ? { design: values.design } : {}), ...(values.root ? { root: values.root } : {}) };
 }
 
 async function readStdin(): Promise<string> {
@@ -374,7 +382,8 @@ async function cmdHooks(values: Values, positionals: string[]): Promise<number> 
   }
   if (action !== "install") throw new UsageError("youi hooks install [--claude] [--git] [--ci] [--strict]   or   youi hooks run claude|pre-commit");
   const p = await project(values);
-  const target = { ...hookTarget(values), project: p.root };
+  // The hook finds the config it was installed with, even when --project named the config's directory and --root the product.
+  const target = { ...hookTarget(values), project: p.root, ...(p.configFile && p.configFile !== join(p.root, PROJECT_FILE) ? { config: p.configFile } : {}), ...(values.root !== undefined ? { root: p.root } : {}) };
   const all = !values.claude && !values.git && !values.ci;
   const results = [];
   if (values.claude || all) results.push({ kind: "Claude Code", ...(await installClaudeHook(await repoRootOf(p.root), hookCommand(TOOL_ROOT, "claude", target))) });
@@ -402,7 +411,7 @@ function watchLine(update: WatchUpdate<CheckResult>, stats: CacheStats): string 
 
 async function cmdWatch(values: Values): Promise<number> {
   const root = values.project ?? process.cwd();
-  const load = { ...(values.config ? { configPath: values.config } : {}), ...(values.design ? { designRoot: values.design } : {}) };
+  const load = loadOptions(values);
   let stats: CacheStats = { parsed: 0, reusedParses: 0, analysed: 0, reusedAnalyses: 0 };
   const watcher = await ProjectWatcher.start<CheckResult>({
     root,
@@ -430,7 +439,7 @@ async function cmdWatch(values: Values): Promise<number> {
 async function startEditor(values: Values, port: string): Promise<RuleEditor | null> {
   if (!values.project) return null;
   try {
-    const editor = await startRuleEditor({ project: values.project, ...(values.config ? { config: values.config } : {}), ...(values.design ? { design: values.design } : {}), ...(values.state ? { state: values.state } : {}) });
+    const editor = await startRuleEditor({ project: values.project, ...(values.config ? { config: values.config } : {}), ...(values.design ? { design: values.design } : {}), ...(values.root ? { root: values.root } : {}), ...(values.state ? { state: values.state } : {}) });
     const { design, project: product } = editor.info;
     print(`${style.ok("rule editor")} http://localhost:${port}/#key=${editor.sessionKey}`);
     print(style.dim(`  design   ${design.root} (${design.branch} @ ${design.head.slice(0, 7)}${design.dirty ? ", working tree differs" : ""})`));
@@ -449,7 +458,7 @@ async function cmdUi(values: Values): Promise<number> {
   const port = values.port ?? DEFAULT_HUB_PORT;
   const editor = await startEditor(values, port);
   try {
-    return await runHub(TOOL_ROOT, { ...(values.design ? { design: values.design } : {}), ...(values.project ? { project: values.project } : {}), ...(values.config ? { config: values.config } : {}), ...(values.port || editor ? { port } : {}), ...(editor ? { api: editor.url } : {}), watch: values.watch });
+    return await runHub(TOOL_ROOT, { ...(values.design ? { design: values.design } : {}), ...(values.project ? { project: values.project } : {}), ...(values.config ? { config: values.config } : {}), ...(values.root ? { root: values.root } : {}), ...(values.port || editor ? { port } : {}), ...(editor ? { api: editor.url } : {}), watch: values.watch });
   } finally {
     await editor?.close();
   }
@@ -457,7 +466,7 @@ async function cmdUi(values: Values): Promise<number> {
 
 async function cmdMcp(values: Values): Promise<number> {
   const { startStdioServer } = await import("@youiyoux/mcp");
-  await startStdioServer({ projectRoot: values.project ?? process.cwd(), ...(values.config ? { configPath: values.config } : {}), ...(values.design ? { designRoot: values.design } : {}) });
+  await startStdioServer({ projectRoot: values.project ?? process.cwd(), ...loadOptions(values) });
   return -1;
 }
 

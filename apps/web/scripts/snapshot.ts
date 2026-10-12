@@ -1,7 +1,7 @@
 /**
  * Builds everything the hub reads about one design system, from that system's own repo:
  *
- *   node scripts/snapshot.ts [--design <dir>] [--project <dir>] [--config <youi.project.json>] [--screens <dir>] [--out <dir>] [--commit <sha>] [--watch]
+ *   node scripts/snapshot.ts [--design <dir>] [--project <dir>] [--config <youi.project.json>] [--root <dir>] [--screens <dir>] [--out <dir>] [--commit <sha>] [--watch]
  *
  * - <out>/public/data/*.json: the system catalog (tokens, contracts, rules, narrative)
  *   and the project's usage map, content-hashed so the browser can cache them forever.
@@ -59,7 +59,7 @@ type CoreModule = typeof import("@youiyoux/core");
 type TokensModule = typeof import("@youiyoux/tokens");
 /** The scanner calls used here, typed locally so the hub's typecheck never pulls in the scanner's sources. */
 interface ScannerModule {
-  loadProject(root: string, options: { configPath?: string; designRoot?: string }): Promise<ScannedProject>;
+  loadProject(root: string, options: LoadOptions): Promise<ScannedProject>;
   /** How youi check executes a rule; the scanner compiles ast-grep bodies, which the browser cannot. */
   ruleCapability(rule: import("@youiyoux/core").RuleSpec): unknown;
   scanProject(project: ScannedProject, options?: { cache?: unknown }): Promise<{ report: unknown; identity: import("@youiyoux/core").CheckIdentity }>;
@@ -67,12 +67,17 @@ interface ScannerModule {
   ProjectWatcher: {
     start<R>(options: {
       root: string;
-      load: { configPath?: string; designRoot?: string };
+      load: LoadOptions;
       job: (project: ScannedProject, cache: unknown) => Promise<R>;
       onUpdate: (update: { generation: number; status: "ok"; result: R } | { generation: number; status: "failed"; error: string }) => void;
     }): Promise<{ close(): void }>;
   };
 }
+type LoadOptions = { configPath?: string; designRoot?: string; productRoot?: string };
+
+/** --config, --design and --root, as the scanner's loader options. */
+const loadOptions = (values: { config?: string; design?: string; root?: string }): LoadOptions => ({ ...(values.config ? { configPath: resolve(values.config) } : {}), ...(values.design ? { designRoot: resolve(values.design) } : {}), ...(values.root !== undefined ? { productRoot: resolve(values.root) } : {}) });
+
 interface ScannedProject {
   readonly root: string;
   readonly config: import("@youiyoux/core").ProjectConfig;
@@ -181,14 +186,23 @@ interface Source {
   readonly usage: ScanReport | null;
 }
 
+/**
+ * The directory the scanner loads the project from: --project, else a --config's own directory
+ * when --root names its product (the config's `root` and --root win over it), else the demo.
+ */
+function projectArg(values: { design?: string; project?: string; config?: string; root?: string }): string | undefined {
+  if (values.project) return values.project;
+  if (values.config) return values.root !== undefined ? dirname(resolve(values.config)) : undefined;
+  return values.design ? undefined : DEMO_PROJECT;
+}
+
 /** Where the system comes from, and the project whose scan and outputs go with it. */
-async function readSource(values: { design?: string; project?: string; config?: string }, core: CoreModule, scanner: ScannerModule): Promise<Source> {
-  const defaults = !values.design && !values.project && !values.config;
-  const projectDir = values.project ?? (defaults ? DEMO_PROJECT : undefined);
+export async function readSource(values: { design?: string; project?: string; config?: string; root?: string }, core: CoreModule, scanner: ScannerModule): Promise<Source> {
+  const projectDir = projectArg(values);
   if (projectDir) {
-    const project = await scanner.loadProject(projectDir, { ...(values.config ? { configPath: values.config } : {}), ...(values.design ? { designRoot: values.design } : {}) });
+    const project = await scanner.loadProject(projectDir, loadOptions(values));
     const { report } = await scanner.scanProject(project);
-    return { designRoot: project.repo.root, projectDir: resolve(projectDir), systemId: project.config.system, output: project.config.outputs, usage: core.ScanReport.parse(report) };
+    return { designRoot: project.repo.root, projectDir: project.root, systemId: project.config.system, output: project.config.outputs, usage: core.ScanReport.parse(report) };
   }
   if (values.config) {
     const configFile = resolve(values.config);
@@ -370,10 +384,10 @@ function pruneData(dataDir: string, keep: ReadonlySet<string>): void {
  * with an atomic manifest write, which the dev server announces to the open hub. A failed
  * run keeps the last good data and marks the manifest failed.
  */
-async function watchSnapshot(values: { design?: string; project?: string; config?: string; commit?: string; screens?: string }, out: string, libs: Libraries): Promise<void> {
+async function watchSnapshot(values: { design?: string; project?: string; config?: string; root?: string; commit?: string; screens?: string }, out: string, libs: Libraries): Promise<void> {
   const dataDir = join(out, "public/data");
   mkdirSync(dataDir, { recursive: true });
-  const root = values.project ?? DEMO_PROJECT;
+  const root = projectArg(values) ?? (values.config ? dirname(resolve(values.config)) : DEMO_PROJECT);
   let previousId = previousSystemId(dataDir);
   let system: WrittenSystem | null = null;
   let systemOf: ScannedProject | null = null;
@@ -384,7 +398,7 @@ async function watchSnapshot(values: { design?: string; project?: string; config
   const stamp = (): string => new Date().toISOString();
   const watcher = await libs.scanner.ProjectWatcher.start({
     root,
-    load: { ...(values.config ? { configPath: resolve(values.config) } : {}), ...(values.design ? { designRoot: resolve(values.design) } : {}) },
+    load: loadOptions(values),
     job: async (project, cache) => {
       // A new project object means the definitions were (re)loaded: rebuild the catalog too.
       if (project !== systemOf) {
@@ -402,7 +416,7 @@ async function watchSnapshot(values: { design?: string; project?: string; config
       if (update.status === "ok") {
         const { report } = update.result;
         if (shots === undefined) {
-          const dir = screensDir(values.screens, resolve(root));
+          const dir = screensDir(values.screens, systemOf?.root ?? resolve(root));
           shots = dir ? writeScreens(dir, dataDir, report.project) : null;
         }
         usage = [writeUsage(dataDir, report, shots)];
@@ -426,9 +440,14 @@ async function watchSnapshot(values: { design?: string; project?: string; config
   process.once("SIGTERM", stop);
 }
 
+/** The workspace packages this script uses, loaded from their sources. */
+export async function libraries(): Promise<Libraries> {
+  return { core: await load<CoreModule>("core"), lib: await load<TokensModule>("tokens"), scanner: await load<ScannerModule>("scanner") };
+}
+
 async function main(): Promise<void> {
-  const { values } = parseArgs({ options: { design: { type: "string" }, project: { type: "string" }, config: { type: "string" }, out: { type: "string" }, commit: { type: "string" }, screens: { type: "string" }, watch: { type: "boolean", default: false } } });
-  const libs: Libraries = { core: await load<CoreModule>("core"), lib: await load<TokensModule>("tokens"), scanner: await load<ScannerModule>("scanner") };
+  const { values } = parseArgs({ options: { design: { type: "string" }, project: { type: "string" }, config: { type: "string" }, root: { type: "string" }, out: { type: "string" }, commit: { type: "string" }, screens: { type: "string" }, watch: { type: "boolean", default: false } } });
+  const libs = await libraries();
   const out = resolve(values.out ?? DEFAULT_OUT);
   if (values.watch) {
     if (out === DEFAULT_OUT) throw new Error("--watch writes a live snapshot; pass --out (the committed default snapshot is never watched)");
@@ -448,4 +467,5 @@ async function main(): Promise<void> {
   process.stdout.write(`snapshot of ${system.summary}; ${usage.length ? `usage map of ${usage[0]!.project}${shots ? ` with ${shots.screens.length} screens` : ""}` : "no usage map"} → ${relative(process.cwd(), out) || "."}\n`);
 }
 
-await main();
+// Run as a script, not when a test imports readSource.
+if (import.meta.main) await main();

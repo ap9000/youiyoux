@@ -44,12 +44,17 @@ function enumSummary(contract: ComponentContract): string {
     .join("; ");
 }
 
+/** Where components are imported from, for prose: the alias, or componentsDir by a relative path. */
+function importHint(config: Project["config"]): string {
+  return config.importFrom ? `\`${config.importFrom}\`` : `\`${config.componentsDir}\` (by a relative path from your file)`;
+}
+
 /* ----------------------------------------------------------------- AGENTS.md */
 
 export function agentsBlock(project: Project): string {
   const { config, system } = project;
   const names = system.components.map((c) => c.contract.name).join(", ");
-  const from = config.importFrom ?? config.componentsDir;
+  const from = importHint(config);
   const lines = [
     BLOCK_BEGIN,
     `<!-- ${generatedNote(project)} -->`,
@@ -58,7 +63,7 @@ export function agentsBlock(project: Project): string {
     `This project's UI follows ${system.config.name} v${system.config.version}. Exact contracts live in YouIyouX: look them up, never guess.`,
     "",
     "- **Build only with the System.** System elements are approved: the components, tokens and rules below, looked up with `system_*` tools (MCP server `youiyoux`) or `youi show`. Library items (`lib:` ids, `library_*` tools, `youi library`) are ingested references, not approved: never import, copy or restyle code from one. To use one, draft a request with `library_request` (or `youi library request <id>`), put it in your summary, and keep building with the System.",
-    `- Build UI from the owned components, imported from \`${from}\`: ${names}.`,
+    `- Build UI from the owned components, imported from ${from}: ${names}.`,
     "- Before using a component's props, call `system_get_component` or run `youi show <component>`; use only the listed values.",
     ...enforced(system.rules).map((r) => `- ${r.agent}`),
     ...unchecked(system.rules).map((r) => `- ${r.agent} (not checked by \`youi check\`: follow it yourself)`),
@@ -165,7 +170,7 @@ export function designMd(project: Project, build: TokenBuild, narrative: string 
 
 export function skillMd(project: Project, uncontracted: readonly string[] = []): string {
   const { config, system } = project;
-  const from = config.importFrom ?? config.componentsDir;
+  const from = importHint(config);
   const description = `Build and fix UI with the ${system.config.name} design language (YouIyouX): System components, tokens, rules, where-used lookups, change proposals and Library adoption requests. Use for any UI, styling, colour or component work in this project.`;
   const components = system.components.map(({ contract }) => `- **${contract.name}**: ${contract.summary}${enumSummary(contract) ? ` (${enumSummary(contract)})` : ""}`);
   const fixes = enforced(system.rules).map((r) => `| \`${r.id.split("/rule/")[1]}\` | ${r.severity} | ${r.agent} |`);
@@ -194,7 +199,7 @@ export function skillMd(project: Project, uncontracted: readonly string[] = []):
     "",
     "1. Find what exists: `system_search` (MCP) or the component list below. Prefer an existing component over new markup.",
     "2. Read the contract before using props: `system_get_component {\"name\": \"Button\"}`, or `youi show button` without MCP. Use only the listed values; `guidance` says when to use which.",
-    `3. Import from \`${from}\`. Never import a component of the same name from anywhere else.`,
+    `3. Import from ${from}. Never import a component of the same name from anywhere else.`,
     "4. Colour, type, radius and shadow come from tokens: `system_get_tokens {\"group\": \"color\"}` gives each token's CSS variable and a Tailwind utility (a colour works with bg-, text- and border-). Never write a hex, rgb() or a `[arbitrary]` value that copies a token.",
     "5. Run `youi check` and fix every error; warnings need a reason if left.",
     "",

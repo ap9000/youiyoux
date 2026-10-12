@@ -91,6 +91,7 @@ export function checkInputFor(project: Project, scan: Pick<ScanResult, "modules"
     tokens: scan.tokens,
     rules,
     componentsDir: project.config.componentsDir,
+    ...(project.config.importFrom ? { importFrom: project.config.importFrom } : {}),
     tokenSources: project.config.tokenSources,
     generatedDir: project.config.outputs.dir,
   };

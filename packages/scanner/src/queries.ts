@@ -19,7 +19,8 @@ export function findContract(project: Project, query: string): ComponentContract
 
 export function importLine(project: Project, contract: ComponentContract): string {
   const names = [contract.source.export, ...contract.source.also].join(", ");
-  return `import { ${names} } from "${project.config.importFrom ?? project.config.componentsDir}";`;
+  // Without an alias the specifier depends on the importing file, so say so rather than print one that does not resolve.
+  return `import { ${names} } from "${project.config.importFrom ?? `<relative path to ${project.config.componentsDir}>`}";`;
 }
 
 const MAX_PROP_TEXT = 40;
@@ -145,6 +146,11 @@ export interface ScreenBom {
 
 export function screenBom(project: Project, report: ScanReport, route: string): ScreenBom {
   const sites = report.usages.filter((u) => u.routes.includes(route));
+  if (sites.length === 0) {
+    // An empty bill for a mistyped route would read as "nothing on this screen": unknown is never zero.
+    const known = new Set([...report.usages.flatMap((u) => u.routes), ...project.config.routes.map.flatMap((m) => m.routes)].filter((r) => r !== "*"));
+    if (!known.has(route)) throw new Error(`no screen "${route}"; known: ${[...known].sort().join(", ") || "none (set routes in the project config)"}`);
+  }
   const files = new Set(sites.map((s) => s.file));
   const byElement = Map.groupBy(sites, (s) => s.element);
   const elements = [...byElement].map(([element, list]) => {

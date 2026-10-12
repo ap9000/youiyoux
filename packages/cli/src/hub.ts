@@ -17,6 +17,8 @@ export interface HubOptions {
   readonly project?: string;
   /** Project config, when it lives outside the product repo. */
   readonly config?: string;
+  /** Product root, when the config does not name it. */
+  readonly root?: string;
   readonly port?: string;
   /** Keep the snapshot live while the hub runs. */
   readonly watch?: boolean;
@@ -41,7 +43,7 @@ export const DEFAULT_HUB_PORT = "5173";
 export function hubPlan(toolRoot: string, options: HubOptions): HubPlan {
   const web = join(toolRoot, "apps/web");
   const vite = [join(web, "node_modules/vite/bin/vite.js"), ...(options.port ? ["--port", options.port, "--strictPort"] : [])];
-  const named = (["design", "project", "config"] as const).flatMap((key) => (options[key] ? [`--${key}`, resolve(options[key])] : []));
+  const named = (["design", "project", "config", "root"] as const).flatMap((key) => (options[key] ? [`--${key}`, resolve(options[key])] : []));
   const flags = named.length === 0 && options.watch ? ["--project", join(toolRoot, "examples/demo-app")] : named;
   const api: Record<string, string> = options.api ? { YOUI_API: options.api } : {};
   if (flags.length === 0) return { web, snapshot: null, env: api, vite, watch: null };
