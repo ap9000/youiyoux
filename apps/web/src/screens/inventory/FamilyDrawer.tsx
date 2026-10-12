@@ -1,19 +1,21 @@
 /**
  * A family opened from the wall: a drawer on a desktop, a bottom sheet on a phone, headed by how
  * many uses it has across how many projects. Usage lists every look (project, repo-relative
- * file:line, routes); Variants draws each distinct specimen; Code shows their HTML. It loads
+ * file:line, routes); Variants draws each distinct specimen, or (States) each one default, hover,
+ * focus, pressed and disabled side by side; Code shows their HTML. It loads
  * the family's chunk in each of its projects, so every use is listed even under a project filter.
  */
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { Scheme } from "../../app/theme.tsx";
 import { useParts, type InventorySource } from "../../data/inventory-source.ts";
 import { usageRows, type FamilyView } from "../../data/inventory-view.ts";
 import type { InventoryChunk } from "../../data/types.ts";
 import { CodeBlock } from "../../ui/CodeBlock.tsx";
+import { Segmented } from "../../ui/Segmented.tsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../ui/Tabs.tsx";
 import { familyTiles } from "./family-tiles.ts";
 import { Sheet, useWide } from "./Sheet.tsx";
-import { ScrollRoot, TileGrid } from "./Specimens.tsx";
+import { ScrollRoot, StateStrip, TileGrid, type Tile } from "./Specimens.tsx";
 
 /** Code shows this many specimens' HTML; the rest are counted. */
 const CODE_LIMIT = 12;
@@ -80,8 +82,7 @@ function FamilyDetail({ view, source, scheme }: { view: FamilyView; source: Inve
             </ul>
           </TabsContent>
           <TabsContent value="variants" className="px-5 py-4 outline-none">
-            <p className="mb-3 text-small text-muted">Each distinct way it is drawn, per project; looks drawn the same share a tile.</p>
-            <TileGrid tiles={tiles} scheme={scheme} />
+            <Variants tiles={tiles} scheme={scheme} />
           </TabsContent>
           <TabsContent value="code" className="space-y-3 px-5 py-4 outline-none">
             {code.length === 0 ? (
@@ -98,5 +99,48 @@ function FamilyDetail({ view, source, scheme }: { view: FamilyView; source: Inve
         </>
       )}
     </Tabs>
+  );
+}
+
+/** Variants: every distinct specimen as a tile, or each drawn one in its five states, so near-duplicates compare state by state. */
+function Variants({ tiles, scheme }: { tiles: readonly Tile[]; scheme: Scheme }) {
+  const [show, setShow] = useState<"looks" | "states">("looks");
+  const drawn = tiles.filter((t) => t.specimen !== null && t.css !== null);
+  return (
+    <>
+      <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+        <p className="min-w-0 flex-1 text-small text-muted">{show === "looks" ? "Each distinct way it is drawn, per project; looks drawn the same share a tile." : "Each drawn look default, hover, focus, pressed and disabled, from its project's own CSS."}</p>
+        <Segmented
+          label="Show"
+          touch
+          value={show}
+          onChange={setShow}
+          options={[
+            { value: "looks", label: "Looks" },
+            { value: "states", label: "States", count: drawn.length },
+          ]}
+        />
+      </div>
+      {show === "looks" ? (
+        <TileGrid tiles={tiles} scheme={scheme} tryIt />
+      ) : drawn.length === 0 ? (
+        <p className="text-small text-muted">No look of this family was drawn from its project's code and CSS, so there are no states to show.</p>
+      ) : (
+        <ul className="space-y-4" aria-label="States of each look">
+          {drawn.map((tile) => (
+            <li key={tile.key} className="min-w-0 space-y-1">
+              <p className="flex min-w-0 items-baseline gap-1.5 text-caption text-muted">
+                <span className="shrink-0 font-medium text-ink-2">{tile.project}</span>
+                {tile.count > 1 && <span className="shrink-0 tabular">×{tile.count}</span>}
+                <span className="truncate font-mono" title={tile.place}>
+                  {tile.place}
+                </span>
+              </p>
+              <StateStrip tile={tile} scheme={scheme} label={`${tile.project} ${tile.place}`} />
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   );
 }

@@ -68,14 +68,14 @@ The Inventory page paints from a small index (projects, roles by project, counts
 
 `scripts/measure-inventory.ts` makes synthetic inventories of the scanner's fixtures at 50 and 5,000 looks (each copy a little taller and with its own label, so families and specimens multiply), snapshots each with specimens, builds the hub against it, serves it with `vite preview` and opens `/inventory` cold in headless Chromium five times. It counts the bytes transferred (headers included, uncompressed preview server) until the frame after the headline (filters, family count, drawn from the index alone) is in the DOM, and reads FCP.
 
-Measured 2026-10-12, Apple silicon laptop, median of 5:
+Measured 2026-10-12 (with state strips and Try it), Apple silicon laptop, median of 5:
 
 | Looks | Families | Index | Requests before the inventory paints | Bytes before it paints | Inventory paint | FCP |
 | --- | --- | --- | --- | --- | --- | --- |
-| 50 | 16 | 3.1 KB | 28 | 183,283 | 176 ms | 188 ms |
-| 5,000 | 126 | 3.2 KB | 28 | 183,334 | 170 ms | 184 ms |
+| 50 | 16 | 3.3 KB | 28 | 186,050 | 171 ms | 184 ms |
+| 5,000 | 126 | 3.4 KB | 28 | 186,103 | 175 ms | 188 ms |
 
-It exits 1 when the larger run transfers more than the smaller's bytes + 10%, or its median paint or FCP is over 1.5× the smaller's plus one frame (16 ms). Only counts grow in the index. What does grow is after the paint: at 5,000 looks the console's button chunk is 1 MB uncompressed (its 2,000-odd looks and their specimen HTML), loaded when the Buttons row nears the screen or the browser is next idle, unless a filter leaves buttons or the console out. The specimen stylesheets do not grow with looks: 33 KB per scheme for the console (its Tailwind build, with its 13 KB font inlined), 1.5 KB for the site. Full numbers are in [`perf/inventory.json`](perf/inventory.json).
+It exits 1 when the larger run transfers more than the smaller's bytes + 10%, or its median paint or FCP is over 1.5× the smaller's plus one frame (16 ms). It also exits 1 when, a second after the paint with nothing clicked, the page has asked for any of Try it (the `try-live` chunk or a `/__youi/try` bundle) or mounted a state strip, or when the build carries `try.json`: in both runs above, none. State strips and Try it added 2.8 KB before the paint at both sizes (183,283 → 186,050 bytes at 50 looks): the Try it button, the one-live-tile store and the strip component in the Inventory chunk. The live frame is its own chunk, fetched on the first Try it; a look's bundle (the console's Tabs with React and Radix: about 250 KB, built in about 150 ms) is fetched only for the tile clicked, and cached by its content hash. The forced-state twins add about 3% to a project's specimen stylesheet (33.2 KB → 34.2 KB for the console), once per sheet, whatever the number of looks. Only counts grow in the index. What does grow is after the paint: at 5,000 looks the console's button chunk is 1 MB uncompressed (its 2,000-odd looks and their specimen HTML), loaded when the Buttons row nears the screen or the browser is next idle, unless a filter leaves buttons or the console out. The specimen stylesheets do not grow with looks: 33 KB per scheme for the console (its Tailwind build, with its 13 KB font inlined), 1.5 KB for the site. Full numbers are in [`perf/inventory.json`](perf/inventory.json).
 
 ## Live numbers
 

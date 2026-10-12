@@ -21,8 +21,13 @@
  * inventory-compare.<scheme>.png (the 32px button's compare card, its slider dragged to 45% then
  * moved by a key, so its focus ring shows), inventory-lead.<scheme>.png (the mobile project's
  * wall: its back button's hidden phone look skipped for the desktop one),
- * inventory-fixes.<scheme>.png (the fix list) and inventory-drawer.<scheme>.png (that family
- * opened); and at 390×844 on a touch phone the same as phone-inventory*.png, with
+ * inventory-compare-states.<scheme>.png (that card's States: both sides' strips, one above the
+ * other), inventory-fixes.<scheme>.png (the fix list), inventory-drawer.<scheme>.png (that family
+ * opened), inventory-states.<scheme>.png (its Variants tab showing States: each look default,
+ * hover, focus, pressed and disabled side by side) and inventory-try-tabs.<scheme>.png (the
+ * console's Tabs after Try it, its second trigger clicked in the live sandboxed frame, so it is
+ * the active tab; `--serve` answers Try it from `vite preview`); and at 390×844 on a touch phone
+ * the same as phone-inventory*.png, with
  * phone-inventory-filters.<scheme>.png (the filters' bottom sheet) and
  * phone-inventory-sheet.<scheme>.png (the family's bottom sheet) for the last two. Each waits
  * until every specimen frame on screen has drawn.
@@ -72,6 +77,21 @@ async function framesDrawn(page: Page): Promise<void> {
           return r.bottom > 0 && r.top < innerHeight && r.width > 0;
         })
         .every((t) => (t as HTMLElement).dataset.kind === "shape" || t.querySelector("iframe[data-placed]")),
+    undefined,
+    { timeout: FRAMES_TIMEOUT_MS },
+  );
+}
+
+/** Every state strip on screen has drawn its frame. */
+async function stripsDrawn(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const strips = [...document.querySelectorAll("[data-strip]")].filter((t) => {
+        const r = t.getBoundingClientRect();
+        return r.bottom > 0 && r.top < innerHeight && r.width > 0;
+      });
+      return strips.length > 0 && strips.every((t) => t.querySelector("iframe[data-placed]"));
+    },
     undefined,
     { timeout: FRAMES_TIMEOUT_MS },
   );
@@ -208,6 +228,14 @@ async function capture(browser: Browser, base: string, out: string, checks: Chec
       await stage.getByRole("slider").focus();
       await page.keyboard.press("ArrowRight");
       files.push(await shoot(page, out, `${prefix}-compare.${scheme}`));
+      // The same pair state by state.
+      await page.locator('[data-compare="button-1"]').getByRole("radiogroup", { name: "Compare as" }).getByRole("radio", { name: "States" }).click();
+      await scrollTo(page, '[data-compare="button-1"]');
+      await stripsDrawn(page);
+      await page.waitForTimeout(SETTLE_MS);
+      const compareStates = join(out, `${prefix}-compare-states.${scheme}.png`);
+      await page.screenshot({ path: compareStates });
+      files.push(compareStates);
 
       await scrollTo(page, "#inventory-fixes");
       files.push(await shoot(page, out, `${prefix}-fixes.${scheme}`));
@@ -216,7 +244,33 @@ async function capture(browser: Browser, base: string, out: string, checks: Chec
       await page.locator('[data-family="button-1"]').getByRole("button", { name: /^Open / }).click();
       await page.getByTestId("family-drawer").getByRole("list", { name: "Every use" }).waitFor();
       files.push(await shoot(page, out, phone ? `${prefix}-sheet.${scheme}` : `${prefix}-drawer.${scheme}`));
+      // Its looks in each state, from each project's own CSS.
+      const drawer = page.getByTestId("family-drawer");
+      await drawer.getByRole("tab", { name: /Variants/ }).click();
+      await drawer.getByRole("radiogroup", { name: "Show" }).getByRole("radio", { name: /States/ }).click();
+      await stripsDrawn(page);
+      await page.waitForTimeout(SETTLE_MS);
+      const statesFile = join(out, `${prefix}-states.${scheme}.png`);
+      await page.screenshot({ path: statesFile });
+      files.push(statesFile);
       await page.keyboard.press("Escape");
+
+      // Try it: the console's Tabs, live; its second trigger clicked.
+      await open(page, base, "?type=tabs&project=console");
+      await scrollTo(page, '[data-role="tabs"]');
+      const tabs = page.locator('[data-family="tabs-1"]');
+      await framesDrawn(page);
+      await tabs.getByRole("button", { name: /^Try / }).click();
+      await tabs.locator('[data-live="drawn"]').waitFor({ timeout: FRAMES_TIMEOUT_MS });
+      const live = page.frameLocator('[data-family="tabs-1"] iframe[data-live-frame]');
+      await live.getByRole("tab").nth(1).click();
+      await live.locator('[role="tab"][data-state="active"]').nth(0).waitFor();
+      if ((await live.getByRole("tab").nth(1).getAttribute("data-state")) !== "active") throw new Error("Try it: the second tab did not become active");
+      await page.waitForTimeout(SETTLE_MS);
+      const tryFile = join(out, `${prefix}-try-tabs.${scheme}.png`);
+      await page.screenshot({ path: tryFile });
+      files.push(tryFile);
+      await tabs.getByRole("button", { name: /^Done / }).click();
 
       await open(page, base, "?project=mobile");
       await scrollTo(page, '[data-role="button"]');
@@ -242,6 +296,8 @@ async function serveFixtures(): Promise<{ base: string; close: () => Promise<voi
   const dist = join(work, "dist");
   execFileSync(process.execPath, [join(APP, "scripts/snapshot.ts"), "--out", out, "--inventory", join(work, "inventory.json")], { cwd: TOOL, stdio: ["ignore", "inherit", "inherit"] });
   execFileSync(process.execPath, [join(APP, "node_modules/vite/bin/vite.js"), "build", "--outDir", dist, "--emptyOutDir", "--logLevel", "error"], { cwd: APP, env: { ...process.env, YOUI_HUB_SNAPSHOT: out }, stdio: ["ignore", "ignore", "inherit"] });
+  // The preview server answers Try it from this snapshot's try.json (vite.config.ts reads it at load).
+  process.env.YOUI_HUB_SNAPSHOT = out;
   const { preview } = await import("vite");
   const server = await preview({ root: APP, configFile: join(APP, "vite.config.ts"), build: { outDir: dist }, preview: { port: PORT, strictPort: true }, logLevel: "error" });
   return { base: `http://localhost:${PORT}`, close: () => server.close() };

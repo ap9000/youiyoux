@@ -14,12 +14,14 @@
  *
  * Fails when the largest size transfers more than the smallest's bytes + 10%, or its median
  * inventory paint or FCP is over 1.5× the smallest's (plus one frame, 16 ms, for timer noise).
+ * Also fails when a page nobody clicked asks for any of Try it (its chunk or a bundle), mounts a
+ * state strip, or when the build carries try.json: those load on click only, from the server.
  * Results go to perf/inventory.json. Its snapshots and builds are made in apps/web/.measure (a
  * snapshot's preview components resolve the hub's own packages, as `youi ui`'s .hub does),
  * removed afterwards unless --keep.
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { chromium, type Browser } from "playwright-core";
@@ -40,7 +42,14 @@ interface Run {
   requests: number;
   inventoryPaintMs: number;
   fcpMs: number;
+  /** Try it requests (its chunk, a bundle) and state strips, a second after the paint, with nothing clicked: 0. */
+  tryRequests: number;
+  strips: number;
 }
+
+/** A request that is Try it's: the live frame's chunk, or the bundle endpoint. */
+const TRY_REQUEST = /\/__youi\/try|\/assets\/try-live[-.]/;
+const SETTLE_MS = 1000;
 
 const median = (values: readonly number[]): number => {
   const sorted = [...values].sort((a, b) => a - b);
@@ -51,6 +60,8 @@ const median = (values: readonly number[]): number => {
 async function measure(browser: Browser, url: string): Promise<Run> {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
+  const tryRequests: string[] = [];
+  page.on("request", (request) => TRY_REQUEST.test(request.url()) && tryRequests.push(request.url()));
   // Cold: nothing from the HTTP cache (each context's Cache Storage starts empty anyway).
   const cdp = await context.newCDPSession(page);
   await cdp.send("Network.enable");
@@ -83,8 +94,11 @@ async function measure(browser: Browser, url: string): Promise<Run> {
     };
   });
   const before = entries.filter((e) => e.end <= paint);
+  // A moment on, rows and their chunks loading: still nothing of Try it, and no strip.
+  await page.waitForTimeout(SETTLE_MS);
+  const strips = await page.locator("[data-strip]").count();
   await context.close();
-  return { bytes: before.reduce((n, e) => n + e.size, 0), requests: before.length, inventoryPaintMs: Math.round(paint * 10) / 10, fcpMs: Math.round(fcp * 10) / 10 };
+  return { bytes: before.reduce((n, e) => n + e.size, 0), requests: before.length, inventoryPaintMs: Math.round(paint * 10) / 10, fcpMs: Math.round(fcp * 10) / 10, tryRequests: tryRequests.length, strips };
 }
 
 async function main(): Promise<void> {
@@ -98,7 +112,7 @@ async function main(): Promise<void> {
   const base = libs.core.InventoryReport.parse(await libs.scanner.buildInventory(FIXTURES, { cwd: TOOL }));
   // Absolute roots, so the snapshot finds the projects wherever it runs.
   const rooted = { ...base, projects: base.projects.map((p, i) => ({ ...p, root: FIXTURES[i]! })) };
-  const results: Array<{ looks: number; families: number; indexBytes: number; runs: Run[] }> = [];
+  const results: Array<{ looks: number; families: number; indexBytes: number; tryJsonInBuild: boolean; runs: Run[] }> = [];
   const browser = await chromium.launch({ headless: true });
   try {
     for (const size of sizes) {
@@ -117,7 +131,7 @@ async function main(): Promise<void> {
       try {
         const measured: Run[] = [];
         for (let i = 0; i < runs; i++) measured.push(await measure(browser, `http://localhost:${PORT}/inventory`));
-        results.push({ looks: size, families: report.families.length, indexBytes, runs: measured });
+        results.push({ looks: size, families: report.families.length, indexBytes, tryJsonInBuild: existsSync(join(dist, "try.json")) || existsSync(join(dist, "data/try.json")), runs: measured });
       } finally {
         await server.close();
       }
@@ -125,17 +139,22 @@ async function main(): Promise<void> {
   } finally {
     await browser.close();
   }
-  const summary = results.map((r) => ({ looks: r.looks, families: r.families, indexBytes: r.indexBytes, bytesBeforePaint: median(r.runs.map((x) => x.bytes)), requestsBeforePaint: median(r.runs.map((x) => x.requests)), inventoryPaintMs: median(r.runs.map((x) => x.inventoryPaintMs)), fcpMs: median(r.runs.map((x) => x.fcpMs)) }));
+  const summary = results.map((r) => ({ looks: r.looks, families: r.families, indexBytes: r.indexBytes, bytesBeforePaint: median(r.runs.map((x) => x.bytes)), requestsBeforePaint: median(r.runs.map((x) => x.requests)), inventoryPaintMs: median(r.runs.map((x) => x.inventoryPaintMs)), fcpMs: median(r.runs.map((x) => x.fcpMs)), tryRequests: Math.max(...r.runs.map((x) => x.tryRequests)), strips: Math.max(...r.runs.map((x) => x.strips)) }));
   const [small, large] = [summary[0]!, summary.at(-1)!];
   const problems = [
     large.bytesBeforePaint > small.bytesBeforePaint * BYTES_SLACK && `${large.looks} looks transfer ${large.bytesBeforePaint} bytes before the inventory paints, over ${small.looks} looks' ${small.bytesBeforePaint} + 10%`,
     large.inventoryPaintMs > small.inventoryPaintMs * TIME_RATIO + FRAME_MS && `${large.looks} looks paint the inventory at ${large.inventoryPaintMs} ms, over 1.5× ${small.looks} looks' ${small.inventoryPaintMs} ms`,
     large.fcpMs > small.fcpMs * TIME_RATIO + FRAME_MS && `${large.looks} looks' FCP is ${large.fcpMs} ms, over 1.5× ${small.looks} looks' ${small.fcpMs} ms`,
+    ...results.flatMap((r) => [
+      r.runs.some((x) => x.tryRequests > 0) && `${r.looks} looks: Try it was requested with nothing clicked`,
+      r.runs.some((x) => x.strips > 0) && `${r.looks} looks: a state strip mounted with nothing opened`,
+      r.tryJsonInBuild && `${r.looks} looks: try.json is in the build, where anyone could read it`,
+    ]),
   ].filter((p): p is string => typeof p === "string");
   const report = { measuredAt: new Date().toISOString(), runs, bounds: { bytes: "≤ smallest + 10%", time: "≤ 1.5× smallest + 16 ms (median)" }, summary, raw: results, problems };
   mkdirSync(join(APP, "perf"), { recursive: true });
   writeFileSync(join(APP, "perf/inventory.json"), `${JSON.stringify(report, null, 2)}\n`);
-  for (const s of summary) process.stdout.write(`${String(s.looks).padStart(5)} looks, ${s.families} families: index ${s.indexBytes} B; before the inventory paints ${s.requestsBeforePaint} requests, ${s.bytesBeforePaint} B; inventory paint ${s.inventoryPaintMs} ms; FCP ${s.fcpMs} ms (median of ${runs})\n`);
+  for (const s of summary) process.stdout.write(`${String(s.looks).padStart(5)} looks, ${s.families} families: index ${s.indexBytes} B; before the inventory paints ${s.requestsBeforePaint} requests, ${s.bytesBeforePaint} B; inventory paint ${s.inventoryPaintMs} ms; FCP ${s.fcpMs} ms (median of ${runs}); Try it requests ${s.tryRequests}, state strips ${s.strips}\n`);
   if (!values.keep) rmSync(work, { recursive: true, force: true });
   if (problems.length > 0) {
     for (const problem of problems) process.stderr.write(`measure-inventory: ${problem}\n`);

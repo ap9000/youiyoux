@@ -22,6 +22,9 @@
  *   `--config` kept outside the product names that product's stylesheets, so it is never edited;
  *   the stylesheets each project used, in page order, and any Tailwind entry it skipped (one
  *   nothing links, imports or reads, when the page builds another) are printed.
+ * - <out>/try.json: for Try it, each project's root (relative to <out>) and tsconfig and each
+ *   component specimen's recipe and sibling looks, so the hub's own server can bundle one look on
+ *   request (scripts/try-server.ts). Beside public/, never in it: it is never served or built.
  * - <out>/public/data/detect.<hash>.json and detect.shot.<hash>.png: a `youi detect` report
  *   (`--detect`, validated as youi.detect/v1) and its element screenshots, for Library > Stack.
  *   Like screens, it belongs to whoever ran it and never lives in this repo.
@@ -48,6 +51,7 @@ import { pathToFileURL } from "node:url";
 import { splitInventory, type SplitSpecimens } from "../src/data/inventory-split.ts";
 import { screenSlug } from "../src/data/screens.ts";
 import type { ProjectShots } from "../src/data/types.ts";
+import { tryProject, type TryIndex, type TryLook, type TryProject } from "./try-server.ts";
 
 const APP = resolve(import.meta.dirname, "..");
 const TOOL = resolve(APP, "../..");
@@ -84,7 +88,9 @@ interface ScannerModule {
   scanProject(project: ScannedProject, options?: { cache?: unknown }): Promise<{ report: unknown; identity: import("@youiyoux/core").CheckIdentity }>;
   describeIdentity(identity: import("@youiyoux/core").CheckIdentity): string;
   buildInventory(dirs: readonly string[], options?: { cwd?: string }): Promise<unknown>;
-  projectSpecimens(project: { id: string; root: string; commit: string | null; looks: ReadonlyArray<Pick<import("@youiyoux/core").InventoryLook, "id" | "role" | "recipe">> }, options?: { css?: { sheets: readonly string[]; from: string } }): Promise<{ css: { light: string; dark: string } | null; specimens: SplitSpecimens["specimens"]; looks: Record<string, string>; warnings: readonly string[]; tailwind: string; used: readonly string[]; skipped: readonly string[]; cached: boolean }>;
+  projectSpecimens(project: { id: string; root: string; commit: string | null; looks: ReadonlyArray<Pick<import("@youiyoux/core").InventoryLook, "id" | "role" | "recipe">> }, options?: { css?: { sheets: readonly string[]; from: string } }): Promise<{ css: { light: string; dark: string } | null; specimens: SplitSpecimens["specimens"]; looks: Record<string, string>; warnings: readonly string[]; tailwind: string; used: readonly string[]; skipped: readonly string[]; tsconfig: string; cached: boolean }>;
+  /** A component look as Try it bundles it (its label or icon when it has no text). */
+  browserLookOf(recipe: unknown, role: string): TryLook;
   ProjectWatcher: {
     start<R>(options: {
       root: string;
@@ -469,8 +475,8 @@ export function sheetReport(id: string, used: readonly string[], skipped: readon
  * machine gets none. The product a `--config` kept outside it names uses that config's
  * `specimens.css`. Each project's stylesheets, in order, go to `log`.
  */
-export async function buildSpecimens(inventory: InventoryReport, roots: ReadonlyMap<string, string>, scanner: ScannerModule, configured: ConfiguredCss | null = null, log: (line: string) => void = (line) => process.stdout.write(`${line}\n`)): Promise<Record<string, SplitSpecimens>> {
-  const out: Record<string, SplitSpecimens> = {};
+export async function buildSpecimens(inventory: InventoryReport, roots: ReadonlyMap<string, string>, scanner: ScannerModule, configured: ConfiguredCss | null = null, log: (line: string) => void = (line) => process.stdout.write(`${line}\n`)): Promise<Record<string, SplitSpecimens & { try?: { root: string; tsconfig: string } }>> {
+  const out: Record<string, SplitSpecimens & { try?: { root: string; tsconfig: string } }> = {};
   let matched = false;
   for (const project of inventory.projects) {
     const root = roots.get(project.id);
@@ -482,7 +488,7 @@ export async function buildSpecimens(inventory: InventoryReport, roots: Readonly
     matched ||= css !== null;
     try {
       const built = await scanner.projectSpecimens({ id: project.id, root, commit: project.commit, looks: inventory.looks.filter((l) => l.project === project.id) }, css ? { css } : {});
-      out[project.id] = { css: built.css, specimens: built.specimens, looks: built.looks, notes: [`CSS: ${built.tailwind}`, ...built.used, ...built.skipped, ...built.warnings] };
+      out[project.id] = { css: built.css, specimens: built.specimens, looks: built.looks, notes: [`CSS: ${built.tailwind}`, ...built.used, ...built.skipped, ...built.warnings], try: { root, tsconfig: built.tsconfig } };
       for (const line of sheetReport(project.id, built.used, built.skipped)) log(line);
     } catch (error: unknown) {
       out[project.id] = { css: null, specimens: {}, looks: {}, notes: [`specimens failed: ${error instanceof Error ? error.message : String(error)}`] };
@@ -492,9 +498,26 @@ export async function buildSpecimens(inventory: InventoryReport, roots: Readonly
   return out;
 }
 
-/** Specimens for an inventory, then its split files. */
-async function writeInventoryWithSpecimens(dataDir: string, inventory: InventoryReport, path: string | undefined, libs: Pick<Libraries, "core" | "scanner">, values: { config?: string; root?: string }): Promise<WrittenInventory> {
-  return writeInventory(dataDir, inventory, await buildSpecimens(inventory, inventoryRoots(inventory, path), libs.scanner, configuredSpecimenCss(values, libs.core)));
+/**
+ * try.json for a snapshot directory: each project with specimens on this machine, its root
+ * relative to the directory, and its component specimens' recipes and siblings (try-server.ts).
+ */
+export function tryIndex(out: string, inventory: InventoryReport, specimens: Readonly<Record<string, SplitSpecimens & { try?: { root: string; tsconfig: string } }>>, scanner: Pick<ScannerModule, "browserLookOf">): TryIndex {
+  const projects: Record<string, TryProject> = {};
+  for (const project of inventory.projects) {
+    const built = specimens[project.id];
+    if (!built?.try) continue;
+    const looks = inventory.looks.filter((l) => l.project === project.id) as unknown as Parameters<typeof tryProject>[2];
+    projects[project.id] = tryProject(relative(out, built.try.root) || ".", built.try.tsconfig, looks, built.looks, built.specimens, (recipe, role) => scanner.browserLookOf(recipe, role));
+  }
+  return { schema: "youiyoux.try/v1", projects };
+}
+
+/** Specimens for an inventory, then its split files, and try.json beside the snapshot's public/. */
+async function writeInventoryWithSpecimens(out: string, inventory: InventoryReport, path: string | undefined, libs: Pick<Libraries, "core" | "scanner">, values: { config?: string; root?: string }): Promise<WrittenInventory> {
+  const specimens = await buildSpecimens(inventory, inventoryRoots(inventory, path), libs.scanner, configuredSpecimenCss(values, libs.core));
+  write(join(out, "try.json"), `${JSON.stringify(tryIndex(out, inventory, specimens, libs.scanner), null, 2)}\n`);
+  return writeInventory(join(out, "public/data"), inventory, specimens);
 }
 
 /**
@@ -561,7 +584,7 @@ async function watchSnapshot(values: { design?: string; project?: string; config
   mkdirSync(dataDir, { recursive: true });
   // The inventory and the detect report are files someone produced, not views of the watched sources: written once.
   const read = await readInventory(values.inventory, false, libs);
-  const inventory = read ? await writeInventoryWithSpecimens(dataDir, read, values.inventory, libs, values) : null;
+  const inventory = read ? await writeInventoryWithSpecimens(out, read, values.inventory, libs, values) : null;
   const detect = values.detect ? writeDetect(values.detect, dataDir, libs.core) : null;
   const root = projectArg(values) ?? (values.config ? dirname(resolve(values.config)) : DEMO_PROJECT);
   let previousId = previousSystemId(dataDir);
@@ -641,7 +664,8 @@ async function main(): Promise<void> {
   const shots = source.usage && shotsDir ? writeScreens(shotsDir, dataDir, source.usage.project) : null;
   const usage = source.usage ? [writeUsage(dataDir, source.usage, shots)] : [];
   const read = await readInventory(values.inventory, out === DEFAULT_OUT, libs);
-  const inventory = read ? await writeInventoryWithSpecimens(dataDir, read, values.inventory, libs, values) : null;
+  const inventory = read ? await writeInventoryWithSpecimens(out, read, values.inventory, libs, values) : null;
+  if (!read) rmSync(join(out, "try.json"), { force: true });
   const detect = values.detect ? writeDetect(values.detect, dataDir, libs.core) : null;
   writeManifest(dataDir, system, usage, undefined, inventory, detect);
   if (out === DEFAULT_OUT) await buildHubTokens(libs.core, libs.lib);

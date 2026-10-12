@@ -10,17 +10,20 @@
  * MAX_MOUNTED are mounted at all, visible tiles first; a strip of more than VIRTUALISE_AT tiles
  * is virtualised. Without a stylesheet or a specimen, a tile draws the look's measured shape
  * instead, and so does a near tile waiting for room to mount its frame.
+ *
+ * A state strip (StateStrip) is one such frame with the look five times, each cell forcing a state
+ * (default, hover, focus, pressed, disabled) through the twins the scanner added to the sheet.
  */
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { clsx } from "clsx";
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { Scheme } from "../../app/theme.tsx";
 import type { InventoryShape, Specimen } from "../../data/types.ts";
 
 export const DESK_WIDTH = 1280;
-const FRAME_HEIGHT = 480;
+export const FRAME_HEIGHT = 480;
 /** The specimen's offset inside the frame, so a shadow or ring is not cut off. */
-const MARGIN = 32;
+export const MARGIN = 32;
 export const TILE_HEIGHT = 88;
 /** A wall tile's specimen, drawn larger. */
 export const LARGE_TILE_HEIGHT = 136;
@@ -238,19 +241,77 @@ export interface Tile {
   readonly shape: InventoryShape;
   readonly count: number;
   readonly place: string;
+  /** Its specimen's id in its project, which Try it asks the hub's server to bundle. */
+  readonly specimenId?: string | null;
+}
+
+/** The `<html>` opening and `<head>` every specimen document shares: the hub's scheme, one stylesheet link. */
+export function documentHead(css: string, scheme: Scheme): string {
+  const escaped = css.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+  const dark = scheme === "dark";
+  return `<!doctype html><html lang="en"${dark ? ' class="dark"' : ""} data-theme="${scheme}" style="color-scheme:${scheme}"><head><meta charset="utf-8"><link rel="stylesheet" href="${escaped}">`;
 }
 
 /** The document a frame shows: static HTML and one stylesheet link, no script. */
 export function frameDocument(html: string, css: string, scheme: Scheme): string {
-  const escaped = css.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
-  const dark = scheme === "dark";
-  return `<!doctype html><html lang="en"${dark ? ' class="dark"' : ""} data-theme="${scheme}" style="color-scheme:${scheme}"><head><meta charset="utf-8"><link rel="stylesheet" href="${escaped}"></head><body><div id="youi-specimen" style="display:inline-block;margin:${MARGIN}px">${html}</div></body></html>`;
+  return `${documentHead(css, scheme)}</head><body><div id="youi-specimen" style="display:inline-block;margin:${MARGIN}px">${html}</div></body></html>`;
 }
 
-/** The box every visible element of the specimen covers, in frame pixels. */
-function specimenBox(doc: Document): { x: number; y: number; width: number; height: number } | null {
+/* ----------------------------------------------------------------- the state strip */
+
+/**
+ * The states a strip draws, left to right. A cell's class forces its state through the twins the
+ * scanner adds to every project sheet (packages/scanner/src/specimens/states.ts, STATE_CLASSES).
+ */
+export const STATES = [
+  { id: "default", label: "Default", className: null },
+  { id: "hover", label: "Hover", className: "youi-state-hover" },
+  { id: "focus", label: "Focus", className: "youi-state-focus" },
+  { id: "pressed", label: "Pressed", className: "youi-state-active" },
+  { id: "disabled", label: "Disabled", className: "youi-state-disabled" },
+] as const;
+
+const CONTROL = "button, input, select, textarea, fieldset, optgroup, option";
+const INTERACTIVE = `${CONTROL}, a, [role], [tabindex]`;
+
+/**
+ * The specimen as it is when disabled: `disabled` on its form controls, `aria-disabled="true"`
+ * and Radix's `data-disabled` on them, on links and widgets and on its top elements. Set on a
+ * `<template>` copy here, before the frame gets it, since the frame runs no script.
+ */
+export function disabledHtml(html: string): string {
+  if (typeof document === "undefined") return html;
+  const template = document.createElement("template");
+  template.innerHTML = html;
+  const content = template.content;
+  for (const element of [...content.children, ...content.querySelectorAll(INTERACTIVE)]) {
+    if (element.matches(CONTROL)) element.setAttribute("disabled", "");
+    element.setAttribute("aria-disabled", "true");
+    element.setAttribute("data-disabled", "");
+  }
+  return template.innerHTML;
+}
+
+/**
+ * The same specimen five times, one cell per state, in equal columns (an inline grid of `1fr`
+ * columns is as wide as its widest cell five times), so the hub can label each column. Each cell
+ * is a containing block of its own, so a `fixed` look stays in its cell. No script.
+ */
+export function stateStripDocument(html: string, css: string, scheme: Scheme): string {
+  const cells = STATES.map((state) => `<div class="youi-state-cell${state.className ? ` ${state.className}` : ""}" data-youi-state="${state.id}" style="display:flex;align-items:center;justify-content:center;padding:16px;contain:layout">${state.id === "disabled" ? disabledHtml(html) : html}</div>`).join("");
+  return `${documentHead(css, scheme)}</head><body><div id="youi-specimen" style="display:inline-grid;grid-auto-flow:column;grid-auto-columns:1fr;align-items:center;margin:${MARGIN}px">${cells}</div></body></html>`;
+}
+
+type Box = { x: number; y: number; width: number; height: number };
+
+/** The box every visible element of the specimen covers, in frame pixels; `own`: the root's own box (a strip, whose columns the hub labels). */
+function specimenBox(doc: Document, own = false): Box | null {
   const root = doc.getElementById("youi-specimen");
   if (!root) return null;
+  if (own) {
+    const rect = root.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 ? { x: rect.left, y: rect.top, width: rect.width, height: rect.height } : null;
+  }
   let left = Infinity;
   let top = Infinity;
   let right = -Infinity;
@@ -266,19 +327,41 @@ function specimenBox(doc: Document): { x: number; y: number; width: number; heig
   return Number.isFinite(left) ? { x: left, y: top, width: right - left, height: bottom - top } : null;
 }
 
-function SpecimenFrame({ specimen, css, scheme, near, height, onBlank }: { specimen: Specimen; css: string; scheme: Scheme; near: boolean; height: number; onBlank?: () => void }) {
+/** How far a box is scaled down to fit a tile, padding kept; never up. */
+const fitScale = (box: Box, width: number, height: number): number => Math.min(1, (width - 2 * TILE_PAD) / box.width, (height - 2 * TILE_PAD) / box.height);
+
+/** The frame's transform that centres `box` (frame pixels) in a tile `width` by `height`, scaled to fit. */
+export function fitTransform(box: Box, width: number, height: number): string {
+  const w = width || TILE_MIN_WIDTH;
+  const scale = fitScale(box, w, height);
+  const x = w / 2 - (box.x + box.width / 2) * scale;
+  const y = height / 2 - (box.y + box.height / 2) * scale;
+  return `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${scale.toFixed(4)})`;
+}
+
+interface FrameProps {
+  /** The frame's document (frameDocument or stateStripDocument). */
+  srcDoc: string;
+  scheme: Scheme;
+  near: boolean;
+  height: number;
+  onBlank?: () => void;
+  /** A strip: fit the root's own box, and say where it was placed in the tile (x and width, tile pixels). */
+  strip?: (placed: { x: number; width: number }) => void;
+}
+
+function SpecimenFrame({ srcDoc, scheme, near, height, onBlank, strip }: FrameProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const slot = useFrameSlot(near);
   const [transform, setTransform] = useState<string | null>(null);
   const [background, setBackground] = useState<string | undefined>(undefined);
-  const srcDoc = frameDocument(specimen.html, css, scheme);
   useLayoutEffect(() => setTransform(null), [srcDoc]);
 
   const place = (): void => {
     const doc = frameRef.current?.contentDocument;
     const tile = boxRef.current;
-    const box = doc ? specimenBox(doc) : null;
+    const box = doc ? specimenBox(doc, strip !== undefined) : null;
     if (!tile || !box) {
       setTransform(`translate(${TILE_PAD}px, ${TILE_PAD}px)`);
       slot.done();
@@ -291,10 +374,9 @@ function SpecimenFrame({ specimen, css, scheme, near, height, onBlank }: { speci
     const paint = [doc!.body, doc!.documentElement].map((e) => view?.getComputedStyle(e).backgroundColor).find((c) => c && c !== "transparent" && c !== "rgba(0, 0, 0, 0)");
     setBackground(paint);
     const width = tile.clientWidth || TILE_MIN_WIDTH;
-    const scale = Math.min(1, (width - 2 * TILE_PAD) / box.width, (height - 2 * TILE_PAD) / box.height);
-    const x = width / 2 - (box.x + box.width / 2) * scale;
-    const y = height / 2 - (box.y + box.height / 2) * scale;
-    setTransform(`translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${scale.toFixed(4)})`);
+    setTransform(fitTransform(box, width, height));
+    const scale = fitScale(box, width, height);
+    strip?.({ x: width / 2 - (box.width / 2) * scale, width: box.width * scale });
     slot.done();
   };
 
@@ -342,6 +424,67 @@ export function ShapeBox({ shape, caption = "shape only", tileHeight = TILE_HEIG
   );
 }
 
+/* ------------------------------------------------------------ Try it: one live tile */
+
+/** The live frame (try-live.tsx), its own chunk: fetched on the first Try it, never for the first paint. */
+const LiveFrame = lazy(() => import("./try-live.tsx").then((m) => ({ default: m.LiveFrame })));
+
+/** The one live tile on the page: starting another ends it. */
+let live: { id: object; end: () => void } | null = null;
+
+export function startLive(id: object, end: () => void): void {
+  const previous = live;
+  live = { id, end };
+  if (previous && previous.id !== id) previous.end();
+}
+
+export function stopLive(id: object): void {
+  if (live?.id === id) live = null;
+}
+
+type LiveState = { status: "static"; failure: string | null } | { status: "loading" | "live" };
+
+/**
+ * A tile's Try it: start (ending any other live tile), end (Done, Escape, scrolling away, or
+ * another tile starting) and fail (a sentence; the static specimen stays). Escape anywhere in the
+ * page ends it; pressed inside the tile, it ends only Try it, not the drawer around it.
+ */
+function useLive(near: boolean, container: RefObject<HTMLElement | null>) {
+  const [state, setState] = useState<LiveState>({ status: "static", failure: null });
+  const token = useRef<object>({});
+  const button = useRef<HTMLButtonElement>(null);
+  const active = state.status !== "static";
+  const end = useCallback((failure: string | null = null) => {
+    stopLive(token.current);
+    setState({ status: "static", failure });
+  }, []);
+  const start = (): void => {
+    startLive(token.current, () => setState({ status: "static", failure: null }));
+    setState({ status: "loading" });
+  };
+  const ready = useCallback(() => setState((s) => (s.status === "loading" ? { status: "live" } : s)), []);
+  useEffect(() => {
+    if (active && !near) end();
+  }, [active, near, end]);
+  useEffect(() => {
+    if (!active) return;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape") return;
+      const inside = container.current?.contains(event.target as Node) ?? false;
+      if (inside) {
+        event.stopPropagation();
+        event.preventDefault();
+      }
+      end();
+      if (inside) button.current?.focus();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [active, end, container]);
+  useEffect(() => () => stopLive(token.current), []);
+  return { state, start, ready, end, button };
+}
+
 interface SpecimenTileProps {
   tile: Tile;
   scheme: Scheme;
@@ -354,24 +497,56 @@ interface SpecimenTileProps {
   className?: string;
   /** Called when the specimen's frame loads and nothing in it has a box at the desk width. */
   onBlank?: () => void;
+  /** Offer Try it on a component look: its own code, live, in a sandboxed frame. */
+  tryIt?: boolean;
 }
 
 /**
  * One look drawn: its frame (or its shape) in a box, sharing the near-viewport mounting, the
- * six-at-once queue and the 48-frame budget with every other specimen on the page.
+ * six-at-once queue and the 48-frame budget with every other specimen on the page. A component
+ * look can offer Try it: on click (and only then) its code is bundled by the hub's server and
+ * the tile swaps to a live frame (try-live.tsx) until Done, Escape or scrolling away.
  */
-export function SpecimenTile({ tile, scheme, size = "small", as: Tag = "li", caption = true, className, onBlank }: SpecimenTileProps) {
+export function SpecimenTile({ tile, scheme, size = "small", as: Tag = "li", caption = true, className, onBlank, tryIt = false }: SpecimenTileProps) {
   const ref = useRef<HTMLElement>(null);
   const near = useNearViewport(ref);
   const visible = useInView(ref);
   const drawn = tile.specimen !== null && tile.css !== null;
   const mounted = useFrameBudget(drawn && near, visible);
   const height = size === "large" ? LARGE_TILE_HEIGHT : TILE_HEIGHT;
+  const tryable = tryIt && drawn && tile.specimen!.kind === "component" && !!tile.specimenId;
+  const { state, start, ready, end, button } = useLive(near, ref);
+  const staticFrame: ReactNode = !drawn ? <ShapeBox shape={tile.shape} tileHeight={height} /> : mounted ? <SpecimenFrame srcDoc={frameDocument(tile.specimen!.html, tile.css!, scheme)} scheme={scheme} near={near} height={height} onBlank={onBlank} /> : near ? <ShapeBox shape={tile.shape} caption="waiting" tileHeight={height} /> : null;
+  const label = `${tile.project} ${tile.place}`;
   return (
-    <Tag ref={ref as RefObject<never>} className={clsx("min-w-0 space-y-1", className)} data-tile={tile.key} data-kind={drawn ? tile.specimen!.kind : "shape"} data-frame={drawn && near ? (mounted ? "mounted" : "waiting") : undefined}>
+    <Tag ref={ref as RefObject<never>} className={clsx("min-w-0 space-y-1", className)} data-tile={tile.key} data-kind={drawn ? tile.specimen!.kind : "shape"} data-frame={drawn && near ? (mounted ? "mounted" : "waiting") : undefined} data-live={state.status !== "static" ? state.status : undefined}>
       <div className="relative overflow-hidden rounded-md border border-line bg-sunken" style={{ height }}>
-        {!drawn ? <ShapeBox shape={tile.shape} tileHeight={height} /> : mounted ? <SpecimenFrame specimen={tile.specimen!} css={tile.css!} scheme={scheme} near={near} height={height} onBlank={onBlank} /> : near ? <ShapeBox shape={tile.shape} caption="waiting" tileHeight={height} /> : null}
+        {tryable && state.status !== "static" ? (
+          <Suspense fallback={staticFrame}>
+            <LiveFrame project={tile.project} specimen={tile.specimenId!} html={tile.specimen!.html} css={tile.css!} scheme={scheme} height={height} fallback={staticFrame} onReady={ready} onEnd={() => (end(), button.current?.focus())} onFail={(sentence) => end(sentence)} />
+          </Suspense>
+        ) : (
+          staticFrame
+        )}
+        {tryable && (
+          <button
+            ref={button}
+            type="button"
+            onClick={() => (state.status === "static" ? start() : (end(), button.current?.focus()))}
+            aria-label={state.status === "static" ? `Try ${label} live` : `Done trying ${label}`}
+            aria-busy={state.status === "loading" || undefined}
+            className="absolute top-1 right-1 z-10 inline-flex h-6 items-center rounded-sm border border-line bg-surface/90 px-2 text-caption font-medium text-ink-2 shadow-raise outline-none hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus focus-visible:outline-solid max-md:h-11 max-md:px-3"
+            data-try={state.status === "static" ? "start" : "done"}
+          >
+            {state.status === "static" ? "Try it" : "Done"}
+          </button>
+        )}
       </div>
+      {state.status === "static" && state.failure && (
+        <p role="status" className="text-caption text-danger" data-try-failure="">
+          {state.failure}
+        </p>
+      )}
       {caption && (
       <p className="flex min-w-0 items-baseline gap-1.5 text-caption text-muted">
         <span className="shrink-0 font-medium text-ink-2">{tile.project}</span>
@@ -400,19 +575,55 @@ export function LeadTile({ tiles, ...props }: Omit<SpecimenTileProps, "tile" | "
   return <SpecimenTile key={index} {...props} tile={tile} onBlank={last ? undefined : () => setBlank((b) => new Set(b).add(id(tile)))} />;
 }
 
+/** A state strip's height: five cells of one look, scaled to fit. */
+export const STRIP_HEIGHT = 112;
+
+/**
+ * One look in its five states side by side (stateStripDocument): one frame, mounted like a tile
+ * (near the scroll area, six loading at once, within the frame budget), with the states named
+ * under their columns. A look with no specimen or no stylesheet has no states to show.
+ */
+export function StateStrip({ tile, scheme, label }: { tile: Tile; scheme: Scheme; label: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const near = useNearViewport(ref);
+  const visible = useInView(ref);
+  const drawn = tile.specimen !== null && tile.css !== null;
+  const mounted = useFrameBudget(drawn && near, visible);
+  const [columns, setColumns] = useState<{ x: number; width: number } | null>(null);
+  const srcDoc = drawn && mounted ? stateStripDocument(tile.specimen!.html, tile.css!, scheme) : null;
+  useLayoutEffect(() => setColumns(null), [srcDoc]);
+  return (
+    <div ref={ref} role="group" aria-label={`${label}, in each state`} className="min-w-0 space-y-1" data-strip={tile.key} data-frame={drawn && near ? (mounted ? "mounted" : "waiting") : undefined}>
+      <div className="relative overflow-hidden rounded-md border border-line bg-sunken" style={{ height: STRIP_HEIGHT }}>
+        {!drawn ? <ShapeBox shape={tile.shape} caption="no specimen: no states to show" tileHeight={STRIP_HEIGHT} /> : srcDoc ? <SpecimenFrame srcDoc={srcDoc} scheme={scheme} near={near} height={STRIP_HEIGHT} strip={setColumns} /> : near ? <ShapeBox shape={tile.shape} caption="waiting" tileHeight={STRIP_HEIGHT} /> : null}
+      </div>
+      {drawn && (
+        // Each label under its column once the strip is placed; evenly spaced until then.
+        <ol aria-label="States" className={clsx("relative h-4 text-caption text-muted", !columns && "grid grid-cols-5 text-center")}>
+          {STATES.map((state, i) => (
+            <li key={state.id} data-state={state.id} className={clsx(columns && "absolute top-0 -translate-x-1/2 whitespace-nowrap")} style={columns ? { left: columns.x + ((i + 0.5) * columns.width) / STATES.length } : undefined}>
+              {state.label}
+            </li>
+          ))}
+        </ol>
+      )}
+    </div>
+  );
+}
+
 /** A family's tiles: a wrapping grid, virtualised by rows past VIRTUALISE_AT. */
-export function TileGrid({ tiles, scheme }: { tiles: readonly Tile[]; scheme: Scheme }) {
-  if (tiles.length > VIRTUALISE_AT) return <VirtualTileGrid tiles={tiles} scheme={scheme} />;
+export function TileGrid({ tiles, scheme, tryIt = false }: { tiles: readonly Tile[]; scheme: Scheme; tryIt?: boolean }) {
+  if (tiles.length > VIRTUALISE_AT) return <VirtualTileGrid tiles={tiles} scheme={scheme} tryIt={tryIt} />;
   return (
     <ul className="grid gap-2" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${TILE_MIN_WIDTH}px, 1fr))` }} aria-label="Specimens">
       {tiles.map((tile) => (
-        <SpecimenTile key={tile.key} tile={tile} scheme={scheme} />
+        <SpecimenTile key={tile.key} tile={tile} scheme={scheme} tryIt={tryIt} />
       ))}
     </ul>
   );
 }
 
-function VirtualTileGrid({ tiles, scheme }: { tiles: readonly Tile[]; scheme: Scheme }) {
+function VirtualTileGrid({ tiles, scheme, tryIt }: { tiles: readonly Tile[]; scheme: Scheme; tryIt: boolean }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   useLayoutEffect(() => {
@@ -434,7 +645,7 @@ function VirtualTileGrid({ tiles, scheme }: { tiles: readonly Tile[]; scheme: Sc
           {virtualizer.getVirtualItems().map((row) => (
             <ul key={row.key} className="absolute inset-x-0 grid gap-2" style={{ top: row.start, height: ROW_HEIGHT, gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }} aria-label={`Specimens, row ${row.index + 1} of ${rows}`}>
               {tiles.slice(row.index * columns, (row.index + 1) * columns).map((tile) => (
-                <SpecimenTile key={tile.key} tile={tile} scheme={scheme} />
+                <SpecimenTile key={tile.key} tile={tile} scheme={scheme} tryIt={tryIt} />
               ))}
             </ul>
           ))}

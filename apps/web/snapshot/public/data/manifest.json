@@ -10,17 +10,17 @@
       "usage": [
         {
           "project": "demo-app",
-          "file": "demo-app.usage.d884ebe652.json"
+          "file": "demo-app.usage.708c673635.json"
         }
       ]
     }
   ],
-  "inventory": "inventory.89903e4ef0.json",
+  "inventory": "inventory.f3dce09115.json",
   "inventoryFiles": [
-    "specimens.console.light.2964eff092.css",
-    "specimens.console.dark.84fe65c11d.css",
-    "specimens.site.light.0cb9c15460.css",
-    "specimens.site.dark.fe469eda7c.css",
+    "specimens.console.light.efa666eec4.css",
+    "specimens.console.dark.d2ea88c7e0.css",
+    "specimens.site.light.3ddbc8d28d.css",
+    "specimens.site.dark.94a6706908.css",
     "inventory.console.button.d544e4e8de.json",
     "inventory.site.button.720938384e.json",
     "inventory.console.link-as-button.ee018fd12f.json",

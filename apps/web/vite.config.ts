@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import type { Plugin } from "vite";
 import { defineConfig } from "vitest/config";
+import { tryMiddleware } from "./scripts/try-server.ts";
 
 const root = import.meta.dirname;
 /**
@@ -45,8 +46,24 @@ function snapshotFiles(): Plugin {
   };
 }
 
+/**
+ * Try it (scripts/try-server.ts): bundles one look for the browser on request, on the dev server
+ * and on `vite preview`. A static host has no such endpoint; the hub then keeps the static specimen.
+ */
+function tryIt(): Plugin {
+  return {
+    name: "youiyoux-try",
+    configureServer(server) {
+      server.middlewares.use(tryMiddleware(snapshot, server.config.base));
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(tryMiddleware(snapshot, server.config.base));
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss(), snapshotFiles()],
+  plugins: [react(), tailwindcss(), snapshotFiles(), tryIt()],
   resolve: { alias: { "@snapshot": snapshot } },
   // A system's demos may use any of the hub's UI packages. Pre-bundled up front, so the preview
   // frame's first visit to such a demo never makes the dev server re-optimize and reload mid-render.

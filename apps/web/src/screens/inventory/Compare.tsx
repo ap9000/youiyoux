@@ -2,7 +2,8 @@
  * Near-duplicates side by side. A compare card lays one side's specimen over the other's and a
  * slider wipes between them (the top layer, side B, clipped by `clip-path: inset(0 0 0 X%)`, so
  * side A shows left of the handle and B right of it, as the table reads), or shows
- * them next to each other, over a table of their attributes with the differing rows marked. A
+ * them next to each other, or each side in its five states (default, hover, focus, pressed,
+ * disabled) one above the other, over a table of their attributes with the differing rows marked. A
  * fix card shows every side's specimen, the files to change, and a Merge button that stays off:
  * the hub reads projects, it never edits them.
  */
@@ -17,7 +18,7 @@ import { Button } from "../../ui/Button.tsx";
 import { Segmented } from "../../ui/Segmented.tsx";
 import { familyTiles, leadTiles } from "./family-tiles.ts";
 import { TOUCH } from "./FilterBar.tsx";
-import { LARGE_TILE_HEIGHT, LeadTile } from "./Specimens.tsx";
+import { LARGE_TILE_HEIGHT, LeadTile, StateStrip, type Tile } from "./Specimens.tsx";
 
 type Side = InventoryFamily["sides"][number];
 
@@ -37,6 +38,9 @@ function sideTiles({ view, chunks, source, scheme }: CardProps, side: Side, pref
   return leadTiles(tiles, view.family, `${prefix}:${sideKey(view.family, side)}`);
 }
 
+/** The tile a side's strip draws: its lead tile's first drawn one, else its shape. */
+const stripTile = (tiles: readonly Tile[]): Tile => tiles.find((t) => t.specimen !== null && t.css !== null) ?? tiles[tiles.length - 1]!;
+
 export const compareAnchor = (family: string): string => `compare-${family}`;
 export const fixAnchor = (family: string): string => `fix-${family}`;
 
@@ -46,7 +50,7 @@ const STEP = 5;
 export function CompareCard(props: CardProps) {
   const { view, libraries } = props;
   const pair = compareSides(view.family);
-  const [mode, setMode] = useState<"overlay" | "side">("overlay");
+  const [mode, setMode] = useState<"overlay" | "side" | "states">("overlay");
   const [percent, setPercent] = useState(50);
   const boxRef = useRef<HTMLDivElement>(null);
   const dragging = useRef<number | null>(null);
@@ -96,6 +100,7 @@ export function CompareCard(props: CardProps) {
           options={[
             { value: "overlay", label: "Overlay" },
             { value: "side", label: "Side by side" },
+            { value: "states", label: "States" },
           ]}
         />
       </header>
@@ -129,6 +134,18 @@ export function CompareCard(props: CardProps) {
               <span aria-hidden className="absolute top-1/2 left-1/2 size-4 -translate-1/2 rounded-full border-2 border-surface bg-accent shadow-raise" />
             </div>
           </div>
+        </div>
+      ) : mode === "states" ? (
+        <div className="space-y-3" data-testid="compare-states">
+          {[
+            { side: a, tiles: tilesA },
+            { side: b, tiles: tilesB },
+          ].map(({ side, tiles }) => (
+            <div key={sideKey(view.family, side)} className="min-w-0 space-y-1.5">
+              <p className="truncate text-caption text-muted">{sideLabel(side, libraries)}</p>
+              <StateStrip tile={stripTile(tiles)} scheme={props.scheme} label={sideLabel(side, libraries)} />
+            </div>
+          ))}
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3" data-testid="compare-side-by-side">

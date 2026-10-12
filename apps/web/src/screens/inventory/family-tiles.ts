@@ -26,7 +26,7 @@ export function familyTiles(family: InventoryFamily, chunks: readonly InventoryC
       const key = `${chunk.project}:${specimen && css ? `s:${look.specimen}` : `shape:${Object.values(look.shape).join("/")}`}`;
       const group = groups.get(key);
       if (group) group.count++;
-      else groups.set(key, { key, project: chunk.project, specimen, css: specimen ? css : null, shape: look.shape, count: 1, place: `${look.file}:${look.line}` });
+      else groups.set(key, { key, project: chunk.project, specimen, css: specimen ? css : null, shape: look.shape, count: 1, place: `${look.file}:${look.line}`, specimenId: specimen ? look.specimen : null });
     }
     tiles.push(...groups.values());
   }

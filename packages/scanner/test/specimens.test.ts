@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { InventoryReport } from "@youiyoux/core";
-import { buildInventory, buildProjectCss, defaultCacheDir, escapingLinks, findStylesheets, forScheme, loadInventoryTarget, markupOf, newStats, pageStylesheets, projectSpecimens, projectTailwind, relativeInside, SpecimenCache, stylesheetLinks, tailwindCliBuilds, within, type ProjectSpecimens } from "../src/index.ts";
+import { BrowserBundleCache, bundleForBrowser, buildInventory, buildProjectCss, defaultCacheDir, escapingLinks, findStylesheets, forScheme, loadInventoryTarget, markupOf, newStats, pageStylesheets, projectSpecimens, projectTailwind, relativeInside, SpecimenCache, stylesheetLinks, tailwindCliBuilds, within, type ProjectSpecimens } from "../src/index.ts";
 import { renderComponents, type ComponentRecipe } from "../src/specimens/render.ts";
 
 const FIXTURES = join(import.meta.dirname, "fixtures/inventory");
@@ -73,6 +73,18 @@ describe("specimen CSS: the project's own build (c1)", () => {
     // legacy.css arrives through Tailwind's @import, once; the browser kit's sheet after it.
     expect(css.match(/\.lg-button \{/g)).toHaveLength(1);
     expect(css.indexOf(".lg-button {")).toBeLessThan(css.indexOf(".ui-button {"));
+  });
+
+  test("the Tailwind-built sheet carries forced-state twins, each once: hover (with its touch-screen copy), focus-visible, disabled", () => {
+    for (const scheme of ["light", "dark"] as const) {
+      const css = built.get("console")!.css![scheme];
+      expect(css.split(".hover\\:bg-accent:is(:hover, .youi-state-hover, .youi-state-hover *)")).toHaveLength(2);
+      expect(css.split(".hover\\:bg-accent:is(.youi-state-hover, .youi-state-hover *)")).toHaveLength(2);
+      expect(css.split(".focus-visible\\:ring-2:is(:focus-visible, .youi-state-focus, .youi-state-focus *)")).toHaveLength(2);
+      expect(css.split(".disabled\\:opacity-50:is(:disabled, .youi-state-disabled, .youi-state-disabled *)")).toHaveLength(2);
+      expect(css.split(".lg-button:is(:hover, .youi-state-hover, .youi-state-hover *)")).toHaveLength(2);
+      expect(css).not.toMatch(/\.hover\\:bg-accent:hover\b/);
+    }
   });
 
   test("a font loaded from an absolute /fonts path is inlined as a data URI", () => {
@@ -437,6 +449,100 @@ function expectContained(box: ReturnType<typeof sandbox>, built: ProjectSpecimen
   expect(existsSync(box.ran)).toBe(false);
   expect(built.warnings.join("\n")).toMatch(warning);
 }
+
+describe("Try it's browser bundle: the same fence, and a sentence instead of a throw (c2)", () => {
+  const tabs = (value: string, label: string): ComponentRecipe => ({ kind: "component", file: "src/components/ui/tabs.tsx", export: "TabsTrigger", props: { value }, label, wrappers: [{ file: "src/components/ui/tabs.tsx", export: "Tabs", props: { defaultValue: "runs" } }, { file: "src/components/ui/tabs.tsx", export: "TabsList", props: {} }], tag: "button", classes: [] });
+  const look = (recipe: ComponentRecipe, label: string | null = recipe.label) => ({ recipe, label });
+
+  test("the fixture's Radix Tabs, with its sibling trigger, bundles for the browser within its time limit", async () => {
+    const started = Date.now();
+    const result = await bundleForBrowser(CONSOLE, "tsconfig.json", look(tabs("runs", "Runs")), [look(tabs("runs", "Runs")), look(tabs("logs", "Logs"))], { bundleTimeoutMs: 20_000 });
+    expect(Date.now() - started).toBeLessThan(20_000);
+    if ("error" in result) throw new Error(result.error);
+    expect(result.hash).toMatch(/^[0-9a-f]{16}$/);
+    expect(result.code).toContain('"Logs"');
+    expect(result.code).toContain("youi");
+    // A classic script: no import or export statement left.
+    expect(result.code).not.toMatch(/^\s*(?:import|export)\s/m);
+    expect(result.inputs.map((i) => i.path)).toContain(join(realpathSync(CONSOLE), "src/components/ui/tabs.tsx"));
+    expect(result.inputs.every((i) => i.digest !== "missing")).toBe(true);
+    expect(result.inputs.some((i) => i.path.includes("@radix-ui") && i.path.includes("react-tabs"))).toBe(true);
+    // Radix's real portal, not the server render's stub.
+    expect(result.inputs.some((i) => i.path.includes("react-portal")) || !result.code.includes("youi-specimen-stub")).toBe(true);
+  }, 30_000);
+
+  test("a recipe or sibling outside the root is refused: `../`, an absolute path, an escaping symlink", async () => {
+    const box = sandbox();
+    try {
+      symlinkSync(join(box.outside, "evil.tsx"), join(box.root, "src/components/ui/linked.tsx"));
+      const evil = (file: string): ComponentRecipe => ({ kind: "component", file, export: "Evil", props: {}, label: "Evil", wrappers: [], tag: "button", classes: [] });
+      expect(await bundleForBrowser(box.root, "tsconfig.json", look(evil("../outside/evil.tsx")))).toEqual({ error: "refused: ../outside/evil.tsx is outside the project root" });
+      expect(await bundleForBrowser(box.root, "tsconfig.json", look(evil(join(box.outside, "evil.tsx"))))).toEqual({ error: `refused: ${join(box.outside, "evil.tsx")} is an absolute path` });
+      expect(await bundleForBrowser(box.root, "tsconfig.json", look(evil("src/components/ui/linked.tsx")))).toEqual({ error: "refused: src/components/ui/linked.tsx leads outside the project root (a symlink)" });
+      expect(await bundleForBrowser(box.root, "tsconfig.json", look(tabs("runs", "Runs")), [look(tabs("runs", "Runs")), look({ ...tabs("x", "X"), file: "../outside/evil.tsx" })])).toEqual({ error: "refused: ../outside/evil.tsx is outside the project root" });
+      expect(await bundleForBrowser(box.root, "tsconfig.json", look({ ...tabs("runs", "Runs"), wrappers: [{ file: "../outside/evil.tsx", export: "Evil", props: {} }] }))).toEqual({ error: "refused: ../outside/evil.tsx is outside the project root" });
+      expect(existsSync(box.ran)).toBe(false);
+    } finally {
+      box.dispose();
+    }
+  });
+
+  test("an import outside the root is refused in the client bundle: `../`, a tsconfig path, an escaping symlink", async () => {
+    const box = sandbox();
+    try {
+      symlinkSync(join(box.outside, "evil.tsx"), join(box.root, "src/components/ui/linked.tsx"));
+      const tsconfig = join(box.root, "tsconfig.json");
+      const config = JSON.parse(readFileSync(tsconfig, "utf8")) as { compilerOptions: { paths: Record<string, string[]> } };
+      config.compilerOptions.paths["lib/*"] = ["../outside/lib/*"];
+      writeFileSync(tsconfig, JSON.stringify(config));
+      const cases: Array<[string, string, RegExp]> = [
+        ["climbs", `import { Evil } from "../../../../outside/evil";\nexport function Climbs() { return <button><Evil /></button>; }\n`, /^refused import "\.\.\/\.\.\/\.\.\/\.\.\/outside\/evil" resolves outside the project root \(from src\/components\/ui\/climbs\.tsx\)$/],
+        ["aliased", `import { Thing } from "lib/thing";\nexport function Aliased() { return <button><Thing /></button>; }\n`, /^refused import "lib\/thing" resolves outside the project root \(from src\/components\/ui\/aliased\.tsx\)$/],
+        ["linking", `import { Evil } from "./linked";\nexport function Linking() { return <button><Evil /></button>; }\n`, /^refused import "\.\/linked" resolves outside the project root \(from src\/components\/ui\/linking\.tsx\)$/],
+        ["absolute", `import { Evil } from ${JSON.stringify(join(box.outside, "evil.tsx"))};\nexport function Absolute() { return <button><Evil /></button>; }\n`, /^refused import ".*\/outside\/evil\.tsx" resolves outside the project root \(from src\/components\/ui\/absolute\.tsx\)$/],
+      ];
+      for (const [name, source, refusal] of cases) {
+        writeFileSync(join(box.root, `src/components/ui/${name}.tsx`), source);
+        const recipe: ComponentRecipe = { kind: "component", file: `src/components/ui/${name}.tsx`, export: name[0]!.toUpperCase() + name.slice(1), props: {}, label: null, wrappers: [], tag: "button", classes: [] };
+        const result = await bundleForBrowser(box.root, "tsconfig.json", look(recipe));
+        expect("error" in result && result.error).toMatch(refusal);
+      }
+      expect(existsSync(box.ran)).toBe(false);
+    } finally {
+      box.dispose();
+    }
+  });
+
+  test("past its time limit esbuild is stopped, and that is a sentence", async () => {
+    expect(await bundleForBrowser(CONSOLE, "tsconfig.json", look(tabs("runs", "Runs")), [], { bundleTimeoutMs: 1 })).toEqual({ error: "bundling took over 1 ms and was stopped" });
+  });
+
+  test("bundles are cached by key while every file they read is unchanged, and served by their content hash", async () => {
+    const box = sandbox();
+    try {
+      const cache = new BrowserBundleCache();
+      const recipe: ComponentRecipe = { kind: "component", file: "src/components/ui/button.tsx", export: "Button", props: {}, label: "Go", wrappers: [], tag: "button", classes: [] };
+      let builds = 0;
+      const build = () => {
+        builds++;
+        return bundleForBrowser(box.root, "tsconfig.json", look(recipe));
+      };
+      const first = await cache.get("button", build);
+      const again = await cache.get("button", build);
+      if ("error" in first) throw new Error(first.error);
+      expect(again).toBe(first);
+      expect(builds).toBe(1);
+      expect(cache.code(first.hash)).toBe(first.code);
+      const file = join(box.root, "src/components/ui/button.tsx");
+      writeFileSync(file, readFileSync(file, "utf8").replace("bg-primary", "bg-secondary"));
+      const changed = await cache.get("button", build);
+      expect(builds).toBe(2);
+      expect("hash" in changed && changed.hash).not.toBe(first.hash);
+    } finally {
+      box.dispose();
+    }
+  }, 30_000);
+});
 
 describe("specimen builds read and run nothing outside the project root (c4)", () => {
   test("the root check: real paths, separator-aware, refusing .., absolute paths and escaping symlinks", () => {

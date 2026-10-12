@@ -1,0 +1,686 @@
+{
+  "schema": "youiyoux.try/v1",
+  "projects": {
+    "console": {
+      "root": "../../../packages/scanner/test/fixtures/inventory/console",
+      "tsconfig": "tsconfig.json",
+      "specimens": {
+        "89fe4a5007f0": {
+          "look": {
+            "recipe": {
+              "kind": "component",
+              "file": "src/components/ui/button.tsx",
+              "export": "Button",
+              "props": {},
+              "label": "Open",
+              "wrappers": [],
+              "tag": "button",
+              "classes": [
+                "inline-flex",
+                "items-center",
+                "justify-center",
+                "gap-2",
+                "rounded-md",
+                "text-sm",
+                "font-medium",
+                "transition-colors",
+                "focus-visible:ring-2",
+                "disabled:opacity-50",
+                "bg-primary",
+                "text-primary-foreground",
+                "hover:bg-primary/90",
+                "h-8",
+                "px-3"
+              ]
+            },
+            "label": "Open",
+            "icon": false
+          },
+          "siblings": []
+        },
+        "d21789f08eed": {
+          "look": {
+            "recipe": {
+              "kind": "component",
+              "file": "src/components/ui/card.tsx",
+              "export": "Card",
+              "props": {},
+              "label": null,
+              "wrappers": [],
+              "tag": "div",
+              "classes": [
+                "rounded-xl",
+                "border",
+                "bg-card",
+                "p-6",
+                "shadow-sm"
+              ]
+            },
+            "label": "Card",
+            "icon": false
+          },
+          "siblings": []
+        },
+        "cf18639ed670": {
+          "look": {
+            "recipe": {
+              "kind": "component",
+              "file": "src/components/ui/badge.tsx",
+              "export": "Badge",
+              "props": {
+                "tone": "success"
+              },
+              "label": "Live",
+              "wrappers": [],
+              "tag": "span",
+              "classes": [
+                "inline-flex",
+                "h-5",
+                "items-center",
+                "rounded-full",
+                "border",
+                "px-2",
+                "text-xs",
+                "font-medium",
+                "bg-green-100",
+                "text-green-800"
+              ]
+            },
+            "label": "Live",
+            "icon": false
+          },
+          "siblings": []
+        },
+        "5300a43e9f1a": {
+          "look": {
+            "recipe": {
+              "kind": "component",
+              "file": "src/components/ui/button.tsx",
+              "export": "Button",
+              "props": {},
+              "label": "New run",
+              "wrappers": [],
+              "tag": "button",
+              "classes": [
+                "inline-flex",
+                "items-center",
+                "justify-center",
+                "gap-2",
+                "rounded-md",
+                "text-sm",
+                "font-medium",
+                "transition-colors",
+                "focus-visible:ring-2",
+                "disabled:opacity-50",
+                "bg-primary",
+                "text-primary-foreground",
+                "hover:bg-primary/90",
+                "h-8",
+                "px-3"
+              ]
+            },
+            "label": "New run",
+            "icon": false
+          },
+          "siblings": []
+        },
+        "93c023b75bb0": {
+          "look": {
+            "recipe": {
+              "kind": "component",
+              "file": "src/components/ui/button.tsx",
+              "export": "Button",
+              "props": {
+                "variant": "outline"
+              },
+              "label": "Export",
+              "wrappers": [],
+              "tag": "button",
+              "classes": [
+                "inline-flex",
+                "items-center",
+                "justify-center",
+                "gap-2",
+                "rounded-md",
+                "text-sm",
+                "font-medium",
+                "transition-colors",
+                "focus-visible:ring-2",
+                "disabled:opacity-50",
+                "border",
+                "border-input",
+                "bg-background",
+                "hover:bg-accent",
+                "h-8",
+                "px-3"
+              ]
+            },
+            "label": "Export",
+            "icon": false
+          },
+          "siblings": []
+        },
+        "aaa0927dda6e": {
+          "look": {
+            "recipe": {
+              "kind": "component",
+              "file": "src/components/ui/button.tsx",
+              "export": "Button",
+              "props": {},
+              "label": "Settings",
+              "wrappers": [],
+              "tag": "button",
+              "classes": [
+                "inline-flex",
+                "items-center",
+                "justify-center",
+                "gap-2",
+                "rounded-md",
+                "text-sm",
+                "font-medium",
+                "transition-colors",
+                "focus-visible:ring-2",
+                "disabled:opacity-50",
+                "bg-primary",
+                "text-primary-foreground",
+                "hover:bg-primary/90",
+                "h-8",
+                "px-3"
+              ]
+            },
+            "label": "Settings",
+            "icon": false
+          },
+          "siblings": []
+        },
+        "1cae477c67f9": {
+          "look": {
+            "recipe": {
+              "kind": "component",
+              "file": "src/components/ui/tabs.tsx",
+              "export": "Tabs",
+              "props": {
+                "defaultValue": "runs"
+              },
+              "label": null,
+              "wrappers": [],
+              "tag": "button",
+              "classes": []
+            },
+            "label": "Tab",
+            "icon": false
+          },
+          "siblings": []
+        },
+        "d01ef30cc0e0": {
+          "look": {
+            "recipe": {
+              "kind": "component",
+              "file": "src/components/ui/tabs.tsx",
+              "export": "TabsList",
+              "props": {},
+              "label": null,
+              "wrappers": [
+                {
+                  "file": "src/components/ui/tabs.tsx",
+                  "export": "Tabs",
+                  "props": {
+                    "defaultValue": "runs"
+                  }
+                }
+              ],
+              "tag": "button",
+              "classes": [
+                "inline-flex",
+                "h-9",
+                "items-center",
+                "rounded-lg",
+                "bg-muted",
+                "p-1"
+              ]
+            },
+            "label": "Tab",
+            "icon": false
+          },
+          "siblings": []
+        },
+        "e57482076ef2": {
+          "look": {
+            "recipe": {
+              "kind": "component",
+              "file": "src/components/ui/tabs.tsx",
+              "export": "TabsTrigger",
+              "props": {
+                "value": "runs"
+              },
+              "label": "Runs",
+              "wrappers": [
+                {
+                  "file": "src/components/ui/tabs.tsx",
+                  "export": "Tabs",
+                  "props": {
+                    "defaultValue": "runs"
+                  }
+                },
+                {
+                  "file": "src/components/ui/tabs.tsx",
+                  "export": "TabsList",
+                  "props": {}
+                }
+              ],
+              "tag": "button",
+              "classes": [
+                "inline-flex",
+                "h-7",
+                "items-center",
+                "rounded-md",
+                "px-3",
+                "text-sm",
+                "font-medium",
+                "data-[state=active]:bg-background",
+                "data-[state=active]:shadow-sm"
+              ]
+            },
+            "label": "Runs",
+            "icon": false
+          },
+          "siblings": [
+            {
+              "recipe": {
+                "kind": "component",
+                "file": "src/components/ui/tabs.tsx",
+                "export": "TabsTrigger",
+                "props": {
+                  "value": "runs"
+                },
+                "label": "Runs",
+                "wrappers": [
+                  {
+                    "file": "src/components/ui/tabs.tsx",
+                    "export": "Tabs",
+                    "props": {
+                      "defaultValue": "runs"
+                    }
+                  },
+                  {
+                    "file": "src/components/ui/tabs.tsx",
+                    "export": "TabsList",
+                    "props": {}
+                  }
+                ],
+                "tag": "button",
+                "classes": [
+                  "inline-flex",
+                  "h-7",
+                  "items-center",
+                  "rounded-md",
+                  "px-3",
+                  "text-sm",
+                  "font-medium",
+                  "data-[state=active]:bg-background",
+                  "data-[state=active]:shadow-sm"
+                ]
+              },
+              "label": "Runs",
+              "icon": false
+            },
+            {
+              "recipe": {
+                "kind": "component",
+                "file": "src/components/ui/tabs.tsx",
+                "export": "TabsTrigger",
+                "props": {
+                  "value": "logs"
+                },
+                "label": "Logs",
+                "wrappers": [
+                  {
+                    "file": "src/components/ui/tabs.tsx",
+                    "export": "Tabs",
+                    "props": {
+                      "defaultValue": "runs"
+                    }
+                  },
+                  {
+                    "file": "src/components/ui/tabs.tsx",
+                    "export": "TabsList",
+                    "props": {}
+                  }
+                ],
+                "tag": "button",
+                "classes": [
+                  "inline-flex",
+                  "h-7",
+                  "items-center",
+                  "rounded-md",
+                  "px-3",
+                  "text-sm",
+                  "font-medium",
+                  "data-[state=active]:bg-background",
+                  "data-[state=active]:shadow-sm"
+                ]
+              },
+              "label": "Logs",
+              "icon": false
+            }
+          ]
+        },
+        "eba271cf00be": {
+          "look": {
+            "recipe": {
+              "kind": "component",
+              "file": "src/components/ui/tabs.tsx",
+              "export": "TabsTrigger",
+              "props": {
+                "value": "logs"
+              },
+              "label": "Logs",
+              "wrappers": [
+                {
+                  "file": "src/components/ui/tabs.tsx",
+                  "export": "Tabs",
+                  "props": {
+                    "defaultValue": "runs"
+                  }
+                },
+                {
+                  "file": "src/components/ui/tabs.tsx",
+                  "export": "TabsList",
+                  "props": {}
+                }
+              ],
+              "tag": "button",
+              "classes": [
+                "inline-flex",
+                "h-7",
+                "items-center",
+                "rounded-md",
+                "px-3",
+                "text-sm",
+                "font-medium",
+                "data-[state=active]:bg-background",
+                "data-[state=active]:shadow-sm"
+              ]
+            },
+            "label": "Logs",
+            "icon": false
+          },
+          "siblings": [
+            {
+              "recipe": {
+                "kind": "component",
+                "file": "src/components/ui/tabs.tsx",
+                "export": "TabsTrigger",
+                "props": {
+                  "value": "runs"
+                },
+                "label": "Runs",
+                "wrappers": [
+                  {
+                    "file": "src/components/ui/tabs.tsx",
+                    "export": "Tabs",
+                    "props": {
+                      "defaultValue": "runs"
+                    }
+                  },
+                  {
+                    "file": "src/components/ui/tabs.tsx",
+                    "export": "TabsList",
+                    "props": {}
+                  }
+                ],
+                "tag": "button",
+                "classes": [
+                  "inline-flex",
+                  "h-7",
+                  "items-center",
+                  "rounded-md",
+                  "px-3",
+                  "text-sm",
+                  "font-medium",
+                  "data-[state=active]:bg-background",
+                  "data-[state=active]:shadow-sm"
+                ]
+              },
+              "label": "Runs",
+              "icon": false
+            },
+            {
+              "recipe": {
+                "kind": "component",
+                "file": "src/components/ui/tabs.tsx",
+                "export": "TabsTrigger",
+                "props": {
+                  "value": "logs"
+                },
+                "label": "Logs",
+                "wrappers": [
+                  {
+                    "file": "src/components/ui/tabs.tsx",
+                    "export": "Tabs",
+                    "props": {
+                      "defaultValue": "runs"
+                    }
+                  },
+                  {
+                    "file": "src/components/ui/tabs.tsx",
+                    "export": "TabsList",
+                    "props": {}
+                  }
+                ],
+                "tag": "button",
+                "classes": [
+                  "inline-flex",
+                  "h-7",
+                  "items-center",
+                  "rounded-md",
+                  "px-3",
+                  "text-sm",
+                  "font-medium",
+                  "data-[state=active]:bg-background",
+                  "data-[state=active]:shadow-sm"
+                ]
+              },
+              "label": "Logs",
+              "icon": false
+            }
+          ]
+        },
+        "2a1525dbdbca": {
+          "look": {
+            "recipe": {
+              "kind": "component",
+              "file": "src/components/ui/input.tsx",
+              "export": "Input",
+              "props": {
+                "name": "name"
+              },
+              "label": null,
+              "wrappers": [],
+              "tag": "input",
+              "classes": [
+                "h-8",
+                "w-full",
+                "rounded-md",
+                "border",
+                "px-3",
+                "text-sm"
+              ]
+            },
+            "label": null,
+            "icon": false
+          },
+          "siblings": []
+        },
+        "9066bc0294f2": {
+          "look": {
+            "recipe": {
+              "kind": "component",
+              "file": "src/components/legacy/badge.tsx",
+              "export": "Badge",
+              "props": {},
+              "label": "Beta",
+              "wrappers": [],
+              "tag": "span",
+              "classes": [
+                "lg-badge"
+              ]
+            },
+            "label": "Beta",
+            "icon": false
+          },
+          "siblings": []
+        },
+        "f34043f88688": {
+          "look": {
+            "recipe": {
+              "kind": "component",
+              "file": "src/components/ui/button.tsx",
+              "export": "Button",
+              "props": {
+                "type": "submit"
+              },
+              "label": "Save",
+              "wrappers": [],
+              "tag": "button",
+              "classes": [
+                "inline-flex",
+                "items-center",
+                "justify-center",
+                "gap-2",
+                "rounded-md",
+                "text-sm",
+                "font-medium",
+                "transition-colors",
+                "focus-visible:ring-2",
+                "disabled:opacity-50",
+                "bg-primary",
+                "text-primary-foreground",
+                "hover:bg-primary/90",
+                "h-8",
+                "px-3"
+              ]
+            },
+            "label": "Save",
+            "icon": false
+          },
+          "siblings": []
+        },
+        "dd23c09a3f81": {
+          "look": {
+            "recipe": {
+              "kind": "component",
+              "file": "src/components/legacy/legacy-button.tsx",
+              "export": "LegacyButton",
+              "props": {
+                "type": "reset"
+              },
+              "label": "Reset",
+              "wrappers": [],
+              "tag": "button",
+              "classes": [
+                "lg-button"
+              ]
+            },
+            "label": "Reset",
+            "icon": false
+          },
+          "siblings": []
+        },
+        "dd9dc5e07f56": {
+          "look": {
+            "recipe": {
+              "kind": "component",
+              "file": "src/components/legacy/legacy-button.tsx",
+              "export": "LegacyIconButton",
+              "props": {
+                "aria-label": "Undo"
+              },
+              "label": "↺",
+              "wrappers": [],
+              "tag": "button",
+              "classes": [
+                "lg-button",
+                "lg-button--small"
+              ]
+            },
+            "label": "↺",
+            "icon": false
+          },
+          "siblings": []
+        },
+        "69e53e0fd148": {
+          "look": {
+            "recipe": {
+              "kind": "component",
+              "file": "src/components/ui/button.tsx",
+              "export": "Button",
+              "props": {
+                "variant": "ghost"
+              },
+              "label": "Delete…",
+              "wrappers": [],
+              "tag": "button",
+              "classes": [
+                "inline-flex",
+                "items-center",
+                "justify-center",
+                "gap-2",
+                "rounded-md",
+                "text-sm",
+                "font-medium",
+                "transition-colors",
+                "focus-visible:ring-2",
+                "disabled:opacity-50",
+                "hover:bg-accent",
+                "h-8",
+                "px-3"
+              ]
+            },
+            "label": "Delete…",
+            "icon": false
+          },
+          "siblings": []
+        },
+        "fbee02d5bfbe": {
+          "look": {
+            "recipe": {
+              "kind": "component",
+              "file": "src/components/ui/dialog.tsx",
+              "export": "DialogContent",
+              "props": {},
+              "label": "Are you sure?",
+              "wrappers": [
+                {
+                  "file": "src/components/ui/dialog.tsx",
+                  "export": "Dialog",
+                  "props": {
+                    "open": true
+                  }
+                }
+              ],
+              "tag": "div",
+              "classes": [
+                "fixed",
+                "rounded-lg",
+                "border",
+                "bg-background",
+                "p-6",
+                "shadow-lg",
+                "sm:max-w-lg"
+              ]
+            },
+            "label": "Are you sure?",
+            "icon": false
+          },
+          "siblings": []
+        }
+      }
+    },
+    "site": {
+      "root": "../../../packages/scanner/test/fixtures/inventory/site",
+      "tsconfig": "tsconfig.json",
+      "specimens": {}
+    }
+  }
+}

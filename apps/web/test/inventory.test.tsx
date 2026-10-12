@@ -10,7 +10,7 @@ import { createSource, memorySource, type InventorySource } from "../src/data/in
 import type { InventoryChunk, InventoryFamily, InventoryIndex, InventoryReport, Manifest } from "../src/data/types.ts";
 import { InventoryView } from "../src/screens/inventory/InventoryScreen.tsx";
 import { StrictMode } from "react";
-import { DESK_WIDTH, FrameBudget, FrameQueue, frameDocument, LeadTile, MAX_MOUNTED, MAX_RENDERING, TileGrid, VIRTUALISE_AT } from "../src/screens/inventory/Specimens.tsx";
+import { DESK_WIDTH, disabledHtml, FrameBudget, FrameQueue, frameDocument, LeadTile, MAX_MOUNTED, MAX_RENDERING, stateStripDocument, STATES, TileGrid, VIRTUALISE_AT } from "../src/screens/inventory/Specimens.tsx";
 import { leadTiles } from "../src/screens/inventory/family-tiles.ts";
 
 const TOOL = resolve(import.meta.dirname, "../../..");
@@ -714,5 +714,241 @@ describe("specimen tiles (c1, c3)", () => {
     expect(Object.fromEntries(state)).toEqual({ b: true, c: true });
     expect(budget.mounted).toBe(2);
     expect(peak).toBeLessThanOrEqual(2);
+  });
+});
+
+/* ------------------------------------------------------------- state strips */
+
+describe("state strips: default, hover, focus, pressed and disabled side by side (c1)", () => {
+  beforeEach(() => {
+    FakeObserver.all = [];
+    vi.stubGlobal("IntersectionObserver", FakeObserver);
+    window.history.replaceState(null, "", "/inventory");
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  /** A strip's one frame, as the browser would get it: five cells of the same specimen. */
+  const cellsOf = (strip: HTMLElement): HTMLElement[] => {
+    const doc = new DOMParser().parseFromString(strip.querySelector("iframe")!.getAttribute("srcdoc")!, "text/html");
+    return [...doc.querySelectorAll<HTMLElement>("#youi-specimen > [data-youi-state]")];
+  };
+
+  test("the strip document: one stylesheet, no script, five cells forcing each state by class, the disabled cell by attribute", () => {
+    const doc = stateStripDocument('<button class="b">Save</button><a class="l" href="#">Docs</a>', "/s.css", "dark");
+    expect(doc).toMatch(/^<!doctype html><html lang="en" class="dark" data-theme="dark" style="color-scheme:dark"><head><meta charset="utf-8"><link rel="stylesheet" href="\/s\.css"><\/head>/);
+    expect(doc).not.toMatch(/<script/i);
+    const cells = [...new DOMParser().parseFromString(doc, "text/html").querySelectorAll<HTMLElement>("[data-youi-state]")];
+    expect(cells.map((c) => [c.dataset.youiState, c.className])).toEqual(STATES.map((s) => [s.id, `youi-state-cell${s.className ? ` ${s.className}` : ""}`]));
+    expect(cells.slice(0, 4).every((c) => c.innerHTML === '<button class="b">Save</button><a class="l" href="#">Docs</a>')).toBe(true);
+    const button = cells[4]!.querySelector("button")!;
+    expect(button.hasAttribute("disabled")).toBe(true);
+    expect(button.getAttribute("aria-disabled")).toBe("true");
+    const link = cells[4]!.querySelector("a")!;
+    expect(link.hasAttribute("disabled")).toBe(false);
+    expect(link.getAttribute("aria-disabled")).toBe("true");
+    expect(disabledHtml('<div role="tablist"><button role="tab">A</button></div>')).toBe('<div role="tablist" aria-disabled="true" data-disabled=""><button role="tab" disabled="" aria-disabled="true" data-disabled="">A</button></div>');
+  });
+
+  test("the drawer's Variants tab shows each drawn look as a five-cell strip, its states named under it", () => {
+    const { container } = render(<InventoryView inventory={snapshotSource()} />);
+    fireEvent.click(within(container.querySelector<HTMLElement>('[data-family="button-1"]')!).getByRole("button", { name: /^Open / }));
+    const drawer = screen.getByRole("dialog");
+    fireEvent.mouseDown(within(drawer).getByRole("tab", { name: /Variants/ }));
+    fireEvent.click(within(within(drawer).getByRole("radiogroup", { name: "Show" })).getByRole("radio", { name: /States/ }));
+    const strips = [...within(drawer).getByRole("list", { name: "States of each look" }).querySelectorAll<HTMLElement>("[data-strip]")];
+    // Five console Button looks are drawn from the project's code; its CSS-kit and the ladder's from their classes.
+    expect(strips.length).toBeGreaterThanOrEqual(5);
+    // No frame until a strip nears the screen.
+    expect(drawer.querySelectorAll("[data-strip] iframe")).toHaveLength(0);
+    FakeObserver.report(strips, true, "near");
+    const strip = strips.find((s) => s.querySelector("iframe")?.getAttribute("srcdoc")?.includes("focus-visible:ring-2"))!;
+    expect(strip.querySelectorAll("iframe")).toHaveLength(1);
+    expect(strip.querySelector("iframe")!.getAttribute("sandbox")).toBe("allow-same-origin");
+    const cells = cellsOf(strip);
+    expect(cells.map((c) => c.dataset.youiState)).toEqual(["default", "hover", "focus", "pressed", "disabled"]);
+    expect(cells[4]!.querySelector("button")!.hasAttribute("disabled")).toBe(true);
+    expect(cells.slice(0, 4).every((c) => !c.querySelector("[disabled]"))).toBe(true);
+    expect(within(within(strip).getByRole("list", { name: "States" })).getAllByRole("listitem").map((li) => li.textContent)).toEqual(["Default", "Hover", "Focus", "Pressed", "Disabled"]);
+    expect(strip.getAttribute("role")).toBe("group");
+  });
+
+  test("a compare card's States shows both sides' strips, one above the other, so near-duplicates compare state by state", () => {
+    const { container } = render(<InventoryView inventory={snapshotSource()} />);
+    const card = container.querySelector<HTMLElement>('[data-compare="button-1"]')!;
+    fireEvent.click(within(within(card).getByRole("radiogroup", { name: "Compare as" })).getByRole("radio", { name: "States" }));
+    const strips = [...within(card).getByTestId("compare-states").querySelectorAll<HTMLElement>("[data-strip]")];
+    expect(strips).toHaveLength(2);
+    FakeObserver.report(strips, true, "near");
+    const drawn = strips.filter((s) => s.querySelector("iframe"));
+    expect(drawn.length).toBeGreaterThan(0);
+    for (const strip of drawn) {
+      const cells = cellsOf(strip);
+      expect(cells.map((c) => c.dataset.youiState)).toEqual(["default", "hover", "focus", "pressed", "disabled"]);
+      expect(cells[4]!.querySelector("[aria-disabled='true']")).not.toBeNull();
+    }
+  });
+});
+
+/* ------------------------------------------------------------------ Try it */
+
+describe("Try it: one tile live in a sandboxed frame, loaded only on click (c2)", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+  const tryRequests = (): string[] => fetchMock.mock.calls.map(([url]) => String(url)).filter((url) => url.includes("__youi/try"));
+  const answer = (status: number, body: unknown) => Promise.resolve(new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } }));
+
+  beforeEach(() => {
+    FakeObserver.all = [];
+    vi.stubGlobal("IntersectionObserver", FakeObserver);
+    fetchMock = vi.fn(() => answer(200, { script: "/__youi/try/0123456789abcdef.js" }));
+    vi.stubGlobal("fetch", fetchMock);
+    window.history.replaceState(null, "", "/inventory?type=tabs");
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const wallTile = (container: HTMLElement, family: string): HTMLElement => container.querySelector<HTMLElement>(`[data-family="${family}"] [data-tile]`)!;
+  const liveFrames = (container: ParentNode): HTMLIFrameElement[] => [...container.querySelectorAll<HTMLIFrameElement>("iframe[data-live-frame]")];
+  /** A message as the live frame would post it, from `source`. */
+  const post = (source: Window | null, data: unknown): void => act(() => void window.dispatchEvent(new MessageEvent("message", { data, source })));
+  const start = async (tile: HTMLElement): Promise<HTMLIFrameElement> => {
+    fireEvent.click(within(tile).getByRole("button", { name: /^Try / }));
+    await waitFor(() => expect(tile.querySelector("iframe[data-live-frame]")).not.toBeNull());
+    return tile.querySelector<HTMLIFrameElement>("iframe[data-live-frame]")!;
+  };
+
+  test("nothing is requested before a click; Try it bundles that look and runs it in a frame sandboxed allow-scripts only", async () => {
+    const { container } = render(<InventoryView inventory={snapshotSource()} />);
+    const tiles = [...container.querySelectorAll<HTMLElement>("[data-tile]")];
+    FakeObserver.report(tiles, true, "near");
+    // Every tile near and drawn, and still no bundle asked for.
+    expect(tryRequests()).toEqual([]);
+    const tile = wallTile(container, "tabs-1");
+    expect(tile.dataset.kind).toBe("component");
+    const frame = await start(tile);
+    expect(tryRequests()).toHaveLength(1);
+    expect(tryRequests()[0]).toMatch(/\/__youi\/try\?project=console&specimen=[0-9a-f]{12}$/);
+    expect(frame.getAttribute("sandbox")).toBe("allow-scripts");
+    expect(frame.getAttribute("sandbox")).not.toContain("allow-same-origin");
+    expect(frame.tabIndex).toBe(0);
+    const doc = frame.getAttribute("srcdoc")!;
+    expect(doc).toMatch(/<link rel="stylesheet" href="http:\/\/hub\.test\/data\/specimens\.console\.light\.[0-9a-f]{10}\.css">/);
+    expect(doc).toMatch(/<script src="http:\/\/[^"]+\/__youi\/try\/0123456789abcdef\.js"><\/script><\/body>/);
+    // Until it has drawn, the static specimen shows; its box arrives as a message from the frame.
+    expect(tile.querySelector("[data-live]")!.getAttribute("data-live")).toBe("loading");
+    post(frame.contentWindow, { youi: "try", type: "box", x: 32, y: 32, width: 120, height: 36 });
+    expect(tile.querySelector("[data-live]")!.getAttribute("data-live")).toBe("drawn");
+    expect(within(tile).getByRole("button", { name: /^Done / }).textContent).toBe("Done");
+  });
+
+  test("messages from any other window are ignored, and so are boxes that are not finite numbers", async () => {
+    const { container } = render(<InventoryView inventory={snapshotSource()} />);
+    const tile = wallTile(container, "tabs-1");
+    FakeObserver.report([tile], true, "near");
+    const frame = await start(tile);
+    post(window, { youi: "try", type: "box", x: 0, y: 0, width: 10, height: 10 });
+    post(null, { youi: "try", type: "escape" });
+    post(window, { youi: "try", type: "error", message: "spoofed" });
+    post(frame.contentWindow, { youi: "try", type: "box", x: Number.NaN, y: 0, width: 1e999, height: 10 });
+    expect(tile.querySelector("[data-live]")!.getAttribute("data-live")).toBe("loading");
+    expect(liveFrames(container)).toHaveLength(1);
+    expect(tile.querySelector("[data-try-failure]")).toBeNull();
+  });
+
+  test("at most one tile is live: starting another ends the first", async () => {
+    window.history.replaceState(null, "", "/inventory");
+    const { container } = render(<InventoryView inventory={snapshotSource()} />);
+    const tabs = wallTile(container, "tabs-1");
+    const button = wallTile(container, "button-1");
+    FakeObserver.report([tabs, button], true, "near");
+    await start(tabs);
+    await start(button);
+    expect(liveFrames(container)).toHaveLength(1);
+    expect(liveFrames(button)).toHaveLength(1);
+    expect(tabs.dataset.live).toBeUndefined();
+    expect(within(tabs).getByRole("button", { name: /^Try / })).toBeTruthy();
+  });
+
+  test("Done, Escape (in the page or posted by the frame) and scrolling away each return to the static specimen", async () => {
+    const { container } = render(<InventoryView inventory={snapshotSource()} />);
+    const tile = wallTile(container, "tabs-1");
+    FakeObserver.report([tile], true, "near");
+    const staticFrame = (): HTMLIFrameElement | null => tile.querySelector("iframe:not([data-live-frame])");
+    // Done.
+    await start(tile);
+    fireEvent.click(within(tile).getByRole("button", { name: /^Done / }));
+    expect(liveFrames(tile)).toHaveLength(0);
+    await waitFor(() => expect(staticFrame()).not.toBeNull());
+    expect(document.activeElement).toBe(within(tile).getByRole("button", { name: /^Try / }));
+    // Escape pressed in the hub.
+    await start(tile);
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(liveFrames(tile)).toHaveLength(0);
+    // Escape the look did not use, posted by its frame.
+    const frame = await start(tile);
+    post(frame.contentWindow, { youi: "try", type: "escape" });
+    expect(liveFrames(tile)).toHaveLength(0);
+    // Scrolled far away: released.
+    await start(tile);
+    FakeObserver.report([tile], false, "far");
+    expect(liveFrames(container)).toHaveLength(0);
+  });
+
+  test("Escape pressed inside a live tile in the drawer ends Try it and leaves the drawer open", async () => {
+    window.history.replaceState(null, "", "/inventory");
+    const { container } = render(<InventoryView inventory={snapshotSource()} />);
+    fireEvent.click(within(container.querySelector<HTMLElement>('[data-family="tabs-1"]')!).getByRole("button", { name: /^Open / }));
+    const drawer = screen.getByRole("dialog");
+    fireEvent.mouseDown(within(drawer).getByRole("tab", { name: /Variants/ }));
+    const tile = within(drawer).getByRole("list", { name: "Specimens" }).querySelector<HTMLElement>('[data-kind="component"]')!;
+    FakeObserver.report([tile], true, "near");
+    await start(tile);
+    fireEvent.keyDown(within(tile).getByRole("button", { name: /^Done / }), { key: "Escape" });
+    expect(liveFrames(tile)).toHaveLength(0);
+    expect(screen.getByRole("dialog")).toBe(drawer);
+  });
+
+  test("a bundle that fails, a look that throws, or no server: one plain sentence, and the static specimen stays", async () => {
+    const { container } = render(<InventoryView inventory={snapshotSource()} />);
+    const tile = wallTile(container, "tabs-1");
+    FakeObserver.report([tile], true, "near");
+    const failure = (): string => text(tile.querySelector("[data-try-failure]")!);
+    fetchMock.mockImplementation(() => answer(422, { error: 'refused import "../../secrets" resolves outside the project root (from src/components/ui/tabs.tsx)' }));
+    fireEvent.click(within(tile).getByRole("button", { name: /^Try / }));
+    await waitFor(() => expect(tile.querySelector("[data-try-failure]")).not.toBeNull());
+    expect(failure()).toBe('Try it could not bundle this look (refused import "../../secrets" resolves outside the project root (from src/components/ui/tabs.tsx)); the static specimen stays.');
+    expect(tile.querySelector("[data-try-failure]")!.getAttribute("role")).toBe("status");
+    expect(liveFrames(tile)).toHaveLength(0);
+    // The static frame mounts again once its turn in the frame queue comes.
+    await waitFor(() => expect(tile.querySelector("iframe")).not.toBeNull());
+    // A static host: the request finds a page, not the endpoint.
+    fetchMock.mockImplementation(() => Promise.resolve(new Response("<!doctype html>", { status: 200, headers: { "Content-Type": "text/html" } })));
+    fireEvent.click(within(tile).getByRole("button", { name: /^Try / }));
+    await waitFor(() => expect(failure()).toContain("needs the hub's own server"));
+    // The server is gone.
+    fetchMock.mockImplementation(() => Promise.reject(new TypeError("Failed to fetch")));
+    fireEvent.click(within(tile).getByRole("button", { name: /^Try / }));
+    await waitFor(() => expect(failure()).toContain("did not answer"));
+    // It bundled, and threw when it ran.
+    fetchMock.mockImplementation(() => answer(200, { script: "/__youi/try/0123456789abcdef.js" }));
+    const frame = await start(tile);
+    expect(tile.querySelector("[data-try-failure]")).toBeNull();
+    post(frame.contentWindow, { youi: "try", type: "error", message: "localStorage is not available" });
+    expect(liveFrames(tile)).toHaveLength(0);
+    expect(failure()).toBe("This look failed when it ran (localStorage is not available); the static specimen stays.");
+  });
+
+  test("markup looks and shapes have no Try it; neither do compare and fix cards", () => {
+    window.history.replaceState(null, "", "/inventory");
+    const { container } = render(<InventoryView inventory={snapshotSource()} />);
+    for (const tile of container.querySelectorAll<HTMLElement>("[data-tile]")) {
+      const offered = tile.querySelector("[data-try]") !== null;
+      if (tile.closest("[data-compare], [data-fix]")) expect(offered).toBe(false);
+      else expect(offered).toBe(tile.dataset.kind === "component");
+    }
   });
 });

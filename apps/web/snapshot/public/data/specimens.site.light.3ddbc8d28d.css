@@ -21,7 +21,7 @@
   padding: 0 10px;
 }
 
-.ui-button:hover {
+.ui-button:is(:hover, .youi-state-hover, .youi-state-hover *) {
   background: #f4f4f5;
 }
 
@@ -88,3 +88,5 @@
 }
 
 :root { color-scheme: light; }
+
+/* youi-states: forced-state twins */

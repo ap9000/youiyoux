@@ -4,7 +4,9 @@
  * (css.ts), and static HTML per distinct recipe: a component look server-rendered from the
  * project's own code (render.ts), anything else, or a component that would not render, as its
  * tag and classes. Entries are cached outside the project by the content of every input
- * (cache.ts); a hit runs neither Tailwind nor esbuild. Nothing is written into the project, and
+ * (cache.ts); a hit runs neither Tailwind nor esbuild. Each scheme's sheet carries forced-state
+ * twins (states.ts), added once, so a look's static HTML can show hover, focus, pressed and
+ * disabled with no script. Nothing is written into the project, and
  * nothing outside its root is read or run (contain.ts): a source file or recipe that leads out of
  * it is refused with a note, and that look is drawn from its tag and classes.
  */
@@ -15,11 +17,14 @@ import { loadInventoryTarget } from "../inventory/target.ts";
 import { newStats, SPECIMEN_FORMAT, SpecimenCache, specimenKey, type SpecimenStats } from "./cache.ts";
 import { relativeInside } from "./contain.ts";
 import { buildProjectCss, describeSkipped, describeSources, type Scheme, type SheetSource } from "./css.ts";
+import { forcedStates } from "./states.ts";
 import { ICON_HTML, renderComponents, type ComponentRecipe, type RenderJob, type RenderOptions } from "./render.ts";
 
 export { SpecimenCache, defaultCacheDir, newStats, type SpecimenStats } from "./cache.ts";
 export { buildProjectCss, describeSkipped, describeSources, findStylesheets, forScheme, pageStylesheets, projectTailwind, SCHEMES, stylesheetLinks, tailwindCliBuilds, type Scheme, type SheetSource } from "./css.ts";
 export { escapingLinks, isBarePackageUnderRoot, relativeInside, within } from "./contain.ts";
+export { BrowserBundleCache, bundleForBrowser, MAX_SIBLINGS, type BrowserBundle, type BrowserLook, type BrowserResult, type TryMessage } from "./client.ts";
+export { forcedStates, STATE_CLASSES, STATES_MARKER, type ForcedState } from "./states.ts";
 
 /** component: server-rendered from the project's code; markup: a tag with its classes. */
 export interface Specimen {
@@ -46,6 +51,8 @@ export interface ProjectSpecimens {
   readonly used: readonly string[];
   /** Tailwind entries left out, for a reader: `skipped: design/src/globals.css (…)`. */
   readonly skipped: readonly string[];
+  /** The project's tsconfig, project-relative, for bundling a look on request (client.ts). */
+  readonly tsconfig: string;
 }
 
 export interface SpecimenProject {
@@ -79,6 +86,11 @@ const idOf = (recipe: InventoryRecipe, role: InventoryRole): string => createHas
 
 /** A component look sized as an icon (shadcn's `size="icon"`, `icon-sm`, …) with no text of its own: it shows an icon, not a word. */
 const iconSized = (recipe: InventoryRecipe): boolean => recipe.kind === "component" && recipe.label === null && typeof recipe.props.size === "string" && /^icon(?:$|-)/.test(recipe.props.size);
+
+/** A component look as a server render or a browser bundle draws it: its recipe, the children it shows when it has no text, and whether those are an icon. */
+export function browserLookOf(recipe: ComponentRecipe, role: InventoryRole): { recipe: ComponentRecipe; label: string | null; icon: boolean } {
+  return { recipe, label: recipe.label ?? (VOID.test(recipe.tag) ? null : PLACEHOLDER[role] || null), icon: iconSized(recipe) };
+}
 
 /** The static fallback: the recipe's tag and classes around its label (an icon for an icon size). */
 export function markupOf(recipe: InventoryRecipe, role: InventoryRole): string {
@@ -122,7 +134,7 @@ export async function projectSpecimens(project: SpecimenProject, options: Specim
     if (recipe.kind !== "component") continue;
     const refused = [recipe.file, ...recipe.wrappers.map((w) => w.file)].map((f) => relativeInside(project.root, f)).find((r) => "refused" in r);
     if (refused && "refused" in refused) warnings.push(`refused recipe ${recipe.file}#${recipe.export}: ${refused.refused}: drawn from its classes`);
-    else jobs.push({ key: id, recipe: recipe as ComponentRecipe, label: recipe.label ?? (VOID.test(recipe.tag) ? null : PLACEHOLDER[role] || null), icon: iconSized(recipe) });
+    else jobs.push({ key: id, ...browserLookOf(recipe as ComponentRecipe, role) });
   }
   const scratch = cache.scratch(project.id, key);
   const rendered = await renderComponents(project.root, target.tsconfig, jobs, scratch, stats, options.timeouts);
@@ -147,7 +159,7 @@ export async function projectSpecimens(project: SpecimenProject, options: Specim
   const notes = [...failed].sort(([a], [b]) => a.localeCompare(b));
   for (const [note, count] of notes.slice(0, MAX_NOTES)) warnings.push(`${note}: ${count === 1 ? "drawn" : `${count} looks drawn`} from its classes`);
   if (notes.length > MAX_NOTES) warnings.push(`${notes.length - MAX_NOTES} more components did not render`);
-  const entry: ProjectSpecimens = { format: SPECIMEN_FORMAT, project: project.id, key, css: css.light !== null && css.dark !== null ? { light: css.light, dark: css.dark } : null, specimens, looks, warnings, tailwind: css.tailwind, sheets: css.sheets, sources: css.sources, used: describeSources(css.sources, css.tailwindVersion), skipped: describeSkipped(css.skipped) };
+  const entry: ProjectSpecimens = { format: SPECIMEN_FORMAT, project: project.id, key, css: css.light !== null && css.dark !== null ? { light: forcedStates(css.light), dark: forcedStates(css.dark) } : null, specimens, looks, warnings, tailwind: css.tailwind, sheets: css.sheets, sources: css.sources, used: describeSources(css.sources, css.tailwindVersion), skipped: describeSkipped(css.skipped), tsconfig: target.tsconfig };
   cache.write(project.id, key, entry);
   return { ...entry, cached: false };
 }

@@ -38,7 +38,7 @@ export interface RenderJob {
 }
 
 /** What an icon-size button shows: a plus drawn like a 16px Lucide icon. */
-const ICON_PATH = "M5 12h14M12 5v14";
+export const ICON_PATH = "M5 12h14M12 5v14";
 export const ICON_HTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICON_PATH}"></path></svg>`;
 
 export interface RenderResult {
@@ -124,6 +124,20 @@ for (const job of workerData.jobs) {
 parentPort.postMessage({ done: true });
 `;
 
+/** The stubs (stubFor) as an esbuild plugin; `portal: false` keeps Radix's real portal (a browser bundle, where it works). */
+export function stubs(root: string, { portal }: { portal: boolean }): Plugin {
+  return {
+    name: "youi-specimen-stubs",
+    setup(build) {
+      build.onResolve({ filter: portal ? /^(?:next(?:\/.*)?|@radix-ui\/react-portal|server-only|client-only)$/ : /^(?:next(?:\/.*)?|server-only|client-only)$/ }, (args) => ({ path: args.path, namespace: NAMESPACE }));
+      build.onLoad({ filter: /.*/, namespace: NAMESPACE }, (args) => ({ contents: stubFor(args.path) ?? "module.exports = {};", loader: "js", resolveDir: root }));
+    },
+  };
+}
+
+/** Assets a component imports: stylesheets come from the project's sheet, images inline, fonts dropped. */
+export const ASSET_LOADERS: BuildOptions["loader"] = { ".css": "empty", ".scss": "empty", ".sass": "empty", ".less": "empty", ".svg": "dataurl", ".png": "dataurl", ".jpg": "dataurl", ".jpeg": "dataurl", ".gif": "dataurl", ".webp": "dataurl", ".woff": "empty", ".woff2": "empty", ".ttf": "empty" };
+
 /** Why a module esbuild resolved may not be bundled, or null when it may. */
 function moduleRefusal(root: string, importer: string, specifier: string, resolved: string): string | null {
   // An installed package loading its own files or its dependencies, wherever the store is.
@@ -137,7 +151,7 @@ function moduleRefusal(root: string, importer: string, specifier: string, resolv
 }
 
 /** Every import checked against the root before esbuild loads it (see moduleRefusal). */
-function containment(root: string, refusals: Set<string>): Plugin {
+export function containment(root: string, refusals: Set<string>): Plugin {
   return {
     name: "youi-specimen-root",
     setup(build) {
@@ -162,7 +176,7 @@ function containment(root: string, refusals: Set<string>): Plugin {
  * The tsconfig esbuild may use: inside the root, and every `extends` inside it or a package in
  * the root's node_modules. Returns its path, null for none, or why it was refused.
  */
-function checkedTsconfig(root: string, tsconfig: string): { path: string | null } | { refused: string } {
+export function checkedTsconfig(root: string, tsconfig: string): { path: string | null } | { refused: string } {
   const seen = new Set<string>();
   let current: string | null = tsconfig;
   let first: string | null = null;
@@ -188,8 +202,10 @@ function checkedTsconfig(root: string, tsconfig: string): { path: string | null 
   return { path: first };
 }
 
-/** An esbuild run that is cancelled after `timeoutMs`. */
-async function bundleWithin(options: BuildOptions, timeoutMs: number): Promise<string> {
+/** An esbuild run that is cancelled after `timeoutMs`: its output, and (with `metafile`) the files it read. */
+export async function bundleWithin(options: BuildOptions & { metafile: true }, timeoutMs: number): Promise<{ text: string; inputs: string[] }>;
+export async function bundleWithin(options: BuildOptions, timeoutMs: number): Promise<string>;
+export async function bundleWithin(options: BuildOptions, timeoutMs: number): Promise<string | { text: string; inputs: string[] }> {
   const esbuild = await import("esbuild");
   const context = await esbuild.context({ ...options, write: false });
   let timer: NodeJS.Timeout | undefined;
@@ -203,14 +219,15 @@ async function bundleWithin(options: BuildOptions, timeoutMs: number): Promise<s
         }, timeoutMs);
       }),
     ]);
-    return result.outputFiles![0]!.text;
+    const text = result.outputFiles![0]!.text;
+    return options.metafile ? { text, inputs: Object.keys(result.metafile!.inputs) } : text;
   } finally {
     clearTimeout(timer);
     await context.dispose();
   }
 }
 
-const bundleError = (error: unknown): string =>
+export const bundleError = (error: unknown): string =>
   (error as { errors?: Array<{ text: string; location?: { file: string; line: number } | null }> }).errors?.slice(0, 3).map((e) => (e.location ? `${e.location.file}:${e.location.line}: ${e.text}` : e.text)).join("; ") || (error instanceof Error ? error.message : String(error));
 
 type Outcome = { html?: string; error?: string };
@@ -315,18 +332,9 @@ export async function renderComponents(root: string, tsconfig: string, jobs: rea
         jsx: "automatic",
         ...("path" in config && config.path ? { tsconfig: config.path } : { tsconfigRaw: {} }),
         define: { "process.env.NODE_ENV": '"production"' },
-        loader: { ".css": "empty", ".scss": "empty", ".sass": "empty", ".less": "empty", ".svg": "dataurl", ".png": "dataurl", ".jpg": "dataurl", ".jpeg": "dataurl", ".gif": "dataurl", ".webp": "dataurl", ".woff": "empty", ".woff2": "empty", ".ttf": "empty" },
+        loader: ASSET_LOADERS,
         logLevel: "silent",
-        plugins: [
-          {
-            name: "youi-specimen-stubs",
-            setup(build) {
-              build.onResolve({ filter: /^(?:next(?:\/.*)?|@radix-ui\/react-portal|server-only|client-only)$/ }, (args) => ({ path: args.path, namespace: NAMESPACE }));
-              build.onLoad({ filter: /.*/, namespace: NAMESPACE }, (args) => ({ contents: stubFor(args.path) ?? "module.exports = {};", loader: "js", resolveDir: root }));
-            },
-          },
-          containment(root, refusals),
-        ],
+        plugins: [stubs(root, { portal: true }), containment(root, refusals)],
       },
       bundleMs,
     );

@@ -1,5 +1,5 @@
 {
-  "measuredAt": "2026-10-12T22:27:47.534Z",
+  "measuredAt": "2026-10-12T23:39:36.107Z",
   "runs": 5,
   "bounds": {
     "bytes": "≤ smallest + 10%",
@@ -9,94 +9,120 @@
     {
       "looks": 50,
       "families": 16,
-      "indexBytes": 3397,
-      "bytesBeforePaint": 183283,
+      "indexBytes": 3413,
+      "bytesBeforePaint": 186050,
       "requestsBeforePaint": 28,
-      "inventoryPaintMs": 176.4,
-      "fcpMs": 188
+      "inventoryPaintMs": 171.4,
+      "fcpMs": 184,
+      "tryRequests": 0,
+      "strips": 0
     },
     {
       "looks": 5000,
       "families": 126,
-      "indexBytes": 3467,
-      "bytesBeforePaint": 183334,
+      "indexBytes": 3483,
+      "bytesBeforePaint": 186103,
       "requestsBeforePaint": 28,
-      "inventoryPaintMs": 170,
-      "fcpMs": 184
+      "inventoryPaintMs": 175,
+      "fcpMs": 188,
+      "tryRequests": 0,
+      "strips": 0
     }
   ],
   "raw": [
     {
       "looks": 50,
       "families": 16,
-      "indexBytes": 3397,
+      "indexBytes": 3413,
+      "tryJsonInBuild": false,
       "runs": [
         {
-          "bytes": 183283,
+          "bytes": 186050,
           "requests": 28,
-          "inventoryPaintMs": 176.4,
-          "fcpMs": 188
+          "inventoryPaintMs": 206.8,
+          "fcpMs": 224,
+          "tryRequests": 0,
+          "strips": 0
         },
         {
-          "bytes": 183283,
+          "bytes": 186050,
           "requests": 28,
-          "inventoryPaintMs": 174.4,
-          "fcpMs": 188
+          "inventoryPaintMs": 171.1,
+          "fcpMs": 184,
+          "tryRequests": 0,
+          "strips": 0
         },
         {
-          "bytes": 183283,
+          "bytes": 186050,
           "requests": 28,
-          "inventoryPaintMs": 169.8,
-          "fcpMs": 184
+          "inventoryPaintMs": 175.6,
+          "fcpMs": 192,
+          "tryRequests": 0,
+          "strips": 0
         },
         {
-          "bytes": 183283,
+          "bytes": 186050,
           "requests": 28,
-          "inventoryPaintMs": 176.4,
-          "fcpMs": 192
+          "inventoryPaintMs": 171.4,
+          "fcpMs": 184,
+          "tryRequests": 0,
+          "strips": 0
         },
         {
-          "bytes": 183283,
+          "bytes": 186050,
           "requests": 28,
-          "inventoryPaintMs": 177.3,
-          "fcpMs": 192
+          "inventoryPaintMs": 169.9,
+          "fcpMs": 180,
+          "tryRequests": 0,
+          "strips": 0
         }
       ]
     },
     {
       "looks": 5000,
       "families": 126,
-      "indexBytes": 3467,
+      "indexBytes": 3483,
+      "tryJsonInBuild": false,
       "runs": [
         {
-          "bytes": 183334,
+          "bytes": 186103,
           "requests": 28,
-          "inventoryPaintMs": 177.4,
-          "fcpMs": 192
+          "inventoryPaintMs": 172.9,
+          "fcpMs": 188,
+          "tryRequests": 0,
+          "strips": 0
         },
         {
-          "bytes": 183334,
+          "bytes": 186103,
           "requests": 28,
-          "inventoryPaintMs": 170,
-          "fcpMs": 184
+          "inventoryPaintMs": 178.5,
+          "fcpMs": 196,
+          "tryRequests": 0,
+          "strips": 0
         },
         {
-          "bytes": 183334,
+          "bytes": 186103,
           "requests": 28,
-          "inventoryPaintMs": 170.2,
-          "fcpMs": 184
+          "inventoryPaintMs": 174.9,
+          "fcpMs": 188,
+          "tryRequests": 0,
+          "strips": 0
         },
         {
-          "bytes": 183334,
+          "bytes": 186103,
           "requests": 28,
-          "inventoryPaintMs": 168.2,
-          "fcpMs": 180
+          "inventoryPaintMs": 180.1,
+          "fcpMs": 196,
+          "tryRequests": 0,
+          "strips": 0
         },
         {
-          "bytes": 183334,
+          "bytes": 186103,
           "requests": 28,
-          "inventoryPaintMs": 169.5,
-          "fcpMs": 184
+          "inventoryPaintMs": 175,
+          "fcpMs": 188,
+          "tryRequests": 0,
+          "strips": 0
         }
       ]
     }

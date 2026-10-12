@@ -452,7 +452,7 @@ function WallTile({ view, chunks, source, scheme, libraries, stagger, onOpen }: 
       data-stagger={stagger ?? undefined}
       onClick={(event) => !(event.target as Element).closest("button") && open()}
     >
-      <LeadTile tiles={tiles} scheme={scheme} size="large" as="div" caption={false} />
+      <LeadTile tiles={tiles} scheme={scheme} size="large" as="div" caption={false} tryIt />
       <div className="min-w-0 space-y-0.5 px-1">
         <h3 className="inv-tile-name text-small font-medium break-words text-ink">{view.name}</h3>
         <p className="tabular text-caption text-muted">
