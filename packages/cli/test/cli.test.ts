@@ -186,7 +186,7 @@ describe("youi", () => {
       expect(await main(["schema", "--check"])).toBe(0);
       out = "";
       expect(await main(["schema", "--check", "--design", dir, "--json"])).toBe(1);
-      expect((JSON.parse(out) as { stale: string[] }).stale).toHaveLength(11);
+      expect((JSON.parse(out) as { stale: string[] }).stale).toHaveLength(12);
       expect(await main(["schema", "--write", "--design", dir])).toBe(0);
       out = "";
       expect(await main(["schema", "--check", "--design", dir])).toBe(0);
@@ -211,6 +211,46 @@ describe("youi", () => {
     expect(hubPlan(tool, { watch: true }).watch).toEqual(["/opt/youi/apps/web/scripts/snapshot.ts", "--out", "/opt/youi/apps/web/.hub", "--project", "/opt/youi/examples/demo-app", "--watch"]);
     // The rule editor `youi ui --project` starts is what the dev server proxies at /api.
     expect(hubPlan(tool, { project: "/src/acme-app", api: "http://127.0.0.1:50123" }).env).toEqual({ YOUI_HUB_SNAPSHOT: "/opt/youi/apps/web/.hub", YOUI_API: "http://127.0.0.1:50123" });
+    // A detect report alone snapshots the demo system plus the report, into .hub.
+    expect(hubPlan(tool, { detect: "/tmp/acme/detect.json" }).snapshot).toEqual(["/opt/youi/apps/web/scripts/snapshot.ts", "--out", "/opt/youi/apps/web/.hub", "--detect", "/tmp/acme/detect.json"]);
+  });
+
+  test("detect on a repo writes youi.detect/v1 and lists declared-but-unused packages apart from the verdicts", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "youi-detect-"));
+    try {
+      const repo = join(import.meta.dirname, "../../detect/test/fixtures/repos/shadcn-app");
+      expect(await main(["detect", repo, "--out", dir, "--json"])).toBe(0);
+      const report = JSON.parse(out) as { schema: string; libraries: Array<{ id: string }>; unused: Array<{ package: string }> };
+      expect(report.schema).toBe("youi.detect/v1");
+      expect(report.libraries.map((l) => l.id)).toEqual(["shadcn", "radix"]);
+      expect(report.unused.map((u) => u.package).sort()).toEqual(["@mui/material", "styled-components"]);
+      expect(JSON.parse(await readFile(join(dir, "detect.json"), "utf8"))).toEqual(report);
+      out = "";
+      expect(await main(["detect", repo, "--out", dir])).toBe(0);
+      expect(out).toMatch(/shadcn\/ui\s+high/);
+      expect(out).toMatch(/Declared, never imported · not counted\n {2}@mui\/material@\^6\.1\.0 in package\.json\n {2}styled-components@\^6\.1\.13 in package\.json/);
+      expect(out).toContain("declared but never imported packages are listed apart");
+      expect(out).toContain("youi ui --detect");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("detect refuses a repo mixed with URLs, and says when YOUI_CHROMIUM names no Chromium", async () => {
+    expect(await main(["detect"])).toBe(2);
+    expect(await main(["detect", ".", "https://example.com"])).toBe(2);
+    expect(err).toContain("usage: youi detect <repo-path>");
+    const dir = await mkdtemp(join(tmpdir(), "youi-detect-"));
+    vi.stubEnv("YOUI_CHROMIUM", join(dir, "no-such-chromium"));
+    try {
+      expect(await main(["detect", "http://127.0.0.1:9/", "--out", dir])).toBe(1);
+      expect(err).toContain("no Chromium for website detection");
+      expect(err).toContain("(YOUI_CHROMIUM)");
+      expect(err).not.toContain("downloading");
+    } finally {
+      vi.unstubAllEnvs();
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   test("ui explains missing hub dependencies instead of crashing", async () => {

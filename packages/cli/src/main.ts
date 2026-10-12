@@ -11,6 +11,7 @@ import { baselinePath, exitCodeOf, runCheck, writeBaseline, type CheckResult } f
 import { actionable, githubAnnotations, githubSummary, renderCheckText } from "./check-render.ts";
 import { runClaudeHook, runPreCommitHook, type HookTarget } from "./hooks.ts";
 import { hookCommand, installClaudeHook, installPreCommit, installWorkflow, repoRootOf } from "./hooks-install.ts";
+import { detectTarget, renderDetect } from "./detect.ts";
 import { startRuleEditor, type RuleEditor } from "./editor.ts";
 import { DEFAULT_HUB_PORT, runHub } from "./hub.ts";
 import { initProject } from "./init.ts";
@@ -73,14 +74,23 @@ ${style.bold("Library")}  ${style.dim("ingested references: browse and request a
   library search <query>   Library items (lib: ids) and the System elements each could swap in for
   library request <id> --reason <text>   draft an adoption request for a person to approve
 
+${style.bold("Detect")}  ${style.dim("which UI libraries a repo or website uses (youi.detect/v1)")}
+  detect <repo-path>       package.json, lockfile, components.json and the code's real imports;
+                           declared but never imported packages are listed apart, not counted
+  detect <url…> [--expose] load each page in headless Chromium and read its fingerprints, one
+                           screenshot per element type; coverage is per page crawled, so pass
+                           every page that matters; --expose opens menus, dialogs and tabs
+                           (--out dir, default .youi/detect; the first run downloads Chromium, ~100 MB)
+
 ${style.bold("The hub")}
-  ui [--design dir] [--project dir] [--config file] [--root dir] [--port n] [--watch] [--state dir] [--inventory file]
+  ui [--design dir] [--project dir] [--config file] [--root dir] [--port n] [--watch] [--state dir] [--inventory file] [--detect file]
                            open the web hub on a design system (default: the demo system);
                            --project adds that product's usage map (read-only scan) and the
                            rule editor (System > Rules, Work > Changes): drafts, impact preview,
                            approval, a review branch in the design repo (drafts kept in --state);
                            --watch re-scans on every save and updates the open hub;
                            --inventory shows a youi inventory file on the Inventory page
+                           --detect adds a youi detect report to Library > Stack
 
 ${style.bold("In a design repo")} ${style.dim("(the current directory, or --design)")}
   build [--out dir] [--prefix p]   build token outputs
@@ -135,6 +145,8 @@ const OPTIONS = {
   light: { type: "string" },
   port: { type: "string" },
   watch: { type: "boolean", default: false },
+  expose: { type: "boolean", default: false },
+  detect: { type: "string" },
   dark: { type: "string" },
   state: { type: "string" },
   inventory: { type: "string" },
@@ -490,10 +502,25 @@ async function cmdUi(values: Values): Promise<number> {
   const port = values.port ?? DEFAULT_HUB_PORT;
   const editor = await startEditor(values, port);
   try {
-    return await runHub(TOOL_ROOT, { ...(values.inventory ? { inventory: values.inventory } : {}), ...(values.design ? { design: values.design } : {}), ...(values.project ? { project: values.project } : {}), ...(values.config ? { config: values.config } : {}), ...(values.root ? { root: values.root } : {}), ...(values.port || editor ? { port } : {}), ...(editor ? { api: editor.url } : {}), watch: values.watch });
+    return await runHub(TOOL_ROOT, { ...(values.inventory ? { inventory: values.inventory } : {}), ...(values.design ? { design: values.design } : {}), ...(values.project ? { project: values.project } : {}), ...(values.config ? { config: values.config } : {}), ...(values.root ? { root: values.root } : {}), ...(values.detect ? { detect: values.detect } : {}), ...(values.port || editor ? { port } : {}), ...(editor ? { api: editor.url } : {}), watch: values.watch });
   } finally {
     await editor?.close();
   }
+}
+
+async function cmdDetect(values: Values, positionals: string[]): Promise<number> {
+  const target = detectTarget(positionals);
+  if (!target) throw new UsageError("youi detect <repo-path>   or   youi detect <url…> [--expose]   (one repo, or one or more URLs; not both)");
+  const { repoReport, siteReport, writeReport } = await import("@youiyoux/detect");
+  const out = resolve(values.out ?? ".youi/detect");
+  const report = target.kind === "repo" ? await repoReport(target.path) : await siteReport(target.urls, { out, expose: values.expose, ...(process.env.YOUI_CHROMIUM ? { executablePath: process.env.YOUI_CHROMIUM } : {}) });
+  const file = await writeReport(report, out);
+  if (values.json) json(report);
+  else {
+    const shown = relative(process.cwd(), file);
+    print(renderDetect(report, shown && !shown.startsWith("..") ? shown : file));
+  }
+  return 0;
 }
 
 async function cmdMcp(values: Values): Promise<number> {
@@ -505,7 +532,7 @@ async function cmdMcp(values: Values): Promise<number> {
 type Command = (values: Values, positionals: string[]) => Promise<number>;
 
 const COMMANDS: Record<string, Command> = {
-  show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+  show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
 
 export async function main(argv: string[]): Promise<number> {

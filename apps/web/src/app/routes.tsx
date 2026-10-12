@@ -1,5 +1,5 @@
 /** Route table: every screen is its own chunk, preloaded on hover/focus and on idle after first paint. */
-import { Boxes, LayoutGrid, Library, type LucideIcon, Monitor, Paintbrush, Palette, PlugZap, Scale, ScanSearch, GitPullRequestArrow } from "lucide-react";
+import { Boxes, LayoutGrid, Layers, Library, type LucideIcon, Monitor, Paintbrush, Palette, PlugZap, Scale, ScanSearch, GitPullRequestArrow } from "lucide-react";
 import { type ComponentType, createElement } from "react";
 
 /**
@@ -41,6 +41,7 @@ const tokens = preloadable(() => import("../screens/tokens/TokensScreen.tsx"), (
 const rules = preloadable(() => import("../screens/rules/RulesScreen.tsx"), (m) => m.RulesScreen);
 const screens = preloadable(() => import("../screens/screens/ScreensScreen.tsx"), (m) => m.ScreensScreen);
 const library = preloadable(() => import("../screens/library/LibraryScreen.tsx"), (m) => m.LibraryScreen);
+const stack = preloadable(() => import("../screens/stack/StackScreen.tsx"), (m) => m.StackScreen);
 const changes = preloadable(() => import("../screens/changes/ChangesScreen.tsx"), (m) => m.ChangesScreen);
 const inventory = preloadable(() => import("../screens/inventory/InventoryScreen.tsx"), (m) => m.InventoryScreen);
 const style = preloadable(() => import("../screens/style/StyleScreen.tsx"), (m) => m.StyleScreen);
@@ -53,6 +54,7 @@ export const HomeScreen = home.Component;
 export const CatalogScreen = catalog.Component;
 export const TokensScreen = tokens.Component;
 export const LibraryScreen = library.Component;
+export const StackScreen = stack.Component;
 export const ScreensScreen = screens.Component;
 export const RulesScreen = rules.Component;
 export const SourcesScreen = sources.Component;
@@ -69,6 +71,7 @@ const loaders = {
   rules: rules.preload,
   screens: screens.preload,
   library: library.preload,
+  stack: stack.preload,
   changes: changes.preload,
   inventory: inventory.preload,
   style: style.preload,
@@ -106,6 +109,7 @@ export const NAV: readonly NavItem[] = [
   { href: "/screens", label: "Screens", icon: Monitor, key: "s", loader: "screens", section: "system" },
   { href: "/library", label: "Browse", icon: Library, key: "l", loader: "library", section: "library" },
   { href: "/inventory", label: "Inventory", icon: ScanSearch, key: "v", loader: "inventory", section: "library" },
+  { href: "/library/stack", label: "Stack", icon: Layers, key: "d", loader: "stack", section: "library" },
   { href: "/library/sources", label: "Sources", icon: PlugZap, key: "i", loader: "stubs", section: "library" },
   { href: "/style", label: "Style", icon: Paintbrush, key: "e", loader: "style", section: "work" },
   { href: "/changes", label: "Changes", icon: GitPullRequestArrow, key: "w", loader: "changes", section: "work" },

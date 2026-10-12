@@ -1,0 +1,22 @@
+<!doctype html>
+<!-- The false positive: a Geist (Vercel) page. data-slot="geist-icon" is Geist's own slot name, not
+     shadcn/ui's, and --geist-* / --ds-* variables plus dense utilities must never add up to shadcn. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Deployments · Geist fixture</title>
+<style>
+  :root { --geist-foreground: #000; --geist-background: #fff; --geist-radius: 6px; --ds-gray-100: #f2f2f2; --ds-gray-1000: #171717; --ds-blue-700: #0070f3; }
+  body { margin: 0; padding: 24px; font-family: Geist, Arial, sans-serif; }
+  .button_base__IZQUR { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 0; border-radius: var(--geist-radius); background: var(--ds-gray-1000); color: #fff; }
+  .flex { display: flex; } .items-center { align-items: center; } .gap-2 { gap: 8px; } .p-4 { padding: 16px; } .rounded-md { border-radius: 6px; } .border { border: 1px solid var(--ds-gray-100); } .text-sm { font-size: 14px; } .font-medium { font-weight: 500; } .mt-4 { margin-top: 16px; } .w-full { width: 100%; } .justify-between { justify-content: space-between; } .text-gray-900 { color: #111; }
+</style>
+</head>
+<body>
+  <div class="flex items-center justify-between gap-2 p-4 border rounded-md w-full">
+    <div class="flex items-center gap-2 text-sm font-medium text-gray-900"><svg data-slot="geist-icon" height="16" width="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="currentColor"/></svg>Production</div>
+    <button class="button_base__IZQUR reset_reset__KRyvc button_small__BoaHk" type="button"><svg data-slot="geist-icon" height="16" width="16" viewBox="0 0 16 16"><path d="M2 8h12" stroke="currentColor"/></svg>Redeploy</button>
+  </div>
+  <div class="flex items-center gap-2 p-4 mt-4 border rounded-md text-sm"><svg data-slot="geist-icon" height="16" width="16" viewBox="0 0 16 16"><rect width="12" height="12" x="2" y="2" fill="currentColor"/></svg>Preview · 3 deployments</div>
+</body>
+</html>

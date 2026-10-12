@@ -4,7 +4,8 @@
  * (gitignored, so the tool's checkout stays clean) and points the dev server at it.
  * `--watch` keeps that snapshot live: a watcher re-scans on every save and the open
  * hub loads each new generation (the demo project is watched when nothing is named).
- * `api` is the rule editor's service, which the dev server proxies at /api.
+ * `api` is the rule editor's service, which the dev server proxies at /api. `detect` adds a
+ * `youi detect` report to the snapshot (Library > Stack), beside the demo system when nothing else is named.
  */
 import { spawn } from "node:child_process";
 import { access } from "node:fs/promises";
@@ -26,6 +27,8 @@ export interface HubOptions {
   readonly api?: string;
   /** A `youi inventory` file for the Inventory page. */
   readonly inventory?: string;
+  /** A `youi detect` report (detect.json, screenshots beside it) for Library > Stack. */
+  readonly detect?: string;
 }
 
 export interface HubPlan {
@@ -45,8 +48,8 @@ export const DEFAULT_HUB_PORT = "5173";
 export function hubPlan(toolRoot: string, options: HubOptions): HubPlan {
   const web = join(toolRoot, "apps/web");
   const vite = [join(web, "node_modules/vite/bin/vite.js"), ...(options.port ? ["--port", options.port, "--strictPort"] : [])];
-  const named = (["design", "project", "config", "root", "inventory"] as const).flatMap((key) => (options[key] ? [`--${key}`, resolve(options[key])] : []));
-  // --watch with nothing named keeps the demo project live (an inventory file alone names no project).
+  const named = (["design", "project", "config", "root", "inventory", "detect"] as const).flatMap((key) => (options[key] ? [`--${key}`, resolve(options[key])] : []));
+  // --watch with nothing named keeps the demo project live (an inventory file or a detect report alone names no project).
   const watchesDemo = options.watch && !(["design", "project", "config", "root"] as const).some((key) => options[key]);
   const flags = watchesDemo ? [...named, "--project", join(toolRoot, "examples/demo-app")] : named;
   const api: Record<string, string> = options.api ? { YOUI_API: options.api } : {};

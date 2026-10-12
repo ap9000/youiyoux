@@ -4,6 +4,7 @@
  */
 import { posix } from "node:path";
 import { z } from "zod";
+import { DetectReport } from "./detect.ts";
 import { LibraryEntry } from "./hierarchy.ts";
 import { ElementId } from "./ids.ts";
 import { TokenDocument } from "./tokens.ts";
@@ -586,6 +587,7 @@ export const PUBLISHED_SCHEMAS = {
   "youi.library.schema.json": LibraryEntry,
   "youi.baseline.schema.json": Baseline,
   "youi.inventory.schema.json": InventoryReport,
+  "youi.detect.schema.json": DetectReport,
   "youi.tokens.schema.json": TokenDocument,
 } as const;
 

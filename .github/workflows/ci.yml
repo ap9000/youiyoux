@@ -26,11 +26,16 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      # System libraries only: the site tests download the headless shell itself, as youi detect does.
+      - name: System libraries for youi detect's Chromium
+        run: pnpm --filter @youiyoux/detect exec playwright-core install-deps chromium-headless-shell
 
       - name: Engine typecheck
         run: pnpm typecheck
       - name: Engine tests
         run: pnpm test
+        env:
+          YOUI_DETECT_SITE: "1"
 
       - name: Web tests
         run: pnpm --filter @youiyoux/web test

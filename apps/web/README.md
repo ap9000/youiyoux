@@ -17,6 +17,7 @@ youi ui --project ~/src/acme-app                     # plus where it is used in 
 youi ui --project ~/src/acme-app --config ~/src/acme-design/acme-app.youi.json   # config kept outside the product
 youi ui --project ~/src/acme-design/pilot/acme-app --root ~/src/acme-app            # the same, from the config's directory
 youi ui --config ~/src/acme-design/pilot/acme-app/youi.project.json --root ~/src/acme-app   # the usage map, without the rule editor
+youi ui --detect .youi/detect/detect.json            # plus a youi detect report on Library > Stack
 ```
 
 The hub shows one design system at a time, read from a snapshot directory. The committed default (`snapshot/`) is the made-up demo system, so `pnpm dev` works on its own and the tool repo holds no product's data. `youi ui` with a system named writes its snapshot to `.hub/` (gitignored) and starts the dev server on that instead, so pointing the hub at a real system never changes the checkout.
@@ -25,7 +26,7 @@ Rules and Changes are live rather than a snapshot when the rule editor runs: `yo
 
 ## Screens
 
-The nav rail has three labelled groups: **System** (Overview, Components, Tokens, Rules, Screens: approved elements, their rules and live usage; what products build with), **Library** (Browse, Inventory, Sources: what is ingested from outside, to browse and propose; never built with) and **Work** (Style, Changes). Access stays reachable at `/access`.
+The nav rail has three labelled groups: **System** (Overview, Components, Tokens, Rules, Screens: approved elements, their rules and live usage; what products build with), **Library** (Browse, Inventory, Stack, Sources: what is ingested or detected from outside, to browse and propose; never built with) and **Work** (Style, Changes). Access stays reachable at `/access`.
 
 | Route | What it is |
 | --- | --- |
@@ -36,20 +37,22 @@ The nav rail has three labelled groups: **System** (Overview, Components, Tokens
 | `/screens[/<project>/<screen>]` | Each project screen as a screenshot with its element and issue counts; a screen opens with its full screenshot, the elements it renders and the rule issues in its files (`j`/`k` step between screens) |
 | `/library`, `/library/sources` | The Library (Browse): ingested candidates. Empty for now: explains the sources to come, the `library → candidate → adopted → in-use` path and what agents may do. Sources is planned |
 | `/inventory` | What products already built, from `youi inventory`: a role × project grid (families and looks per cell), then each role's families of look-alikes, one row each with its shape (height, padding, radius, font size, weight), kits, count, `file:line` examples with routes and, when it spans projects or kits, each side of the near-duplicate; duplicate-definition and mixed-kit flags; the kits and library primitives. On a phone the grid becomes one section per role. Empty until a snapshot carries an inventory |
+| `/library/stack` | Stack: the UI libraries a repo or website uses, from a `youi detect` report (`youi ui --detect <file>`): each library with its confidence and evidence, an element screenshot per element type, the coverage (per page crawled), and packages declared but never imported. **Add to Library** drafts a `youi.library/v1` item (seen on the site, likely the library) to copy or download; nothing is written. Without a report it explains `youi detect` |
 | `/style`, `/style/draft/<id>` | Work: the style editor. Edit a system's colours (light and dark), type, spacing, radii, borders, shadows, motion (durations, easings, transitions, springs with their settle curve) and focus rings, and re-bind component states (hover, active, focus, disabled) where a contract declares them. A live preview renders the system's own demos and specimen screens (components, type and colour, space and shape, motion, focus) in light and dark, with any state pinned, and turns to the screen for the group being edited. Below 64rem (phones) it is a sticky strip under the header, light beside dark, that folds away; the token cards scroll beneath it, and the token-group tabs wrap. Colour pairs below WCAG AA are flagged as you edit (large text at 3:1, focus rings over component fills, unreadable colours as failures). Save draft (⌘S) puts the edits in Changes as a style draft. Editing and the preview work without the service; saving needs it |
 | `/changes`, `/changes/<id>` | Work: the review queue for every change (rule and style drafts): draft, waiting for approval, approved, sent for review, rolled out. A style draft opens here: its edits, then the impact preview (every changed token, every site of the components that change, every direct use, contrast), approval and review branch. Approving a style draft that puts colour pairs below WCAG AA opens one confirmation naming each pair; confirming sends exactly those pairs with the approval |
 | `/access` | Planned: access |
 
-Keyboard: `⌘K` palette, `/` search the list, `j`/`k` or arrows move, `g` then `o c t r s l v i e w` to jump, `?` for all shortcuts. In Style, ↑/↓ step a number (Shift ×10), Escape puts a field back, ⌘S saves the draft.
+Keyboard: `⌘K` palette, `/` search the list, `j`/`k` or arrows move, `g` then `o c t r s l v d i e w` to jump, `?` for all shortcuts. In Style, ↑/↓ step a number (Shift ×10), Escape puts a field back, ⌘S saves the draft.
 
 ## Data
 
-`pnpm data [--design <dir>] [--project <dir>] [--config <file>] [--root <dir>] [--inventory <file>] [--out <dir>] [--commit <sha>]` (`scripts/snapshot.ts`) builds a snapshot with this repository's `@youiyoux/core`, `@youiyoux/tokens` and `@youiyoux/scanner`; it never runs code from the design repo. With no options it rebuilds the committed demo: `examples/demo-design`, a scan of `examples/demo-app`, and an inventory of the scanner's two inventory fixtures (`packages/scanner/test/fixtures/inventory/{console,site}`).
+`pnpm data [--design <dir>] [--project <dir>] [--config <file>] [--root <dir>] [--inventory <file>] [--detect <detect.json>] [--out <dir>] [--commit <sha>]` (`scripts/snapshot.ts`) builds a snapshot with this repository's `@youiyoux/core`, `@youiyoux/tokens` and `@youiyoux/scanner`; it never runs code from the design repo. With no options it rebuilds the committed demo: `examples/demo-design`, a scan of `examples/demo-app`, and an inventory of the scanner's two inventory fixtures (`packages/scanner/test/fixtures/inventory/{console,site}`).
 
 - `--design` is the design repo checkout (the directory holding `youi.config.json`). `--project` (or `--config` with `--root`) scans a product repo, read-only, for the usage map; its `youi.project.json` (or `--config`) also names the design repo, the system, the CSS variable prefix and the Tailwind names its components use. The snapshot records the commit that last changed the definitions it read.
 - `<snapshot>/public/data/`: `manifest.json` plus content-hashed `<system>.catalog.<hash>.json` (tokens resolved per scheme, component contracts and their owned files, rules, the design narrative) and `<project>.usage.<hash>.json` (validated against `youi.usage/v1`). The browser keeps hashed files in Cache Storage, so repeat visits and offline work need only the manifest. Vite serves them beside `public/` and copies them into the build.
 - `<snapshot>/public/data/<project>.screen.<hash>.webp`: the project's screens, light and dark, when it has captured them (see [Project screens](#project-screens)). The manifest lists them per route; a route without a picture shows an empty state.
 - `<snapshot>/public/data/inventory.<hash>.json`: a `youi inventory` file (`--inventory`, validated against `youi.inventory/v1`; a bad file is refused with the failing field), named by the manifest's `inventory`. `youi ui --inventory <file>` passes it through.
+- `<snapshot>/public/data/detect.<hash>.json` and `detect.shot.<hash>.png`: a `youi detect` report (`--detect`, validated against `youi.detect/v1`) and its element screenshots, renamed by content and named in the manifest's `detect` entry. Like project screens it belongs to whoever ran it: the committed demo snapshot never holds one (`--detect` needs `--out`).
 - `<snapshot>/preview/`: `system.css` (the system's variables scoped to `.system-scope`, the surface it sits on, and its Tailwind theme) and the system's owned component files, which the preview frame renders.
 - `src/styles/generated/`: the hub's own tokens (`design/youiyoux.*.json`, DTCG, built by `@youiyoux/tokens` like any system's) as CSS variables and a Tailwind v4 theme. The hub replaces Tailwind's colour, radius, shadow, type and easing scales with its tokens (the reserved names are mapped explicitly in `scripts/snapshot.ts`), so it uses no style that is not a YouIyouX token. Rebuilt with the default snapshot.
 
@@ -141,10 +144,10 @@ src/data/          snapshot types (@youiyoux/core types, type-only), loading and
 src/search/        MiniSearch engine, Web Worker, client hook
 src/shell/         nav rail, keyboard layer, command palette, shortcuts sheet
 src/ui/            the hub's owned components
-src/screens/       home, catalog, element tabs, tokens, rules, screens, library, inventory, style (style editor), changes (draft review), planned screens
+src/screens/       home, catalog, element tabs, tokens, rules, screens, library, inventory, stack (detect reports), style (style editor), changes (draft review), planned screens
 src/preview/       the isolated preview frame (loads the snapshot's demos through the @snapshot alias)
 snapshot/          the committed demo snapshot (data, previews, preview sources)
 test/              unit tests (pnpm test)
 ```
 
-Contract, rule and usage types are imported type-only from `@youiyoux/core`, so zod and the loaders never reach the browser bundle. `src/data/ids.ts` keeps its own few-line id parser for the same reason (core's `ids.ts` imports zod at module load).
+Contract, rule and usage types are imported type-only from `@youiyoux/core`, so zod and the loaders never reach the browser bundle. `src/data/ids.ts` keeps its own few-line id parser for the same reason (core's `ids.ts` imports zod at module load). Stack drafts Library items with `@youiyoux/core/detect-draft`, which imports types only, for the same reason.

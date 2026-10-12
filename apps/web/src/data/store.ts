@@ -8,8 +8,8 @@
  * is loaded in full and then swapped in for both at once.
  */
 import { useSyncExternalStore } from "react";
-import { DataError, loadCatalog, loadInventory, loadManifest, loadUsage, pruneCache } from "./load.ts";
-import type { InventoryReport, Manifest } from "./types.ts";
+import { DataError, loadCatalog, loadDetect, loadInventory, loadManifest, loadUsage, pruneCache } from "./load.ts";
+import type { DetectReport, InventoryReport, Manifest } from "./types.ts";
 import { buildModel, type Model } from "./model.ts";
 import { indexUsage, type UsageIndex } from "./usage.ts";
 
@@ -118,6 +118,10 @@ async function inventoryFor(manifest: Manifest): Promise<InventoryReport | null>
 
 const inventoryLoader = createLoader(async (): Promise<InventoryReport | null> => inventoryFor(await pinnedManifest()));
 
+/** The detect report the snapshot carries (`youi ui --detect`), or null when it has none. */
+const detectFor = async (manifest: Manifest): Promise<DetectReport | null> => (manifest.detect ? loadDetect(manifest.detect.file) : null);
+const detectLoader = createLoader(async (): Promise<DetectReport | null> => detectFor(await pinnedManifest()));
+
 let refreshing: Promise<void> | null = null;
 let again = false;
 
@@ -138,11 +142,13 @@ export function refreshSnapshot(): Promise<void> {
         const manifest = await loadManifest();
         const usageInUse = usageLoader.get().status !== "idle";
         const inventoryInUse = inventoryLoader.get().status !== "idle";
-        const [model, usage, inventory] = await Promise.all([modelFor(manifest), usageInUse ? usageFor(manifest) : null, inventoryInUse ? inventoryFor(manifest) : undefined]);
+        const detectInUse = detectLoader.get().status !== "idle";
+        const [model, usage, inventory, detect] = await Promise.all([modelFor(manifest), usageInUse ? usageFor(manifest) : null, inventoryInUse ? inventoryFor(manifest) : undefined, detectInUse ? detectFor(manifest) : undefined]);
         pinned = Promise.resolve(manifest);
         modelLoader.replace(model);
         if (usage) usageLoader.replace(usage);
         if (inventory !== undefined) inventoryLoader.replace(inventory);
+        if (detect !== undefined) detectLoader.replace(detect);
         setLive({ manifest, error: null });
       } catch (error: unknown) {
         setLive({ ...live, error: messageOf(error) });
@@ -171,6 +177,7 @@ export const startModel = (): void => modelLoader.start();
 export const retryModel = (): void => modelLoader.retry();
 export const startUsage = (): void => usageLoader.start();
 export const retryUsage = (): void => usageLoader.retry();
+export const retryDetect = (): void => detectLoader.retry();
 
 export function useModelState(): Resource<Model> {
   return useSyncExternalStore(modelLoader.subscribe, modelLoader.get);
@@ -182,6 +189,13 @@ export const retryInventory = (): void => inventoryLoader.retry();
 export function useInventoryState(): Resource<InventoryReport | null> {
   const state = useSyncExternalStore(inventoryLoader.subscribe, inventoryLoader.get);
   if (state.status === "idle") queueMicrotask(() => inventoryLoader.start());
+  return state;
+}
+
+/** The detect report; reading it starts the load. Ready with null when the snapshot has none. */
+export function useDetectState(): Resource<DetectReport | null> {
+  const state = useSyncExternalStore(detectLoader.subscribe, detectLoader.get);
+  if (state.status === "idle") queueMicrotask(() => detectLoader.start());
   return state;
 }
 

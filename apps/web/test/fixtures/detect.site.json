@@ -1,0 +1,30 @@
+{
+  "schema": "youi.detect/v1",
+  "generatedAt": "2026-10-12T10:00:00.000Z",
+  "detector": "youi-detect 0.1.0",
+  "target": { "kind": "site", "inputs": ["http://127.0.0.1:4173/shadcn.html"], "name": "127.0.0.1:4173" },
+  "pages": [{ "url": "http://127.0.0.1:4173/shadcn.html", "status": "ok", "title": "Settings", "exposed": 2 }],
+  "coverage": "Coverage is per page crawled: 1 of 1 page loaded: http://127.0.0.1:4173/shadcn.html.",
+  "libraries": [
+    {
+      "id": "shadcn", "name": "shadcn/ui", "confidence": "medium", "score": 0.5,
+      "evidence": [
+        { "kind": "data-slot", "strength": "strong", "detail": "shadcn/ui data-slot names", "count": 14, "where": ["http://127.0.0.1:4173/shadcn.html"], "samples": ["card", "button", "tabs"] },
+        { "kind": "tailwind", "strength": "support", "detail": "Tailwind utility density 71% of class tokens", "count": 90, "where": [], "samples": [] }
+      ],
+      "pages": ["http://127.0.0.1:4173/shadcn.html"]
+    },
+    {
+      "id": "radix", "name": "Radix Primitives", "confidence": "medium", "score": 0.5,
+      "evidence": [{ "kind": "id-prefix", "strength": "strong", "detail": "ids starting radix-", "count": 6, "where": [], "samples": ["radix-«r2»"] }],
+      "pages": ["http://127.0.0.1:4173/shadcn.html"]
+    }
+  ],
+  "elements": [
+    { "type": "button", "library": "shadcn", "confidence": "medium", "count": 2, "evidence": [{ "kind": "data-slot", "strength": "strong", "detail": "[data-slot=\"button\"]", "count": 2, "where": [], "samples": [] }], "also": [], "screenshot": "detect.shot.abc123.png", "page": "http://127.0.0.1:4173/shadcn.html" },
+    { "type": "dialog", "library": "shadcn", "confidence": "medium", "count": 1, "evidence": [{ "kind": "data-slot", "strength": "strong", "detail": "[data-slot=\"dialog-content\"]", "count": 1, "where": [], "samples": [] }], "also": ["radix"], "screenshot": "detect.shot.def456.png", "page": "http://127.0.0.1:4173/shadcn.html" }
+  ],
+  "unused": [],
+  "fonts": [{ "family": "Inter", "usedBy": ["body"] }],
+  "notes": []
+}

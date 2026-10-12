@@ -1,3 +1,5 @@
+export * from "./detect.ts";
+export * from "./detect-draft.ts";
 export * from "./diff.ts";
 export * from "./files.ts";
 export * from "./hash.ts";

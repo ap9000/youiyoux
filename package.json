@@ -17,6 +17,7 @@
   "devDependencies": {
     "@youiyoux/cli": "workspace:*",
     "@youiyoux/core": "workspace:*",
+    "@youiyoux/detect": "workspace:*",
     "@youiyoux/mcp": "workspace:*",
     "@youiyoux/scanner": "workspace:*",
     "@youiyoux/tokens": "workspace:*",

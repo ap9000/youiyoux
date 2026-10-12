@@ -31,7 +31,7 @@ A design repo is any directory with a `youi.config.json`. A product names it wit
 
 | Path | Contents |
 | --- | --- |
-| `packages/` | `core` (schemas, loader), `tokens` (Terrazzo build, import, parity), `scanner` (usage map, checks, migrations, plans), `cli`, `mcp`, `workflow` (design-change service: rule and style drafts) |
+| `packages/` | `core` (schemas, loader), `tokens` (Terrazzo build, import, parity), `scanner` (usage map, checks, migrations, plans), `detect` (which UI libraries a repo or website uses), `cli`, `mcp`, `workflow` (design-change service: rule and style drafts) |
 | `apps/web/` | The hub: find an element, see its contract, tokens and rules, preview it, see where it lives ([README](apps/web/README.md)) |
 | `schema/` | JSON Schemas, emitted from the Zod definitions in `packages/core` (`youi schema --write`) |
 | `examples/demo-design/` | **Demo**, a made-up design system (Button, Input and Card; 29 tokens including motion, springs and a focus ring; states on Button and Input; 6 rules) used by the tests, these docs and the hub's default data |
@@ -104,7 +104,9 @@ Anywhere:
 | Command | Does |
 | --- | --- |
 | `youi inventory [--project <dir>…] [--include <glob>…] [--exclude <glob>…] [--out <file>] [--json]` | Every UI element across one or more projects, with no design system: definitions, kits, library primitives and each rendered look grouped into families by shape ([inventory](#inventory)) |
-| `youi ui [--design <dir>] [--project <dir>] [--config <file>] [--root <dir>] [--inventory <file>]` | Start the hub on a design system (default: the demo); with `--project`, plus that product's usage map from a read-only scan; with `--inventory`, that inventory on the Inventory page |
+| `youi ui [--design <dir>] [--project <dir>] [--config <file>] [--root <dir>] [--inventory <file>] [--detect <file>]` | Start the hub on a design system (default: the demo); with `--project`, plus that product's usage map from a read-only scan; with `--inventory`, that inventory on the Inventory page; with `--detect`, a `youi detect` report on Library > Stack |
+| `youi detect <repo-path>` | Which UI libraries a repo uses: package.json files, the lockfile, `components.json` (shadcn/ui; without one, a `components/ui` folder of shadcn files), shadcn's own `data-slot` names and the code's actual imports, through path aliases, relative paths and barrels. A package that is declared but never imported is listed under `unused`, never counted |
+| `youi detect <url…> [--expose]` | Which UI libraries a website uses, read in headless Chromium, with one element screenshot per element type. `--expose` opens menus, dialogs and tabs so portals render |
 
 ## Inventory
 
@@ -120,6 +122,27 @@ Anywhere:
 Roles come only from element and component names and ARIA roles (`<button>`, `role="tab"`, `*Badge`, `*Dialog`, a link inside `<Button asChild>`) and the kit member an element uses, never from utility class names. Each look's shape (height, horizontal and vertical padding, radius, font size, weight; colour ignored) is resolved from its classes: plain CSS rules first, then Tailwind utilities in order (a CVA base, its variants, the call site's `className`), including the CSS `font` shorthand's size, weight and line height, using the project's own theme (`@theme` and `:root` variables, a `tailwind.config.*` read statically and never run, `var()` and `calc()`, then Tailwind's defaults), so `rounded-md` is 8px where the project says so. A missing height is derived from padding, line height and border. Breakpoint and state classes (`md:`, `hover:`, `data-[state=active]:`) and pseudo-class or media rules are recorded on the look, not clustered; dynamic classes are listed as unresolved.
 
 Looks are grouped per role, across all projects, with complete-link clustering: two looks share a family only if every dimension is within tolerance of every other look in it (height, padding and radius ±2px, font size ±1px, weight ±100; an unknown dimension matches only an unknown). When both looks have a fixed height (set, not derived), vertical padding is not compared: a 32px `.ui-button` with 6px vertical padding and a CVA `h-8` button with none are one shape. Single-link would chain a 28, 30, 32…38px ladder into one family; complete-link never does. A family that spans more than one project or kit is a near-duplicate. Flags: a component name defined in more than one file, and a file importing two kits' versions of one role (with each import statement and its line).
+
+## Detect
+
+`youi detect` writes a `youi.detect/v1` report (`--out <dir>`, default `.youi/detect/detect.json`, screenshots beside it): a verdict per library and per element type (button, input, dialog, menu, tabs, …), each with a confidence (high, medium, low) and the evidence behind it.
+
+```sh
+youi detect ~/src/acme-app                                  # a repo
+youi detect https://acme.example/ https://acme.example/settings --expose   # a site, two pages
+youi ui --detect .youi/detect/detect.json                   # Library > Stack in the hub
+```
+
+**Coverage is per page crawled.** A website report covers only the URLs given, and says so: a library used only on another page, behind a sign-in, or in a menu nobody opened is not seen. Pass every page that matters, and `--expose` for portals.
+
+Websites are read from these fingerprints, all in one pass per page: class prefixes (`Mui*`, `rt-*`, `sc-*`, `chakra-`, `mantine-`, `ant-`, `bp5-`), custom properties on `:root` (`--mui-`, `--radix-`, `--mantine-`, `--chakra-`, `--geist-`/`--ds-`), id prefixes (`base-ui-`, `radix-`, `headlessui-`), injected style tags (`data-styled`, `data-emotion`), shadcn/ui's own `data-slot` names, Radix Colors 12-step scales, Tailwind utility density and fonts. The table is `packages/detect/src/fingerprints.ts`.
+
+- Only shadcn/ui's own slot names count: `data-slot="geist-icon"` is Geist's, and is noted as not counted. `--geist-` or `--ds-` variables alone give at most a low-confidence Geist verdict, never shadcn.
+- Radix Colors scales and Tailwind density only support a verdict something else decided; on their own they never name a library.
+- When two libraries match one element type (shadcn's dialog is a Radix dialog), the kit wins over the primitives it is built on; the other is listed as `also`.
+- Website detection drives the headless-shell Chromium for the pinned `playwright-core`. The first website run downloads it (~100 MB, once) and says so; project setup never does. `YOUI_CHROMIUM=<path>` uses another Chromium instead.
+- `pnpm test` runs the site tests (`packages/detect/test/site.test.ts`, real Chromium on the fixture pages) only when something under `packages/detect/` or `packages/core/src/detect` differs from origin/main, or git cannot tell; `YOUI_DETECT_SITE=1` always runs them (CI sets it), `YOUI_DETECT_SITE=0` never does.
+- Not yet: ingesting whole library catalogs (that is Sources); grouping each rendered look by shape is [inventory](#inventory). In the hub, **Add to Library** drafts a `youi.library/v1` item from a detected element ("Seen on <site>, likely <library>") to copy or download; nothing is written.
 
 ## Migrations
 

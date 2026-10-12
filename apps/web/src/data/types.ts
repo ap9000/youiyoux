@@ -9,6 +9,10 @@ import type { RuleExecution } from "@youiyoux/core/rules";
 
 export type {
   ComponentContract,
+  DetectElement,
+  DetectEvidence,
+  DetectLibrary,
+  DetectReport,
   ElementId,
   ElementKind,
   InventoryFamily,
@@ -127,5 +131,7 @@ export interface Manifest {
   systems: Array<{ id: string; catalog: string; usage: Array<{ project: string; file: string; screens?: ProjectShots }> }>;
   /** A `youi inventory` file (youi.inventory/v1) for the Inventory page; absent when none was given. */
   inventory?: string;
+  /** A `youi detect` report (`youi ui --detect`), for Library > Stack; its screenshots are data files named in it. */
+  detect?: { file: string; name: string; kind: "repo" | "site" };
   live?: LiveInfo;
 }

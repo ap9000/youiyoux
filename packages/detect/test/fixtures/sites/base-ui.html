@@ -1,0 +1,45 @@
+<!doctype html>
+<!-- Base UI (unstyled, CSS modules), as rendered: generated ids with the base-ui- prefix, ARIA roles,
+     data-* state attributes, and a menu that renders into a portal when opened. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Player · Base UI fixture</title>
+<style>
+  body { margin: 0; padding: 24px; font-family: "IBM Plex Sans", system-ui, sans-serif; }
+  .Tabs_list__x1 { display: flex; gap: 4px; border-bottom: 1px solid #ddd; margin-bottom: 16px; }
+  .Tabs_tab__x2 { padding: 8px 12px; border: 0; background: none; font: inherit; }
+  .Tabs_tab__x2[data-selected] { border-bottom: 2px solid #111; }
+  .Checkbox_root__a1 { width: 20px; height: 20px; border: 1px solid #888; border-radius: 4px; background: #fff; }
+  .Switch_root__b1 { width: 40px; height: 22px; border-radius: 11px; border: 0; background: #111; position: relative; }
+  .Switch_thumb__b2 { position: absolute; top: 3px; left: 21px; width: 16px; height: 16px; border-radius: 50%; background: #fff; }
+  .Field_input__c1 { padding: 8px; border: 1px solid #aaa; border-radius: 6px; width: 240px; }
+  .Menu_popup__d1 { position: fixed; top: 160px; left: 24px; width: 200px; padding: 4px; background: #fff; border: 1px solid #ddd; border-radius: 6px; box-shadow: 0 4px 16px rgb(0 0 0 / 12%); }
+  .Menu_item__d2 { padding: 6px 8px; }
+  .row { display: flex; gap: 16px; align-items: center; margin: 12px 0; }
+</style>
+</head>
+<body>
+  <div class="Tabs_root__x0" data-orientation="horizontal">
+    <div role="tablist" class="Tabs_list__x1" aria-orientation="horizontal" data-orientation="horizontal">
+      <button type="button" role="tab" aria-selected="true" id="base-ui-:r1:" aria-controls="base-ui-:r3:" data-selected="" class="Tabs_tab__x2">Overview</button>
+      <button type="button" role="tab" aria-selected="false" id="base-ui-:r2:" aria-controls="base-ui-:r4:" class="Tabs_tab__x2">Lyrics</button>
+    </div>
+    <div role="tabpanel" id="base-ui-:r3:" aria-labelledby="base-ui-:r1:">Now playing.</div>
+  </div>
+  <div class="row">
+    <button type="button" role="checkbox" aria-checked="false" id="base-ui-:r5:" data-unchecked="" class="Checkbox_root__a1"></button><label for="base-ui-:r5:">Shuffle</label>
+    <button type="button" role="switch" aria-checked="true" id="base-ui-:r7:" data-checked="" class="Switch_root__b1"><span class="Switch_thumb__b2" data-checked=""></span></button>
+    <input id="base-ui-:r8:" class="Field_input__c1" placeholder="Search songs" aria-label="Search songs">
+  </div>
+  <button type="button" id="base-ui-:r9:" aria-haspopup="menu" aria-expanded="false" class="Menu_trigger__d0">Song</button>
+  <script>
+    const trigger = document.getElementById("base-ui-:r9:");
+    trigger.addEventListener("click", () => {
+      document.body.insertAdjacentHTML("beforeend", '<div data-portal><div role="menu" id="base-ui-:ra:" tabindex="-1" data-open="" class="Menu_popup__d1"><div role="menuitem" class="Menu_item__d2">Add to Library</div><div role="menuitem" class="Menu_item__d2">Add to Playlist</div></div></div>');
+      trigger.setAttribute("aria-expanded", "true");
+    });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") { document.querySelectorAll("[data-portal]").forEach((n) => n.remove()); trigger.setAttribute("aria-expanded", "false"); } });
+  </script>
+</body>
+</html>

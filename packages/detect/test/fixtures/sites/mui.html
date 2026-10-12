@@ -1,0 +1,44 @@
+<!doctype html>
+<!-- MUI v6 with CSS variables, as rendered: Emotion style tags, Mui* state and slot classes, --mui-* on :root. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Orders · MUI fixture</title>
+<style>
+  :root { --mui-palette-primary-main: #1976d2; --mui-palette-primary-contrastText: #fff; --mui-palette-text-primary: rgba(0,0,0,.87); --mui-shape-borderRadius: 4px; --mui-shadows-1: 0 2px 1px -1px rgba(0,0,0,.2); }
+  body { margin: 0; padding: 24px; font-family: Roboto, Helvetica, Arial, sans-serif; color: var(--mui-palette-text-primary); }
+</style>
+<style data-emotion="css" data-s="">
+  .css-1ujsas3 { display: inline-flex; align-items: center; padding: 6px 16px; border: 0; border-radius: var(--mui-shape-borderRadius); background: var(--mui-palette-primary-main); color: var(--mui-palette-primary-contrastText); font: 500 14px/1.75 Roboto, sans-serif; text-transform: uppercase; }
+  .css-tabs { display: flex; gap: 8px; border-bottom: 1px solid #ddd; margin: 16px 0; }
+  .css-tab { padding: 12px 16px; border: 0; background: none; font: 500 14px Roboto, sans-serif; }
+  .css-tab.Mui-selected { color: var(--mui-palette-primary-main); border-bottom: 2px solid var(--mui-palette-primary-main); }
+  .css-field { display: inline-flex; flex-direction: column; width: 280px; margin: 16px 0; }
+  .css-input { display: flex; border: 1px solid #bbb; border-radius: 4px; padding: 0 12px; }
+  .css-input input { border: 0; padding: 14px 0; font: 16px Roboto, sans-serif; outline: none; width: 100%; }
+  .css-card { width: 320px; padding: 16px; border-radius: 4px; box-shadow: var(--mui-shadows-1); }
+  .css-chip { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 16px; background: #ebebeb; font-size: 13px; }
+</style>
+</head>
+<body>
+  <header class="MuiBox-root css-0"><h1 class="MuiTypography-root MuiTypography-h4 css-h4">Orders</h1></header>
+  <button class="MuiButtonBase-root MuiButton-root MuiButton-contained MuiButton-containedPrimary MuiButton-sizeMedium css-1ujsas3" tabindex="0" type="button">New order<span class="MuiTouchRipple-root css-ripple"></span></button>
+  <div class="MuiTabs-root css-tabs">
+    <div class="MuiTabs-scroller MuiTabs-fixed" style="overflow: hidden;">
+      <div class="MuiTabs-flexContainer" role="tablist">
+        <button class="MuiButtonBase-root MuiTab-root MuiTab-textColorPrimary Mui-selected css-tab" type="button" role="tab" aria-selected="true">Open</button>
+        <button class="MuiButtonBase-root MuiTab-root MuiTab-textColorPrimary css-tab" type="button" role="tab" aria-selected="false">Shipped</button>
+      </div>
+    </div>
+  </div>
+  <div class="MuiFormControl-root MuiTextField-root css-field">
+    <label class="MuiFormLabel-root MuiInputLabel-root MuiInputLabel-outlined" for="search">Search orders</label>
+    <div class="MuiInputBase-root MuiOutlinedInput-root MuiInputBase-colorPrimary css-input"><input id="search" class="MuiInputBase-input MuiOutlinedInput-input" type="text" value=""></div>
+  </div>
+  <div class="MuiPaper-root MuiPaper-elevation MuiPaper-rounded MuiPaper-elevation1 MuiCard-root css-card">
+    <div class="MuiCardContent-root"><p class="MuiTypography-root MuiTypography-body2">Order #1042 · 3 items</p>
+      <div class="MuiChip-root MuiChip-filled MuiChip-sizeMedium css-chip"><span class="MuiChip-label MuiChip-labelMedium">Paid</span></div>
+    </div>
+  </div>
+</body>
+</html>

@@ -17,6 +17,9 @@ importers:
       '@youiyoux/core':
         specifier: workspace:*
         version: link:packages/core
+      '@youiyoux/detect':
+        specifier: workspace:*
+        version: link:packages/detect
       '@youiyoux/mcp':
         specifier: workspace:*
         version: link:packages/mcp
@@ -147,6 +150,9 @@ importers:
       '@youiyoux/core':
         specifier: workspace:*
         version: link:../core
+      '@youiyoux/detect':
+        specifier: workspace:*
+        version: link:../detect
       '@youiyoux/mcp':
         specifier: workspace:*
         version: link:../mcp
@@ -171,6 +177,21 @@ importers:
       zod:
         specifier: 4.6.5
         version: 4.6.5
+
+  packages/detect:
+    dependencies:
+      '@youiyoux/core':
+        specifier: workspace:*
+        version: link:../core
+      playwright-core:
+        specifier: 1.63.0
+        version: 1.63.0
+      typescript:
+        specifier: 6.0.3
+        version: 6.0.3
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
 
   packages/mcp:
     dependencies:
@@ -1692,6 +1713,11 @@ packages:
   pkce-challenge@5.0.1:
     resolution: {integrity: sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ==}
     engines: {node: '>=16.20.0'}
+
+  playwright-core@1.63.0:
+    resolution: {integrity: sha512-rYCsBF/M5HjUch52bbtVONEFjv6Xu8sm8h72dNlR5bzIE1fvC/bxgspzkjSfU+MweEMmPM8KJebG6nnyxo5mCg==}
+    engines: {node: '>=20'}
+    hasBin: true
 
   playwright-core@1.64.0:
     resolution: {integrity: sha512-T9r+MZkTECl2+oUcZ26YgZzTrYidTsIhYYkJix+6iDOymOb1FB2RLLSOxRGnZGv5DStt+aduIVbt+E8WygXYpg==}
@@ -3429,6 +3455,8 @@ snapshots:
   picomatch@4.0.7: {}
 
   pkce-challenge@5.0.1: {}
+
+  playwright-core@1.63.0: {}
 
   playwright-core@1.64.0: {}
 

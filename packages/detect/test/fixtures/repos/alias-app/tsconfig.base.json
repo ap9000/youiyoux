@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    // No baseUrl: paths resolve from this file's directory.
+    "paths": {
+      "~/*": ["./app/*"],
+      "@lib/*": ["./app/*"]
+    }
+  }
+}

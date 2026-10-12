@@ -12,7 +12,7 @@ const root = import.meta.dirname;
  */
 const snapshot = resolve(root, process.env.YOUI_HUB_SNAPSHOT ?? "snapshot");
 const snapshotPublic = join(snapshot, "public");
-const TYPES: Record<string, string> = { ".json": "application/json", ".webp": "image/webp" };
+const TYPES: Record<string, string> = { ".json": "application/json", ".webp": "image/webp", ".png": "image/png" };
 
 /** Serves the snapshot's public files (data/, previews/) beside public/, and copies them into the build. */
 function snapshotFiles(): Plugin {

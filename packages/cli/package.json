@@ -5,5 +5,5 @@
   "type": "module",
   "bin": { "youi": "./bin/youi.js" },
   "exports": { ".": "./src/index.ts" },
-  "dependencies": { "@youiyoux/core": "workspace:*", "@youiyoux/scanner": "workspace:*", "@youiyoux/tokens": "workspace:*", "@youiyoux/mcp": "workspace:*", "@youiyoux/workflow": "workspace:*", "yaml": "2.9.1" }
+  "dependencies": { "@youiyoux/core": "workspace:*", "@youiyoux/detect": "workspace:*", "@youiyoux/scanner": "workspace:*", "@youiyoux/tokens": "workspace:*", "@youiyoux/mcp": "workspace:*", "@youiyoux/workflow": "workspace:*", "yaml": "2.9.1" }
 }
