@@ -134,6 +134,28 @@
             "exclusiveMinimum": 0,
             "maximum": 9007199254740991
           },
+          "routes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "routeSource": {
+            "type": "string",
+            "enum": [
+              "route-file",
+              "imported-by",
+              "shell",
+              "unrouted"
+            ]
+          },
+          "via": {
+            "type": "string"
+          },
+          "routeReason": {
+            "type": "string",
+            "minLength": 1
+          },
           "element": {
             "type": "string",
             "pattern": "^youi:([a-z][a-z0-9-]*)\\/(token|component|rule|migration)\\/([a-z0-9][a-z0-9.\\-]*)$"
@@ -193,6 +215,32 @@
             "default": false,
             "type": "boolean"
           },
+          "fingerprint": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "file",
+          "line",
+          "column",
+          "routes",
+          "routeSource",
+          "element",
+          "kind",
+          "export",
+          "local",
+          "fingerprint"
+        ]
+      }
+    },
+    "fileRoutes": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
           "routes": {
             "type": "array",
             "items": {
@@ -211,21 +259,14 @@
           "via": {
             "type": "string"
           },
-          "fingerprint": {
-            "type": "string"
+          "routeReason": {
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
-          "file",
-          "line",
-          "column",
-          "element",
-          "kind",
-          "export",
-          "local",
           "routes",
-          "routeSource",
-          "fingerprint"
+          "routeSource"
         ]
       }
     },

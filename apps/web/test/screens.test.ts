@@ -1,4 +1,8 @@
 import { describe, expect, test } from "vitest";
+import { join } from "node:path";
+import { RouteConfig, ScanReport as ScanReportSchema } from "@youiyoux/core";
+import { loadProject } from "../../../packages/scanner/src/project.ts";
+import { scanProject } from "../../../packages/scanner/src/scan.ts";
 import { buildScreens, countIssues, routeLabel, screenHref, screensOf, screensOfElement, screenSlug } from "../src/data/screens.ts";
 import type { Manifest, ScanReport, UsageSite } from "../src/data/types.ts";
 import { EVERY_SCREEN, indexUsage, UNROUTED } from "../src/data/usage.ts";
@@ -30,6 +34,13 @@ const report: ScanReport = {
     site({ file: "src/app.tsx", routes: [EVERY_SCREEN], routeSource: "shell" }),
     site({ file: "src/orphan.tsx", routes: [], routeSource: "unrouted" }),
   ],
+  fileRoutes: {
+    "src/work.tsx": { routes: ["/work"], routeSource: "route-file" },
+    "src/shared.tsx": { routes: ["/work", "/review"], routeSource: "imported-by" },
+    "src/orphan.tsx": { routes: [], routeSource: "unrouted", routeReason: "No route reaches this file." },
+    "src/empty.ts": { routes: [], routeSource: "unrouted", routeReason: "No scanned file imports this file." },
+    "src/styles.css": { routes: [], routeSource: "unrouted", routeReason: "No route reaches this file." },
+  },
   unknowns: [{ name: "Btn", reason: "dynamic-component", detail: "computed", candidate: BUTTON, file: "src/shared.tsx", line: 2, column: 3 }],
   suppressed: 0,
   checks: [],
@@ -71,8 +82,8 @@ describe("buildScreens", () => {
   const screens = buildScreens(indexUsage([report]), manifest);
   const at = (route: string) => screens.screens.find((s) => s.route === route)!;
 
-  test("lists the shell first, then routes by name, then sites on no screen", () => {
-    expect(screens.screens.map((s) => s.route)).toEqual([EVERY_SCREEN, "/review", "/work", UNROUTED]);
+  test("lists the shell first, then routes by name, with no synthetic unrouted screen", () => {
+    expect(screens.screens.map((s) => s.route)).toEqual([EVERY_SCREEN, "/review", "/work"]);
   });
 
   test("groups each screen's sites by element, most used first", () => {
@@ -91,8 +102,80 @@ describe("buildScreens", () => {
     expect(at("/review").elements.find((e) => e.id === BUTTON)?.unresolved).toHaveLength(1);
   });
 
-  test("counts issues in files that render no element as not attributed, never guessing a screen", () => {
+  test("keeps unreachable files visible with their scanner reason", () => {
     expect(screens.unattributed).toEqual({ errors: 0, warnings: 1, lookalikes: 0, unresolved: 0, total: 1 });
+    expect(screens.unattributedFiles).toEqual([
+      { project: "demo-app", file: "src/orphan.tsx", sites: 1, reason: "No route reaches this file." },
+      { project: "demo-app", file: "src/styles.css", sites: 0, reason: "No route reaches this file." },
+    ]);
+  });
+
+  test("unrouted sites and findings share one file list, excluding files with neither", () => {
+    const unplaced = buildScreens(indexUsage([{
+      ...report,
+      usages: [site({ file: "src/styles.css", routes: [], routeSource: "unrouted" }), site({ file: "src/styles.css", routes: [], routeSource: "unrouted", line: 2 })],
+    }]), manifest);
+    expect(unplaced.unattributedFiles).toEqual([
+      { project: "demo-app", file: "src/styles.css", sites: 2, reason: "No route reaches this file." },
+    ]);
+    expect(unplaced.unattributed.total).toBe(1);
+    expect(unplaced.screens.some((s) => s.route === UNROUTED)).toBe(false);
+  });
+
+  test("finding-level routes from older maps never override a missing fileRoutes map", () => {
+    const oldRoutes = { routes: ["/wrong"], routeSource: "imported-by" as const, routeReason: "Old reason" };
+    const legacy = buildScreens(indexUsage([{
+      ...report, usages: [], fileRoutes: undefined,
+      violations: report.violations.map((f) => ({ ...f, ...oldRoutes })),
+      lookalikes: report.lookalikes.map((f) => ({ ...f, ...oldRoutes })),
+      unknowns: report.unknowns.map((f) => ({ ...f, ...oldRoutes })),
+    }]), manifest);
+    expect(legacy.screens).toEqual([]);
+    expect(legacy.unattributed.total).toBe(5);
+    expect(legacy.unattributedFiles.every((f) => f.reason.includes("Scan the project again"))).toBe(true);
+  });
+
+  test("places findings on screens with no element sites, using the saved file map", () => {
+    const onlyIssues = buildScreens(indexUsage([{ ...report, usages: [], fileRoutes: { ...report.fileRoutes, "src/styles.css": { routes: ["/work"], routeSource: "imported-by" } } }]), manifest);
+    expect(onlyIssues.screens.find((s) => s.route === "/work")).toMatchObject({ sites: 0, issues: { total: 5 } });
+    expect(onlyIssues.unattributed.total).toBe(0);
+  });
+
+  test("older reports ask for a rescan instead of inferring issue routes from element sites", () => {
+    const legacy = buildScreens(indexUsage([{ ...report, fileRoutes: undefined }]), manifest);
+    expect(legacy.unattributed.total).toBe(5);
+    expect(legacy.screens.every((s) => s.issues.total === 0)).toBe(true);
+    expect(legacy.unattributedFiles.every((f) => f.reason.includes("Scan the project again"))).toBe(true);
+  });
+
+  test("demo-app findings reach the hub after scanning and serializing, even without system elements", async () => {
+    const project = await loadProject(join(import.meta.dirname, "../../../examples/demo-app"));
+    const file = "components/invite-form.tsx";
+    const mapped = { ...project, config: { ...project.config, routes: RouteConfig.parse({ strategy: "map", map: [{ file: "app/invite/index.tsx", routes: ["/join"] }] }) } };
+    const scan = await scanProject(mapped, { overrides: { [file]: 'import { Button } from "other-kit"; import { Missing } from "./missing"; export function InviteForm() { return <div><button>Invite</button><Button /><Missing /></div>; }' } });
+    const saved = ScanReportSchema.parse(JSON.parse(JSON.stringify(scan.report)));
+    expect(saved.usages.some((s) => s.file === file)).toBe(false);
+    const built = buildScreens(indexUsage([saved]), manifest);
+    const screen = built.screens.find((s) => s.route === "/join")!;
+    expect(screen.sites).toBe(0);
+    expect(screen.violations.some((v) => v.file === file)).toBe(true);
+    expect(screen.lookalikes.some((v) => v.file === file)).toBe(true);
+    expect(screen.unresolved.some((v) => v.file === file)).toBe(true);
+    expect(built.unattributedFiles.some((f) => f.file === file)).toBe(false);
+  });
+
+  test("the demo scanner's unrouted stylesheet reason reaches the hub unchanged", async () => {
+    const project = await loadProject(join(import.meta.dirname, "../../../examples/demo-app"));
+    const file = "components/console.css";
+    const scan = await scanProject(project, { overrides: { [file]: ".notice { color: #c62828; }" } });
+    const saved = ScanReportSchema.parse(JSON.parse(JSON.stringify(scan.report)));
+    const built = buildScreens(indexUsage([saved]), manifest);
+    expect(saved.fileRoutes?.[file]?.routeReason).toContain("routes.shell");
+    expect(built.unattributedFiles.find((f) => f.file === file)).toEqual({
+      project: "demo-app", file, sites: 0, reason: saved.fileRoutes![file]!.routeReason,
+    });
+    const activeFiles = new Set([...saved.usages, ...saved.violations, ...saved.lookalikes, ...saved.unknowns].map((f) => f.file));
+    expect(built.unattributedFiles.every((f) => activeFiles.has(f.file))).toBe(true);
   });
 
   test("attaches the captured screenshot and leaves screens without one empty", () => {

@@ -6,12 +6,12 @@
  *   unknown   – cannot be resolved statically (never counted as zero or as a usage)
  */
 import type { SgNode } from "@ast-grep/napi";
-import { shortHash, type Lookalike, type PropValue, type UnknownSite, type UsageSite } from "@youiyoux/core";
+import { shortHash, type Lookalike, type PropValue, type RouteAttribution, type UnknownSite, type UsageSite } from "@youiyoux/core";
 import { canonicalKey, type ElementBinding, type ElementIndex } from "./elements.ts";
 import type { ModuleGraph, ResolvedSymbol } from "./graph.ts";
 import { unquote, type ModuleInfo } from "./parse.ts";
 
-export type LocalUsage = Omit<UsageSite, "routes" | "routeSource" | "via">;
+export type LocalUsage = Omit<UsageSite, keyof RouteAttribution>;
 
 export interface NativeSite {
   readonly tag: string;

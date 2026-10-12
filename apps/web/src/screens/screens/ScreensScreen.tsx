@@ -2,7 +2,7 @@
  * Screens: every screen of every scanned project as a thumbnail with its element and
  * issue counts; `/screens/<project>/<screen>` opens one with its full screenshot.
  */
-import { Info, MonitorX } from "lucide-react";
+import { MonitorX } from "lucide-react";
 import { useRef, useState } from "react";
 import { Link, useParams } from "wouter";
 import { type Scheme, useTheme } from "../../app/theme.tsx";
@@ -95,13 +95,22 @@ function ScreenGrid({ model, index, screens }: { model: Model; index: UsageIndex
               </section>
             );
           })}
-          {screens.unattributed.total > 0 && (
-            <p className="flex max-w-2xl items-start gap-2 text-small text-muted">
-              <Info className="mt-0.5 size-3.5 shrink-0" />
-              <span>
-                Not on any screen: {issueBreakdown(screens.unattributed).join(", ")}. They are in files where no element renders (shared helpers, stylesheets), so the usage map can't place them on a screen.
-              </span>
-            </p>
+          {screens.unattributedFiles.length > 0 && (
+            <details className="max-w-2xl text-small text-muted">
+              <summary className="min-h-11 cursor-pointer content-center rounded-sm py-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
+                Not on any screen · {screens.unattributedFiles.length} {screens.unattributedFiles.length === 1 ? "file" : "files"}
+              </summary>
+              {screens.unattributed.total > 0 && <p className="mt-1">{issueBreakdown(screens.unattributed).join(", ")}</p>}
+              <ul className="mt-3 space-y-3">
+                {screens.unattributedFiles.map(({ project, file, sites, reason }) => (
+                  <li key={`${project}:${file}`}>
+                    <code className="font-mono text-mono-sm break-all text-ink-2">{project}/{file}</code>
+                    {sites > 0 && <span className="ml-2 inline-block">{sites} {sites === 1 ? "site" : "sites"}</span>}
+                    <p className="break-words">{reason}</p>
+                  </li>
+                ))}
+              </ul>
+            </details>
           )}
         </div>
       </div>

@@ -62,9 +62,10 @@ export class ModuleGraph {
     return result.kind === "external" ? result : { kind: "unresolved" };
   }
 
-  /** Project files this module depends on (imports, re-exports, `export *`). */
-  dependencies(module: ModuleInfo): string[] {
-    const specifiers = new Set([...module.imports.map((i) => i.specifier), ...module.starExports, ...module.exports.flatMap((e) => (e.kind === "reexport" ? [e.specifier] : []))]);
+  /** Project files this module depends on, including literal dynamic and CSS imports. */
+  dependencies(module: ModuleInfo, options: { runtimeOnly?: boolean } = {}): string[] {
+    const specifiers = new Set(options.runtimeOnly ? module.runtimeSpecifiers : [...module.runtimeSpecifiers, ...module.imports.map((i) => i.specifier), ...module.starExports, ...module.exports.flatMap((e) => (e.kind === "reexport" ? [e.specifier] : []))]);
+    for (const specifier of module.dynamicSpecifiers) specifiers.add(specifier);
     const files = new Set<string>();
     for (const specifier of specifiers) {
       const resolved = this.resolveSpecifier(specifier, module.file);

@@ -40,6 +40,7 @@ describe("focused scans", () => {
     const focused = await scanProject(project, { focus: [CHECKOUT, "app/settings/index.tsx"] });
     const inFiles = full.report.violations.filter((v) => v.file === CHECKOUT || v.file === "app/settings/index.tsx");
     expect(focused.report.violations).toEqual(inFiles);
+    expect(Object.values(focused.report.fileRoutes!).every((v) => v.routeSource === "unrouted" && v.routeReason?.includes("focused scan"))).toBe(true);
     expect(focused.files).toEqual(["app/settings/index.tsx", CHECKOUT]);
   });
 });

@@ -1,7 +1,7 @@
 /** `youi scan`: discover → parse (ast-grep, in parallel) → resolve identity → attribute routes → check. */
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { findFiles, readTextOrNull, sha256, shortHash, type CheckIdentity, type ScanReport, type UnknownSite, type UsageSite, type Lookalike, type Violation } from "@youiyoux/core";
+import { findFiles, readTextOrNull, sha256, shortHash, type CheckIdentity, type ScanReport, type UnknownSite, type UsageSite, type Lookalike } from "@youiyoux/core";
 import { buildTokens } from "@youiyoux/tokens";
 import type { ScanCache } from "./cache.ts";
 import { checkInputFor } from "./capabilities.ts";
@@ -107,7 +107,7 @@ export async function scanProject(project: Project, options: ScanOptions = {}): 
   const graph = new ModuleGraph(project.root, resolver, modules, new Map(Object.entries(overrides)), parse);
   const elements = buildElementIndex(project);
   const tokens = buildTokenIndex(build.tokens, project.config.outputs);
-  const routes = focus ? new RouteIndex() : RouteIndex.build(graph, modules, project.config.routes);
+  const routes = focus ? new RouteIndex("Routes are not checked in a focused scan. Run a full scan to place this file.") : RouteIndex.build(graph, modules, project.config.routes);
 
   const scanned = new Map<string, ModuleInfo>();
   for (const file of files) {
@@ -143,9 +143,10 @@ export async function scanProject(project: Project, options: ScanOptions = {}): 
     status: failed.length > 0 || failedChecks(checks).length > 0 ? "partial" : "complete",
     coverage: { filesMatched: files.length, filesScanned: scanned.size, failed: failed.sort((a, b) => a.file.localeCompare(b.file)) },
     usages: usages.sort(byPosition),
+    fileRoutes: Object.fromEntries(files.map((file) => [file, routes.of(file)])),
     unknowns: unknowns.sort(byPosition),
     lookalikes: lookalikes.sort(byPosition),
-    violations: (violations as Violation[]).sort(byPosition),
+    violations: violations.sort(byPosition),
     suppressed,
     checks,
   };
