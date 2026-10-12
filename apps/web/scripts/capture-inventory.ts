@@ -7,22 +7,30 @@
  *   node scripts/capture-inventory.ts [--base http://localhost:5173] [--out screenshots]
  *   node scripts/capture-inventory.ts --serve [--out screenshots]  # or: build and serve a fixture snapshot itself
  *
- * `--serve` snapshots the scanner's four inventory fixtures into apps/web/.capture (console:
+ * `--serve` snapshots the scanner's five inventory fixtures into apps/web/.capture (console:
  * Tailwind v4 CVA kit; site: BEM class kit and Astro components; widgets: shaped like the Toolroll
  * console, its Tailwind entry built by the CLI and linked from index.html and a server template,
  * its tokens @imported by that entry, so its CVA Button and Badge and its .ui-button draw in
  * their real colours; sketch: Tailwind classes and no stylesheet, so its button shows the
- * shape-only fallback), builds the hub against it and serves the build with `vite preview`; no
- * app's dev server runs.
+ * shape-only fallback; mobile: a back button whose most used look is display:none at the 1280px
+ * desk width), builds the hub against it and serves the build with `vite preview`; no app's dev
+ * server runs.
  *
  * Writes, light and dark, at 1440×900: inventory.<scheme>.png (filters, the headline and the
  * top of the wall; on a phone, the two-column wall), inventory-filtered.<scheme>.png (a filtered URL: the console's buttons),
- * inventory-compare.<scheme>.png (the 32px button's compare card, its slider dragged to 45%),
+ * inventory-compare.<scheme>.png (the 32px button's compare card, its slider dragged to 45% then
+ * moved by a key, so its focus ring shows), inventory-lead.<scheme>.png (the mobile project's
+ * wall: its back button's hidden phone look skipped for the desktop one),
  * inventory-fixes.<scheme>.png (the fix list) and inventory-drawer.<scheme>.png (that family
  * opened); and at 390×844 on a touch phone the same as phone-inventory*.png, with
  * phone-inventory-filters.<scheme>.png (the filters' bottom sheet) and
  * phone-inventory-sheet.<scheme>.png (the family's bottom sheet) for the last two. Each waits
  * until every specimen frame on screen has drawn.
+ *
+ * It also checks, and writes inventory-checks.json (exiting 1 when one fails): on a phone every
+ * control on the page, in the filters' sheet and in a family's sheet (each tab) is at least 44px
+ * tall; at both widths no family's lead tile (wall, compare and fix) is blank: each draws a
+ * specimen with a visible box, or its shape.
  */
 import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -32,11 +40,15 @@ import { chromium, type Browser, type Page } from "playwright-core";
 
 const APP = resolve(import.meta.dirname, "..");
 const TOOL = resolve(APP, "../..");
-const FIXTURES = ["console", "site", "widgets", "sketch"].map((name) => join(TOOL, "packages/scanner/test/fixtures/inventory", name));
+const FIXTURES = ["console", "site", "widgets", "sketch", "mobile"].map((name) => join(TOOL, "packages/scanner/test/fixtures/inventory", name));
 const SCHEMES = ["light", "dark"] as const;
 const SETTLE_MS = 400;
 const FRAMES_TIMEOUT_MS = 20_000;
 const PORT = 4796;
+/** A phone's smallest tap target (WCAG 2.5.5, Apple's HIG). */
+const TAP_MIN = 44;
+/** What a finger can press: native controls and anything focusable or given a widget role. */
+const CONTROLS = 'button, a[href], input:not([type="hidden"]), select, textarea, summary, [role="slider"], [role="radio"], [role="tab"], [role="checkbox"], [tabindex]:not([tabindex="-1"])';
 const VIEWPORTS = [
   { prefix: "inventory", options: { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 } },
   { prefix: "phone-inventory", options: { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true } },
@@ -78,7 +90,93 @@ async function open(page: Page, base: string, query = ""): Promise<void> {
   await page.locator("[data-family]").first().waitFor();
 }
 
-async function capture(browser: Browser, base: string, out: string): Promise<string[]> {
+interface Checks {
+  /** Per viewport and place: controls under TAP_MIN tall on a phone. */
+  small: Array<{ viewport: string; where: string; control: string; height: number }>;
+  /** Controls measured on a phone, per place. */
+  measured: Record<string, number>;
+  /** Lead tiles that drew nothing: no visible box and no shape. */
+  blank: Array<{ viewport: string; scheme: string; tile: string }>;
+  /** Lead tiles looked at, per viewport and scheme. */
+  leads: Record<string, number>;
+  /** What the mobile back button's wall tile drew, per viewport and scheme. */
+  mobileLead: Record<string, string>;
+}
+
+/** Every visible control inside `root` (the Inventory screen, or an open sheet) shorter than TAP_MIN. */
+async function smallControls(page: Page, root: string): Promise<{ count: number; small: Array<{ control: string; height: number }> }> {
+  return page.evaluate(
+    ({ root, selector, min }) => {
+      const scope = document.querySelector(root);
+      if (!scope) throw new Error(`${root} is not on the page`);
+      const controls = [...scope.querySelectorAll<HTMLElement>(selector)].filter((e) => {
+        const r = e.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== "hidden" && !e.closest("[inert]");
+      });
+      const name = (e: HTMLElement): string => `${e.tagName.toLowerCase()}${e.getAttribute("role") ? `[role=${e.getAttribute("role")}]` : ""} "${(e.getAttribute("aria-label") ?? e.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 40)}"`;
+      return { count: controls.length, small: controls.filter((e) => e.getBoundingClientRect().height < min).map((e) => ({ control: name(e), height: Math.round(e.getBoundingClientRect().height * 10) / 10 })) };
+    },
+    { root, selector: CONTROLS, min: TAP_MIN },
+  );
+}
+
+/** Every lead tile, scrolled to in turn: the specimen it drew, or `shape`, or null when it drew nothing visible. */
+async function leadTiles(page: Page): Promise<Array<{ tile: string; drew: string | null }>> {
+  const selector = '[data-family] > [data-tile], [data-compare] [data-tile], [data-fix] [data-tile]';
+  const count = await page.locator(selector).count();
+  const results: Array<{ tile: string; drew: string | null }> = [];
+  for (let i = 0; i < count; i++) {
+    const tile = page.locator(selector).nth(i);
+    await tile.evaluate((element) => element.scrollIntoView({ block: "center" }));
+    await framesDrawn(page);
+    results.push(
+      await tile.evaluate((element) => {
+        const key = (element as HTMLElement).dataset.tile!;
+        if ((element as HTMLElement).dataset.kind === "shape") return { tile: key, drew: "shape" };
+        const doc = element.querySelector("iframe")?.contentDocument;
+        const root = doc?.getElementById("youi-specimen");
+        const seen = root ? [root, ...root.querySelectorAll("*")].find((e) => e !== root && e.getBoundingClientRect().width > 0 && e.getBoundingClientRect().height > 0) : undefined;
+        return { tile: key, drew: seen ? seen.outerHTML.slice(0, 120) : null };
+      }),
+    );
+  }
+  return results;
+}
+
+async function check(page: Page, phone: boolean, viewport: string, scheme: string, checks: Checks): Promise<void> {
+  // Every row loaded, so the compare cards and fix list are there too.
+  await page.locator("[data-compare]").first().waitFor();
+  const leads = await leadTiles(page);
+  checks.leads[`${viewport}.${scheme}`] = leads.length;
+  for (const lead of leads) if (lead.drew === null) checks.blank.push({ viewport, scheme, tile: lead.tile });
+  checks.mobileLead[`${viewport}.${scheme}`] = leads.find((l) => l.tile.startsWith("wall:") && /so-(?:phone-)?back/.test(l.drew ?? ""))?.drew ?? "not found";
+  if (!phone || scheme !== "light") return;
+  const measure = async (where: string, root: string): Promise<void> => {
+    const { count, small } = await smallControls(page, root);
+    checks.measured[where] = count;
+    checks.small.push(...small.map((s) => ({ viewport, where, ...s })));
+  };
+  await measure("page", '[data-screen="inventory"]');
+  await page.getByTestId("filter-phone").getByRole("button", { name: /Filters/ }).click();
+  await page.getByRole("dialog", { name: "Filters" }).waitFor();
+  await page.getByRole("dialog").getByRole("searchbox").fill("button");
+  await measure("filters sheet", '[role="dialog"]');
+  await page.getByRole("dialog").getByRole("button", { name: /^Show / }).click();
+  await page.getByRole("dialog").waitFor({ state: "detached" });
+  // Clear filters shows only while a filter is on.
+  await measure("page, filtered", '[data-screen="inventory"]');
+  await page.getByTestId("filter-phone").getByRole("button", { name: "Clear filters" }).click();
+  await page.locator('[data-family="button-1"]').getByRole("button", { name: /^Open / }).click();
+  const sheet = page.getByTestId("family-drawer");
+  await sheet.getByRole("list", { name: "Every use" }).waitFor();
+  for (const tab of ["Usage", "Variants", "Code"]) {
+    await sheet.getByRole("tab", { name: new RegExp(tab) }).click();
+    await measure(`family sheet, ${tab}`, '[role="dialog"]');
+  }
+  await page.keyboard.press("Escape");
+}
+
+async function capture(browser: Browser, base: string, out: string, checks: Checks): Promise<string[]> {
   const files: string[] = [];
   for (const { prefix, options } of VIEWPORTS) {
     const phone = prefix.startsWith("phone");
@@ -106,6 +204,9 @@ async function capture(browser: Browser, base: string, out: string): Promise<str
       await page.mouse.down();
       await page.mouse.move(box.x + box.width * 0.45, box.y + box.height / 2, { steps: 6 });
       await page.mouse.up();
+      // A key moves it on, so its focus ring shows.
+      await stage.getByRole("slider").focus();
+      await page.keyboard.press("ArrowRight");
       files.push(await shoot(page, out, `${prefix}-compare.${scheme}`));
 
       await scrollTo(page, "#inventory-fixes");
@@ -115,6 +216,14 @@ async function capture(browser: Browser, base: string, out: string): Promise<str
       await page.locator('[data-family="button-1"]').getByRole("button", { name: /^Open / }).click();
       await page.getByTestId("family-drawer").getByRole("list", { name: "Every use" }).waitFor();
       files.push(await shoot(page, out, phone ? `${prefix}-sheet.${scheme}` : `${prefix}-drawer.${scheme}`));
+      await page.keyboard.press("Escape");
+
+      await open(page, base, "?project=mobile");
+      await scrollTo(page, '[data-role="button"]');
+      files.push(await shoot(page, out, `${prefix}-lead.${scheme}`));
+
+      await open(page, base);
+      await check(page, phone, prefix, scheme, checks);
       await context.close();
     }
   }
@@ -145,12 +254,17 @@ async function main(): Promise<void> {
   const served = values.serve ? await serveFixtures() : null;
   // Playwright's own headless shell; `pnpm exec playwright-core install chromium-headless-shell` fetches it.
   const browser = await chromium.launch({ headless: true });
+  const checks: Checks = { small: [], measured: {}, blank: [], leads: {}, mobileLead: {} };
   try {
-    for (const file of await capture(browser, (served?.base ?? values.base).replace(/\/$/, ""), out)) process.stdout.write(`${file}\n`);
+    for (const file of await capture(browser, (served?.base ?? values.base).replace(/\/$/, ""), out, checks)) process.stdout.write(`${file}\n`);
   } finally {
     await browser.close();
     await served?.close();
   }
+  writeFileSync(join(out, "inventory-checks.json"), `${JSON.stringify(checks, null, 2)}\n`);
+  const failed = [...checks.small.map((s) => `${s.viewport} ${s.where}: ${s.control} is ${s.height}px tall, under ${TAP_MIN}px`), ...checks.blank.map((b) => `${b.viewport} ${b.scheme}: lead tile ${b.tile} is blank`)];
+  process.stdout.write(failed.length === 0 ? `checks passed: ${JSON.stringify(checks.measured)} controls of ${TAP_MIN}px or more on a phone; ${JSON.stringify(checks.leads)} lead tiles, none blank\n` : `${failed.join("\n")}\n`);
+  if (failed.length > 0) process.exitCode = 1;
 }
 
 await main();

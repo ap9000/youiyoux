@@ -111,7 +111,7 @@ export function Sheet({ open, onOpenChange, variant, title, description, childre
                 <Dialog.Title className="text-heading text-ink">{title}</Dialog.Title>
                 {description ? <Dialog.Description className="text-small text-muted">{description}</Dialog.Description> : <Dialog.Description className="sr-only">Details</Dialog.Description>}
               </div>
-              <Dialog.Close aria-label="Close" className="inv-press grid size-7 shrink-0 place-items-center rounded-md text-muted">
+              <Dialog.Close aria-label="Close" className="inv-press grid size-7 shrink-0 place-items-center rounded-md text-muted max-md:-my-2 max-md:-mr-2 max-md:size-11">
                 <X className="size-4" />
               </Dialog.Close>
             </header>

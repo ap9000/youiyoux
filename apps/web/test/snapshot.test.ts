@@ -109,6 +109,17 @@ describe("snapshot specimens: stylesheets and their order", () => {
   }, 120_000);
 });
 
+describe("snapshot specimens: Tailwind entries skipped", () => {
+  test("the stylesheet list names a skipped entry after the numbered ones it built", () => {
+    const skipped = "skipped: design/src/globals.css (a Tailwind entry nothing links, imports or reads; the page builds another)";
+    expect(sheetReport("console", ["built: src/app/globals.css (import in src/app/layout.tsx, Tailwind 4.1.0)"], [skipped])).toEqual([
+      "specimens console: 1 stylesheet, in page order",
+      "  1. built: src/app/globals.css (import in src/app/layout.tsx, Tailwind 4.1.0)",
+      `  ${skipped}`,
+    ]);
+  });
+});
+
 describe("snapshot --detect", () => {
   test("copies the report and its screenshots under content hashes, rewriting the screenshot paths", async () => {
     const dir = await mkdtemp(join(tmpdir(), "youi-detect-snap-"));

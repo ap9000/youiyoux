@@ -33,8 +33,15 @@ export function familyTiles(family: InventoryFamily, chunks: readonly InventoryC
   return tiles;
 }
 
-/** The one tile that stands for a set: the most used drawn specimen, else the most used shape; the family's shape when nothing is loaded. */
-export function leadTile(tiles: readonly Tile[], family: InventoryFamily, key: string): Tile {
-  const best = [...tiles].sort((a, b) => Number(b.specimen !== null && b.css !== null) - Number(a.specimen !== null && a.css !== null) || b.count - a.count)[0];
-  return best ? { ...best, key } : { key, project: family.projects[0] ?? "", specimen: null, css: null, shape: family.shape, count: family.looks, place: "" };
+const drawn = (tile: Tile): boolean => tile.specimen !== null && tile.css !== null;
+
+/**
+ * The tiles that can stand for a set, in the order to try them: its drawn specimens, most used
+ * first, then its most used shape (the family's shape when it has none). A specimen can draw
+ * nothing at the desk width (shown only on a phone), so LeadTile moves on to the next.
+ */
+export function leadTiles(tiles: readonly Tile[], family: InventoryFamily, key: string): Tile[] {
+  const byUse = [...tiles].sort((a, b) => b.count - a.count);
+  const shape = byUse.find((t) => !drawn(t)) ?? { project: family.projects[0] ?? "", specimen: null, css: null, shape: family.shape, count: family.looks, place: "" };
+  return [...byUse.filter(drawn), shape].map((tile) => ({ ...tile, key }));
 }

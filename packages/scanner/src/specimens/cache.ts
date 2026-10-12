@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { packageUnderRoot, within } from "./contain.ts";
 
 /** Bump when what a specimen entry holds changes, so old entries are never read. */
-export const SPECIMEN_FORMAT = "youiyoux.specimens/2";
+export const SPECIMEN_FORMAT = "youiyoux.specimens/3";
 
 /** Counts, for proving a cache hit compiles nothing. */
 export interface SpecimenStats {

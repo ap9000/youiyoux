@@ -1,0 +1,6 @@
+{
+  "name": "mobile",
+  "private": true,
+  "description": "Inventory fixture: a back button drawn two ways with one shape. The phone's .so-phone-back is used most but is display:none above 767px, so at the hub's 1280px desk width it draws nothing; the desktop's .so-back draws.",
+  "dependencies": { "react": "*" }
+}

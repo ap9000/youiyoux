@@ -20,7 +20,8 @@
  *   outside the project (scanner/src/specimens). A project root the inventory names that is not
  *   on this machine gets no specimens; its looks show their shape. `specimens.css` in a
  *   `--config` kept outside the product names that product's stylesheets, so it is never edited;
- *   the stylesheets each project used, in page order, are printed.
+ *   the stylesheets each project used, in page order, and any Tailwind entry it skipped (one
+ *   nothing links, imports or reads, when the page builds another) are printed.
  * - <out>/public/data/detect.<hash>.json and detect.shot.<hash>.png: a `youi detect` report
  *   (`--detect`, validated as youi.detect/v1) and its element screenshots, for Library > Stack.
  *   Like screens, it belongs to whoever ran it and never lives in this repo.
@@ -83,7 +84,7 @@ interface ScannerModule {
   scanProject(project: ScannedProject, options?: { cache?: unknown }): Promise<{ report: unknown; identity: import("@youiyoux/core").CheckIdentity }>;
   describeIdentity(identity: import("@youiyoux/core").CheckIdentity): string;
   buildInventory(dirs: readonly string[], options?: { cwd?: string }): Promise<unknown>;
-  projectSpecimens(project: { id: string; root: string; commit: string | null; looks: ReadonlyArray<Pick<import("@youiyoux/core").InventoryLook, "id" | "role" | "recipe">> }, options?: { css?: { sheets: readonly string[]; from: string } }): Promise<{ css: { light: string; dark: string } | null; specimens: SplitSpecimens["specimens"]; looks: Record<string, string>; warnings: readonly string[]; tailwind: string; used: readonly string[]; cached: boolean }>;
+  projectSpecimens(project: { id: string; root: string; commit: string | null; looks: ReadonlyArray<Pick<import("@youiyoux/core").InventoryLook, "id" | "role" | "recipe">> }, options?: { css?: { sheets: readonly string[]; from: string } }): Promise<{ css: { light: string; dark: string } | null; specimens: SplitSpecimens["specimens"]; looks: Record<string, string>; warnings: readonly string[]; tailwind: string; used: readonly string[]; skipped: readonly string[]; cached: boolean }>;
   ProjectWatcher: {
     start<R>(options: {
       root: string;
@@ -456,10 +457,11 @@ const realOr = (path: string): string => {
   }
 };
 
-/** The stylesheets a project's specimens used, in page order, for the snapshot's output. */
-export function sheetReport(id: string, used: readonly string[]): string[] {
-  if (used.length === 0) return [`specimens ${id}: no stylesheet`];
-  return [`specimens ${id}: ${used.length} stylesheet${used.length === 1 ? "" : "s"}, in page order`, ...used.map((line, i) => `  ${i + 1}. ${line}`)];
+/** The stylesheets a project's specimens used, in page order, then the Tailwind entries it skipped, for the snapshot's output. */
+export function sheetReport(id: string, used: readonly string[], skipped: readonly string[] = []): string[] {
+  const left = skipped.map((line) => `  ${line}`);
+  if (used.length === 0) return [`specimens ${id}: no stylesheet`, ...left];
+  return [`specimens ${id}: ${used.length} stylesheet${used.length === 1 ? "" : "s"}, in page order`, ...used.map((line, i) => `  ${i + 1}. ${line}`), ...left];
 }
 
 /**
@@ -480,8 +482,8 @@ export async function buildSpecimens(inventory: InventoryReport, roots: Readonly
     matched ||= css !== null;
     try {
       const built = await scanner.projectSpecimens({ id: project.id, root, commit: project.commit, looks: inventory.looks.filter((l) => l.project === project.id) }, css ? { css } : {});
-      out[project.id] = { css: built.css, specimens: built.specimens, looks: built.looks, notes: [`CSS: ${built.tailwind}`, ...built.used, ...built.warnings] };
-      for (const line of sheetReport(project.id, built.used)) log(line);
+      out[project.id] = { css: built.css, specimens: built.specimens, looks: built.looks, notes: [`CSS: ${built.tailwind}`, ...built.used, ...built.skipped, ...built.warnings] };
+      for (const line of sheetReport(project.id, built.used, built.skipped)) log(line);
     } catch (error: unknown) {
       out[project.id] = { css: null, specimens: {}, looks: {}, notes: [`specimens failed: ${error instanceof Error ? error.message : String(error)}`] };
     }

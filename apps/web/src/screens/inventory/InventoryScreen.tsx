@@ -27,9 +27,9 @@ import { EmptyState } from "../../ui/EmptyState.tsx";
 import { PaneHeader, ResourceState } from "../../ui/Pane.tsx";
 import { compareAnchor, CompareCard, fixAnchor, FixCard } from "./Compare.tsx";
 import { FamilyDrawer } from "./FamilyDrawer.tsx";
-import { familyTiles, leadTile } from "./family-tiles.ts";
-import { FilterBar, useFilters } from "./FilterBar.tsx";
-import { LARGE_TILE_HEIGHT, ScrollRoot, SpecimenTile, useNearViewport } from "./Specimens.tsx";
+import { familyTiles, leadTiles } from "./family-tiles.ts";
+import { FilterBar, TOUCH, useFilters } from "./FilterBar.tsx";
+import { LARGE_TILE_HEIGHT, LeadTile, ScrollRoot, useNearViewport } from "./Specimens.tsx";
 
 const SHORT_SHA = 7;
 /** Height a role row keeps per family before its chunks arrive, so the page does not jump. */
@@ -98,7 +98,7 @@ function Inventory({ source, detect }: { source: InventorySource; detect: Detect
   const open = openId ? (views.find((v) => v.family.id === openId) ?? null) : null;
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-screen="inventory">
       <PaneHeader title="Inventory" count={index.summary.families}>
         <Badge tone="outline">
           {index.projects.length} {index.projects.length === 1 ? "project" : "projects"}
@@ -291,10 +291,10 @@ function Headline({ index, views, ready, filtered }: { index: InventoryIndex; vi
                   Built {view.family.sides.length} ways · {view.uses} {view.uses === 1 ? "use" : "uses"} · {view.projects} {view.projects === 1 ? "project" : "projects"}
                 </p>
                 <p className="flex gap-3 text-small">
-                  <a href={`#${compareAnchor(view.family.id)}`} className="inv-link text-accent">
+                  <a href={`#${compareAnchor(view.family.id)}`} className="inv-link text-accent max-md:inline-flex max-md:min-h-11 max-md:items-center">
                     Compare
                   </a>
-                  <a href={`#${fixAnchor(view.family.id)}`} className="inv-link text-accent">
+                  <a href={`#${fixAnchor(view.family.id)}`} className="inv-link text-accent max-md:inline-flex max-md:min-h-11 max-md:items-center">
                     Fix
                   </a>
                 </p>
@@ -303,9 +303,9 @@ function Headline({ index, views, ready, filtered }: { index: InventoryIndex; vi
           </ol>
         </div>
       )}
-      <details className="group rounded-lg border border-line bg-surface px-4 py-3 text-small">
-        <summary className="cursor-pointer font-medium text-ink">How grouping works</summary>
-        <div className="mt-2 space-y-2 text-ink-2">
+      <details className="group rounded-lg border border-line bg-surface px-4 py-3 text-small max-md:py-0">
+        <summary className="cursor-pointer font-medium text-ink max-md:min-h-11 max-md:py-3">How grouping works</summary>
+        <div className="mt-2 space-y-2 text-ink-2 max-md:mt-0 max-md:pb-3">
           <p>
             Every button, input, card, badge, dialog, tab and link-as-button is grouped into families by its resolved shape: height, padding, radius, font size and weight, from Tailwind classes and CSS rules with each project&rsquo;s own theme. Colour is ignored.
           </p>
@@ -437,8 +437,8 @@ function RoleRow({ row, views, start, filters, scope, extras, chunks, source, sc
 }
 
 function WallTile({ view, chunks, source, scheme, libraries, stagger, onOpen }: { view: FamilyView; chunks: readonly InventoryChunk[]; source: InventorySource; scheme: Scheme; libraries: Libraries; stagger: number | null; onOpen: (family: string) => void }) {
-  // The specimen most of its main library's looks share.
-  const tile = leadTile(
+  // The specimen most of its main library's looks share, unless it draws nothing at the desk width.
+  const tiles = leadTiles(
     familyTiles(view.family, chunks, source, scheme, (_, kit) => libraries.primary(kit).id === view.primary.id),
     view.family,
     `wall:${view.family.id}`,
@@ -452,7 +452,7 @@ function WallTile({ view, chunks, source, scheme, libraries, stagger, onOpen }: 
       data-stagger={stagger ?? undefined}
       onClick={(event) => !(event.target as Element).closest("button") && open()}
     >
-      <SpecimenTile tile={tile} scheme={scheme} size="large" as="div" caption={false} />
+      <LeadTile tiles={tiles} scheme={scheme} size="large" as="div" caption={false} />
       <div className="min-w-0 space-y-0.5 px-1">
         <h3 className="inv-tile-name text-small font-medium break-words text-ink">{view.name}</h3>
         <p className="tabular text-caption text-muted">
@@ -461,7 +461,7 @@ function WallTile({ view, chunks, source, scheme, libraries, stagger, onOpen }: 
       </div>
       <div className="mt-auto flex flex-wrap items-center gap-2 px-1 pb-1">
         {view.family.nearDuplicate && <Badge tone="warning">Near-duplicate</Badge>}
-        <Button size="sm" className="inv-press ml-auto" onClick={open} aria-label={`Open ${view.name}`}>
+        <Button size="sm" className={clsx("inv-press ml-auto max-md:px-3", TOUCH)} onClick={open} aria-label={`Open ${view.name}`}>
           Open
         </Button>
       </div>

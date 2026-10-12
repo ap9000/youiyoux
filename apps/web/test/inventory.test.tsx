@@ -7,10 +7,11 @@ import { InventoryReport as InventorySchema } from "@youiyoux/core";
 import { buildInventory } from "../../../packages/scanner/src/inventory/inventory.ts";
 import { familyName, shapeChips, uniqueExamples } from "../src/data/inventory.ts";
 import { createSource, memorySource, type InventorySource } from "../src/data/inventory-source.ts";
-import type { InventoryChunk, InventoryIndex, InventoryReport, Manifest } from "../src/data/types.ts";
+import type { InventoryChunk, InventoryFamily, InventoryIndex, InventoryReport, Manifest } from "../src/data/types.ts";
 import { InventoryView } from "../src/screens/inventory/InventoryScreen.tsx";
 import { StrictMode } from "react";
-import { DESK_WIDTH, FrameBudget, FrameQueue, frameDocument, MAX_MOUNTED, MAX_RENDERING, TileGrid, VIRTUALISE_AT } from "../src/screens/inventory/Specimens.tsx";
+import { DESK_WIDTH, FrameBudget, FrameQueue, frameDocument, LeadTile, MAX_MOUNTED, MAX_RENDERING, TileGrid, VIRTUALISE_AT } from "../src/screens/inventory/Specimens.tsx";
+import { leadTiles } from "../src/screens/inventory/family-tiles.ts";
 
 const TOOL = resolve(import.meta.dirname, "../../..");
 const FIXTURES = join(TOOL, "packages/scanner/test/fixtures/inventory");
@@ -583,6 +584,47 @@ describe("specimen tiles (c1, c3)", () => {
     // The fix card's site side, too.
     const sides = [...container.querySelectorAll<HTMLElement>('[data-fix="button-1"] [data-tile]')];
     expect(sides.filter((t) => t.dataset.tile!.includes(":site:")).every((t) => t.dataset.kind === "shape")).toBe(true);
+  });
+
+  test("a lead tile skips a specimen that draws nothing at the desk width, then falls back to its shape (c2)", () => {
+    const shape = { height: 32, paddingX: 12, paddingY: 0, radius: 8, fontSize: 14, fontWeight: 500 };
+    const family = { projects: ["p"], shape, looks: 70 } as unknown as InventoryFamily;
+    const look = (html: string, count: number) => ({ key: html, project: "p", specimen: { kind: "markup" as const, html }, css: "/s.css", shape, count, place: "a.tsx:1" });
+    const tiles = leadTiles([look('<button class="ok">Back</button>', 4), look('<button class="so-phone-back">Back</button>', 66)], family, "wall:f");
+    expect(tiles.map((t) => [t.key, t.specimen?.html ?? null])).toEqual([
+      ["wall:f", '<button class="so-phone-back">Back</button>'],
+      ["wall:f", '<button class="ok">Back</button>'],
+      ["wall:f", null],
+    ]);
+    /** Load the tile's frame as a browser lays it out at the desk width: `visible` decides whether the look has a box. */
+    const load = (container: HTMLElement, visible: boolean): void => {
+      const frame = container.querySelector("iframe")!;
+      const doc = frame.contentDocument!;
+      doc.body.innerHTML = '<div id="youi-specimen"><button>Back</button></div>';
+      const size = (width: number) => () => ({ width, height: width ? 20 : 0, left: 0, top: 0, right: width, bottom: width ? 20 : 0, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+      doc.documentElement.getBoundingClientRect = size(DESK_WIDTH);
+      for (const element of doc.body.querySelectorAll("*")) element.getBoundingClientRect = size(visible ? 60 : 0);
+      fireEvent.load(frame);
+    };
+    const { container } = render(<LeadTile tiles={tiles} scheme="light" as="div" />);
+    FakeObserver.report([container.querySelector("[data-tile]")!], true, "near");
+    expect(container.querySelector("iframe")!.getAttribute("srcdoc")).toContain("so-phone-back");
+    load(container, false);
+    // The most used look is display:none at 1280px: the next one is drawn instead.
+    FakeObserver.report([container.querySelector("[data-tile]")!], true, "near");
+    expect(container.querySelector("iframe")!.getAttribute("srcdoc")).toContain('class="ok"');
+    load(container, true);
+    expect(container.querySelector("iframe[data-placed]")).not.toBeNull();
+    expect(container.querySelector<HTMLElement>("[data-tile]")!.dataset.kind).toBe("markup");
+
+    // When none draws anything, the family's shape stands in.
+    cleanup();
+    const hidden = leadTiles([look('<button class="so-phone-back">Back</button>', 66)], family, "wall:g");
+    const second = render(<LeadTile tiles={hidden} scheme="light" as="div" />);
+    FakeObserver.report([second.container.querySelector("[data-tile]")!], true, "near");
+    load(second.container, false);
+    expect(second.container.querySelector<HTMLElement>("[data-tile]")!.dataset.kind).toBe("shape");
+    expect(within(second.container).getByTestId("shape-box")).toBeTruthy();
   });
 
   test("a strip of more than 100 tiles is virtualised: only the rows near its scroll position are in the DOM", () => {

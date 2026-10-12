@@ -14,11 +14,11 @@ import type { InventoryLook, InventoryRecipe, InventoryRole } from "@youiyoux/co
 import { loadInventoryTarget } from "../inventory/target.ts";
 import { newStats, SPECIMEN_FORMAT, SpecimenCache, specimenKey, type SpecimenStats } from "./cache.ts";
 import { relativeInside } from "./contain.ts";
-import { buildProjectCss, describeSources, type Scheme, type SheetSource } from "./css.ts";
-import { renderComponents, type ComponentRecipe, type RenderJob, type RenderOptions } from "./render.ts";
+import { buildProjectCss, describeSkipped, describeSources, type Scheme, type SheetSource } from "./css.ts";
+import { ICON_HTML, renderComponents, type ComponentRecipe, type RenderJob, type RenderOptions } from "./render.ts";
 
 export { SpecimenCache, defaultCacheDir, newStats, type SpecimenStats } from "./cache.ts";
-export { buildProjectCss, describeSources, findStylesheets, forScheme, pageStylesheets, projectTailwind, SCHEMES, stylesheetLinks, tailwindCliBuilds, type Scheme, type SheetSource } from "./css.ts";
+export { buildProjectCss, describeSkipped, describeSources, findStylesheets, forScheme, pageStylesheets, projectTailwind, SCHEMES, stylesheetLinks, tailwindCliBuilds, type Scheme, type SheetSource } from "./css.ts";
 export { escapingLinks, isBarePackageUnderRoot, relativeInside, within } from "./contain.ts";
 
 /** component: server-rendered from the project's code; markup: a tag with its classes. */
@@ -44,6 +44,8 @@ export interface ProjectSpecimens {
   readonly sources: readonly SheetSource[];
   /** The same for a reader: `built: src/app.css (link /app.css in index.html, Tailwind 4.1.0)`. */
   readonly used: readonly string[];
+  /** Tailwind entries left out, for a reader: `skipped: design/src/globals.css (…)`. */
+  readonly skipped: readonly string[];
 }
 
 export interface SpecimenProject {
@@ -75,12 +77,15 @@ const VOID = /^(?:input|img|hr|br|area|col|embed|source|track|wbr)$/;
 const escape = (text: string): string => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const idOf = (recipe: InventoryRecipe, role: InventoryRole): string => createHash("sha256").update(`${role}\0${JSON.stringify(recipe)}`).digest("hex").slice(0, 12);
 
-/** The static fallback: the recipe's tag and classes around its label. */
+/** A component look sized as an icon (shadcn's `size="icon"`, `icon-sm`, …) with no text of its own: it shows an icon, not a word. */
+const iconSized = (recipe: InventoryRecipe): boolean => recipe.kind === "component" && recipe.label === null && typeof recipe.props.size === "string" && /^icon(?:$|-)/.test(recipe.props.size);
+
+/** The static fallback: the recipe's tag and classes around its label (an icon for an icon size). */
 export function markupOf(recipe: InventoryRecipe, role: InventoryRole): string {
   const tag = /^[a-z][a-z0-9-]*$/.test(recipe.tag) ? recipe.tag : "div";
   const attributes = `${recipe.classes.length > 0 ? ` class="${escape(recipe.classes.join(" "))}"` : ""}${tag === "a" ? ' href="#"' : ""}${tag === "button" ? ' type="button"' : ""}`;
   if (VOID.test(tag)) return `<${tag}${attributes}${tag === "input" ? ' value=""' : ""}>`;
-  return `<${tag}${attributes}>${escape(recipe.label ?? PLACEHOLDER[role])}</${tag}>`;
+  return `<${tag}${attributes}>${iconSized(recipe) ? ICON_HTML : escape(recipe.label ?? PLACEHOLDER[role])}</${tag}>`;
 }
 
 /** One project's specimens: from the cache when its inputs are unchanged, else built. */
@@ -117,7 +122,7 @@ export async function projectSpecimens(project: SpecimenProject, options: Specim
     if (recipe.kind !== "component") continue;
     const refused = [recipe.file, ...recipe.wrappers.map((w) => w.file)].map((f) => relativeInside(project.root, f)).find((r) => "refused" in r);
     if (refused && "refused" in refused) warnings.push(`refused recipe ${recipe.file}#${recipe.export}: ${refused.refused}: drawn from its classes`);
-    else jobs.push({ key: id, recipe: recipe as ComponentRecipe, label: recipe.label ?? (VOID.test(recipe.tag) ? null : PLACEHOLDER[role] || null) });
+    else jobs.push({ key: id, recipe: recipe as ComponentRecipe, label: recipe.label ?? (VOID.test(recipe.tag) ? null : PLACEHOLDER[role] || null), icon: iconSized(recipe) });
   }
   const scratch = cache.scratch(project.id, key);
   const rendered = await renderComponents(project.root, target.tsconfig, jobs, scratch, stats, options.timeouts);
@@ -142,7 +147,7 @@ export async function projectSpecimens(project: SpecimenProject, options: Specim
   const notes = [...failed].sort(([a], [b]) => a.localeCompare(b));
   for (const [note, count] of notes.slice(0, MAX_NOTES)) warnings.push(`${note}: ${count === 1 ? "drawn" : `${count} looks drawn`} from its classes`);
   if (notes.length > MAX_NOTES) warnings.push(`${notes.length - MAX_NOTES} more components did not render`);
-  const entry: ProjectSpecimens = { format: SPECIMEN_FORMAT, project: project.id, key, css: css.light !== null && css.dark !== null ? { light: css.light, dark: css.dark } : null, specimens, looks, warnings, tailwind: css.tailwind, sheets: css.sheets, sources: css.sources, used: describeSources(css.sources, css.tailwindVersion) };
+  const entry: ProjectSpecimens = { format: SPECIMEN_FORMAT, project: project.id, key, css: css.light !== null && css.dark !== null ? { light: css.light, dark: css.dark } : null, specimens, looks, warnings, tailwind: css.tailwind, sheets: css.sheets, sources: css.sources, used: describeSources(css.sources, css.tailwindVersion), skipped: describeSkipped(css.skipped) };
   cache.write(project.id, key, entry);
   return { ...entry, cached: false };
 }

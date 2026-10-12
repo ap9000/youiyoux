@@ -137,6 +137,19 @@ describe("specimen HTML: looks rendered as the app renders them (c1)", () => {
     expect(Object.values(built.get("site")!.specimens).every((s) => s.kind === "markup")).toBe(true);
   });
 
+  test("an icon-size button with no text of its own shows an icon, not a word that spills out of it", async () => {
+    const scratch = mkdtempSync(join(tmpdir(), "youi-render-"));
+    const recipe = { kind: "component" as const, file: "src/components/ui/button.tsx", export: "Button", props: { variant: "outline", size: "icon" }, label: null, wrappers: [], tag: "button", classes: ["size-8"] };
+    const result = await renderComponents(CONSOLE, "tsconfig.json", [{ key: "i", recipe, label: "Button", icon: true }], scratch, newStats());
+    rmSync(scratch, { recursive: true, force: true });
+    expect(result.failures.size).toBe(0);
+    expect(result.html.get("i")).toMatch(/^<button class="[^"]* size-8"><svg [^>]*width="16" height="16" viewBox="0 0 24 24"[^>]*aria-hidden="true"><path d="M5 12h14M12 5v14"><\/path><\/svg><\/button>$/);
+    expect(markupOf(recipe, "button")).toMatch(/^<button class="size-8" type="button"><svg [^>]*><path d="M5 12h14M12 5v14"><\/path><\/svg><\/button>$/);
+    // A site's own text wins, and other sizes keep the placeholder.
+    expect(markupOf({ ...recipe, label: "Add" }, "button")).toBe('<button class="size-8" type="button">Add</button>');
+    expect(markupOf({ ...recipe, props: { size: "sm" } }, "button")).toBe('<button class="size-8" type="button">Button</button>');
+  });
+
   test("a component that does not render falls back to its tag and classes, and says so", async () => {
     const scratch = mkdtempSync(join(tmpdir(), "youi-render-"));
     const recipe = { kind: "component" as const, file: "src/components/ui/button.tsx", export: "Nope", props: {}, label: "x", wrappers: [], tag: "button", classes: ["h-8"] };
@@ -261,6 +274,25 @@ describe("stylesheets the way the page gets them (c6)", () => {
       expect(css.light).toContain("--color-brand: #0f766e");
       // tokens.css is @imported by the entry, so it is not a sheet of its own.
       expect(css.sheets).not.toContain("src/design/tokens.css");
+    } finally {
+      rmSync(copy, { recursive: true, force: true });
+    }
+  });
+
+  test("a Tailwind entry nothing links, imports or reads is skipped when the page builds another, and the list says so", async () => {
+    const copy = copyFixture(WIDGETS, mkdtempSync(join(tmpdir(), "youi-widgets-")));
+    try {
+      mkdirSync(join(copy, "design/src"), { recursive: true });
+      writeFileSync(join(copy, "design/src/globals.css"), '@import "tailwindcss";\n@theme { --color-unused: #ff00ff; }\n');
+      const target = await loadInventoryTarget(copy);
+      const css = await buildProjectCss(copy, target.files, newStats(), { templates: target.templates });
+      expect(css.sources.map((s) => s.sheet)).toEqual(["src/browser/tailwind.css", "public/ui.css"]);
+      expect(css.skipped).toEqual(["design/src/globals.css"]);
+      expect(css.light).not.toContain("--color-unused");
+      const stats = newStats();
+      const specimens = await projectSpecimens({ id: "widgets", root: copy, commit: "s", looks: [] }, { cache: new SpecimenCache(mkdtempSync(join(tmpdir(), "youi-specimens-"))), stats });
+      expect(stats.tailwindCompiles).toBe(1);
+      expect(specimens.skipped).toEqual(["skipped: design/src/globals.css (a Tailwind entry nothing links, imports or reads; the page builds another)"]);
     } finally {
       rmSync(copy, { recursive: true, force: true });
     }

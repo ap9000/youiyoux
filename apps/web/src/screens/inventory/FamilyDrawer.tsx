@@ -53,7 +53,7 @@ function FamilyDetail({ view, source, scheme }: { view: FamilyView; source: Inve
   if (failed?.status === "error") return <p className="px-5 py-4 text-small text-danger">{failed.message}</p>;
   return (
     <Tabs defaultValue="usage" className="flex min-h-0 flex-col">
-      <TabsList className="px-5">
+      <TabsList className="px-5 max-md:h-12">
         <TabsTrigger value="usage" count={ready ? rows.length : undefined}>
           Usage
         </TabsTrigger>
@@ -89,7 +89,7 @@ function FamilyDetail({ view, source, scheme }: { view: FamilyView; source: Inve
             ) : (
               <>
                 {code.slice(0, CODE_LIMIT).map((tile) => (
-                  <CodeBlock key={tile.key} title={`${tile.project} · ${tile.place}`} code={tile.specimen!.html} maxHeight="sm" />
+                  <CodeBlock key={tile.key} title={`${tile.project} · ${tile.place}`} code={tile.specimen!.html} maxHeight="sm" touch />
                 ))}
                 {code.length > CODE_LIMIT && <p className="text-small text-muted">{code.length - CODE_LIMIT} more in Variants.</p>}
               </>

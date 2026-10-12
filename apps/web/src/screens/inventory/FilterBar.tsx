@@ -2,7 +2,7 @@
  * The Inventory page's filters: element type, library or kit, project, near-duplicates only, and
  * search by name or file. They combine, each option shows how many families it would show with
  * the others on, and they live in the URL (useFilters). On a phone they sit in a bottom sheet
- * behind a Filters button.
+ * behind a Filters button, and every control there is at least 44px tall (TOUCH).
  */
 import { clsx } from "clsx";
 import { Check, SlidersHorizontal } from "lucide-react";
@@ -27,6 +27,8 @@ export function useFilters(index: Pick<InventoryIndex, "projects">): [Filters, (
 }
 
 const ALL = "__all";
+/** A phone's tap target: at least 44px tall below md; a desktop keeps its density. */
+export const TOUCH = "max-md:h-11";
 
 /** A count, or an ellipsis while the looks it needs are still loading. */
 function CountLabel({ label, count }: { label: string; count: number | null }) {
@@ -47,6 +49,7 @@ function Choice<T extends string>({ label, value, all, options, onChange }: { la
       <Segmented<string>
         label={label}
         wrap
+        touch
         value={value ?? ALL}
         onChange={(next) => onChange(next === ALL ? null : (next as T))}
         options={[{ value: ALL, label: <CountLabel label="All" count={all} /> }, ...options.map((o) => ({ value: o.value, label: <CountLabel label={o.label} count={o.count} /> }))]}
@@ -67,7 +70,7 @@ export function FilterControls({ filters, onChange, counts }: { filters: Filters
 
 function NearToggle({ filters, onChange, counts }: { filters: Filters; onChange: (next: Filters) => void; counts: Counts }) {
   return (
-    <Button aria-pressed={filters.near} onClick={() => onChange({ ...filters, near: !filters.near })} className={clsx("inv-press", filters.near && "border-warning text-warning")}>
+    <Button aria-pressed={filters.near} onClick={() => onChange({ ...filters, near: !filters.near })} className={clsx("inv-press", TOUCH, filters.near && "border-warning text-warning")}>
       <span aria-hidden className={clsx("grid size-3.5 place-items-center rounded-xs border", filters.near ? "border-warning bg-warning text-on-accent" : "border-line-strong")}>
         {filters.near && <Check className="size-2.5!" />}
       </span>
@@ -78,7 +81,7 @@ function NearToggle({ filters, onChange, counts }: { filters: Filters; onChange:
 }
 
 function Search({ filters, onChange }: { filters: Filters; onChange: (next: Filters) => void }) {
-  return <SearchField value={filters.q} onChange={(q) => onChange({ ...filters, q })} label="Search by name or file" placeholder="Search by name or file" className="w-full md:w-72" />;
+  return <SearchField value={filters.q} onChange={(q) => onChange({ ...filters, q })} label="Search by name or file" placeholder="Search by name or file" touch className="w-full md:w-72" />;
 }
 
 function Summary({ shown, total, filters, onChange }: { shown: number | null; total: number; filters: Filters; onChange: (next: Filters) => void }): ReactNode {
@@ -86,7 +89,7 @@ function Summary({ shown, total, filters, onChange }: { shown: number | null; to
     <p className="flex items-center gap-2 text-small text-muted" aria-live="polite">
       <span className="tabular">{shown === null ? `Counting ${total} families…` : `${shown} of ${total} ${total === 1 ? "family" : "families"}`}</span>
       {activeFilters(filters) > 0 && (
-        <button type="button" className="inv-link inv-press text-accent" onClick={() => onChange(NO_FILTERS)}>
+        <button type="button" className="inv-link inv-press text-accent max-md:min-h-11" onClick={() => onChange(NO_FILTERS)}>
           Clear filters
         </button>
       )}
@@ -111,7 +114,7 @@ export function FilterBar({ filters, onChange, counts, shown, total }: { filters
         <FilterControls filters={filters} onChange={onChange} counts={counts} />
       </section>
       <div className="flex items-center gap-2 md:hidden" data-testid="filter-phone">
-        <Button onClick={() => setSheet(true)} className="inv-press">
+        <Button onClick={() => setSheet(true)} className={clsx("inv-press", TOUCH)}>
           <SlidersHorizontal /> Filters{active > 0 && <span className="tabular text-caption text-accent">{active}</span>}
         </Button>
         <Summary shown={shown} total={total} filters={filters} onChange={onChange} />
@@ -124,7 +127,7 @@ export function FilterBar({ filters, onChange, counts, shown, total }: { filters
         description="They combine, and stay in the page's address."
         testId="filter-sheet"
         footer={
-          <Button variant="primary" className="inv-press w-full" onClick={() => setSheet(false)}>
+          <Button variant="primary" className={clsx("inv-press w-full", TOUCH)} onClick={() => setSheet(false)}>
             {shown === null ? "Show families" : `Show ${shown} ${shown === 1 ? "family" : "families"}`}
           </Button>
         }

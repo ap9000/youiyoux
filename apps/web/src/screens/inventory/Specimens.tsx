@@ -266,7 +266,7 @@ function specimenBox(doc: Document): { x: number; y: number; width: number; heig
   return Number.isFinite(left) ? { x: left, y: top, width: right - left, height: bottom - top } : null;
 }
 
-function SpecimenFrame({ specimen, css, scheme, near, height }: { specimen: Specimen; css: string; scheme: Scheme; near: boolean; height: number }) {
+function SpecimenFrame({ specimen, css, scheme, near, height, onBlank }: { specimen: Specimen; css: string; scheme: Scheme; near: boolean; height: number; onBlank?: () => void }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const slot = useFrameSlot(near);
@@ -282,6 +282,8 @@ function SpecimenFrame({ specimen, css, scheme, near, height }: { specimen: Spec
     if (!tile || !box) {
       setTransform(`translate(${TILE_PAD}px, ${TILE_PAD}px)`);
       slot.done();
+      // Laid out at the desk width, and nothing in it has a box: the look is hidden there.
+      if (doc && !box && doc.documentElement.getBoundingClientRect().width > 0) onBlank?.();
       return;
     }
     // The page's own background fills the whole tile, not just the moved frame.
@@ -350,13 +352,15 @@ interface SpecimenTileProps {
   /** The project and file:line under the specimen. */
   caption?: boolean;
   className?: string;
+  /** Called when the specimen's frame loads and nothing in it has a box at the desk width. */
+  onBlank?: () => void;
 }
 
 /**
  * One look drawn: its frame (or its shape) in a box, sharing the near-viewport mounting, the
  * six-at-once queue and the 48-frame budget with every other specimen on the page.
  */
-export function SpecimenTile({ tile, scheme, size = "small", as: Tag = "li", caption = true, className }: SpecimenTileProps) {
+export function SpecimenTile({ tile, scheme, size = "small", as: Tag = "li", caption = true, className, onBlank }: SpecimenTileProps) {
   const ref = useRef<HTMLElement>(null);
   const near = useNearViewport(ref);
   const visible = useInView(ref);
@@ -366,7 +370,7 @@ export function SpecimenTile({ tile, scheme, size = "small", as: Tag = "li", cap
   return (
     <Tag ref={ref as RefObject<never>} className={clsx("min-w-0 space-y-1", className)} data-tile={tile.key} data-kind={drawn ? tile.specimen!.kind : "shape"} data-frame={drawn && near ? (mounted ? "mounted" : "waiting") : undefined}>
       <div className="relative overflow-hidden rounded-md border border-line bg-sunken" style={{ height }}>
-        {!drawn ? <ShapeBox shape={tile.shape} tileHeight={height} /> : mounted ? <SpecimenFrame specimen={tile.specimen!} css={tile.css!} scheme={scheme} near={near} height={height} /> : near ? <ShapeBox shape={tile.shape} caption="waiting" tileHeight={height} /> : null}
+        {!drawn ? <ShapeBox shape={tile.shape} tileHeight={height} /> : mounted ? <SpecimenFrame specimen={tile.specimen!} css={tile.css!} scheme={scheme} near={near} height={height} onBlank={onBlank} /> : near ? <ShapeBox shape={tile.shape} caption="waiting" tileHeight={height} /> : null}
       </div>
       {caption && (
       <p className="flex min-w-0 items-baseline gap-1.5 text-caption text-muted">
@@ -379,6 +383,21 @@ export function SpecimenTile({ tile, scheme, size = "small", as: Tag = "li", cap
       )}
     </Tag>
   );
+}
+
+/**
+ * The tile that stands for a set: the first of `tiles` (leadTiles) whose specimen draws something
+ * at the desk width; one that loads with nothing visible (say `display: none` above a phone
+ * breakpoint) gives way to the next, and the last is the set's shape.
+ */
+export function LeadTile({ tiles, ...props }: Omit<SpecimenTileProps, "tile" | "onBlank"> & { tiles: readonly Tile[] }) {
+  const [blank, setBlank] = useState<ReadonlySet<string>>(() => new Set());
+  const id = (t: Tile): string => `${t.css}\n${t.specimen?.html}`;
+  const index = tiles.findIndex((t, i) => i === tiles.length - 1 || !blank.has(id(t)));
+  const tile = tiles[index];
+  if (!tile) return null;
+  const last = index === tiles.length - 1;
+  return <SpecimenTile key={index} {...props} tile={tile} onBlank={last ? undefined : () => setBlank((b) => new Set(b).add(id(tile)))} />;
 }
 
 /** A family's tiles: a wrapping grid, virtualised by rows past VIRTUALISE_AT. */

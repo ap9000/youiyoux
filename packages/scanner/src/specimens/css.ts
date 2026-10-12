@@ -6,7 +6,8 @@
  * import.meta.url)`, `?raw` and `?inline` imports: tokens a server puts in a `<style>` come
  * first), then the `<link rel="stylesheet">`s of its index.html, other HTML and server templates
  * (a link to a Tailwind CLI output maps back to the entry the CLI builds), then what its layouts
- * and components import, then any Tailwind entry nothing imports.
+ * and components import. A Tailwind entry nothing links, imports or reads is built only when the
+ * page loads no other Tailwind entry; otherwise it is skipped, and the stylesheet list says so.
  * Each Tailwind v4 entry is compiled with the project's own installed Tailwind (`@tailwindcss/node`
  * compile, candidates from the oxide Scanner over its sources, then optimize, as
  * `@tailwindcss/vite` does) in a worker that is stopped after a timeout; fonts it loads from
@@ -44,6 +45,8 @@ export interface ProjectCss {
   readonly sheets: string[];
   /** The same, with how the page gets each and how it was built. */
   readonly sources: SheetSource[];
+  /** Tailwind entries nothing links, imports or reads, left out because the page loads another. */
+  readonly skipped: string[];
   /** How Tailwind was handled: compiled with the project's own version, or why not. */
   readonly tailwind: string;
 }
@@ -327,13 +330,15 @@ const isTailwindEntry = (path: string): boolean => {
  * that list. Else: sheets server or source code reads and inlines (sourceReadSheets), ahead of
  * the Tailwind output so the tokens it uses are defined; then links in index.html, then other
  * HTML and templates, then template strings in modules; then module imports (importedSheets);
- * then Tailwind entries nothing links or imports.
+ * then Tailwind entries nothing links or imports, but only when none of those is a Tailwind
+ * entry: a page that loads one does not use the others (`skipped`).
  * Remote links are kept as `@import url()`s.
  */
-export function findStylesheets(root: string, files: readonly string[], options: CssOptions = {}): { found: Found[]; remote: string[]; warnings: string[] } {
+export function findStylesheets(root: string, files: readonly string[], options: CssOptions = {}): { found: Found[]; remote: string[]; warnings: string[]; skipped: string[] } {
   const warnings: string[] = [];
   const found: Found[] = [];
   const remote: string[] = [];
+  const skipped: string[] = [];
   const add = (sheet: Found): void => {
     if (!found.some((f) => realOf(f.path) === realOf(sheet.path))) found.push(sheet);
   };
@@ -345,7 +350,7 @@ export function findStylesheets(root: string, files: readonly string[], options:
       else if (!isFile(join(root, inside.ok))) warnings.push(`${from} specimens.css: ${entry} does not exist`);
       else add({ path: join(root, inside.ok), sheet: inside.ok, via: `specimens.css in ${from}` });
     }
-    return { found, remote, warnings };
+    return { found, remote, warnings, skipped };
   }
   for (const sheet of sourceReadSheets(root, files, warnings)) add(sheet);
   const builds = tailwindCliBuilds(root);
@@ -375,8 +380,10 @@ export function findStylesheets(root: string, files: readonly string[], options:
       if (target && "ok" in target) imported.add(target.ok);
     }
   }
-  for (const entry of entries) if (!imported.has(entry)) add({ path: join(root, entry), sheet: entry, via: "a Tailwind entry no module imports" });
-  return { found, remote, warnings };
+  const unreferenced = entries.filter((entry) => !imported.has(entry) && !found.some((f) => realOf(f.path) === realOf(join(root, entry))));
+  if (found.some((f) => isTailwindEntry(f.path))) skipped.push(...unreferenced);
+  else for (const entry of unreferenced) add({ path: join(root, entry), sheet: entry, via: "a Tailwind entry no module imports" });
+  return { found, remote, warnings, skipped };
 }
 
 type PackageJson = Record<string, Record<string, string> | undefined>;
@@ -528,11 +535,16 @@ export function describeSources(sources: readonly SheetSource[], tailwindVersion
   return sources.map((s) => (s.as === "tailwind" ? `built: ${s.sheet} (${s.via}, Tailwind ${tailwindVersion ?? "?"})` : `inlined: ${s.sheet} (${s.via})`));
 }
 
+/** Lines for a reader: the Tailwind entries left out, and why. */
+export function describeSkipped(skipped: readonly string[]): string[] {
+  return skipped.map((sheet) => `skipped: ${sheet} (a Tailwind entry nothing links, imports or reads; the page builds another)`);
+}
+
 /** Build a project's specimen CSS, light and dark. */
 export async function buildProjectCss(root: string, files: readonly string[], stats: SpecimenStats, options: CssOptions = {}): Promise<ProjectCss & { fonts: string[]; tailwindVersion: string | null }> {
-  const { found, remote, warnings } = findStylesheets(root, files, options);
+  const { found, remote, warnings, skipped } = findStylesheets(root, files, options);
   const sheets = found.map((f) => f.sheet);
-  if (found.length === 0) return { light: null, dark: null, warnings: [...warnings, "no stylesheet a page loads: none is read by its code, linked from HTML, imported by a module, or a Tailwind entry"], sheets, sources: [], tailwind: "not needed", fonts: [], tailwindVersion: null };
+  if (found.length === 0) return { light: null, dark: null, warnings: [...warnings, "no stylesheet a page loads: none is read by its code, linked from HTML, imported by a module, or a Tailwind entry"], sheets, sources: [], skipped, tailwind: "not needed", fonts: [], tailwindVersion: null };
   const needsTailwind = found.some((s) => isTailwindEntry(s.path));
   const tailwind = needsTailwind ? projectTailwind(root) : null;
   if (tailwind && !tailwind.node) warnings.push(tailwind.note);
@@ -562,5 +574,5 @@ export async function buildProjectCss(root: string, files: readonly string[], st
     sources.push({ sheet: sheet.sheet, via: sheet.via, as: "plain" });
   }
   const { css, fonts } = inlineFonts(root, [...new Set(hoisted), ...parts].join("\n"), warnings);
-  return { light: forScheme(css, "light"), dark: forScheme(css, "dark"), warnings, sheets, sources, tailwind: tailwind?.note ?? "not used", fonts, tailwindVersion: tailwind?.version ?? null };
+  return { light: forScheme(css, "light"), dark: forScheme(css, "dark"), warnings, sheets, sources, skipped, tailwind: tailwind?.note ?? "not used", fonts, tailwindVersion: tailwind?.version ?? null };
 }

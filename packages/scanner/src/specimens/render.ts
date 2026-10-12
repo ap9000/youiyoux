@@ -33,7 +33,13 @@ export interface RenderJob {
   readonly recipe: ComponentRecipe;
   /** Children when the site has no text of its own (a card's placeholder). */
   readonly label: string | null;
+  /** An icon (ICON_HTML) as its children instead: an icon-size button, which a word would spill out of. */
+  readonly icon?: boolean;
 }
+
+/** What an icon-size button shows: a plus drawn like a 16px Lucide icon. */
+const ICON_PATH = "M5 12h14M12 5v14";
+export const ICON_HTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICON_PATH}"></path></svg>`;
 
 export interface RenderResult {
   readonly html: Map<string, string>;
@@ -105,7 +111,8 @@ for (const job of workerData.jobs) {
   parentPort.postMessage({ start: job.key });
   let result;
   try {
-    let element = React.createElement(exported(job.file, job.export), job.props, ...(job.label === null ? [] : [job.label]));
+    const icon = () => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" }, React.createElement("path", { d: ${JSON.stringify(ICON_PATH)} }));
+    let element = React.createElement(exported(job.file, job.export), job.props, ...(job.icon ? [icon()] : job.label === null ? [] : [job.label]));
     for (const wrapper of [...job.wrappers].reverse()) element = React.createElement(exported(wrapper.file, wrapper.export), wrapper.props, element);
     const html = renderToStaticMarkup(element).trim();
     result = html ? { html } : { error: "rendered nothing" };
@@ -222,7 +229,7 @@ async function renderInWorkers(bundle: string, jobs: readonly RenderJob[], rende
       for (const job of pending) results.set(job.key, { error: `timed out: the project's looks took over ${limitOf(totalMs)}` });
       break;
     }
-    const payload = pending.map((j) => ({ key: j.key, file: j.recipe.file, export: j.recipe.export, props: j.recipe.props, label: j.label, wrappers: j.recipe.wrappers }));
+    const payload = pending.map((j) => ({ key: j.key, file: j.recipe.file, export: j.recipe.export, props: j.recipe.props, label: j.label, icon: j.icon === true, wrappers: j.recipe.wrappers }));
     const stopped = await new Promise<{ current: string | null; reason: string } | null>((done) => {
       const worker = new Worker(WORKER, { eval: true, workerData: { bundle, jobs: payload }, stdout: true, stderr: true, resourceLimits: { maxOldGenerationSizeMb: 1024 } });
       let current: string | null = null;

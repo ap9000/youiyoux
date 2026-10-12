@@ -1,0 +1,27 @@
+/* The back button: the phone's is hidden on a desktop, the desktop's on a phone. */
+.so-back,
+.so-phone-back {
+  display: inline-flex;
+  align-items: center;
+  height: 40px;
+  padding: 0 18px;
+  border: 1px solid #cbd5e1;
+  border-radius: 20px;
+  background: #f8fafc;
+  color: #0f172a;
+  font: 600 15px/20px system-ui, sans-serif;
+}
+
+.so-phone-back {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .so-phone-back {
+    display: inline-flex;
+  }
+
+  .so-back {
+    display: none;
+  }
+}

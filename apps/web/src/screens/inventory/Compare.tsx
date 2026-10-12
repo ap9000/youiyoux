@@ -15,8 +15,9 @@ import type { InventoryChunk, InventoryFamily } from "../../data/types.ts";
 import { Badge } from "../../ui/Badge.tsx";
 import { Button } from "../../ui/Button.tsx";
 import { Segmented } from "../../ui/Segmented.tsx";
-import { familyTiles, leadTile } from "./family-tiles.ts";
-import { LARGE_TILE_HEIGHT, SpecimenTile } from "./Specimens.tsx";
+import { familyTiles, leadTiles } from "./family-tiles.ts";
+import { TOUCH } from "./FilterBar.tsx";
+import { LARGE_TILE_HEIGHT, LeadTile } from "./Specimens.tsx";
 
 type Side = InventoryFamily["sides"][number];
 
@@ -31,9 +32,9 @@ interface CardProps {
 const sideLabel = (side: Side, libraries: Libraries): string => `${side.project} · ${libraries.primary(side.kit).label}`;
 const sideKey = (family: InventoryFamily, side: Side): string => `${family.id}:${side.project}:${side.kit ?? "plain"}`;
 
-function sideTile({ view, chunks, source, scheme }: CardProps, side: Side, prefix: string) {
+function sideTiles({ view, chunks, source, scheme }: CardProps, side: Side, prefix: string) {
   const tiles = familyTiles(view.family, chunks, source, scheme, (project, kit) => project === side.project && kit === side.kit);
-  return leadTile(tiles, view.family, `${prefix}:${sideKey(view.family, side)}`);
+  return leadTiles(tiles, view.family, `${prefix}:${sideKey(view.family, side)}`);
 }
 
 export const compareAnchor = (family: string): string => `compare-${family}`;
@@ -51,8 +52,9 @@ export function CompareCard(props: CardProps) {
   const dragging = useRef<number | null>(null);
   if (!pair) return null;
   const [a, b] = pair;
-  const tileA = sideTile(props, a, "compare-a");
-  const tileB = sideTile(props, b, "compare-b");
+  const more = view.family.sides.length - 2;
+  const tilesA = sideTiles(props, a, "compare-a");
+  const tilesB = sideTiles(props, b, "compare-b");
   const rows = attributeRows({ shape: sideShape(a, view.looks, view.family.shape), uses: a.looks, projects: [a.project] }, { shape: sideShape(b, view.looks, view.family.shape), uses: b.looks, projects: [b.project] });
 
   const moveTo = (x: number): void => {
@@ -88,6 +90,7 @@ export function CompareCard(props: CardProps) {
         <Segmented
           className="ml-auto"
           label="Compare as"
+          touch
           value={mode}
           onChange={setMode}
           options={[
@@ -105,10 +108,10 @@ export function CompareCard(props: CardProps) {
           {/* Narrow, so the specimens (drawn at their real size) fill enough of it to wipe across. */}
           <div ref={boxRef} className="relative mx-auto max-w-80 touch-none select-none overflow-hidden rounded-md" style={{ height: LARGE_TILE_HEIGHT }} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp} data-testid="compare-stage">
             <div className="absolute inset-0" data-layer="bottom">
-              <SpecimenTile tile={tileA} scheme={props.scheme} size="large" as="div" caption={false} />
+              <LeadTile tiles={tilesA} scheme={props.scheme} size="large" as="div" caption={false} />
             </div>
             <div className="absolute inset-0" data-layer="top" style={{ clipPath: clipInset(percent) }}>
-              <SpecimenTile tile={tileB} scheme={props.scheme} size="large" as="div" caption={false} />
+              <LeadTile tiles={tilesB} scheme={props.scheme} size="large" as="div" caption={false} />
             </div>
             <div
               role="slider"
@@ -119,7 +122,7 @@ export function CompareCard(props: CardProps) {
               aria-valuenow={percent}
               aria-valuetext={`${Math.round(percent)}% from the left`}
               onKeyDown={onKeyDown}
-              className="absolute inset-y-0 w-6 -translate-x-1/2 cursor-ew-resize outline-none focus-visible:[&>span]:bg-focus"
+              className="absolute inset-y-0 w-6 -translate-x-1/2 cursor-ew-resize rounded-md outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus focus-visible:outline-solid focus-visible:[&>span]:bg-focus max-md:w-11"
               style={{ left: `${percent}%` }}
             >
               <span aria-hidden className="absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 bg-accent" />
@@ -130,12 +133,12 @@ export function CompareCard(props: CardProps) {
       ) : (
         <div className="grid grid-cols-2 gap-3" data-testid="compare-side-by-side">
           {[
-            { side: a, tile: tileA },
-            { side: b, tile: tileB },
-          ].map(({ side, tile }) => (
+            { side: a, tiles: tilesA },
+            { side: b, tiles: tilesB },
+          ].map(({ side, tiles }) => (
             <div key={sideKey(view.family, side)} className="min-w-0 space-y-1.5">
               <p className="truncate text-caption text-muted">{sideLabel(side, libraries)}</p>
-              <SpecimenTile tile={tile} scheme={props.scheme} size="large" as="div" caption={false} />
+              <LeadTile tiles={tiles} scheme={props.scheme} size="large" as="div" caption={false} />
             </div>
           ))}
         </div>
@@ -167,7 +170,7 @@ export function CompareCard(props: CardProps) {
           ))}
         </tbody>
       </table>
-      {view.family.sides.length > 2 && <p className="text-caption text-muted">{view.family.sides.length - 2} more ways to build it are in its fix below.</p>}
+      {more > 0 && <p className="text-caption text-muted">{more} more {more === 1 ? "way to build it is" : "ways to build it are"} in its fix below.</p>}
     </article>
   );
 }
@@ -193,7 +196,7 @@ export function FixCard(props: CardProps) {
       <ul className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-2 max-md:grid-cols-2" aria-label="Ways it is built">
         {view.family.sides.map((side) => (
           <li key={sideKey(view.family, side)} className="min-w-0 space-y-1">
-            <SpecimenTile tile={sideTile(props, side, "fix")} scheme={props.scheme} as="div" caption={false} />
+            <LeadTile tiles={sideTiles(props, side, "fix")} scheme={props.scheme} as="div" caption={false} />
             <p className="truncate text-caption text-muted" title={sideLabel(side, libraries)}>
               <span className="font-medium text-ink-2">{side.project}</span> · {libraries.primary(side.kit).label} · {side.looks} {side.looks === 1 ? "use" : "uses"}
             </p>
@@ -213,7 +216,7 @@ export function FixCard(props: CardProps) {
         </ul>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <Button disabled aria-describedby={reason}>
+        <Button disabled aria-describedby={reason} className={TOUCH}>
           Merge into one
         </Button>
         <span id={reason} className="text-small text-muted">

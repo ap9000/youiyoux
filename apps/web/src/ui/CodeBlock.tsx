@@ -7,17 +7,19 @@ interface CodeBlockProps {
   title?: string;
   className?: string;
   maxHeight?: "sm" | "lg" | "none";
+  /** On a phone (below md) its title bar and copy button are at least 44px tall, for a finger; a desktop keeps its density. */
+  touch?: boolean;
 }
 
 const HEIGHTS = { sm: "max-h-56", lg: "max-h-[28rem]", none: "" } as const;
 
-export function CodeBlock({ code, title, className, maxHeight = "lg" }: CodeBlockProps) {
+export function CodeBlock({ code, title, className, maxHeight = "lg", touch = false }: CodeBlockProps) {
   return (
     <div className={clsx("group overflow-hidden rounded-md border border-line bg-sunken", className)}>
       {title && (
-        <div className="flex h-8 items-center justify-between border-b border-line pr-1 pl-3">
+        <div className={clsx("flex h-8 items-center justify-between border-b border-line pr-1 pl-3", touch && "max-md:h-11 max-md:pr-0")}>
           <span className="truncate font-mono text-mono-sm text-muted">{title}</span>
-          <CopyButton value={code} label={`Copy ${title}`} />
+          <CopyButton value={code} label={`Copy ${title}`} className={touch ? "max-md:size-11" : undefined} />
         </div>
       )}
       <div className="relative">
