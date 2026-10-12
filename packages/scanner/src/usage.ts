@@ -177,7 +177,7 @@ const NOT_A_REFERENCE = new Set(["import_specifier", "namespace_import", "import
 
 function analyzeReferences(collector: Collector, module: ModuleInfo, locals: Map<string, ElementBinding>): void {
   if (locals.size === 0) return;
-  for (const identifier of module.root.root().findAll({ rule: { kind: "identifier" } })) {
+  for (const identifier of module.root.root().findAll({ rule: { any: [{ kind: "identifier" }, { kind: "shorthand_property_identifier" }] } })) {
     const binding = locals.get(identifier.text());
     const parent = identifier.parent();
     if (!binding || !parent || NOT_A_REFERENCE.has(String(parent.kind())) || inTypeContext(identifier)) continue;

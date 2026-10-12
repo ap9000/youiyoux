@@ -12,6 +12,7 @@ export * from "./routes.ts";
 export * from "./scan.ts";
 export * from "./usage.ts";
 export * from "./codemod.ts";
+export * from "./import-rewrite.ts";
 export * from "./plan.ts";
 export * from "./queries.ts";
 export * from "./capabilities.ts";

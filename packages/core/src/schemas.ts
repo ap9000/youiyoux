@@ -211,9 +211,16 @@ export type RuleSpec = z.infer<typeof RuleSpec>;
 
 /* ------------------------------------------------------------- youi.migration/v1 */
 
+/** A JavaScript identifier: export names are written into source by the import rewrite. */
+const ExportName = z.string().regex(/^[A-Za-z_$][\w$]*$/, "expected an identifier");
+
 export const MigrationChange = z.union([
   z.object({ renameProp: z.object({ from: z.string(), to: z.string() }) }),
   z.object({ mapValues: z.object({ prop: z.string(), map: z.record(z.string(), z.string()) }) }),
+  /** The element's file exports `to` instead of `from`: imports, re-exports and their uses are rewritten. */
+  z.object({ renameExport: z.object({ from: ExportName, to: ExportName, renameBarrels: z.boolean().optional().default(false) }).refine((r) => r.from !== r.to, "from and to must differ") }),
+  /** The element's file no longer exports `name`: imports move to `replacement` (exported by the same file), or are reported when there is none. */
+  z.object({ removeExport: z.object({ name: ExportName, replacement: ExportName.optional() }).refine((r) => r.name !== r.replacement, "replacement must differ from name") }),
 ]);
 export type MigrationChange = z.infer<typeof MigrationChange>;
 

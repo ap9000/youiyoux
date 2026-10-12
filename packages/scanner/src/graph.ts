@@ -93,7 +93,8 @@ export class ModuleGraph {
     const entry = module.exports.find((e) => e.name === name);
     if (entry?.kind === "local") {
       if (module.declarations.has(entry.local)) return { kind: "symbol", file, name };
-      if (module.imports.some((i) => i.local === entry.local)) return this.resolveLocal(module, entry.local, seen);
+      const binding = module.imports.find((i) => i.local === entry.local);
+      if (binding) return this.follow(binding.specifier, binding.imported, file, seen);
       return { kind: "symbol", file, name };
     }
     if (entry?.kind === "reexport") return this.follow(entry.specifier, entry.imported, file, seen);

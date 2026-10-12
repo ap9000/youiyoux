@@ -3,23 +3,29 @@
  *
  * Only sites the scanner resolved to the element are edited (never "every JSX
  * tag named Button"). Values the spec cannot map deterministically become
- * residuals for a person or agent. Nothing is written unless every gate holds
- * on the rewritten sources, checked in memory first:
+ * residuals for a person or agent. Renamed and removed exports run first, as an
+ * import pass (import-rewrite.ts); props are then planned on a rescan of the
+ * import-rewritten sources. Nothing is written unless every gate holds on the
+ * rewritten sources, checked in memory first:
+ *   exports       the element's file exports every new name (`youi sync` has run); import changes only
  *   parse-errors  no new tree-sitter ERROR nodes in any touched file
- *   usage-count   the element's usage count is unchanged (± the spec's declared delta)
+ *   usage-count   the element's usage count is unchanged (± the spec's declared delta, + sites the
+ *                 import pass makes resolvable again)
  *   unknowns      no site became unresolvable
- *   old-api       no non-residual site still uses a removed prop or value
- *   idempotent    running the migration again changes nothing
+ *   old-api       no non-residual site still uses a removed prop, value or export name
+ *   idempotent    running the migration again (both passes) changes nothing
  * A codemod that "succeeds" proves nothing; these gates are what make it safe.
  */
 import type { Edit, SgNode } from "@ast-grep/napi";
 import { readTextOrNull, unifiedDiff, writeFileAtomic, type MigrationSpec } from "@youiyoux/core";
 import { isAbsolute, join, relative, resolve } from "node:path";
+import { exportChanges, exportedNames, planImports, type ImportPlan } from "./import-rewrite.ts";
+import { verifyImports } from "./import-verification.ts";
 import { countParseErrors, unquote } from "./parse.ts";
 import type { Project } from "./project.ts";
 import { scanProject, type ScanResult } from "./scan.ts";
 
-export type GateName = "coverage" | "parse-errors" | "usage-count" | "unknowns" | "old-api" | "idempotent" | "sources-unchanged";
+export type GateName = "coverage" | "exports" | "imports-resolve" | "parse-errors" | "usage-count" | "unknowns" | "old-api" | "idempotent" | "sources-unchanged";
 
 export interface GateResult {
   readonly name: GateName;
@@ -51,6 +57,7 @@ export interface MigrationResult {
   readonly residuals: readonly Residual[];
   readonly changes: readonly FileChange[];
   readonly gates: readonly GateResult[];
+  readonly keptBarrels: ImportPlan["keptBarrels"];
 }
 
 export interface MigrationOptions {
@@ -96,7 +103,8 @@ function mappableStrings(value: SgNode): SgNode[] | null {
   return null;
 }
 
-function planEdits(migration: MigrationSpec, scan: ScanResult, rewriteValue: NonNullable<MigrationOptions["rewriteValue"]>): Planned {
+/** The prop pass. Sites in `held` files (an ambiguous import rewrite there) are never edited: a site that needs an edit becomes a residual. */
+function planEdits(migration: MigrationSpec, scan: ScanResult, rewriteValue: NonNullable<MigrationOptions["rewriteValue"]>, held: ReadonlyMap<string, string> = new Map()): Planned {
   const contract = scan.elements.contracts.get(migration.element);
   const outputs = new Map<string, string>();
   const residuals: Residual[] = [];
@@ -130,7 +138,7 @@ function planEdits(migration: MigrationSpec, scan: ScanResult, rewriteValue: Non
           }
           edits.push(attr.children()[0]!.replace(change.renameProp.to));
           renamed.set(change.renameProp.to, attr);
-        } else {
+        } else if ("mapValues" in change) {
           const attr = attrs.get(change.mapValues.prop) ?? renamed.get(change.mapValues.prop);
           const value = attr ? valueOf(attr) : undefined;
           if (!value) continue;
@@ -145,8 +153,13 @@ function planEdits(migration: MigrationSpec, scan: ScanResult, rewriteValue: Non
             if (target !== undefined) edits.push(node.replace(rewriteValue(node.text(), literal, target)));
           }
         }
+        // renameExport and removeExport are the import pass's (import-rewrite.ts), planned before this one.
       }
-      if (edits.length > before) edited++;
+      const why = held.get(file);
+      if (why !== undefined && edits.length > before) {
+        residuals.push({ ...where, reason: `not rewritten: ${why}` });
+        edits.length = before;
+      } else if (edits.length > before) edited++;
     }
     if (edits.length > 0) outputs.set(file, module.root.root().commitEdits(edits));
   }
@@ -164,8 +177,34 @@ function mergeResiduals(residuals: readonly Residual[]): Residual[] {
   return [...bySite.values()];
 }
 
-function count(scan: ScanResult, element: string): number {
-  return scan.report.usages.filter((u) => u.element === element).length;
+function count(scan: ScanResult, element: string, files?: ReadonlySet<string>): number {
+  return scan.report.usages.filter((u) => u.element === element && (!files || files.has(u.file))).length;
+}
+
+/**
+ * How many sites the element should have once the import pass is applied, found by the scanner
+ * rather than by the rewrite: a scan of the original sources in which the element's file also
+ * exports each old name as an alias of its new one, so every old-name site resolves again. Held
+ * files stay as they were, so they keep their count from before.
+ */
+async function expectedWithImports(project: Project, migration: MigrationSpec, before: ScanResult, imports: ImportPlan): Promise<number> {
+  const renames = exportChanges(migration).flatMap((c) => (c.to === null ? [] : [{ from: c.from, to: c.to }]));
+  const target = await before.graph.load(imports.target);
+  if (renames.length === 0 || imports.outputs.size === 0 || !target) return count(before, migration.element);
+  // Each old name joins the contract in its new name's role, so a variants function's calls still count.
+  const system = {
+    ...project.system,
+    components: project.system.components.map(({ contract, ...rest }) => {
+      if (contract.id !== migration.element) return { ...rest, contract };
+      const variants = renames.filter((r) => contract.aliases.includes(r.to)).map((r) => r.from);
+      const parts = renames.filter((r) => !contract.aliases.includes(r.to)).map((r) => r.from);
+      return { ...rest, contract: { ...contract, source: { ...contract.source, also: [...contract.source.also, ...parts] }, aliases: [...contract.aliases, ...variants] } };
+    }),
+  };
+  const aliases = `\nexport { ${renames.map((r) => `${r.to} as ${r.from}`).join(", ")} };\n`;
+  const whatIf = await scanProject({ ...project, system }, { overrides: { [imports.target]: `${target.source}${aliases}` } });
+  const held = new Set(imports.held.keys());
+  return count(whatIf, migration.element) - count(whatIf, migration.element, held) + count(before, migration.element, held);
 }
 
 /**
@@ -214,26 +253,61 @@ async function parseGate(changes: readonly FileChange[]): Promise<GateResult> {
   return { name: "parse-errors", ok: regressions.length === 0, detail: regressions.length === 0 ? `${changes.length} rewritten file(s) parse cleanly` : `new parse errors: ${regressions.join(", ")}` };
 }
 
+/** Both passes: imports first, then props on a rescan of the import-rewritten sources (the basis). */
+interface FullPlan extends Planned {
+  readonly imports: ImportPlan;
+  readonly basis: ScanResult;
+}
+
+async function planAll(project: Project, migration: MigrationSpec, scan: ScanResult, rewriteValue: NonNullable<MigrationOptions["rewriteValue"]>): Promise<FullPlan> {
+  const imports = await planImports(project, migration, scan);
+  const basis = imports.outputs.size > 0 ? await scanProject(project, { overrides: Object.fromEntries(imports.outputs) }) : scan;
+  const props = planEdits(migration, basis, rewriteValue, imports.held);
+  return { outputs: new Map([...imports.outputs, ...props.outputs]), edited: imports.edited + props.edited, residuals: mergeResiduals([...imports.residuals, ...props.residuals]), imports, basis };
+}
+
+/** The element's file must already export every new name: rewriting imports before `youi sync` breaks them. */
+async function exportsGate(migration: MigrationSpec, after: ScanResult, target: string): Promise<GateResult> {
+  const wanted = [...new Set(exportChanges(migration).flatMap((c) => (c.to === null ? [] : [c.to])))];
+  const module = await after.graph.load(target);
+  const names = module ? exportedNames(module) : new Set<string>();
+  const missing = wanted.filter((name) => !names.has(name));
+  if (!module) return { name: "exports", ok: false, detail: `cannot read ${target || migration.element}: run youi sync, then migrate` };
+  return missing.length === 0
+    ? { name: "exports", ok: true, detail: wanted.length > 0 ? `${target} exports ${wanted.join(", ")}` : "no new export names" }
+    : { name: "exports", ok: false, detail: `${target} does not export ${missing.join(", ")} yet: run youi sync, then migrate` };
+}
+
 /**
  * The invariant gates, on rewritten sources held in memory. Exported so any rewrite path
  * (a recipe here, an agent's patch for residual sites later) is held to the same checks.
+ * `planned` is the plan the outputs came from; without it the import pass is planned again.
  */
-export async function verifyRewrite(project: Project, migration: MigrationSpec, before: ScanResult, outputs: ReadonlyMap<string, string>, residuals: readonly Residual[] = [], rewriteValue: NonNullable<MigrationOptions["rewriteValue"]> = keepQuotes): Promise<{ gates: GateResult[]; sitesAfter: number }> {
+export async function verifyRewrite(project: Project, migration: MigrationSpec, before: ScanResult, outputs: ReadonlyMap<string, string>, residuals: readonly Residual[] = [], rewriteValue: NonNullable<MigrationOptions["rewriteValue"]> = keepQuotes, planned?: Pick<FullPlan, "imports" | "basis">): Promise<{ gates: GateResult[]; sitesAfter: number }> {
+  const importChanges = exportChanges(migration).length > 0;
+  const { imports, basis } = planned ?? (importChanges ? await planAll(project, migration, before, rewriteValue) : { imports: null, basis: before });
   const changes = [...outputs].map(([file, after]) => ({ file, before: before.modules.get(file)?.source ?? "", after, diff: "" }));
   const after = await scanProject(project, { overrides: Object.fromEntries(outputs) });
   const sitesBefore = count(before, migration.element);
   const sitesAfter = count(after, migration.element);
-  const expected = sitesBefore + migration.expectedUsageDelta;
-  const beforeKeys = siteKeys(before, migration.element);
-  const residualKeys = new Set(residuals.map((r) => beforeKeys.get(`${r.file}:${r.line}:${r.column}`)));
-  const leftover = oldApiSites(migration, after).filter((site) => !residualKeys.has(site.key)).map((site) => site.at);
-  const again = planEdits(migration, after, rewriteValue);
+  const expected = (imports ? await expectedWithImports(project, migration, before, imports) : sitesBefore) + migration.expectedUsageDelta;
+  const recovered = expected - migration.expectedUsageDelta - sitesBefore;
+  // Prop residuals were planned on the basis (the import-rewritten sources); held files are unchanged in every scan.
+  const basisKeys = siteKeys(basis, migration.element);
+  const residualKeys = new Set(residuals.map((r) => basisKeys.get(`${r.file}:${r.line}:${r.column}`)));
+  const importVerification = importChanges ? await verifyImports(migration, before, after, imports!.target, outputs, residuals) : null;
+  const again = await planAll(project, migration, after, rewriteValue);
+  const leftover = [
+    ...oldApiSites(migration, after).filter((site) => !residualKeys.has(site.key)).map((site) => site.at),
+    ...(importVerification?.leftover ?? []),
+  ];
   const gates: GateResult[] = [
     coverageGate(before, migration.element),
+    ...(importVerification ? [await exportsGate(migration, after, imports!.target), importVerification.resolution] : []),
     await parseGate(changes),
-    { name: "usage-count", ok: sitesAfter === expected, detail: `${migration.element}: ${sitesBefore} before, ${sitesAfter} after, ${expected} expected` },
+    { name: "usage-count", ok: sitesAfter === expected, detail: `${migration.element}: ${sitesBefore} before, ${sitesAfter} after, ${expected} expected${recovered > 0 ? ` (${recovered} resolvable again under the new name)` : ""}` },
     { name: "unknowns", ok: after.report.unknowns.length <= before.report.unknowns.length, detail: `${before.report.unknowns.length} unknown site(s) before, ${after.report.unknowns.length} after` },
-    { name: "old-api", ok: leftover.length === 0, detail: leftover.length === 0 ? "no non-residual site uses the old API" : `still on the old API: ${leftover.slice(0, 5).join(", ")}` },
+    { name: "old-api", ok: leftover.length === 0, detail: leftover.length === 0 ? "no non-residual site uses the old API" : `still on the old API: ${[...new Set(leftover)].join(", ")}` },
     { name: "idempotent", ok: again.outputs.size === 0, detail: again.outputs.size === 0 ? "a second run changes nothing" : `a second run would change ${again.outputs.size} file(s)` },
   ];
   return { gates, sitesAfter };
@@ -242,15 +316,15 @@ export async function verifyRewrite(project: Project, migration: MigrationSpec, 
 export async function runMigration(project: Project, migration: MigrationSpec, options: MigrationOptions = {}): Promise<MigrationResult> {
   const rewriteValue = options.rewriteValue ?? keepQuotes;
   const before = await scanProject(project);
-  const planned = planEdits(migration, before, rewriteValue);
+  const planned = await planAll(project, migration, before, rewriteValue);
   const changes: FileChange[] = [...planned.outputs].map(([file, after]) => {
     const original = before.modules.get(file)!.source;
     return { file, before: original, after, diff: unifiedDiff(file, original, after) };
   });
   const sitesBefore = count(before, migration.element);
-  const base = { migration: migration.id, element: migration.element, sitesBefore, edited: planned.edited, residuals: planned.residuals, changes };
+  const base = { migration: migration.id, element: migration.element, sitesBefore, edited: planned.edited, residuals: planned.residuals, changes, keptBarrels: planned.imports.keptBarrels };
   if (changes.length === 0) return { ...base, status: "noop", sitesAfter: sitesBefore, gates: [] };
-  const { gates, sitesAfter } = await verifyRewrite(project, migration, before, planned.outputs, planned.residuals, rewriteValue);
+  const { gates, sitesAfter } = await verifyRewrite(project, migration, before, planned.outputs, planned.residuals, rewriteValue, planned);
   if (gates.every((g) => g.ok) && options.write) gates.push(await writeChanges(project, changes));
   const passed = gates.every((g) => g.ok);
   return { ...base, status: !passed ? "rejected" : options.write ? "applied" : "dry-run", sitesAfter, gates };

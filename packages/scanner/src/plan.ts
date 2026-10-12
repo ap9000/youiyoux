@@ -401,7 +401,12 @@ async function migrationPlan(project: Project, scan: ScanResult, migration: Migr
     class: "api-breaking",
     semver: "major",
     version: { current: contract.version, next: migration.to },
-    reasons: migration.changes.map((c) => ("renameProp" in c ? `rename ${c.renameProp.from} → ${c.renameProp.to}` : `map ${c.mapValues.prop}: ${Object.entries(c.mapValues.map).map(([a, b]) => `${a}→${b}`).join(", ")}`)),
+    reasons: migration.changes.map((c) => {
+      if ("renameProp" in c) return `rename ${c.renameProp.from} → ${c.renameProp.to}`;
+      if ("mapValues" in c) return `map ${c.mapValues.prop}: ${Object.entries(c.mapValues.map).map(([a, b]) => `${a}→${b}`).join(", ")}`;
+      if ("renameExport" in c) return `rename export ${c.renameExport.from} → ${c.renameExport.to}`;
+      return `remove export ${c.removeExport.name}${c.removeExport.replacement ? ` → ${c.removeExport.replacement}` : ", no replacement"}`;
+    }),
     recipe: RECIPE["api-breaking"],
     impact,
     callSites: { affected: result.edited + result.residuals.length, auto: result.edited, residual: result.residuals.length, unresolved: result.residuals.length, residualSites: result.residuals.slice(0, MAX_LISTED).map((r) => `${r.file}:${r.line} (${r.reason})`), changes: [] },

@@ -84,7 +84,7 @@ function importsOf(root: SgNode): ImportBinding[] {
           const name = spec.field("name")?.text();
           if (!name) continue;
           const alias = spec.field("alias")?.text();
-          bindings.push({ local: alias ?? name, imported: name, specifier, typeOnly: typeOnly || /^type\s/.test(spec.text()) });
+          bindings.push({ local: unquote(alias ?? name), imported: unquote(name), specifier, typeOnly: typeOnly || /^type\s/.test(spec.text()) });
         }
       }
     }
@@ -134,7 +134,7 @@ function cssSpecifiersOf(source: string): string[] {
 
 function declaredNames(node: SgNode): string[] {
   const kind = node.kind();
-  if (kind === "function_declaration" || kind === "class_declaration" || kind === "generator_function_declaration") {
+  if (["function_declaration", "class_declaration", "generator_function_declaration", "type_alias_declaration", "interface_declaration", "enum_declaration"].includes(String(kind))) {
     const name = node.field("name")?.text();
     return name ? [name] : [];
   }
@@ -168,6 +168,9 @@ function exportsOf(root: SgNode): { exports: ExportEntry[]; starExports: string[
     }
     const clause = statement.find({ rule: { kind: "export_clause" } });
     if (!clause) {
+      const namespace = statement.find({ rule: { kind: "namespace_export" } });
+      const name = namespace?.children().find((c) => c.isNamed());
+      if (source && name) exports.push({ kind: "reexport", name: unquote(name.text()), imported: "*", specifier: unquote(source.text()) });
       if (source && /^export\s+(?:type\s+)?\*\s+from/.test(statement.text())) starExports.push(unquote(source.text()));
       continue;
     }
@@ -175,7 +178,7 @@ function exportsOf(root: SgNode): { exports: ExportEntry[]; starExports: string[
       const name = spec.field("name")?.text();
       if (!name) continue;
       const alias = spec.field("alias")?.text() ?? name;
-      exports.push(source ? { kind: "reexport", name: alias, imported: name, specifier: unquote(source.text()) } : { kind: "local", name: alias, local: name });
+      exports.push(source ? { kind: "reexport", name: unquote(alias), imported: unquote(name), specifier: unquote(source.text()) } : { kind: "local", name: unquote(alias), local: unquote(name) });
     }
   }
   return { exports, starExports };

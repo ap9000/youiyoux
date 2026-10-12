@@ -81,6 +81,59 @@
             "required": [
               "mapValues"
             ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "renameExport": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z_$][\\w$]*$"
+                  },
+                  "to": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z_$][\\w$]*$"
+                  },
+                  "renameBarrels": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "from",
+                  "to"
+                ]
+              }
+            },
+            "required": [
+              "renameExport"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "removeExport": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z_$][\\w$]*$"
+                  },
+                  "replacement": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z_$][\\w$]*$"
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            },
+            "required": [
+              "removeExport"
+            ]
           }
         ]
       }

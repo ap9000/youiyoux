@@ -42,6 +42,8 @@ export interface ScanResult {
   readonly contentDigest: string;
   /** The files this scan analysed and checked (all matched files, or the focus). */
   readonly files: readonly string[];
+  /** Binding resolution over this scan's sources (overrides included), for passes that follow imports themselves. */
+  readonly graph: ModuleGraph;
 }
 
 const MAX_DIRTY_LISTED = 50;
@@ -154,5 +156,5 @@ export async function scanProject(project: Project, options: ScanOptions = {}): 
     checks,
   };
   const identity = checkIdentity(project, definitions, designGit, consumerGit);
-  return { report, modules: scanned, analyses, elements, tokens, routes, identity, contentDigest, files };
+  return { report, modules: scanned, analyses, elements, tokens, routes, identity, contentDigest, files, graph };
 }

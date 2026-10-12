@@ -184,8 +184,10 @@ export function renderMigration(result: MigrationResult, showDiff: boolean): str
   const verdict = { applied: style.ok("applied"), "dry-run": style.live("dry run: nothing written"), rejected: style.error("rejected: nothing written"), noop: style.dim("nothing to change") }[result.status];
   const lines = [`${style.accent(result.migration)}  ${verdict}`, `${plural(result.edited, "site")} rewritten in ${plural(result.changes.length, "file")} · ${result.residuals.length > 0 ? style.warn(`${plural(result.residuals.length, "residual")} for a person`) : "0 residuals"}`, ""];
   for (const gate of result.gates) lines.push(`${gate.ok ? style.ok("✓") : style.error("✖")} ${padEnd(gate.name, 13)} ${style.dim(gate.detail)}`);
+  if (result.keptBarrels.length) lines.push("", "Barrel public names kept:", ...result.keptBarrels.map((b) => `  ${b.file}:${b.line}  ${b.name}`));
   if (result.residuals.length) lines.push("", style.bold("residuals"), ...result.residuals.map((r) => `  ${style.dim(`${r.file}:${r.line}`)}  ${r.reason}`));
   if (showDiff) for (const change of result.changes) lines.push("", ...change.diff.trimEnd().split("\n").map((l) => (l.startsWith("+") && !l.startsWith("+++") ? style.ok(l) : l.startsWith("-") && !l.startsWith("---") ? style.error(l) : style.dim(l))));
+  if (result.status === "dry-run") lines.push("", style.dim("run again with --write to apply"));
   return lines.join("\n");
 }
 

@@ -51,7 +51,9 @@ ${style.bold("System")}  ${style.dim("approved elements: build only with these")
                            importers are re-analysed; definition changes reload the rules)
   plan <component> --patch <json|file>    classify a contract change and show its impact
   plan --token <id> [--value v]           impact of a token change
-  migrate <migration.yaml> [--write] [--diff]   gated codemod; dry run unless --write
+  migrate <migration.yaml> [--write] [--diff]   gated codemod for props and renamed or removed exports
+                           (imports, re-exports, uses); a dry run that prints the diff and the sites
+                           left for a person (file:line, why) unless --write; --diff shows it after --write too
   rules [--preview <rule.yaml>]   whether each rule is checked; preview a draft rule on the current scan
 
 ${style.bold("Library")}  ${style.dim("ingested references: browse and request adoption, never build with")}
@@ -264,11 +266,12 @@ async function cmdRules(values: Values): Promise<number> {
 
 async function cmdMigrate(values: Values, positionals: string[]): Promise<number> {
   const file = positionals[0];
-  if (!file) throw new UsageError("youi migrate <migration.yaml> [--write]");
+  if (!file) throw new UsageError("youi migrate <migration.yaml> [--write] [--diff]");
   const spec = MigrationSpec.parse(parseYaml(await readFile(file, "utf8")));
   const result = await runMigration(await project(values), spec, { write: values.write });
   if (values.json) json(result);
-  else print(renderMigration(result, values.diff));
+  // A dry run is a preview: it always shows what it would write.
+  else print(renderMigration(result, values.diff || !values.write));
   return result.status === "rejected" ? 1 : 0;
 }
 

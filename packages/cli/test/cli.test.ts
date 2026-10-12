@@ -1,4 +1,5 @@
-import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -250,5 +251,117 @@ describe("youi", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("youi migrate: renamed and removed exports", () => {
+  const MIGRATION = ["schema: youi.migration/v1", "id: youi:demo/migration/card-2.0.0", "element: youi:demo/component/card", "from: 1.x", "to: 2.0.0", "changes:", "  - renameExport: { from: Card, to: Panel }", "  - removeExport: { name: CardTitle, replacement: CardHeading }", ""].join("\n");
+  const CLASH = 'import { Card } from "@/components/ui";\n\nconst Panel = "panel";\nexport const Clash = () => <Card className={Panel} />;\n';
+  let dir = "";
+  let app = "";
+  let migration = "";
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  /** Copies of examples/demo-app and examples/demo-design; the design renames Card and CardTitle; `synced` vendors that into the app. */
+  async function setup(synced: boolean): Promise<void> {
+    dir = await mkdtemp(join(tmpdir(), "youi-migrate-cli-"));
+    app = join(dir, "demo-app");
+    const design = join(dir, "demo-design");
+    await cp(join(DEMO, "../demo-app"), app, { recursive: true });
+    await cp(DEMO, design, { recursive: true });
+    const card = (await readFile(join(design, "components/card/card.tsx"), "utf8")).replace("export function Card(", "export function Panel(").replace("export function CardTitle(", "export function CardHeading(");
+    await writeFile(join(design, "components/card/card.tsx"), card);
+    const contractFile = join(design, "components/card/card.contract.json");
+    const contract = (await readFile(contractFile, "utf8")).replace('"export": "Card"', '"export": "Panel"').replace('"CardTitle"', '"CardHeading"');
+    await writeFile(contractFile, contract);
+    if (synced) await writeFile(join(app, "components/ui/card.tsx"), card);
+    await writeFile(join(app, "components/clash.tsx"), CLASH);
+    migration = join(dir, "card.migration.yaml");
+    await writeFile(migration, MIGRATION);
+  }
+
+  const files = async (): Promise<string[]> => Promise.all(["app/index.tsx", "app/settings/index.tsx", "components/invite-form.tsx", "components/clash.tsx"].map((f) => readFile(join(app, f), "utf8")));
+  const treeHash = async (): Promise<string> => {
+    const paths = (await readdir(app, { recursive: true, withFileTypes: true })).filter((e) => e.isFile()).map((e) => join(e.parentPath, e.name)).sort();
+    const hash = createHash("sha256");
+    for (const path of paths) hash.update(relative(app, path)).update("\0").update(await readFile(path)).update("\0");
+    return hash.digest("hex");
+  };
+
+  test("without --write it previews: the diff, the residual sites with file:line and why, and nothing written", async () => {
+    await setup(true);
+    await writeFile(join(app, "components/cards.ts"), 'export { Card } from "./ui/card";\n');
+    await writeFile(join(app, "components/dynamic.ts"), 'import * as ui from "./ui";\nconst { Card } = ui;\n');
+    const before = await files();
+    const hash = await treeHash();
+    expect(await main(["migrate", migration, "--project", app])).toBe(0);
+    expect(out).toContain("dry run: nothing written");
+    expect(out).toContain("✓ exports");
+    expect(out).toContain("✓ imports-resolve");
+    expect(out).toContain("Barrel public names kept:\n  components/cards.ts:1  Card");
+    expect(out).toContain("components/dynamic.ts:2  not rewritten: namespace ui is used dynamically");
+    expect(out).toContain("--- a/app/index.tsx");
+    expect(out).toContain('+import { Button, Panel, CardContent, CardHeader, CardHeading } from "@/components/ui";');
+    expect(out).toContain("+          <CardHeading>Project</CardHeading>");
+    expect(out).toContain("components/clash.tsx:1  not rewritten: Panel is already used at line 3");
+    expect(out).toContain("run again with --write to apply");
+    expect(await files()).toEqual(before);
+    expect(await treeHash()).toBe(hash);
+  });
+
+  test("--write applies it, keeps the ambiguous file as it was, and a second run changes nothing", async () => {
+    await setup(true);
+    expect(await main(["migrate", migration, "--project", app, "--write"])).toBe(0);
+    expect(out).toContain("applied");
+    expect(out).not.toContain("--- a/app/index.tsx");
+    const [home, , invite, clash] = await files();
+    expect(home).toContain("<Panel key={project.name}>");
+    expect(home).toContain("<CardHeading>{project.name}</CardHeading>");
+    expect(invite).toContain('import { Button, Panel, CardContent, CardHeader, CardHeading, Input } from "@/components/ui";');
+    expect(clash).toBe(CLASH);
+    out = "";
+    expect(await main(["migrate", migration, "--project", app, "--write"])).toBe(0);
+    expect(out).toContain("nothing to change");
+    expect(out).toContain("components/clash.tsx:1  not rewritten");
+    expect(await files()).toEqual([home, expect.any(String), invite, CLASH]);
+  });
+
+
+  test("qualified external members survive preview and --write beside a renamed local", async () => {
+    await setup(true);
+    const source = 'import type * as R from "react";\ntype X = R.Card;\ntype Y = MyGlobal.Card;\ntype Z = R.Panel;\n';
+    const local = 'import { Card } from "./ui/card";\nexport const card = Card;\n';
+    await writeFile(join(app, "components/qualified.ts"), source);
+    await writeFile(join(app, "components/qualified-mixed.ts"), local + source);
+    const before = await treeHash();
+    expect(await main(["migrate", migration, "--project", app])).toBe(0);
+    expect(out).toContain("dry run: nothing written");
+    expect(await treeHash()).toBe(before);
+    expect(await main(["migrate", migration, "--project", app, "--write"])).toBe(0);
+    expect(await readFile(join(app, "components/qualified.ts"), "utf8")).toBe(source);
+    expect(await readFile(join(app, "components/qualified-mixed.ts"), "utf8")).toBe(local.replaceAll("Card", "Panel") + source);
+  });
+
+  test("before youi sync the exports gate rejects it and nothing is written", async () => {
+    await setup(false);
+    const before = await files();
+    expect(await main(["migrate", migration, "--project", app, "--write"])).toBe(1);
+    expect(out).toContain("rejected: nothing written");
+    expect(out).toContain("✖ exports       components/ui/card.tsx does not export Panel, CardHeading yet: run youi sync, then migrate");
+    expect(await files()).toEqual(before);
+  });
+
+  test("--write refuses unresolved imports through an owned barrel, including type-only imports", async () => {
+    await setup(true);
+    // This owned barrel has not been updated by sync; migrate must neither edit it nor trust it.
+    await writeFile(join(app, "components/ui/index.ts"), 'export * from "./button";\nexport { Card, CardContent, CardHeader, CardTitle } from "./card";\nexport * from "./input";\n');
+    await writeFile(join(app, "components/typed.ts"), 'import type { Card } from "./ui";\nexport type T = typeof Card;\n');
+    const hash = await treeHash();
+    expect(await main(["migrate", migration, "--project", app, "--write"])).toBe(1);
+    expect(out).toContain("rejected: nothing written");
+    expect(out).toContain("✖ imports-resolve");
+    expect(await treeHash()).toBe(hash);
   });
 });
