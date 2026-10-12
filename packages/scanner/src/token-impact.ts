@@ -77,7 +77,7 @@ export interface DirectUse {
 }
 
 export interface TokenImpact {
-  /** Tokens whose value changes with this one (aliases and composites that read it), excluding itself. */
+  /** Tokens whose value changes with these (aliases and composites that read them), excluding themselves. */
   readonly dependents: readonly string[];
   readonly contracts: ReadonlyArray<{ readonly id: string; readonly name: string; readonly via: "binding" | "implementation" }>;
   /** Uses in project code outside the owned implementations of those contracts. */
@@ -92,16 +92,27 @@ function lineOf(source: string, index: number): number {
   return source.slice(0, index).split("\n").length;
 }
 
+/** Contracts that bind an affected token, at rest or in an interaction state. */
 function bindingContracts(project: Project, affected: ReadonlySet<string>): Map<string, "binding" | "implementation"> {
   const contracts = new Map<string, "binding" | "implementation">();
   for (const { contract } of project.system.components) {
-    if (Object.values(contract.tokens).some((id) => affected.has(id.replace(/^youi:[a-z-]+\/token\//, "")))) contracts.set(contract.id, "binding");
+    const bound = [...Object.values(contract.tokens), ...Object.values(contract.states ?? {}).flatMap((roles) => Object.values(roles ?? {}))];
+    if (bound.some((id) => affected.has(id.replace(/^youi:[a-z-]+\/token\//, "")))) contracts.set(contract.id, "binding");
   }
   return contracts;
 }
 
-export function tokenImpact(project: Project, scan: ScanResult, tokenId: string): TokenImpact {
-  const affected = tokenClosure(scan.tokens.tokens, tokenId);
+export interface TokenImpactOptions {
+  /** How many direct-use files to list (the counts always cover all); default 10. */
+  readonly maxSites?: number;
+}
+
+/** What changing `tokenId` (or several tokens together: a style draft) reaches; every token counts once. */
+export function tokenImpact(project: Project, scan: ScanResult, tokenId: string | readonly string[], options: TokenImpactOptions = {}): TokenImpact {
+  const known = new Set(scan.tokens.tokens.map((t) => t.id));
+  const ids = (typeof tokenId === "string" ? [tokenId] : tokenId).filter((id) => known.has(id));
+  const affected = new Set(ids.flatMap((id) => [...tokenClosure(scan.tokens.tokens, id)]));
+  if (affected.size === 0) return { dependents: [], contracts: [], direct: { uses: 0, files: 0, sites: [] }, everyScreen: false, directRoutes: new Map() };
   const names = scan.tokens.tokens.filter((t) => affected.has(t.id)).flatMap((t) => useNames(t, scan.tokens.prefix, scan.tokens.themeKeys.get(t.id) ?? []));
   // `-?` admits negative utilities (-mt-4); `.` after a name means a different scale step (p-1 vs p-1.5).
   const pattern = new RegExp(`(?<![\\w-])-?(?:${[...new Set(names)].map(escape).join("|")})(?![\\w.-])`, "g");
@@ -133,9 +144,9 @@ export function tokenImpact(project: Project, scan: ScanResult, tokenId: string)
   }
   const name = (id: string): string => project.system.components.find((c) => c.contract.id === id)?.contract.name ?? id;
   return {
-    dependents: [...affected].filter((id) => id !== tokenId).sort(),
+    dependents: [...affected].filter((id) => !ids.includes(id)).sort(),
     contracts: [...contracts].map(([id, via]) => ({ id, name: name(id), via })),
-    direct: { uses: sites.reduce((n, s) => n + s.uses, 0), files: sites.length, sites: sites.sort((a, b) => b.uses - a.uses || a.file.localeCompare(b.file)).slice(0, MAX_SITES) },
+    direct: { uses: sites.reduce((n, s) => n + s.uses, 0), files: sites.length, sites: sites.sort((a, b) => b.uses - a.uses || a.file.localeCompare(b.file)).slice(0, options.maxSites ?? MAX_SITES) },
     everyScreen,
     directRoutes,
   };

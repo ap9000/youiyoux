@@ -4,12 +4,13 @@ import type { ComponentProps } from "react";
 import { cn } from "./utils";
 
 export const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-control text-label transition-colors duration-150 ease-out outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  // States read the contract's state tokens (--demo-button-<state>-<role>, from the token build), so re-binding one changes no code.
+  "inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-control text-label transition-colors duration-(--demo-motion-duration-fast) ease-out outline-none focus-visible:[outline:var(--demo-button-focus-ring)] focus-visible:[outline-offset:var(--demo-button-focus-ring-offset)] disabled:pointer-events-none disabled:opacity-(--demo-button-disabled-opacity) [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
   {
     variants: {
       variant: {
-        default: "bg-accent text-on-accent hover:bg-accent/90",
-        outline: "border border-line bg-background text-foreground hover:bg-card",
+        default: "bg-accent text-on-accent hover:bg-(--demo-button-hover-bg-default) active:bg-(--demo-button-active-bg-default)",
+        outline: "border border-line bg-background text-foreground hover:bg-(--demo-button-hover-bg-outline)",
         ghost: "text-muted hover:bg-card hover:text-foreground",
         danger: "bg-danger-soft text-danger hover:bg-danger/15",
         link: "text-accent underline underline-offset-4",

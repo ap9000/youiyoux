@@ -67,7 +67,8 @@ export function parseCssColor(input: string): DtcgColor | null {
 }
 
 export function toHex(color: DtcgColor): string {
-  return color.hex ?? `#${color.components.map(channelToHex).join("")}`;
+  // The schema checks the fallback; anything else is never written, the components are.
+  return color.hex !== undefined && /^#[0-9a-f]{6}$/i.test(color.hex) ? color.hex : `#${color.components.map(channelToHex).join("")}`;
 }
 
 /** Shortest faithful CSS form: hex when opaque, `rgb(r g b / a)` when translucent. */

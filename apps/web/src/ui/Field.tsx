@@ -2,7 +2,8 @@
 import { clsx } from "clsx";
 import { useId, type ComponentProps, type ReactNode } from "react";
 
-const CONTROL = "w-full rounded-md border border-line bg-surface px-2.5 text-body text-ink outline-none transition-colors duration-100 placeholder:text-faint hover:border-line-strong focus:border-accent disabled:cursor-not-allowed disabled:bg-sunken disabled:text-muted";
+/** Keyboard focus draws the hub's focus ring (the focus token, 2px at a 2px offset), as every other control does. */
+export const CONTROL = "w-full rounded-md border border-line bg-surface px-2.5 text-body text-ink transition-colors duration-100 placeholder:text-faint hover:border-line-strong focus:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus focus-visible:outline-solid disabled:cursor-not-allowed disabled:bg-sunken disabled:text-muted";
 
 interface FieldProps {
   label: string;

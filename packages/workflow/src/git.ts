@@ -117,6 +117,12 @@ export async function listAt(top: string, commit: string, dir: string): Promise<
   return out ? out.split("\n").filter(Boolean) : [];
 }
 
+/** Every file under `dir` at a commit (recursively), relative to `dir`. */
+export async function listTreeAt(top: string, commit: string, dir: string): Promise<string[]> {
+  const out = await gitOrNull(top, ["ls-tree", "-r", "--name-only", `${commit}:${dir}`]);
+  return out ? out.split("\n").filter(Boolean) : [];
+}
+
 /** True when any of `paths` has uncommitted changes (including untracked files). */
 export async function hasChanges(top: string, paths: readonly string[]): Promise<boolean> {
   const out = await git(top, ["--no-optional-locks", "status", "--porcelain", "--untracked-files=all", "--", ...paths]);

@@ -119,7 +119,7 @@ function aliasChain(token: ResolvedToken, byId: Map<string, ResolvedToken>): str
   return chain;
 }
 
-function catalogTokens(system: string, prefix: string, tokens: readonly ResolvedToken[], lib: TokensModule): unknown[] {
+function catalogTokens(system: string, prefix: string, tokens: readonly ResolvedToken[], darkOwn: ReadonlySet<string>, lib: TokensModule): unknown[] {
   const byId = new Map(tokens.map((t) => [t.id, t]));
   const elementId = (path: string): string => `youi:${system}/token/${path}`;
   return tokens.map((token) => ({
@@ -133,7 +133,19 @@ function catalogTokens(system: string, prefix: string, tokens: readonly Resolved
     ...(token.type === "typography" ? { lightValue: token.light } : {}),
     aliasChain: aliasChain(token, byId).map(elementId),
     ...(token.description ? { description: token.description } : {}),
+    // What the style editor starts from: the values as written (aliases kept) and whether dark has its own.
+    ...(token.source ? { source: token.source } : {}),
+    darkOwn: darkOwn.has(token.id),
   }));
+}
+
+/** Token paths the theme's dark context files give their own value (the rest follow light). */
+function darkOverrides(repoRoot: string, config: import("@youiyoux/core").SystemConfig, core: CoreModule, lib: TokensModule): Set<string> {
+  if (!config.themeModifier) return new Set();
+  const resolverFile = join(repoRoot, config.tokens);
+  const layout = lib.resolverLayout(JSON.parse(readFileSync(resolverFile, "utf8")), config.themeModifier);
+  const files = layout.contexts[config.themeModifier.dark] ?? [];
+  return new Set(files.flatMap((ref) => core.flattenTokens({ file: ref, document: JSON.parse(readFileSync(join(dirname(resolverFile), ref), "utf8")) }).map((t) => t.path)));
 }
 
 /** The files a project vendors for this component: its own source plus the system's support files. */
@@ -143,23 +155,27 @@ function componentFiles(componentsRoot: string, sourceFile: string, support: rea
 
 /**
  * The preview frame's sheet for this system: its variables scoped to the frame (light by
- * default, dark under data-scheme), the stage it sits on, and the Tailwind names its
- * components use (from the project's outputs, so shadcn-style names map like they do in the product).
+ * default, dark under data-scheme), the stage it sits on, the contracts' state variables, and
+ * the Tailwind names its components use (from the project's outputs, so shadcn-style names map
+ * like they do in the product). Aliases stay `var()` references, so the style editor's live
+ * overrides of one token reach every token that reads it.
  */
-function systemCss(name: string, tokens: readonly ResolvedToken[], output: OutputConfig, lib: TokensModule): string {
+function systemCss(name: string, tokens: readonly ResolvedToken[], contracts: readonly import("@youiyoux/core").ComponentContract[], output: OutputConfig, lib: TokensModule): string {
   const prefix = output.cssVarPrefix;
+  const byId = new Map(tokens.map((t) => [t.id, t]));
   const variable = (paths: readonly string[]): string | null => {
-    const token = paths.map((p) => tokens.find((t) => t.id === p)).find(Boolean);
+    const token = paths.map((p) => byId.get(p)).find(Boolean);
     return token ? `var(--${prefix}-${token.cssName})` : null;
   };
+  const ref = (path: string, suffix = ""): string => `var(--${prefix}-${byId.get(path)?.cssName ?? path.replace(/\./g, "-")}${suffix})`;
   const decl = (scheme: "light" | "dark"): string =>
     tokens
-      .filter((t) => t.type !== "typography")
-      .map((t) => `  --${prefix}-${t.cssName}: ${lib.cssValue(t.type, t[scheme])};`)
+      .flatMap((t) => lib.tokenVariables(t.type, t.source?.[scheme] ?? t[scheme], ref).map(([suffix, css]) => `  --${prefix}-${t.cssName}${suffix}: ${css};`))
       .join("\n");
+  const states = lib.stateVariables(contracts, tokens, prefix).map(([property, css]) => `  ${property}: ${css};`).join("\n");
   const stage = [variable(STAGE) && `  background: ${variable(STAGE)};`, variable(INK) && `  color: ${variable(INK)};`].filter(Boolean).join("\n");
   const theme = lib.renderTailwind(tokens, output, "").trim();
-  return `${generated(`the ${name} tokens`)}@source "./components";\n\n${SCOPE} {\n  color-scheme: light;\n${decl("light")}\n${stage}\n}\n\n${SCOPE}[data-scheme="dark"] {\n  color-scheme: dark;\n${decl("dark")}\n}\n\n${theme}\n`;
+  return `${generated(`the ${name} tokens`)}@source "./components";\n\n${SCOPE} {\n  color-scheme: light;\n${decl("light")}\n${states ? `${states}\n` : ""}${stage}\n}\n\n${SCOPE}[data-scheme="dark"] {\n  color-scheme: dark;\n${decl("dark")}\n}\n\n${theme}\n`;
 }
 
 async function buildHubTokens(core: CoreModule, lib: TokensModule): Promise<void> {
@@ -335,7 +351,7 @@ async function writeSystem(out: string, designRoot: string, systemId: string | u
       cssPrefix: output.cssVarPrefix,
       design: config.design ? readFileSync(join(repo.root, config.design), "utf8") : "",
     },
-    tokens: catalogTokens(config.id, output.cssVarPrefix, built.tokens, lib),
+    tokens: catalogTokens(config.id, output.cssVarPrefix, built.tokens, darkOverrides(repo.root, config, core, lib), lib),
     components: system.components.map(({ contract }) => ({ contract, files: componentFiles(componentsRoot, contract.source.file, config.support) })),
     // Each rule with how youi check executes it, so the hub never shows an uncompilable rule as enforced.
     rules: system.rules.map((rule) => ({ ...rule, execution: scanner.ruleCapability(rule) })),
@@ -345,7 +361,7 @@ async function writeSystem(out: string, designRoot: string, systemId: string | u
   write(join(out, "public/data", catalogFile), catalogText);
   const previewDir = join(out, "preview");
   rmSync(previewDir, { recursive: true, force: true });
-  write(join(previewDir, "system.css"), systemCss(config.name, built.tokens, output, lib));
+  write(join(previewDir, "system.css"), systemCss(config.name, built.tokens, system.components.map((c) => c.contract), output, lib));
   const demos = writePreview(previewDir, system, componentsRoot);
   const commit = commitOverride ?? definitionsCommit(repo.root, ["youi.config.json", dirname(config.tokens), config.components, config.rules, ...(config.design ? [config.design] : [])]);
   const summary = `${config.name} from ${repo.root} @ ${commit ?? "unknown"}: ${catalog.tokens.length} tokens, ${catalog.components.length} components (${demos} demos), ${catalog.rules.length} rules`;

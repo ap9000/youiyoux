@@ -43,6 +43,10 @@ export interface TokenEntry {
   /** [this token, …, the token that holds the value]. Length 1 when not an alias. */
   aliasChain: ElementId[];
   description?: string;
+  /** The DTCG `$value` as written per scheme, aliases kept (`{color.brand}`): what the style editor edits. Absent in older snapshots. */
+  source?: { light: unknown; dark: unknown };
+  /** True when the dark context gives this token its own value; otherwise dark follows light. */
+  darkOwn?: boolean;
 }
 
 export interface ComponentEntry {

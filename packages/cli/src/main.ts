@@ -320,7 +320,7 @@ async function cmdBuild(values: Values): Promise<number> {
   const system = getSystem(await loadDesignRepo(root), values.system);
   const output = OutputConfig.parse({ cssVarPrefix: values.prefix ?? "youi", targets: ["css-vars", "tailwind-v4", "ts", "react-native"] });
   const started = performance.now();
-  const built = await buildTokens(root, system.config, output);
+  const built = await buildTokens(root, system.config, output, { contracts: system.components.map((c) => c.contract) });
   const out = resolve(values.out ?? join(root, "build", system.config.id));
   for (const file of built.files) await writeFileAtomic(join(out, file.path), file.content);
   if (values.json) json({ out, files: built.files.map((f) => f.path), tokens: built.tokens.length });

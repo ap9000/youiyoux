@@ -7,7 +7,7 @@ import { RuleSpec } from "@youiyoux/core";
 import { loadProject, scanProject } from "@youiyoux/scanner";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { createServer as createMcpServer } from "@youiyoux/mcp";
-import { scannerExecution, createReviewBranch, FileStore, renderRuleYaml, RuleWorkflow, toRuleSpec, type Actor, type DraftContent, type DraftView } from "../src/index.ts";
+import { scannerExecution, createReviewBranch, FileStore, renderRuleYaml, RuleWorkflow, toRuleSpec, type Actor, type DraftContent, type DraftView, type RuleDraftView } from "../src/index.ts";
 import { git, sandbox, type Sandbox } from "./helpers.ts";
 
 const PERSON: Actor = { kind: "person", name: "captain" };
@@ -29,8 +29,15 @@ afterEach(async () => {
   await box.dispose();
 });
 
-function withRule(draft: DraftView, patch: Partial<DraftContent["rule"]>, components = draft.content.components): DraftContent {
+function withRule(draft: RuleDraftView, patch: Partial<DraftContent["rule"]>, components = draft.content.components): DraftContent {
   return { rule: { ...draft.content.rule, ...patch }, components };
+}
+
+/** Every draft in this file is a rule draft. */
+async function previewRule(id: string): Promise<RuleDraftView> {
+  const view = await workflow.preview(PERSON, id);
+  if (view.kind !== "rule") throw new Error(`${id} is not a rule draft`);
+  return view;
 }
 
 async function approved(id: string): Promise<DraftView> {
@@ -82,7 +89,7 @@ describe("drafts", () => {
     const draft = await workflow.create(PERSON, { mode: "create" });
     const content = withRule(draft, { id: "youi:demo/rule/custom.thing", title: "Custom", statement: "s", agent: "a", check: { engine: "ast-grep", language: "tsx", rule: { kind: "jsx_opening_element" } } });
     expect((await workflow.save(PERSON, draft.id, { revision: 1, content })).problems).toEqual([]);
-    const { preview } = await workflow.preview(PERSON, draft.id);
+    const { preview } = await previewRule(draft.id);
     expect(preview).toMatchObject({ enforced: true, counts: { kept: 0, resolved: 0 } });
     expect(preview!.flagged).toBeGreaterThan(0);
   });
@@ -103,7 +110,7 @@ describe("impact preview", () => {
     const published = scan.report.violations.filter((v) => v.rule === RAW_COLOR).length + silenced;
     const draft = await workflow.create(PERSON, { mode: "create" });
     await workflow.save(PERSON, draft.id, { revision: 1, content: withRule(draft, { id: "youi:demo/rule/color.no-raw-color-again", title: "Again", statement: "No raw colours.", agent: "Use tokens.", check: { engine: "youi", id: "raw-color", options: {} }, files: ["**/*.{ts,tsx,css}"] }) });
-    const previewed = await workflow.preview(PERSON, draft.id);
+    const previewed = await previewRule(draft.id);
     expect(published).toBeGreaterThan(0);
     expect(previewed.preview).toMatchObject({ flagged: published, baseline: 0, counts: { new: published, kept: 0, resolved: 0 }, enforced: true });
     expect(previewed.preview!.limits).toContain(`Ships as a warning. Tightening it to an error later would turn these ${published} place(s) into errors.`);
@@ -115,7 +122,7 @@ describe("impact preview", () => {
     const check = draft.content.rule.check as { engine: "youi"; id: "native-element"; options: { elements: Record<string, string> } };
     const { button: _dropped, ...elements } = check.options.elements;
     await workflow.save(PERSON, draft.id, { revision: 1, content: withRule(draft, { check: { ...check, options: { ...check.options, elements } } }) });
-    const { preview } = await workflow.preview(PERSON, draft.id);
+    const { preview } = await previewRule(draft.id);
     expect(preview!.baseline).toBeGreaterThan(0);
     expect(preview!.counts.resolved).toBeGreaterThan(0);
     expect(preview!.findings.filter((f) => f.change === "resolved").every((f) => f.text === "<button>")).toBe(true);
@@ -125,7 +132,7 @@ describe("impact preview", () => {
   test("an off rule says plainly that it flags nothing", async () => {
     const draft = await workflow.create(PERSON, { mode: "edit", ruleId: RAW_COLOR });
     await workflow.save(PERSON, draft.id, { revision: 1, content: withRule(draft, { severity: "off" }) });
-    const { preview } = await workflow.preview(PERSON, draft.id);
+    const { preview } = await previewRule(draft.id);
     expect(preview).toMatchObject({ flagged: 0, enforced: false });
     expect(preview!.counts.resolved).toBe(preview!.baseline);
     expect(preview!.limits).toContain("Severity is off: once published, this rule flags nothing anywhere.");
@@ -136,7 +143,7 @@ describe("approval", () => {
   test("is a person's decision, of the revision they saw, after a current preview", async () => {
     const draft = await workflow.create(PERSON, { mode: "edit", ruleId: RAW_COLOR });
     await expect(workflow.approve(PERSON, draft.id, { revision: 1, previewId: "p-0" })).rejects.toMatchObject({ code: "conflict" });
-    const { preview } = await workflow.preview(PERSON, draft.id);
+    const { preview } = await previewRule(draft.id);
     const seen = { revision: 1, previewId: preview!.id };
     await expect(workflow.approve(AGENT, draft.id, seen)).rejects.toMatchObject({ code: "forbidden" });
     await expect(workflow.approve(PERSON, draft.id, { ...seen, revision: 2 })).rejects.toMatchObject({ code: "conflict" });
@@ -172,8 +179,8 @@ describe("approval", () => {
 describe("approval of what was seen", () => {
   test("a preview re-run elsewhere cannot be approved unseen", async () => {
     const draft = await workflow.create(PERSON, { mode: "edit", ruleId: RAW_COLOR });
-    const first = await workflow.preview(PERSON, draft.id);
-    await workflow.preview(PERSON, draft.id);
+    const first = await previewRule(draft.id);
+    await previewRule(draft.id);
     await expect(workflow.approve(PERSON, draft.id, { revision: 1, previewId: first.preview!.id })).rejects.toMatchObject({ code: "conflict" });
   });
 });

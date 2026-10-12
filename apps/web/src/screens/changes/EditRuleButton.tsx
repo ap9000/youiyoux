@@ -15,7 +15,7 @@ export function EditRuleButton({ ruleId }: { ruleId: string }) {
     setError(null);
     try {
       const { drafts } = await workflowApi.drafts();
-      const existing = drafts.find((d) => d.ruleId === ruleId && OPEN.has(d.status));
+      const existing = drafts.find((d) => d.kind === "rule" && d.ruleId === ruleId && OPEN.has(d.status));
       navigate(`/rules/draft/${(existing ?? (await workflowApi.edit(ruleId))).id}`);
     } catch (failure: unknown) {
       setError(asRequestError(failure));

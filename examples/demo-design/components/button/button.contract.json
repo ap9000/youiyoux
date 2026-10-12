@@ -50,6 +50,21 @@
     "radius": "youi:demo/token/radius.control",
     "text": "youi:demo/token/typography.label"
   },
+  "states": {
+    "hover": {
+      "bg.default": "youi:demo/token/color.accent-hover",
+      "bg.outline": "youi:demo/token/color.card"
+    },
+    "active": {
+      "bg.default": "youi:demo/token/color.accent-active"
+    },
+    "focus": {
+      "ring": "youi:demo/token/focus.ring"
+    },
+    "disabled": {
+      "opacity": "youi:demo/token/opacity.disabled"
+    }
+  },
   "a11y": {
     "role": "button",
     "notes": [

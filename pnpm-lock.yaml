@@ -231,6 +231,9 @@ importers:
       '@youiyoux/scanner':
         specifier: workspace:*
         version: link:../scanner
+      '@youiyoux/tokens':
+        specifier: workspace:*
+        version: link:../tokens
       yaml:
         specifier: 2.9.1
         version: 2.9.1

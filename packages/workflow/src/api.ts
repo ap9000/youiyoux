@@ -1,8 +1,10 @@
 /**
- * The rule-editor workflow's wire shapes: what the loopback service returns and the
- * hub reads. Types only (the hub imports this file type-only), so no runtime code here.
+ * The design-change workflow's wire shapes: what the loopback service returns and the
+ * hub reads. Two kinds of draft share one lifecycle (draft, impact preview, approval, review
+ * branch): rule drafts and style drafts (token values and component-state bindings).
+ * Types only (the hub imports this file type-only), so no runtime code here.
  */
-import type { ElementId, RuleExecution, RuleRollout, RuleSpec } from "@youiyoux/core";
+import type { ComponentState, ElementId, RuleExecution, RuleRollout, RuleSpec } from "@youiyoux/core";
 
 /** Who asked. Locally every browser request is the person at the keyboard; agents never approve. */
 export interface Actor {
@@ -100,6 +102,8 @@ export interface Preview {
 
 export interface Approval {
   readonly by: Actor;
+  /** Style drafts: the keys of the colour pairs the draft puts below WCAG AA, confirmed by the approver. */
+  readonly contrastAcknowledged?: readonly string[];
   readonly at: string;
   readonly draftRevision: number;
   readonly draftDigest: string;
@@ -130,29 +134,154 @@ export interface DraftEvent {
   readonly note?: string;
 }
 
-/** A draft as stored: restart-safe, bound to its base commit and content digest. */
-export interface Draft {
+/* ------------------------------------------------------------ style drafts */
+
+/**
+ * One token's new value, as it will be written (a DTCG `$value`, or an alias like `{color.brand}`).
+ * `light` goes to the file that holds the token's light value; `dark` to the theme's dark file.
+ */
+export interface TokenEdit {
+  /** DTCG path, e.g. `color.accent`. */
+  readonly path: string;
+  /** New light (base) value; absent leaves it as it is. Dark follows it unless the token has its own dark value. */
+  readonly light?: unknown;
+  /** New dark value; absent leaves it as it is; null removes the dark value so dark follows light. */
+  readonly dark?: unknown;
+}
+
+/** Re-bind one role of a component's interaction state to another token. */
+export interface StateEdit {
+  readonly component: ElementId;
+  readonly state: ComponentState;
+  /** The role in the contract's `states` (`bg.default`, `ring`). */
+  readonly role: string;
+  readonly token: ElementId;
+}
+
+export interface StyleDraftContent {
+  /** A short name for the change, for the queue and the review branch. */
+  readonly title: string;
+  readonly tokens: readonly TokenEdit[];
+  readonly states: readonly StateEdit[];
+}
+
+/** A token whose resolved value the draft changes, per scheme (CSS text, as the build emits it). */
+export interface StyleTokenChange {
+  readonly path: string;
+  readonly type: string;
+  readonly light: { readonly before: string; readonly after: string };
+  readonly dark: { readonly before: string; readonly after: string };
+  /** edited: the draft sets it; follows: it reads a token the draft sets (an alias or a part). */
+  readonly cause: "edited" | "follows";
+}
+
+/** One place a changed component is used: a site from the project's usage map. */
+export interface StyleSite {
+  readonly file: string;
+  readonly line: number;
+  readonly column: number;
+  readonly element: ElementId;
+  readonly component: string;
+  /** The export used: the component, a sub-part (CardHeader) or its variants function. */
+  readonly export: string;
+  readonly routes: readonly string[];
+  readonly routeSource: "route-file" | "imported-by" | "shell" | "unrouted";
+}
+
+/** A file that uses a changed token's CSS variable or Tailwind utilities directly (outside the owned implementations). */
+export interface StyleDirectUse {
+  readonly file: string;
+  readonly uses: number;
+  readonly line: number;
+  readonly text: string;
+  readonly routes: readonly string[];
+}
+
+/** A colour pair that changes grade or stays below WCAG AA with this draft. */
+export interface StyleContrast {
+  /** Stable per pair and scheme: what an approval acknowledges. */
+  readonly key: string;
+  readonly label: string;
+  readonly foreground: string;
+  readonly background: string;
+  readonly scheme: "light" | "dark";
+  /** text needs 4.5:1; large text and UI parts (focus rings) need 3:1. */
+  readonly kind: "text" | "large" | "ui";
+  readonly required: number;
+  readonly before: number | null;
+  readonly after: number | null;
+  readonly grade: "AAA" | "AA" | "AA large" | "Fail" | null;
+  /** A colour that could not be read: the pair counts as failing. */
+  readonly unreadable?: string;
+  /** new: below AA with this draft, and passed before (or did not exist); kept: was already below and still is; fixed: was below, now passes. */
+  readonly change: "new" | "kept" | "fixed";
+}
+
+export interface StylePreview {
   readonly id: string;
-  readonly kind: "rule";
-  readonly mode: "edit" | "create";
-  readonly ruleId: string;
+  readonly at: string;
+  readonly draftRevision: number;
+  readonly draftDigest: string;
+  readonly snapshot: SnapshotIdentity;
+  readonly durationMs: number;
+  readonly scan: { readonly status: "complete" | "partial"; readonly files: number; readonly failed: ReadonlyArray<{ file: string; reason: string }> };
+  readonly tokens: readonly StyleTokenChange[];
+  /** Contracts that change: they bind a changed token (at rest or in a state), their implementation uses one, or the draft re-binds a state. */
+  readonly contracts: ReadonlyArray<{ readonly id: ElementId; readonly name: string; readonly via: "binding" | "implementation" | "state"; readonly sites: number }>;
+  /** Every usage-map site of those contracts, by file and line; `sites.length` is `totals.sites` unless `truncated`. */
+  readonly sites: readonly StyleSite[];
+  readonly direct: readonly StyleDirectUse[];
+  /** Screens reached, with their component sites and direct uses. */
+  readonly routes: ReadonlyArray<{ readonly route: string; readonly sites: number; readonly direct: number }>;
+  /** A changed token is used in a stylesheet, the app shell or an unrouted file: every screen may change. */
+  readonly everyScreen: boolean;
+  readonly totals: { readonly tokens: number; readonly contracts: number; readonly sites: number; readonly files: number; readonly routes: number; readonly direct: number; readonly directFiles: number };
+  /** Lists stop at a large bound so a preview stays loadable; the totals above always count everything. */
+  readonly truncated: boolean;
+  readonly contrast: readonly StyleContrast[];
+  readonly limits: readonly string[];
+}
+
+/* ----------------------------------------------------------------- drafts */
+
+/** What every draft shares: restart-safe, bound to its base commit and content digest. */
+interface DraftCommon {
+  readonly id: string;
   readonly createdAt: string;
   readonly updatedAt: string;
   readonly revision: number;
   readonly digest: string;
-  readonly content: DraftContent;
   readonly base: DraftBase;
-  readonly preview: Preview | null;
   readonly approval: Approval | null;
   readonly handoff: Handoff | null;
   readonly discarded: boolean;
   readonly events: readonly DraftEvent[];
 }
 
+/** A rule draft: one rule's fields and the components that list it. */
+export interface RuleDraft extends DraftCommon {
+  readonly kind: "rule";
+  readonly mode: "edit" | "create";
+  readonly ruleId: string;
+  readonly content: DraftContent;
+  readonly preview: Preview | null;
+}
+
+/** A style draft: token values (light and dark) and component-state bindings, changed together. */
+export interface StyleDraft extends DraftCommon {
+  readonly kind: "style";
+  readonly mode: "edit";
+  readonly content: StyleDraftContent;
+  readonly preview: StylePreview | null;
+}
+
+export type Draft = RuleDraft | StyleDraft;
+export type DraftKind = Draft["kind"];
+
 export type DraftStatus = "draft" | "previewed" | "approved" | "handed-off" | "rolled-out" | "discarded";
 
-/** A draft plus what is true about it right now. */
-export interface DraftView extends Draft {
+/** What is true about a draft right now. */
+export interface DraftViewFields {
   readonly status: DraftStatus;
   /** Why the draft cannot be previewed or approved as it stands (empty when it is valid). */
   readonly problems: readonly string[];
@@ -165,6 +294,11 @@ export interface DraftView extends Draft {
   readonly canApprove: boolean;
   readonly canHandoff: boolean;
 }
+
+export type RuleDraftView = RuleDraft & DraftViewFields;
+export type StyleDraftView = StyleDraft & DraftViewFields;
+/** A draft plus what is true about it right now. */
+export type DraftView = RuleDraftView | StyleDraftView;
 
 export interface RulePlace {
   readonly file: string;
@@ -202,6 +336,8 @@ export interface WorkflowInfo {
   readonly checks: readonly CheckCapability[];
   readonly executor: string;
   readonly components: ReadonlyArray<{ id: ElementId; name: string }>;
+  /** Draft kinds this service accepts. */
+  readonly kinds: readonly DraftKind[];
   readonly limits: readonly string[];
 }
 

@@ -31,7 +31,7 @@ export function SearchField({ value, onChange, placeholder, label, className }: 
         autoComplete="off"
         onChange={(event) => onChange(event.target.value)}
         onKeyDown={onKeyDown}
-        className="h-7 w-full rounded-md border border-line bg-surface pr-8 pl-7 text-body text-ink outline-none transition-colors duration-100 placeholder:text-muted hover:border-line-strong focus:border-accent focus-visible:outline-none [&::-webkit-search-cancel-button]:appearance-none"
+        className="h-7 w-full rounded-md border border-line bg-surface pr-8 pl-7 text-body text-ink transition-colors duration-100 placeholder:text-muted hover:border-line-strong focus:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus focus-visible:outline-solid [&::-webkit-search-cancel-button]:appearance-none"
       />
       {value ? (
         <button type="button" aria-label="Clear search" onClick={() => onChange("")} className="absolute right-1.5 grid size-5 place-items-center rounded-xs text-muted hover:bg-raised hover:text-ink">

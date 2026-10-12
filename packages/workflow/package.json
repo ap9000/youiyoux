@@ -4,6 +4,6 @@
   "private": true,
   "type": "module",
   "exports": { ".": "./src/index.ts", "./api": "./src/api.ts" },
-  "dependencies": { "@youiyoux/core": "workspace:*", "@youiyoux/scanner": "workspace:*", "yaml": "2.9.1", "zod": "4.6.5" },
+  "dependencies": { "@youiyoux/core": "workspace:*", "@youiyoux/scanner": "workspace:*", "@youiyoux/tokens": "workspace:*", "yaml": "2.9.1", "zod": "4.6.5" },
   "devDependencies": { "@youiyoux/mcp": "workspace:*", "@modelcontextprotocol/sdk": "1.30.1" }
 }

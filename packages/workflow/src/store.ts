@@ -40,7 +40,10 @@ function decode(text: string, file: string): Draft {
   // Commit ids reach git as arguments: anything but a full object id is refused.
   const commits = [draft.base.commit, draft.approval?.baseCommit, draft.handoff?.base, draft.handoff?.commit].filter((c) => c !== undefined);
   if (!commits.every((c) => typeof c === "string" && COMMIT.test(c))) throw new Error(`${file} names a commit that is not a git object id`);
-  return draft as Draft;
+  // Drafts written before style drafts existed are rule drafts.
+  const kind = (draft as { kind?: unknown }).kind ?? "rule";
+  if (kind !== "rule" && kind !== "style") throw new Error(`${file} is a "${String(kind)}" draft, which this youi does not know`);
+  return { ...draft, kind } as Draft;
 }
 
 function checkId(id: string): void {

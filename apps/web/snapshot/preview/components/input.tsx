@@ -10,7 +10,7 @@ export function Input({ className, invalid = false, type, ...props }: ComponentP
       type={type ?? "text"}
       aria-invalid={invalid || undefined}
       className={cn(
-        "h-9 w-full rounded-control border border-line bg-background px-3 text-body text-foreground outline-none transition-colors duration-150 ease-out placeholder:text-muted focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-danger",
+        "h-9 w-full rounded-control border border-line bg-background px-3 text-body text-foreground outline-none transition-colors duration-(--demo-motion-duration-fast) ease-out placeholder:text-muted focus-visible:border-(--demo-input-focus-border) focus-visible:[outline:var(--demo-input-focus-ring)] focus-visible:[outline-offset:var(--demo-input-focus-ring-offset)] disabled:cursor-not-allowed disabled:opacity-(--demo-input-disabled-opacity) aria-invalid:border-danger",
         className,
       )}
       {...props}

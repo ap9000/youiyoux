@@ -2,7 +2,7 @@
 import { ArrowRight, Link2 } from "lucide-react";
 import { Link } from "wouter";
 import { type Scheme, useTheme } from "../../app/theme.tsx";
-import { type ContrastGrade, contrastRatio, grade } from "../../data/contrast.ts";
+import { type ContrastGrade, contrastRatio, grade, pairsFor } from "../../data/contrast.ts";
 import { elementHref, shortName, tokenHref } from "../../data/ids.ts";
 import type { Model } from "../../data/model.ts";
 import type { TokenEntry } from "../../data/types.ts";
@@ -13,10 +13,6 @@ import { Section, Table } from "../../ui/Section.tsx";
 import { stageFor, TokenValue } from "./TokenValue.tsx";
 
 const SCHEMES: readonly Scheme[] = ["light", "dark"];
-const SURFACES = ["paper", "ground", "raised"];
-const FALLBACK_SURFACES = ["surface", "canvas", "background", "card"];
-/** Text colours a surface must carry: the first ink-like token, then muted. */
-const TEXT_ON_SURFACE = [["ink", "foreground", "text"], ["muted"]];
 const GRADE_TONE: Record<ContrastGrade, BadgeTone> = { AAA: "success", AA: "success", "AA large": "warning", Fail: "danger" };
 
 export interface ContrastPair {
@@ -26,25 +22,13 @@ export interface ContrastPair {
 }
 
 /**
- * Which pairs matter for a colour: `on-x` sits on `x`; `x-soft` carries `x` text;
- * a surface carries ink; anything else is read as text on the system's surfaces.
+ * Which pairs matter for a colour (the shared pair finder the style editor and its impact
+ * preview use): `on-x` sits on `x`; `x-soft` carries `x` text; a surface carries ink and
+ * muted; anything else is read as text on the system's surfaces.
  */
 export function contrastPairs(model: Model, token: TokenEntry): ContrastPair[] {
-  if (token.type !== "color") return [];
-  const color = (name: string): TokenEntry | undefined => model.tokenByPath.get(`color.${name}`);
-  const name = token.path.slice("color.".length);
-  const surfaces = SURFACES.map(color).filter((t): t is TokenEntry => t !== undefined);
-  const backgrounds = surfaces.length > 0 ? surfaces : FALLBACK_SURFACES.map(color).filter((t): t is TokenEntry => t !== undefined);
-  const base = name.startsWith("on-") ? color(name.slice(3)) : name.endsWith("-soft") ? color(name.slice(0, -"-soft".length)) : undefined;
-  if (base && name.startsWith("on-")) return [{ label: `on ${base.path}`, foreground: token, background: base }];
-  if (base) return [{ label: `${base.path} text on it`, foreground: base, background: token }];
-  if (backgrounds.some((b) => b.id === token.id)) {
-    return TEXT_ON_SURFACE.flatMap((names) => {
-      const fg = names.map(color).find(Boolean);
-      return fg ? [{ label: `${fg.path} on it`, foreground: fg, background: token }] : [];
-    });
-  }
-  return backgrounds.map((bg) => ({ label: `as text on ${bg.path}`, foreground: token, background: bg }));
+  const tokens = [...model.tokens.values()].map((t) => ({ path: t.path, type: t.type, light: t.light, dark: t.dark }));
+  return pairsFor(tokens, token.path).map((pair) => ({ label: pair.label, foreground: model.tokenByPath.get(pair.foreground)!, background: model.tokenByPath.get(pair.background)! }));
 }
 
 function Ratio({ fg, bg }: { fg: string; bg: string }) {

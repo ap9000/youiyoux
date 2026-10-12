@@ -8,7 +8,7 @@ describe("navigation hierarchy", () => {
     expect(groups).toEqual([
       { section: "system", labels: ["Overview", "Components", "Tokens", "Rules", "Screens"] },
       { section: "library", labels: ["Browse", "Sources"] },
-      { section: "work", labels: ["Changes"] },
+      { section: "work", labels: ["Style", "Changes"] },
     ]);
     expect(NAV_SECTIONS.system.hint).toMatch(/build with/);
     expect(NAV_SECTIONS.library.hint).toMatch(/never build with/);
@@ -25,6 +25,8 @@ describe("navigation hierarchy", () => {
     expect(active("/library/sources")).toEqual(["Sources"]);
     expect(active("/elements/demo/component/button")).toEqual(["Components"]);
     expect(active("/")).toEqual(["Overview"]);
+    expect(active("/style/draft/d-0123456789")).toEqual(["Style"]);
+    expect(active("/changes/d-0123456789")).toEqual(["Changes"]);
   });
 
   test("the Library page explains every stage, Library stages first", () => {

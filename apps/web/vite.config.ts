@@ -48,6 +48,9 @@ function snapshotFiles(): Plugin {
 export default defineConfig({
   plugins: [react(), tailwindcss(), snapshotFiles()],
   resolve: { alias: { "@snapshot": snapshot } },
+  // A system's demos may use any of the hub's UI packages. Pre-bundled up front, so the preview
+  // frame's first visit to such a demo never makes the dev server re-optimize and reload mid-render.
+  optimizeDeps: { entries: ["index.html", "preview.html"], include: ["@radix-ui/react-label", "@radix-ui/react-separator", "@radix-ui/react-slot", "@radix-ui/react-switch", "@radix-ui/react-tabs", "class-variance-authority", "clsx", "tailwind-merge", "lucide-react"] },
   // The rule editor's live API: `youi ui --project` starts the service and sets YOUI_API to it.
   server: { proxy: { "/api": { target: process.env.YOUI_API ?? "http://127.0.0.1:4417", changeOrigin: true } } },
   build: {

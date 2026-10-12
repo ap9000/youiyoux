@@ -6,11 +6,11 @@
   "systems": [
     {
       "id": "demo",
-      "catalog": "demo.catalog.5d2408b83a.json",
+      "catalog": "demo.catalog.313ae68c4d.json",
       "usage": [
         {
           "project": "demo-app",
-          "file": "demo-app.usage.8613a48179.json"
+          "file": "demo-app.usage.459a44060d.json"
         }
       ]
     }

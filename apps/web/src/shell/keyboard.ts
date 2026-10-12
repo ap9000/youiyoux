@@ -128,6 +128,14 @@ export const SHORTCUTS: ReadonlyArray<{ readonly group: string; readonly items: 
   },
   { group: "Go to", items: NAV.map((item) => ({ keys: ["g", item.key], label: item.label })) },
   {
+    group: "Style editor",
+    items: [
+      { keys: ["↑", "↓"], label: "Step a number (with Shift: ×10)" },
+      { keys: ["Esc"], label: "Put the field back as it was" },
+      { keys: ["⌘", "S"], label: "Save the edits as a draft" },
+    ],
+  },
+  {
     group: "Lists",
     items: [
       { keys: ["j"], label: "Next item" },

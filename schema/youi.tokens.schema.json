@@ -1,0 +1,1956 @@
+{
+  "$id": "https://design-language.local/schema/youi.tokens.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "youi.tokens/v1: a DTCG 2025.10 token file, plus the youi types spring and focusRing",
+  "$ref": "#/$defs/__schema0",
+  "$defs": {
+    "__schema0": {
+      "type": "object",
+      "properties": {
+        "$type": {
+          "type": "string",
+          "enum": [
+            "color",
+            "dimension",
+            "fontFamily",
+            "fontWeight",
+            "duration",
+            "cubicBezier",
+            "number",
+            "strokeStyle",
+            "border",
+            "transition",
+            "shadow",
+            "gradient",
+            "typography",
+            "spring",
+            "focusRing"
+          ]
+        },
+        "$value": {
+          "not": {}
+        },
+        "$description": {
+          "type": "string"
+        },
+        "$extensions": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "$deprecated": {
+          "type": [
+            "boolean",
+            "string"
+          ]
+        },
+        "$schema": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "$type": {
+                "type": "string",
+                "const": "color"
+              },
+              "$value": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "colorSpace": {
+                        "type": "string",
+                        "enum": [
+                          "srgb",
+                          "srgb-linear",
+                          "hsl",
+                          "hwb",
+                          "lab",
+                          "lch",
+                          "oklab",
+                          "oklch",
+                          "display-p3",
+                          "a98-rgb",
+                          "prophoto-rgb",
+                          "rec2020",
+                          "xyz-d65",
+                          "xyz-d50"
+                        ]
+                      },
+                      "components": {
+                        "minItems": 3,
+                        "maxItems": 3,
+                        "type": "array",
+                        "items": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "const": "none"
+                            }
+                          ]
+                        }
+                      },
+                      "alpha": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "hex": {
+                        "type": "string",
+                        "pattern": "^#[0-9a-fA-F]{6}$"
+                      }
+                    },
+                    "required": [
+                      "colorSpace",
+                      "components"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^\\{([^{}]+)\\}$"
+                  }
+                ]
+              },
+              "$description": {
+                "type": "string"
+              },
+              "$extensions": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "$deprecated": {
+                "type": [
+                  "boolean",
+                  "string"
+                ]
+              }
+            },
+            "required": [
+              "$type",
+              "$value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "$type": {
+                "type": "string",
+                "const": "dimension"
+              },
+              "$value": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": "number"
+                      },
+                      "unit": {
+                        "type": "string",
+                        "enum": [
+                          "px",
+                          "rem"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^\\{([^{}]+)\\}$"
+                  }
+                ]
+              },
+              "$description": {
+                "type": "string"
+              },
+              "$extensions": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "$deprecated": {
+                "type": [
+                  "boolean",
+                  "string"
+                ]
+              }
+            },
+            "required": [
+              "$type",
+              "$value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "$type": {
+                "type": "string",
+                "const": "fontFamily"
+              },
+              "$value": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "pattern": "^[\\p{L}\\p{M}\\p{N} -]*[\\p{L}\\p{M}\\p{N}][\\p{L}\\p{M}\\p{N} -]*(?:,[\\p{L}\\p{M}\\p{N} -]*[\\p{L}\\p{M}\\p{N}][\\p{L}\\p{M}\\p{N} -]*)*$"
+                      },
+                      {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "pattern": "^[\\p{L}\\p{M}\\p{N} -]*[\\p{L}\\p{M}\\p{N}][\\p{L}\\p{M}\\p{N} -]*$"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^\\{([^{}]+)\\}$"
+                  }
+                ]
+              },
+              "$description": {
+                "type": "string"
+              },
+              "$extensions": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "$deprecated": {
+                "type": [
+                  "boolean",
+                  "string"
+                ]
+              }
+            },
+            "required": [
+              "$type",
+              "$value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "$type": {
+                "type": "string",
+                "const": "fontWeight"
+              },
+              "$value": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "number",
+                        "minimum": 1,
+                        "maximum": 1000
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "thin",
+                          "hairline",
+                          "extra-light",
+                          "ultra-light",
+                          "light",
+                          "normal",
+                          "regular",
+                          "book",
+                          "medium",
+                          "semi-bold",
+                          "demi-bold",
+                          "bold",
+                          "extra-bold",
+                          "ultra-bold",
+                          "black",
+                          "heavy",
+                          "extra-black",
+                          "ultra-black"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^\\{([^{}]+)\\}$"
+                  }
+                ]
+              },
+              "$description": {
+                "type": "string"
+              },
+              "$extensions": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "$deprecated": {
+                "type": [
+                  "boolean",
+                  "string"
+                ]
+              }
+            },
+            "required": [
+              "$type",
+              "$value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "$type": {
+                "type": "string",
+                "const": "duration"
+              },
+              "$value": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "value": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "unit": {
+                        "type": "string",
+                        "enum": [
+                          "ms",
+                          "s"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "unit"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^\\{([^{}]+)\\}$"
+                  }
+                ]
+              },
+              "$description": {
+                "type": "string"
+              },
+              "$extensions": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "$deprecated": {
+                "type": [
+                  "boolean",
+                  "string"
+                ]
+              }
+            },
+            "required": [
+              "$type",
+              "$value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "$type": {
+                "type": "string",
+                "const": "cubicBezier"
+              },
+              "$value": {
+                "anyOf": [
+                  {
+                    "type": "array",
+                    "prefixItems": [
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      {
+                        "type": "number"
+                      }
+                    ],
+                    "items": false,
+                    "minItems": 4,
+                    "maxItems": 4,
+                    "description": "[x1, y1, x2, y2]; x1 and x2 between 0 and 1"
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^\\{([^{}]+)\\}$"
+                  }
+                ]
+              },
+              "$description": {
+                "type": "string"
+              },
+              "$extensions": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "$deprecated": {
+                "type": [
+                  "boolean",
+                  "string"
+                ]
+              }
+            },
+            "required": [
+              "$type",
+              "$value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "$type": {
+                "type": "string",
+                "const": "number"
+              },
+              "$value": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^\\{([^{}]+)\\}$"
+                  }
+                ]
+              },
+              "$description": {
+                "type": "string"
+              },
+              "$extensions": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "$deprecated": {
+                "type": [
+                  "boolean",
+                  "string"
+                ]
+              }
+            },
+            "required": [
+              "$type",
+              "$value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "$type": {
+                "type": "string",
+                "const": "strokeStyle"
+              },
+              "$value": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": [
+                          "solid",
+                          "dashed",
+                          "dotted",
+                          "double",
+                          "groove",
+                          "ridge",
+                          "outset",
+                          "inset"
+                        ]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "dashArray": {
+                            "minItems": 1,
+                            "type": "array",
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "value": {
+                                      "type": "number"
+                                    },
+                                    "unit": {
+                                      "type": "string",
+                                      "enum": [
+                                        "px",
+                                        "rem"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "value",
+                                    "unit"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\{([^{}]+)\\}$"
+                                }
+                              ]
+                            }
+                          },
+                          "lineCap": {
+                            "type": "string",
+                            "enum": [
+                              "round",
+                              "butt",
+                              "square"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "dashArray",
+                          "lineCap"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^\\{([^{}]+)\\}$"
+                  }
+                ]
+              },
+              "$description": {
+                "type": "string"
+              },
+              "$extensions": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "$deprecated": {
+                "type": [
+                  "boolean",
+                  "string"
+                ]
+              }
+            },
+            "required": [
+              "$type",
+              "$value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "$type": {
+                "type": "string",
+                "const": "border"
+              },
+              "$value": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "color": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "colorSpace": {
+                                "type": "string",
+                                "enum": [
+                                  "srgb",
+                                  "srgb-linear",
+                                  "hsl",
+                                  "hwb",
+                                  "lab",
+                                  "lch",
+                                  "oklab",
+                                  "oklch",
+                                  "display-p3",
+                                  "a98-rgb",
+                                  "prophoto-rgb",
+                                  "rec2020",
+                                  "xyz-d65",
+                                  "xyz-d50"
+                                ]
+                              },
+                              "components": {
+                                "minItems": 3,
+                                "maxItems": 3,
+                                "type": "array",
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "string",
+                                      "const": "none"
+                                    }
+                                  ]
+                                }
+                              },
+                              "alpha": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1
+                              },
+                              "hex": {
+                                "type": "string",
+                                "pattern": "^#[0-9a-fA-F]{6}$"
+                              }
+                            },
+                            "required": [
+                              "colorSpace",
+                              "components"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^\\{([^{}]+)\\}$"
+                          }
+                        ]
+                      },
+                      "width": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "number"
+                              },
+                              "unit": {
+                                "type": "string",
+                                "enum": [
+                                  "px",
+                                  "rem"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "value",
+                              "unit"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^\\{([^{}]+)\\}$"
+                          }
+                        ]
+                      },
+                      "style": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "solid",
+                                  "dashed",
+                                  "dotted",
+                                  "double",
+                                  "groove",
+                                  "ridge",
+                                  "outset",
+                                  "inset"
+                                ]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "dashArray": {
+                                    "minItems": 1,
+                                    "type": "array",
+                                    "items": {
+                                      "anyOf": [
+                                        {
+                                          "type": "object",
+                                          "properties": {
+                                            "value": {
+                                              "type": "number"
+                                            },
+                                            "unit": {
+                                              "type": "string",
+                                              "enum": [
+                                                "px",
+                                                "rem"
+                                              ]
+                                            }
+                                          },
+                                          "required": [
+                                            "value",
+                                            "unit"
+                                          ]
+                                        },
+                                        {
+                                          "type": "string",
+                                          "pattern": "^\\{([^{}]+)\\}$"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "lineCap": {
+                                    "type": "string",
+                                    "enum": [
+                                      "round",
+                                      "butt",
+                                      "square"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "dashArray",
+                                  "lineCap"
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^\\{([^{}]+)\\}$"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "color",
+                      "width",
+                      "style"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^\\{([^{}]+)\\}$"
+                  }
+                ]
+              },
+              "$description": {
+                "type": "string"
+              },
+              "$extensions": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "$deprecated": {
+                "type": [
+                  "boolean",
+                  "string"
+                ]
+              }
+            },
+            "required": [
+              "$type",
+              "$value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "$type": {
+                "type": "string",
+                "const": "transition"
+              },
+              "$value": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "duration": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "number",
+                                "minimum": 0
+                              },
+                              "unit": {
+                                "type": "string",
+                                "enum": [
+                                  "ms",
+                                  "s"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "value",
+                              "unit"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^\\{([^{}]+)\\}$"
+                          }
+                        ]
+                      },
+                      "delay": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "number",
+                                "minimum": 0
+                              },
+                              "unit": {
+                                "type": "string",
+                                "enum": [
+                                  "ms",
+                                  "s"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "value",
+                              "unit"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^\\{([^{}]+)\\}$"
+                          }
+                        ]
+                      },
+                      "timingFunction": {
+                        "anyOf": [
+                          {
+                            "type": "array",
+                            "prefixItems": [
+                              {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1
+                              },
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1
+                              },
+                              {
+                                "type": "number"
+                              }
+                            ],
+                            "items": false,
+                            "minItems": 4,
+                            "maxItems": 4,
+                            "description": "[x1, y1, x2, y2]; x1 and x2 between 0 and 1"
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^\\{([^{}]+)\\}$"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "duration",
+                      "delay",
+                      "timingFunction"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^\\{([^{}]+)\\}$"
+                  }
+                ]
+              },
+              "$description": {
+                "type": "string"
+              },
+              "$extensions": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "$deprecated": {
+                "type": [
+                  "boolean",
+                  "string"
+                ]
+              }
+            },
+            "required": [
+              "$type",
+              "$value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "$type": {
+                "type": "string",
+                "const": "shadow"
+              },
+              "$value": {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "color": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "colorSpace": {
+                                    "type": "string",
+                                    "enum": [
+                                      "srgb",
+                                      "srgb-linear",
+                                      "hsl",
+                                      "hwb",
+                                      "lab",
+                                      "lch",
+                                      "oklab",
+                                      "oklch",
+                                      "display-p3",
+                                      "a98-rgb",
+                                      "prophoto-rgb",
+                                      "rec2020",
+                                      "xyz-d65",
+                                      "xyz-d50"
+                                    ]
+                                  },
+                                  "components": {
+                                    "minItems": 3,
+                                    "maxItems": 3,
+                                    "type": "array",
+                                    "items": {
+                                      "anyOf": [
+                                        {
+                                          "type": "number"
+                                        },
+                                        {
+                                          "type": "string",
+                                          "const": "none"
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "alpha": {
+                                    "type": "number",
+                                    "minimum": 0,
+                                    "maximum": 1
+                                  },
+                                  "hex": {
+                                    "type": "string",
+                                    "pattern": "^#[0-9a-fA-F]{6}$"
+                                  }
+                                },
+                                "required": [
+                                  "colorSpace",
+                                  "components"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "pattern": "^\\{([^{}]+)\\}$"
+                              }
+                            ]
+                          },
+                          "offsetX": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "value": {
+                                    "type": "number"
+                                  },
+                                  "unit": {
+                                    "type": "string",
+                                    "enum": [
+                                      "px",
+                                      "rem"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "value",
+                                  "unit"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "pattern": "^\\{([^{}]+)\\}$"
+                              }
+                            ]
+                          },
+                          "offsetY": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "value": {
+                                    "type": "number"
+                                  },
+                                  "unit": {
+                                    "type": "string",
+                                    "enum": [
+                                      "px",
+                                      "rem"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "value",
+                                  "unit"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "pattern": "^\\{([^{}]+)\\}$"
+                              }
+                            ]
+                          },
+                          "blur": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "value": {
+                                    "type": "number"
+                                  },
+                                  "unit": {
+                                    "type": "string",
+                                    "enum": [
+                                      "px",
+                                      "rem"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "value",
+                                  "unit"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "pattern": "^\\{([^{}]+)\\}$"
+                              }
+                            ]
+                          },
+                          "spread": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "value": {
+                                    "type": "number"
+                                  },
+                                  "unit": {
+                                    "type": "string",
+                                    "enum": [
+                                      "px",
+                                      "rem"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "value",
+                                  "unit"
+                                ]
+                              },
+                              {
+                                "type": "string",
+                                "pattern": "^\\{([^{}]+)\\}$"
+                              }
+                            ]
+                          },
+                          "inset": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "color",
+                          "offsetX",
+                          "offsetY",
+                          "blur",
+                          "spread"
+                        ]
+                      },
+                      {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "color": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "colorSpace": {
+                                      "type": "string",
+                                      "enum": [
+                                        "srgb",
+                                        "srgb-linear",
+                                        "hsl",
+                                        "hwb",
+                                        "lab",
+                                        "lch",
+                                        "oklab",
+                                        "oklch",
+                                        "display-p3",
+                                        "a98-rgb",
+                                        "prophoto-rgb",
+                                        "rec2020",
+                                        "xyz-d65",
+                                        "xyz-d50"
+                                      ]
+                                    },
+                                    "components": {
+                                      "minItems": 3,
+                                      "maxItems": 3,
+                                      "type": "array",
+                                      "items": {
+                                        "anyOf": [
+                                          {
+                                            "type": "number"
+                                          },
+                                          {
+                                            "type": "string",
+                                            "const": "none"
+                                          }
+                                        ]
+                                      }
+                                    },
+                                    "alpha": {
+                                      "type": "number",
+                                      "minimum": 0,
+                                      "maximum": 1
+                                    },
+                                    "hex": {
+                                      "type": "string",
+                                      "pattern": "^#[0-9a-fA-F]{6}$"
+                                    }
+                                  },
+                                  "required": [
+                                    "colorSpace",
+                                    "components"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\{([^{}]+)\\}$"
+                                }
+                              ]
+                            },
+                            "offsetX": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "value": {
+                                      "type": "number"
+                                    },
+                                    "unit": {
+                                      "type": "string",
+                                      "enum": [
+                                        "px",
+                                        "rem"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "value",
+                                    "unit"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\{([^{}]+)\\}$"
+                                }
+                              ]
+                            },
+                            "offsetY": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "value": {
+                                      "type": "number"
+                                    },
+                                    "unit": {
+                                      "type": "string",
+                                      "enum": [
+                                        "px",
+                                        "rem"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "value",
+                                    "unit"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\{([^{}]+)\\}$"
+                                }
+                              ]
+                            },
+                            "blur": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "value": {
+                                      "type": "number"
+                                    },
+                                    "unit": {
+                                      "type": "string",
+                                      "enum": [
+                                        "px",
+                                        "rem"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "value",
+                                    "unit"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\{([^{}]+)\\}$"
+                                }
+                              ]
+                            },
+                            "spread": {
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "value": {
+                                      "type": "number"
+                                    },
+                                    "unit": {
+                                      "type": "string",
+                                      "enum": [
+                                        "px",
+                                        "rem"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "value",
+                                    "unit"
+                                  ]
+                                },
+                                {
+                                  "type": "string",
+                                  "pattern": "^\\{([^{}]+)\\}$"
+                                }
+                              ]
+                            },
+                            "inset": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "color",
+                            "offsetX",
+                            "offsetY",
+                            "blur",
+                            "spread"
+                          ]
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^\\{([^{}]+)\\}$"
+                  }
+                ]
+              },
+              "$description": {
+                "type": "string"
+              },
+              "$extensions": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "$deprecated": {
+                "type": [
+                  "boolean",
+                  "string"
+                ]
+              }
+            },
+            "required": [
+              "$type",
+              "$value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "$type": {
+                "type": "string",
+                "const": "gradient"
+              },
+              "$value": {
+                "anyOf": [
+                  {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "color": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "colorSpace": {
+                                  "type": "string",
+                                  "enum": [
+                                    "srgb",
+                                    "srgb-linear",
+                                    "hsl",
+                                    "hwb",
+                                    "lab",
+                                    "lch",
+                                    "oklab",
+                                    "oklch",
+                                    "display-p3",
+                                    "a98-rgb",
+                                    "prophoto-rgb",
+                                    "rec2020",
+                                    "xyz-d65",
+                                    "xyz-d50"
+                                  ]
+                                },
+                                "components": {
+                                  "minItems": 3,
+                                  "maxItems": 3,
+                                  "type": "array",
+                                  "items": {
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "string",
+                                        "const": "none"
+                                      }
+                                    ]
+                                  }
+                                },
+                                "alpha": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 1
+                                },
+                                "hex": {
+                                  "type": "string",
+                                  "pattern": "^#[0-9a-fA-F]{6}$"
+                                }
+                              },
+                              "required": [
+                                "colorSpace",
+                                "components"
+                              ]
+                            },
+                            {
+                              "type": "string",
+                              "pattern": "^\\{([^{}]+)\\}$"
+                            }
+                          ]
+                        },
+                        "position": {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1
+                            },
+                            {
+                              "type": "string",
+                              "pattern": "^\\{([^{}]+)\\}$"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "color",
+                        "position"
+                      ]
+                    }
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^\\{([^{}]+)\\}$"
+                  }
+                ]
+              },
+              "$description": {
+                "type": "string"
+              },
+              "$extensions": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "$deprecated": {
+                "type": [
+                  "boolean",
+                  "string"
+                ]
+              }
+            },
+            "required": [
+              "$type",
+              "$value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "$type": {
+                "type": "string",
+                "const": "typography"
+              },
+              "$value": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "fontFamily": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "pattern": "^[\\p{L}\\p{M}\\p{N} -]*[\\p{L}\\p{M}\\p{N}][\\p{L}\\p{M}\\p{N} -]*(?:,[\\p{L}\\p{M}\\p{N} -]*[\\p{L}\\p{M}\\p{N}][\\p{L}\\p{M}\\p{N} -]*)*$"
+                              },
+                              {
+                                "minItems": 1,
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "pattern": "^[\\p{L}\\p{M}\\p{N} -]*[\\p{L}\\p{M}\\p{N}][\\p{L}\\p{M}\\p{N} -]*$"
+                                }
+                              }
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^\\{([^{}]+)\\}$"
+                          }
+                        ]
+                      },
+                      "fontSize": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "number"
+                              },
+                              "unit": {
+                                "type": "string",
+                                "enum": [
+                                  "px",
+                                  "rem"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "value",
+                              "unit"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^\\{([^{}]+)\\}$"
+                          }
+                        ]
+                      },
+                      "fontWeight": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "type": "number",
+                                "minimum": 1,
+                                "maximum": 1000
+                              },
+                              {
+                                "type": "string",
+                                "enum": [
+                                  "thin",
+                                  "hairline",
+                                  "extra-light",
+                                  "ultra-light",
+                                  "light",
+                                  "normal",
+                                  "regular",
+                                  "book",
+                                  "medium",
+                                  "semi-bold",
+                                  "demi-bold",
+                                  "bold",
+                                  "extra-bold",
+                                  "ultra-bold",
+                                  "black",
+                                  "heavy",
+                                  "extra-black",
+                                  "ultra-black"
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^\\{([^{}]+)\\}$"
+                          }
+                        ]
+                      },
+                      "letterSpacing": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "number"
+                              },
+                              "unit": {
+                                "type": "string",
+                                "enum": [
+                                  "px",
+                                  "rem"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "value",
+                              "unit"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^\\{([^{}]+)\\}$"
+                          }
+                        ]
+                      },
+                      "lineHeight": {
+                        "anyOf": [
+                          {
+                            "anyOf": [
+                              {
+                                "type": "number",
+                                "minimum": 0
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "value": {
+                                    "type": "number"
+                                  },
+                                  "unit": {
+                                    "type": "string",
+                                    "enum": [
+                                      "px",
+                                      "rem"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "value",
+                                  "unit"
+                                ]
+                              }
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^\\{([^{}]+)\\}$"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "fontFamily",
+                      "fontSize",
+                      "fontWeight",
+                      "lineHeight"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^\\{([^{}]+)\\}$"
+                  }
+                ]
+              },
+              "$description": {
+                "type": "string"
+              },
+              "$extensions": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "$deprecated": {
+                "type": [
+                  "boolean",
+                  "string"
+                ]
+              }
+            },
+            "required": [
+              "$type",
+              "$value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "$type": {
+                "type": "string",
+                "const": "spring"
+              },
+              "$value": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "stiffness": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "damping": {
+                        "type": "number",
+                        "minimum": 0
+                      },
+                      "mass": {
+                        "type": "number",
+                        "exclusiveMinimum": 0
+                      },
+                      "velocity": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "stiffness",
+                      "damping",
+                      "mass"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^\\{([^{}]+)\\}$"
+                  }
+                ]
+              },
+              "$description": {
+                "type": "string"
+              },
+              "$extensions": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "$deprecated": {
+                "type": [
+                  "boolean",
+                  "string"
+                ]
+              }
+            },
+            "required": [
+              "$type",
+              "$value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "$type": {
+                "type": "string",
+                "const": "focusRing"
+              },
+              "$value": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "color": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "colorSpace": {
+                                "type": "string",
+                                "enum": [
+                                  "srgb",
+                                  "srgb-linear",
+                                  "hsl",
+                                  "hwb",
+                                  "lab",
+                                  "lch",
+                                  "oklab",
+                                  "oklch",
+                                  "display-p3",
+                                  "a98-rgb",
+                                  "prophoto-rgb",
+                                  "rec2020",
+                                  "xyz-d65",
+                                  "xyz-d50"
+                                ]
+                              },
+                              "components": {
+                                "minItems": 3,
+                                "maxItems": 3,
+                                "type": "array",
+                                "items": {
+                                  "anyOf": [
+                                    {
+                                      "type": "number"
+                                    },
+                                    {
+                                      "type": "string",
+                                      "const": "none"
+                                    }
+                                  ]
+                                }
+                              },
+                              "alpha": {
+                                "type": "number",
+                                "minimum": 0,
+                                "maximum": 1
+                              },
+                              "hex": {
+                                "type": "string",
+                                "pattern": "^#[0-9a-fA-F]{6}$"
+                              }
+                            },
+                            "required": [
+                              "colorSpace",
+                              "components"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^\\{([^{}]+)\\}$"
+                          }
+                        ]
+                      },
+                      "width": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "number"
+                              },
+                              "unit": {
+                                "type": "string",
+                                "enum": [
+                                  "px",
+                                  "rem"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "value",
+                              "unit"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^\\{([^{}]+)\\}$"
+                          }
+                        ]
+                      },
+                      "offset": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "value": {
+                                "type": "number"
+                              },
+                              "unit": {
+                                "type": "string",
+                                "enum": [
+                                  "px",
+                                  "rem"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "value",
+                              "unit"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^\\{([^{}]+)\\}$"
+                          }
+                        ]
+                      },
+                      "style": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "solid",
+                              "dashed",
+                              "dotted",
+                              "double"
+                            ]
+                          },
+                          {
+                            "type": "string",
+                            "pattern": "^\\{([^{}]+)\\}$"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "color",
+                      "width",
+                      "offset",
+                      "style"
+                    ]
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "^\\{([^{}]+)\\}$"
+                  }
+                ]
+              },
+              "$description": {
+                "type": "string"
+              },
+              "$extensions": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "$deprecated": {
+                "type": [
+                  "boolean",
+                  "string"
+                ]
+              }
+            },
+            "required": [
+              "$type",
+              "$value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "$value": {},
+              "$description": {
+                "type": "string"
+              },
+              "$extensions": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              "$deprecated": {
+                "type": [
+                  "boolean",
+                  "string"
+                ]
+              }
+            },
+            "required": [
+              "$value"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "$ref": "#/$defs/__schema0"
+          }
+        ]
+      }
+    }
+  }
+}

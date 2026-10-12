@@ -1,57 +1,9 @@
 /** Non-CSS-variable outputs rendered from resolved tokens: Tailwind v4 @theme, TS, React Native. */
-import type { OutputConfig } from "@youiyoux/core";
-import { formatCssColor, type DtcgColor } from "./color.ts";
+import type { ComponentContract, OutputConfig } from "@youiyoux/core";
 import type { ResolvedToken } from "./build.ts";
-
-interface Dimension {
-  value: number;
-  unit: string;
-}
-
-interface ShadowLayer {
-  color: DtcgColor;
-  offsetX: Dimension;
-  offsetY: Dimension;
-  blur: Dimension;
-  spread: Dimension;
-  inset?: boolean;
-}
-
-interface Typography {
-  fontFamily: string[] | string;
-  fontSize: Dimension;
-  fontWeight: number;
-  lineHeight: number | Dimension;
-  letterSpacing?: Dimension;
-}
+import { cssValue, springCurve, tokenVariables, variableSuffixes, type Dimension, type FocusRing, type Spring, type Typography } from "./values.ts";
 
 const dim = (d: Dimension): string => `${d.value}${d.unit}`;
-const quoteFamily = (f: string): string => (/^[a-z-]+$/i.test(f) && !/\s/.test(f) ? f : `"${f}"`);
-
-/** A token value as CSS text (used for TS output and literal theme entries). */
-export function cssValue(type: string, value: unknown): string {
-  switch (type) {
-    case "color":
-      return formatCssColor(value as DtcgColor);
-    case "dimension":
-      return dim(value as Dimension);
-    case "fontFamily":
-      return (Array.isArray(value) ? value : [String(value)]).map(quoteFamily).join(", ");
-    case "cubicBezier":
-      return `cubic-bezier(${(value as number[]).join(", ")})`;
-    case "shadow":
-      return (Array.isArray(value) ? (value as ShadowLayer[]) : [value as ShadowLayer])
-        .map((l) => `${l.inset ? "inset " : ""}${dim(l.offsetX)} ${dim(l.offsetY)} ${dim(l.blur)} ${dim(l.spread)} ${formatCssColor(l.color)}`)
-        .join(", ");
-    case "typography": {
-      const t = value as Typography;
-      const lh = typeof t.lineHeight === "number" ? t.lineHeight : dim(t.lineHeight);
-      return `${t.fontWeight} ${dim(t.fontSize)}/${lh} ${cssValue("fontFamily", t.fontFamily)}`;
-    }
-    default:
-      return typeof value === "object" ? JSON.stringify(value) : String(value);
-  }
-}
 
 const NAMESPACE: Record<string, string> = { color: "color", radius: "radius", space: "spacing", font: "font", shadow: "shadow", easing: "ease" };
 
@@ -71,7 +23,23 @@ function tailwindEntries(token: ResolvedToken, prefix: string): Array<[string, s
     ];
   }
   const namespace = NAMESPACE[group ?? ""];
-  return namespace && name ? [[`${namespace}-${name}`, ref]] : [];
+  if (namespace && name) return [[`${namespace}-${name}`, ref]];
+  // Motion and focus tokens live in any group: their type says which Tailwind names they get.
+  const named = rest.filter((segment) => !/^(?:durations?|easings?)$/.test(segment)).join("-") || name;
+  switch (token.type) {
+    case "duration":
+      return named ? [[`transition-duration-${named}`, ref]] : [];
+    case "cubicBezier":
+      return named ? [[`ease-${named}`, ref]] : [];
+    case "spring":
+      // `ease-spring-snappy duration-spring-snappy`: the spring's curve and its settle time.
+      return named ? [[`ease-${named}`, ref], [`transition-duration-${named}`, `var(--${prefix}-${token.cssName}-duration)`]] : [];
+    case "focusRing":
+      // The ring's colour for outline-/ring- utilities; the ring itself is var(--<prefix>-<name>) (an outline shorthand).
+      return [[`color-${token.id.replace(/\./g, "-")}`, `var(--${prefix}-${token.cssName}-color)`]];
+    default:
+      return [];
+  }
 }
 
 export interface ThemeEntry {
@@ -150,7 +118,7 @@ function nativeValue(type: string, value: unknown): unknown {
     case "dimension":
       return px(value as Dimension);
     case "typography": {
-      const t = value as Typography;
+      const t = value as Typography & { fontSize: Dimension; lineHeight: number | Dimension; letterSpacing?: Dimension };
       const size = px(t.fontSize);
       const family = Array.isArray(t.fontFamily) ? t.fontFamily[0] : t.fontFamily;
       return {
@@ -165,12 +133,25 @@ function nativeValue(type: string, value: unknown): unknown {
       return cssValue("shadow", value);
     case "fontFamily":
       return Array.isArray(value) ? value[0] : value;
+    case "duration": {
+      const d = value as Dimension;
+      return d.unit === "s" ? d.value * 1000 : d.value;
+    }
+    case "spring": {
+      // The config Reanimated's withSpring (and most native spring APIs) take, plus its settle time.
+      const { stiffness, damping, mass, velocity } = value as Spring;
+      return { stiffness, damping, mass, ...(velocity !== undefined ? { velocity } : {}), durationMs: springCurve(value as Spring).durationMs };
+    }
+    case "focusRing": {
+      const f = value as FocusRing;
+      return { color: cssValue("color", f.color), width: px(f.width as Dimension), offset: px(f.offset as Dimension), style: f.style };
+    }
     default:
       return cssValue(type, value);
   }
 }
 
-/** React Native: numbers for dimensions (px), first family only, `boxShadow` strings (RN ≥ 0.76). */
+/** React Native: numbers for dimensions (px) and durations (ms), first family only, `boxShadow` strings (RN ≥ 0.76), spring configs and focus ring parts as objects. */
 export function renderNative(tokens: readonly ResolvedToken[], header: string): string {
   const scheme = (pick: (t: ResolvedToken) => unknown): Record<string, unknown> => Object.fromEntries(tokens.map((t) => [t.id, nativeValue(t.type, pick(t))]));
   return [
@@ -183,4 +164,35 @@ export function renderNative(tokens: readonly ResolvedToken[], header: string): 
     "export type NativeTokenId = keyof typeof light;",
     "",
   ].join("\n");
+}
+
+/**
+ * Component state variables: each binding in a contract's `states` becomes
+ * `--<prefix>-<component>-<state>-<role>` reading the bound token's variable (and its part
+ * variables, for composites), so the owned implementation reads the state from one place and a
+ * re-bound state changes no code. Dark follows, because each reads a token variable.
+ */
+export function stateVariables(contracts: readonly Pick<ComponentContract, "id" | "states">[], tokens: readonly ResolvedToken[], prefix: string): Array<[string, string]> {
+  const byId = new Map(tokens.map((t) => [t.id, t]));
+  const vars: Array<[string, string]> = [];
+  for (const contract of contracts) {
+    const component = contract.id.split("/").at(-1)!;
+    for (const [state, bindings] of Object.entries(contract.states ?? {})) {
+      for (const [role, tokenId] of Object.entries(bindings ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
+        const token = byId.get(tokenId.replace(/^youi:[a-z][a-z0-9-]*\/token\//, ""));
+        if (!token) continue;
+        for (const suffix of variableSuffixes(token.type)) vars.push([`--${prefix}-${component}-${state}-${role.replace(/\./g, "-")}${suffix}`, `var(--${prefix}-${token.cssName}${suffix})`]);
+      }
+    }
+  }
+  return vars;
+}
+
+/** Declarations for the variables Terrazzo does not emit (the youi types), per scheme: aliases stay var() references. */
+export function youiTypeVariables(tokens: readonly ResolvedToken[], prefix: string, scheme: "light" | "dark"): Array<[string, string]> {
+  const byId = new Map(tokens.map((t) => [t.id, t]));
+  const ref = (path: string, suffix = ""): string => `var(--${prefix}-${byId.get(path)?.cssName ?? path.replace(/\./g, "-")}${suffix})`;
+  return tokens
+    .filter((t) => t.type === "spring" || t.type === "focusRing")
+    .flatMap((t) => tokenVariables(t.type, t.source?.[scheme] ?? t[scheme], ref).map(([suffix, css]) => [`--${prefix}-${t.cssName}${suffix}`, css] as [string, string]));
 }

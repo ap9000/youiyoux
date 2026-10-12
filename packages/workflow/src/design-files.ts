@@ -2,13 +2,15 @@
  * Where a rule's definitions live in the design repository, read at an exact commit, and
  * the files a review branch carries for a draft.
  */
-import { relative } from "node:path";
+import { posix, relative } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { parseId, sha256, toPosix, type RuleSpec } from "@youiyoux/core";
 import type { Project } from "@youiyoux/scanner";
-import type { DraftContent } from "./api.ts";
+import { resolverLayout } from "@youiyoux/tokens";
+import type { DraftContent, StyleDraftContent } from "./api.ts";
 import { componentChanges, renderContract, renderRuleYaml } from "./drafts.ts";
-import { listAt, readAt, type RepoLocation } from "./git.ts";
+import { listAt, listTreeAt, readAt, type RepoLocation } from "./git.ts";
+import { effectiveStateEdits, renderContractStates, renderTokenEdits, type TokenFiles } from "./style-drafts.ts";
 
 const DEFAULT_SCHEMA_REF = "../schema/youi.rule.schema.json";
 
@@ -102,5 +104,57 @@ export class DesignFiles {
       }
     }
     return files;
+  }
+
+  /* ------------------------------------------------------------ style drafts */
+
+  /** The directory holding the system's resolver, design-root-relative. */
+  get tokensDir(): string {
+    return posix.dirname(this.project.system.config.tokens);
+  }
+
+  /** Every file in the tokens directory at `commit` (design-root-relative path → text): what a token build reads. */
+  async tokenTree(commit: string): Promise<Map<string, string>> {
+    const dir = this.tokensDir;
+    const names = await listTreeAt(this.repo.top, commit, this.top(dir));
+    const entries = await Promise.all(names.map(async (name) => [`${dir}/${name}`, (await this.read(commit, `${dir}/${name}`)) ?? ""] as const));
+    return new Map(entries);
+  }
+
+  /** The system's token files at `commit`: the resolver's layout and the text of every file it reads. */
+  async tokenFiles(commit: string): Promise<TokenFiles> {
+    const { config } = this.project.system;
+    const resolverText = await this.read(commit, config.tokens);
+    if (resolverText === null) throw new Error(`${config.tokens} is not in the design repository at ${commit.slice(0, 7)}`);
+    const layout = resolverLayout(JSON.parse(resolverText), config.themeModifier);
+    const texts = new Map<string, string>();
+    for (const ref of layout.files) {
+      const path = posix.normalize(`${this.tokensDir}/${ref}`);
+      const text = await this.read(commit, path);
+      if (text !== null) texts.set(path, text);
+    }
+    return { dir: this.tokensDir, layout, texts, light: config.themeModifier?.light ?? "", dark: config.themeModifier?.dark ?? null };
+  }
+
+  /** The files a style draft could touch: every token file the resolver reads and every contract that declares states. */
+  async stylePaths(commit: string): Promise<string[]> {
+    const tokenPaths = [...(await this.tokenFiles(commit)).texts.keys()];
+    const contracts = await Promise.all(this.project.system.components.filter((c) => c.contract.states).map((c) => this.contractPath(commit, c.contract.id)));
+    return [...tokenPaths, ...contracts.filter((p): p is string => p !== null)];
+  }
+
+  /** The files (design-root-relative path → content) a review branch for a style draft writes on `commit`: only the edited keys change. */
+  async styleFilesFor(commit: string, content: StyleDraftContent, types: ReadonlyMap<string, string>): Promise<{ files: Record<string, string>; problems: string[] }> {
+    const rendered = renderTokenEdits(await this.tokenFiles(commit), content.tokens, types);
+    const files: Record<string, string> = { ...rendered.files };
+    const states = effectiveStateEdits(content, this.project.system.components.map((c) => c.contract));
+    for (const component of new Set(states.map((s) => s.component))) {
+      const path = await this.contractPath(commit, component);
+      const text = path ? await this.read(commit, path) : null;
+      const next = text ? renderContractStates(text, states.filter((s) => s.component === component)) : null;
+      if (path && next) files[path] = next;
+      else if (!path || !text) rendered.problems.push(`states: the contract of ${component} is not in the design repository at ${commit.slice(0, 7)}`);
+    }
+    return { files, problems: rendered.problems };
   }
 }

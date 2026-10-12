@@ -1,5 +1,6 @@
 /**
- * The rule-editor workflow: draft → save → preview → approve → hand off to review.
+ * The design-change workflow: draft → save → preview → approve → hand off to review, for
+ * rule drafts and style drafts (token values and component-state bindings) alike.
  *
  * Saving never publishes and never approves. A draft is bound to the design commit it
  * started from and to the digest of its content; a preview is bound to the exact design
@@ -10,10 +11,13 @@
  */
 import { randomBytes } from "node:crypto";
 import { loadProject, ruleCapability, scanProject, SCANNER_VERSION, type LoadProjectOptions, type Project, type ScanResult } from "@youiyoux/scanner";
+import { buildTokens, type ResolvedToken } from "@youiyoux/tokens";
 import { parseId, shortHash, stableStringify } from "@youiyoux/core";
-import type { Actor, Draft, DraftContent, DraftEvent, DraftView, Preview, PublishedRules, SnapshotIdentity, WorkflowInfo } from "./api.ts";
+import type { Actor, Draft, DraftContent, DraftEvent, DraftView, Preview, PublishedRules, RuleDraft, RuleDraftView, SnapshotIdentity, StyleDraft, StyleDraftContent, StyleContrast, StyleDraftView, StylePreview, WorkflowInfo } from "./api.ts";
 import { DesignFiles } from "./design-files.ts";
 import { contentDigest, draftStatus, fieldsFromRule, newRuleFields, toRuleSpec, validateContent } from "./drafts.ts";
+import { describeStyle, normalizeStyleContent, styleDigest, styleSlug, validateStyleContent, type StyleContext } from "./style-drafts.ts";
+import { previewStyle } from "./style-preview.ts";
 import { scannerExecution, type RuleExecution } from "./execution.ts";
 import { branchTip, changesDigest, createReviewBranch, defaultBranch, hasChanges, headCommit, isAncestor, locate, type RepoLocation } from "./git.ts";
 import { authorize, WorkflowError, type Action } from "./policy.ts";
@@ -40,6 +44,17 @@ interface Current {
   readonly tip: string;
   readonly designDirty: boolean;
   readonly snapshot: SnapshotIdentity;
+  /** The published tokens (built once, on first need): what style drafts are checked against. */
+  readonly tokens: () => Promise<readonly ResolvedToken[]>;
+}
+
+export type CreateInput = { kind?: "rule"; mode: "edit"; ruleId: string } | { kind?: "rule"; mode: "create" } | { kind: "style"; content?: StyleDraftContent };
+
+/** A preview's headline, for history notes and commit messages. */
+export function previewSummary(draft: Draft): string {
+  if (draft.kind === "rule") return draft.preview ? `flags ${draft.preview.flagged} place(s)` : "no preview";
+  const p = draft.preview;
+  return p ? `changes ${p.totals.tokens} token(s) and ${p.totals.contracts} component(s): ${p.totals.sites} site(s) and ${p.totals.direct} direct use(s) in ${p.totals.files} file(s) on ${p.totals.routes} screen(s)` : "no preview";
 }
 
 const randomId = (prefix: "d" | "p"): string => `${prefix}-${randomBytes(5).toString("hex")}`;
@@ -87,7 +102,9 @@ export class RuleWorkflow {
     const [projectCommit, projectChanges] = projectRepo ? await Promise.all([headCommit(projectRepo.top), changesDigest(projectRepo.top)]) : [null, null];
     const designDirty = dirty || head !== tip;
     const identity = { designCommit: tip, designDirty, project: project.config.id, projectCommit, projectChanges, scanner: SCANNER_VERSION };
-    return { project, repo, files: new DesignFiles(repo, project), branch, tip, designDirty, snapshot: { ...identity, digest: shortHash(stableStringify(identity)) } };
+    let built: Promise<readonly ResolvedToken[]> | null = null;
+    const tokens = (): Promise<readonly ResolvedToken[]> => (built ??= buildTokens(project.repo.root, project.system.config, project.config.outputs).then((b) => b.tokens));
+    return { project, repo, files: new DesignFiles(repo, project), branch, tip, designDirty, snapshot: { ...identity, digest: shortHash(stableStringify(identity)) }, tokens };
   }
 
   private event(actor: Actor, type: DraftEvent["type"], note?: string): DraftEvent {
@@ -105,7 +122,18 @@ export class RuleWorkflow {
     return draft;
   }
 
-  private problems(draft: Draft, current: Current): string[] {
+  private async styleContext(current: Current): Promise<StyleContext> {
+    const { system } = current.project;
+    return {
+      system: system.config.id,
+      tokens: (await current.tokens()).map((t) => ({ path: t.id, type: t.type, source: t.source ?? { light: t.light, dark: t.dark } })),
+      contracts: system.components.map((c) => c.contract),
+      hasDark: system.config.themeModifier !== undefined,
+    };
+  }
+
+  private async problems(draft: Draft, current: Current): Promise<string[]> {
+    if (draft.kind === "style") return validateStyleContent(draft.content, await this.styleContext(current));
     return validateContent(draft.content, {
       mode: draft.mode,
       ruleId: draft.ruleId,
@@ -160,7 +188,7 @@ export class RuleWorkflow {
     const status = draftStatus(draft, merged);
     const open = status !== "discarded" && status !== "handed-off" && status !== "rolled-out";
     // A closed draft is history: judging it against today's definitions (where its rule may now exist) would only mislead.
-    const problems = open ? this.problems(draft, current) : [];
+    const problems = open ? await this.problems(draft, current) : [];
     const previewStale = open ? this.previewStale(draft, current) : [];
     const baseStale = open ? this.baseStale(draft, current) : [];
     const previewFresh = draft.preview !== null && previewStale.length === 0;
@@ -173,7 +201,7 @@ export class RuleWorkflow {
       needsRebase: open && draft.base.commit !== current.tip,
       canApprove: open && !draft.approval && problems.length === 0 && previewFresh && baseStale.length === 0,
       canHandoff: open && draft.approval !== null && problems.length === 0 && baseStale.length === 0 && this.approvalLapsed(draft, current).length === 0,
-    };
+    } as DraftView;
   }
 
   private async refreshed(draft: Draft, current: Current): Promise<DraftView> {
@@ -199,6 +227,7 @@ export class RuleWorkflow {
       checks: this.execution.supportedChecks(),
       executor: this.execution.name,
       components: current.project.system.components.map((c) => ({ id: c.contract.id, name: c.contract.name })),
+      kinds: ["rule", "style"],
       limits: [
         `One design repository and one project (${current.project.config.id}).`,
         `Approved changes become a local review branch in the design repository; nothing is pushed or merged for you.`,
@@ -252,9 +281,13 @@ export class RuleWorkflow {
 
   /* ---------------------------------------------------------------- writes */
 
-  async create(actor: Actor, input: { mode: "edit"; ruleId: string } | { mode: "create" }): Promise<DraftView> {
+  async create(actor: Actor, input: { kind?: "rule"; mode: "edit"; ruleId: string } | { kind?: "rule"; mode: "create" }): Promise<RuleDraftView>;
+  async create(actor: Actor, input: { kind: "style"; content?: StyleDraftContent }): Promise<StyleDraftView>;
+  async create(actor: Actor, input: CreateInput): Promise<DraftView>;
+  async create(actor: Actor, input: CreateInput): Promise<DraftView> {
     authorize(actor, "draft");
     const current = await this.current();
+    if (input.kind === "style") return this.createStyle(actor, current, input.content);
     let content: DraftContent;
     let ruleId: string;
     const files: Record<string, string | null> = {};
@@ -270,7 +303,7 @@ export class RuleWorkflow {
       ruleId = content.rule.id;
     }
     const at = this.now();
-    const draft: Draft = {
+    const draft: RuleDraft = {
       id: this.id("d"),
       kind: "rule",
       mode: input.mode,
@@ -291,39 +324,64 @@ export class RuleWorkflow {
     return this.view(draft, current);
   }
 
+  /** A style draft starts from the default branch tip, bound to every file it could touch. */
+  private async createStyle(actor: Actor, current: Current, initial?: StyleDraftContent): Promise<StyleDraftView> {
+    const content = normalizeStyleContent(initial ?? { title: "", tokens: [], states: [] });
+    const files: Record<string, string | null> = {};
+    for (const path of await current.files.stylePaths(current.tip)) files[path] = await current.files.digest(current.tip, path);
+    const at = this.now();
+    const draft: StyleDraft = {
+      id: this.id("d"),
+      kind: "style",
+      mode: "edit",
+      createdAt: at,
+      updatedAt: at,
+      revision: 1,
+      digest: styleDigest(content),
+      content,
+      base: { branch: current.branch, commit: current.tip, files },
+      preview: null,
+      approval: null,
+      handoff: null,
+      discarded: false,
+      events: [this.event(actor, "created", `Style change from ${current.branch}@${current.tip.slice(0, 7)}${content.tokens.length + content.states.length ? `: ${describeStyle(content)}` : ""}.`)],
+    };
+    await this.options.store.put(draft);
+    return (await this.view(draft, current)) as StyleDraftView;
+  }
+
   /** Save content. Saving is only saving: it withdraws any approval and never publishes. */
-  async save(actor: Actor, id: string, input: { revision: number; content: DraftContent }): Promise<DraftView> {
+  async save(actor: Actor, id: string, input: { revision: number; content: DraftContent | StyleDraftContent }): Promise<DraftView> {
     return this.locked(id, async () => {
       const draft = await this.load(id);
       this.guard(actor, "draft", draft);
       if (input.revision !== draft.revision) throw new WorkflowError("conflict", `draft ${id} is at revision ${draft.revision}, not ${input.revision}: it was saved elsewhere. Reload it before saving.`);
+      const isStyle = "tokens" in input.content;
+      if (isStyle !== (draft.kind === "style")) throw new WorkflowError("bad-request", `draft ${id} is a ${draft.kind} draft; send ${draft.kind} content`);
       const current = await this.current();
-      const digest = contentDigest(input.content);
+      const content = isStyle ? normalizeStyleContent(input.content as StyleDraftContent) : (input.content as DraftContent);
+      const digest = isStyle ? styleDigest(content as StyleDraftContent) : contentDigest(content as DraftContent);
       if (digest === draft.digest) return this.refreshed(draft, current);
-      const events = [...draft.events, this.event(actor, "saved", `Revision ${draft.revision + 1}.`)];
+      const events = [...draft.events, this.event(actor, "saved", `Revision ${draft.revision + 1}${isStyle ? `: ${describeStyle(content as StyleDraftContent)}` : ""}.`)];
       if (draft.approval) events.push(this.event(actor, "approval-invalidated", "Approval withdrawn: the draft changed."));
-      const next: Draft = {
-        ...draft,
-        ruleId: draft.mode === "create" ? input.content.rule.id.trim() : draft.ruleId,
-        revision: draft.revision + 1,
-        digest,
-        content: input.content,
-        approval: null,
-        updatedAt: this.now(),
-        events,
-      };
+      const common = { revision: draft.revision + 1, digest, approval: null, updatedAt: this.now(), events };
+      const next: Draft =
+        draft.kind === "style"
+          ? { ...draft, ...common, content: content as StyleDraftContent }
+          : { ...draft, ...common, content: content as DraftContent, ruleId: draft.mode === "create" ? (content as DraftContent).rule.id.trim() : draft.ruleId };
       await this.options.store.put(next);
       return this.view(next, current);
     });
   }
 
-  /** Evaluate the draft and the published rule over one fresh scan of the project. */
+  /** Evaluate the draft over one fresh scan of the project: a rule against the published rule, a style change against the published tokens. */
   async preview(actor: Actor, id: string): Promise<DraftView> {
     return this.locked(id, async () => {
       const draft = await this.load(id);
       this.guard(actor, "preview", draft);
+      if (draft.kind === "style") return this.previewStyle(actor, draft);
       const before = await this.current();
-      const problems = this.problems(draft, before);
+      const problems = await this.problems(draft, before);
       const { rule } = toRuleSpec(draft.content.rule);
       if (!rule || problems.length > 0) throw new WorkflowError("invalid", "fix the draft before previewing it", problems);
       const started = performance.now();
@@ -355,8 +413,44 @@ export class RuleWorkflow {
     });
   }
 
-  /** A person approves exactly the revision and preview they saw. */
-  async approve(actor: Actor, id: string, input: { revision: number; previewId: string }): Promise<DraftView> {
+  /** Build the tokens as published and as drafted, and trace every changed value through one fresh scan. */
+  private async previewStyle(actor: Actor, draft: StyleDraft): Promise<DraftView> {
+    const before = await this.current();
+    const problems = await this.problems(draft, before);
+    if (problems.length > 0) throw new WorkflowError("invalid", "fix the draft before previewing it", problems);
+    const started = performance.now();
+    const scan = await scanProject(before.project);
+    const impact = await previewStyle({ project: before.project, scan, files: before.files, commit: draft.base.commit, content: draft.content, published: await before.tokens() });
+    const after = await this.current();
+    if (after.snapshot.digest !== before.snapshot.digest) throw new WorkflowError("stale", "the project or design repository changed while the preview ran; run it again");
+    const { report } = scan;
+    const preview: StylePreview = {
+      id: this.id("p"),
+      at: this.now(),
+      draftRevision: draft.revision,
+      draftDigest: draft.digest,
+      snapshot: before.snapshot,
+      durationMs: Math.round(performance.now() - started),
+      scan: { status: report.status, files: report.coverage.filesScanned, failed: report.coverage.failed },
+      ...impact,
+      limits: [
+        ...impact.limits,
+        ...(before.designDirty ? ["The design repository has uncommitted changes or another branch checked out; the project scan reads the working tree, the token build reads the draft's base commit."] : []),
+        ...(before.snapshot.projectCommit === null ? [`${report.project} is not a git repository: later edits to it cannot be detected, so this preview cannot go stale.`] : []),
+      ],
+    };
+    const failing = preview.contrast.filter((c) => c.change !== "fixed").length;
+    const next: StyleDraft = { ...draft, preview, updatedAt: this.now(), events: [...draft.events, this.event(actor, "previewed", `In ${report.project}, ${previewSummary({ ...draft, preview })}${failing ? `; ${failing} colour pair(s) below WCAG AA` : ""}.`)] };
+    await this.options.store.put(next);
+    return this.refreshed(next, after);
+  }
+
+  /**
+   * A person approves exactly the revision and preview they saw. A style draft that puts colour
+   * pairs below WCAG AA that passed before (or did not exist) needs `acknowledgeContrast`: exactly
+   * those pairs' keys, from one explicit confirmation that named them.
+   */
+  async approve(actor: Actor, id: string, input: { revision: number; previewId: string; acknowledgeContrast?: readonly string[] }): Promise<DraftView> {
     return this.locked(id, async () => {
       const draft = await this.load(id);
       this.guard(actor, "approve", draft);
@@ -370,11 +464,13 @@ export class RuleWorkflow {
         throw new WorkflowError(view.problems.length ? "invalid" : "stale", "this draft cannot be approved yet", reasons);
       }
       const preview = view.preview!;
-      const next: Draft = {
+      const acknowledged = view.kind === "style" ? contrastAcknowledgement(view.preview!, input.acknowledgeContrast) : [];
+      const confirmed = acknowledged.length ? ` Confirmed ${acknowledged.length} colour pair(s) this draft puts below WCAG AA.` : "";
+      const next = {
         ...view,
-        approval: { by: actor, at: this.now(), draftRevision: draft.revision, draftDigest: draft.digest, previewId: preview.id, snapshotDigest: current.snapshot.digest, baseCommit: current.tip },
+        approval: { by: actor, at: this.now(), draftRevision: draft.revision, draftDigest: draft.digest, previewId: preview.id, snapshotDigest: current.snapshot.digest, baseCommit: current.tip, ...(acknowledged.length ? { contrastAcknowledged: acknowledged } : {}) },
         updatedAt: this.now(),
-        events: [...view.events, this.event(actor, "approved", `Approved revision ${draft.revision} after a preview that flags ${preview.flagged} place(s).`)],
+        events: [...view.events, this.event(actor, "approved", `Approved revision ${draft.revision} after a preview that ${previewSummary(view)}.${confirmed}`)],
       };
       await this.options.store.put(stored(next));
       return this.view(stored(next), current);
@@ -413,21 +509,8 @@ export class RuleWorkflow {
       const current = await this.current();
       const view = await this.refreshed(draft, current);
       if (!view.canHandoff) throw new WorkflowError("stale", "only a current approval can be handed off", [...view.problems, ...view.baseStale, ...(view.approval ? [] : ["Approve the draft first (an approval is withdrawn when the draft, the design repository or the project changes)."])]);
-      const { rule } = toRuleSpec(draft.content.rule);
-      const files = await current.files.filesFor(draft.base.commit, rule!, draft.content);
+      const { files, branch, message } = draft.kind === "style" ? await this.styleChange(draft, view as StyleDraftView, current) : await this.ruleChange(draft, view as RuleDraftView, current);
       if (Object.keys(files).length === 0) throw new WorkflowError("invalid", "this draft changes nothing in the design repository");
-      const branch = `youi/rules/${parseId(rule!.id)?.name ?? "rule"}-${draft.id.slice(2, 8)}`;
-      const approval = view.approval!;
-      const preview = view.preview!;
-      const message = [
-        `rule: ${draft.mode === "create" ? "add" : "update"} ${rule!.title}`,
-        "",
-        rule!.statement,
-        "",
-        `Rule ${rule!.id}, draft ${draft.id} revision ${draft.revision}.`,
-        `Approved by ${approval.by.name} at ${approval.at}.`,
-        `Impact on ${current.project.config.id}${current.snapshot.projectCommit ? ` @ ${current.snapshot.projectCommit.slice(0, 12)}` : ""}: flags ${preview.flagged} place(s), ${preview.counts.new} new, ${preview.counts.resolved} no longer flagged.`,
-      ].join("\n");
       const created = await createReviewBranch(current.repo.top, {
         base: draft.base.commit,
         branch,
@@ -456,6 +539,50 @@ export class RuleWorkflow {
     });
   }
 
+  /** What a rule draft's review branch carries. */
+  private async ruleChange(draft: RuleDraft, view: RuleDraftView, current: Current): Promise<{ files: Record<string, string>; branch: string; message: string }> {
+    const { rule } = toRuleSpec(draft.content.rule);
+    const files = await current.files.filesFor(draft.base.commit, rule!, draft.content);
+    const approval = view.approval!;
+    const preview = view.preview!;
+    const message = [
+      `rule: ${draft.mode === "create" ? "add" : "update"} ${rule!.title}`,
+      "",
+      rule!.statement,
+      "",
+      `Rule ${rule!.id}, draft ${draft.id} revision ${draft.revision}.`,
+      `Approved by ${approval.by.name} at ${approval.at}.`,
+      `Impact on ${current.project.config.id}${current.snapshot.projectCommit ? ` @ ${current.snapshot.projectCommit.slice(0, 12)}` : ""}: flags ${preview.flagged} place(s), ${preview.counts.new} new, ${preview.counts.resolved} no longer flagged.`,
+    ].join("\n");
+    return { files, branch: `youi/rules/${parseId(rule!.id)?.name ?? "rule"}-${draft.id.slice(2, 8)}`, message };
+  }
+
+  /** What a style draft's review branch carries: the token files and contracts, edited in place. */
+  private async styleChange(draft: StyleDraft, view: StyleDraftView, current: Current): Promise<{ files: Record<string, string>; branch: string; message: string }> {
+    const types = new Map((await current.tokens()).map((t) => [t.id, t.type]));
+    const { files, problems } = await current.files.styleFilesFor(draft.base.commit, draft.content, types);
+    if (problems.length > 0) throw new WorkflowError("invalid", "this draft cannot be written to the design repository", problems);
+    const approval = view.approval!;
+    const scheme = (edit: StyleDraftContent["tokens"][number]): string => [edit.light !== undefined ? "light" : "", edit.dark === null ? "dark follows light" : edit.dark !== undefined ? "dark" : ""].filter(Boolean).join(", ");
+    const lines = [
+      ...draft.content.tokens.map((edit) => `- ${edit.path} (${scheme(edit)})`),
+      ...draft.content.states.map((edit) => `- ${edit.component.split("/").at(-1)} ${edit.state} ${edit.role} → ${edit.token.split("/").at(-1)}`),
+    ];
+    const contrast = view.preview!.contrast.filter((c) => c.change !== "fixed").length;
+    const confirmed = view.preview!.contrast.filter((c) => approval.contrastAcknowledged?.includes(c.key));
+    const message = [
+      `style: ${draft.content.title.trim() || `update ${describeStyle(draft.content)}`}`,
+      "",
+      ...lines,
+      "",
+      `Style draft ${draft.id} revision ${draft.revision}.`,
+      `Approved by ${approval.by.name} at ${approval.at}.`,
+      `Impact on ${current.project.config.id}${current.snapshot.projectCommit ? ` @ ${current.snapshot.projectCommit.slice(0, 12)}` : ""}: ${previewSummary(view)}${contrast ? `; ${contrast} colour pair(s) below WCAG AA` : ""}.`,
+      ...(confirmed.length ? ["", `${approval.by.name} confirmed these new WCAG AA failures:`, ...confirmed.map((c) => `- ${describeContrast(c)}`)] : []),
+    ].join("\n");
+    return { files, branch: `youi/style/${styleSlug(draft.content)}-${draft.id.slice(2, 8)}`, message };
+  }
+
   async discard(actor: Actor, id: string): Promise<DraftView> {
     return this.locked(id, async () => {
       const draft = await this.load(id);
@@ -467,6 +594,32 @@ export class RuleWorkflow {
   }
 }
 
+/** One colour pair below AA, in words: "Button default (hover): text on fill, light: 1.21:1, needs 4.5:1". */
+export function describeContrast(c: StyleContrast): string {
+  return `${c.label}, ${c.scheme}: ${c.after === null ? (c.unreadable ?? "could not read colour") : `${c.after.toFixed(2)}:1`}, needs ${c.required}:1`;
+}
+
+/** The colour pairs a style draft puts below WCAG AA (they passed before, or did not exist): what its approval must acknowledge. */
+export function newContrastFailures(preview: StylePreview): StyleContrast[] {
+  return preview.contrast.filter((c) => c.change === "new");
+}
+
+/** The keys an approval confirms, or a refusal naming every pair when they are not exactly the draft's new failures. */
+function contrastAcknowledgement(preview: StylePreview, given: readonly string[] | undefined): string[] {
+  const failing = newContrastFailures(preview);
+  // A preview from before pairs had keys cannot be confirmed pair by pair.
+  if (failing.some((c) => typeof c.key !== "string")) throw new WorkflowError("stale", "this preview predates contrast confirmation; run the impact preview again");
+  const keys = failing.map((c) => c.key).sort();
+  const acknowledged = [...new Set(given ?? [])].sort();
+  if (keys.length === acknowledged.length && keys.every((key, i) => key === acknowledged[i])) return keys;
+  if (keys.length === 0) throw new WorkflowError("invalid", "this draft puts no colour pair below WCAG AA, so there is nothing to confirm; approve it without a contrast acknowledgement", acknowledged.map((key) => `not a new failure: ${key}`));
+  const unknown = acknowledged.filter((key) => !keys.includes(key));
+  throw new WorkflowError("invalid", `this draft puts ${failing.length} colour pair(s) below WCAG AA: confirm exactly these pairs to approve it`, [
+    ...failing.map((c) => `${describeContrast(c)}${acknowledged.includes(c.key) ? "" : " (not confirmed)"}`),
+    ...unknown.map((key) => `confirmed, but not a new failure of this preview: ${key}`),
+  ]);
+}
+
 /** A view's stored part: drop the computed fields before persisting. */
 function stored(view: Draft | DraftView): Draft {
   const { status: _s, problems: _p, previewStale: _ps, baseStale: _bs, needsRebase: _nr, canApprove: _ca, canHandoff: _ch, ...draft } = view as DraftView;
@@ -476,3 +629,6 @@ function stored(view: Draft | DraftView): Draft {
 function shellQuote(path: string): string {
   return /^[\w./-]+$/.test(path) ? path : `'${path.replaceAll("'", "'\\''")}'`;
 }
+
+/** The workflow handles every kind of design change; `RuleWorkflow` is its original name. */
+export { RuleWorkflow as DesignWorkflow };

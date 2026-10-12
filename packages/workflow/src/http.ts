@@ -1,5 +1,5 @@
 /**
- * The loopback HTTP service: the workflow under /api, and (optionally) the built hub at /.
+ * The loopback HTTP service: the workflow (rule and style drafts) under /api, and (optionally) the built hub at /.
  *
  * It listens on 127.0.0.1 only. Requests must name a loopback Host (no DNS rebinding) and
  * may not come cross-site; writes must carry this run's session key (printed only in the
@@ -11,7 +11,7 @@ import { timingSafeEqual } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { z } from "zod";
-import { DefinitionError, ElementId, RuleCheck, RuleRollout } from "@youiyoux/core";
+import { COMPONENT_STATES, DefinitionError, ElementId, RuleCheck, RuleRollout } from "@youiyoux/core";
 import type { Actor, ApiError } from "./api.ts";
 import { WorkflowError } from "./policy.ts";
 import type { RuleWorkflow } from "./service.ts";
@@ -32,9 +32,22 @@ const RuleFieldsInput = z.object({
   examples: z.object({ bad: z.array(z.string().max(2000)).max(20), good: z.array(z.string().max(2000)).max(20) }),
 });
 const DraftContentInput = z.object({ rule: RuleFieldsInput, components: z.array(ElementId).max(200) });
-const CreateInput = z.discriminatedUnion("mode", [z.object({ mode: z.literal("edit"), ruleId: ElementId }), z.object({ mode: z.literal("create") })]);
-const SaveInput = z.object({ revision: z.number().int().positive(), content: DraftContentInput });
-const ApproveInput = z.object({ revision: z.number().int().positive(), previewId: z.string().min(1).max(40) });
+/** A token value is checked against its type by the workflow; here only its path is. */
+const TokenEditInput = z.object({ path: z.string().min(1).max(200).regex(/^[^${}.][^{}]*$/, "expected a token path like color.accent"), light: z.unknown().optional(), dark: z.unknown().optional() });
+const StateEditInput = z.object({ component: ElementId, state: z.enum(COMPONENT_STATES), role: z.string().min(1).max(100), token: ElementId });
+const StyleContentInput = z.object({ title: z.string().max(200), tokens: z.array(TokenEditInput).max(500), states: z.array(StateEditInput).max(200) });
+const CreateInput = z.union([
+  z.object({ kind: z.literal("style"), content: StyleContentInput.optional() }),
+  z.discriminatedUnion("mode", [z.object({ kind: z.literal("rule").optional(), mode: z.literal("edit"), ruleId: ElementId }), z.object({ kind: z.literal("rule").optional(), mode: z.literal("create") })]),
+]);
+const SaveInput = z.object({ revision: z.number().int().positive(), content: z.union([DraftContentInput, StyleContentInput]) });
+
+/** JSON has no undefined: an absent light or dark stays absent (unchanged), null stays null (dark follows light). */
+function styleContent<T extends { tokens: Array<{ light?: unknown; dark?: unknown }> }>(content: T): T {
+  return { ...content, tokens: content.tokens.map((t) => Object.fromEntries(Object.entries(t).filter(([, v]) => v !== undefined))) } as T;
+}
+/** `acknowledgeContrast`: the keys of the colour pairs a style draft puts below WCAG AA, from the confirmation that named them. */
+const ApproveInput = z.object({ revision: z.number().int().positive(), previewId: z.string().min(1).max(40), acknowledgeContrast: z.array(z.string().min(1).max(600)).max(1000).optional() });
 
 const STATUS: Record<ApiError["code"], number> = { "bad-request": 400, forbidden: 403, "not-found": 404, conflict: 409, stale: 409, invalid: 422, internal: 500 };
 
@@ -130,13 +143,19 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string, opti
   if (path === "/api/info" && method === "GET") return send(res, 200, await workflow.info(actor));
   if (path === "/api/rules" && method === "GET") return send(res, 200, await workflow.published(actor));
   if (path === "/api/drafts" && method === "GET") return send(res, 200, await workflow.list(actor));
-  if (path === "/api/drafts" && method === "POST") return send(res, 201, await workflow.create(actor, parse(CreateInput, await readJson(req))));
+  if (path === "/api/drafts" && method === "POST") {
+    const input = parse(CreateInput, await readJson(req));
+    return send(res, 201, await workflow.create(actor, "kind" in input && input.kind === "style" ? { kind: "style", ...(input.content ? { content: styleContent(input.content) } : {}) } : (input as Exclude<typeof input, { kind: "style" }>)));
+  }
   const match = /^\/api\/drafts\/(d-[0-9a-f]{10})(?:\/(preview|approve|rebase|handoff))?$/.exec(path);
   if (match) {
     const id = match[1]!;
     const action = match[2];
     if (!action && method === "GET") return send(res, 200, await workflow.get(actor, id));
-    if (!action && method === "PUT") return send(res, 200, await workflow.save(actor, id, parse(SaveInput, await readJson(req))));
+    if (!action && method === "PUT") {
+      const input = parse(SaveInput, await readJson(req));
+      return send(res, 200, await workflow.save(actor, id, { revision: input.revision, content: "tokens" in input.content ? styleContent(input.content) : input.content }));
+    }
     if (!action && method === "DELETE") return send(res, 200, await workflow.discard(actor, id));
     if (method === "POST" && action === "preview") return send(res, 200, await workflow.preview(actor, id));
     if (method === "POST" && action === "approve") return send(res, 200, await workflow.approve(actor, id, parse(ApproveInput, await readJson(req))));

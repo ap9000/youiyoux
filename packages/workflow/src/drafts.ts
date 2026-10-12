@@ -7,6 +7,7 @@ import { parseDocument, type Document } from "yaml";
 import { parseId, RuleSpec, sha256, stableStringify, type ElementId } from "@youiyoux/core";
 import type { Draft, DraftContent, DraftStatus, RuleFields } from "./api.ts";
 import type { RuleExecution } from "./execution.ts";
+import { setJsonPath } from "./json-edit.ts";
 
 /** Key order of a rule file, as the hand-written rules use it. */
 const RULE_KEYS = ["$schema", "schema", "id", "title", "severity", "rollout", "statement", "rationale", "agent", "check", "files", "examples"] as const;
@@ -145,13 +146,12 @@ export function renderRuleYaml(rule: RuleSpec, existing: string | null, schemaRe
   return doc.toString({ lineWidth: 0 });
 }
 
-/** A contract with `ruleId` added to or removed from its rules; null when nothing changes. */
+/** A contract with `ruleId` added to or removed from its rules, edited in place; null when nothing changes. */
 export function renderContract(text: string, ruleId: string, listed: boolean): string | null {
   const contract = JSON.parse(text) as { rules?: string[] };
   const rules = contract.rules ?? [];
   if (rules.includes(ruleId) === listed) return null;
-  const next = { ...contract, rules: listed ? [...rules, ruleId] : rules.filter((id) => id !== ruleId) };
-  return `${JSON.stringify(next, null, 2)}\n`;
+  return setJsonPath(text, ["rules"], listed ? [...rules, ruleId] : rules.filter((id) => id !== ruleId));
 }
 
 export function draftStatus(draft: Draft, merged = false): DraftStatus {

@@ -71,4 +71,6 @@
   --text-title--font-weight: var(--yx-typography-title-font-weight);
   --text-title--letter-spacing: var(--yx-typography-title-letter-spacing);
   --text-title--line-height: var(--yx-typography-title-line-height);
+  --transition-duration-base: var(--yx-duration-base);
+  --transition-duration-fast: var(--yx-duration-fast);
 }

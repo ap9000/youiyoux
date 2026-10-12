@@ -1,13 +1,13 @@
 /**
- * The rule-editor workflow service, reached at /api: `youi ui --project` starts it beside
+ * The design-change workflow service (rule and style drafts), reached at /api: `youi ui --project` starts it beside
  * the dev server, which proxies /api to it (same origin when the service serves a built hub). Unlike the snapshot, this is live
  * state, so nothing here is cached.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ApiError, DraftContent, DraftView, PublishedRules, WorkflowInfo } from "@youiyoux/workflow/api";
+import type { ApiError, DraftContent, DraftView, PublishedRules, StyleDraftContent, StyleDraftView, WorkflowInfo } from "@youiyoux/workflow/api";
 import { sessionKey } from "./session-key.ts";
 
-export type { CheckCapability, DraftContent, DraftView, Preview, PreviewFinding, PublishedRule, PublishedRules, RuleFields, RulePlace, WorkflowInfo } from "@youiyoux/workflow/api";
+export type { CheckCapability, DraftContent, DraftView, Preview, PreviewFinding, PublishedRule, PublishedRules, RuleDraftView, RuleFields, RulePlace, StyleContrast, StyleDraftContent, StyleDraftView, StylePreview, StyleSite, WorkflowInfo } from "@youiyoux/workflow/api";
 
 const API = `${import.meta.env.BASE_URL}api`;
 
@@ -55,9 +55,11 @@ export const workflowApi = {
   draft: (id: string) => call<DraftView>("GET", `/drafts/${id}`),
   edit: (ruleId: string) => call<DraftView>("POST", "/drafts", { mode: "edit", ruleId }),
   create: () => call<DraftView>("POST", "/drafts", { mode: "create" }),
-  save: (id: string, revision: number, content: DraftContent) => call<DraftView>("PUT", `/drafts/${id}`, { revision, content }),
+  createStyle: (content: StyleDraftContent) => call<StyleDraftView>("POST", "/drafts", { kind: "style", content }),
+  save: (id: string, revision: number, content: DraftContent | StyleDraftContent) => call<DraftView>("PUT", `/drafts/${id}`, { revision, content }),
   preview: (id: string) => call<DraftView>("POST", `/drafts/${id}/preview`),
-  approve: (id: string, revision: number, previewId: string) => call<DraftView>("POST", `/drafts/${id}/approve`, { revision, previewId }),
+  /** `acknowledgeContrast`: a style draft's new WCAG AA failures (their keys), confirmed in the approval dialog. */
+  approve: (id: string, revision: number, previewId: string, acknowledgeContrast?: readonly string[]) => call<DraftView>("POST", `/drafts/${id}/approve`, { revision, previewId, ...(acknowledgeContrast ? { acknowledgeContrast } : {}) }),
   rebase: (id: string) => call<DraftView>("POST", `/drafts/${id}/rebase`),
   handoff: (id: string) => call<DraftView>("POST", `/drafts/${id}/handoff`),
   discard: (id: string) => call<DraftView>("DELETE", `/drafts/${id}`),

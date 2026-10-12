@@ -20,8 +20,8 @@ A design repo is any directory with a `youi.config.json`. A product names it wit
 | Path in a design repo | Contents |
 | --- | --- |
 | `youi.config.json` | Systems and where their definitions live |
-| `tokens/<system>/` | DTCG 2025.10 tokens: a resolver (base set plus a light/dark `theme` modifier) |
-| `components/<name>/` | `youi.component/v1` contracts, the owned implementations that sync vendors into products, and an optional `<name>.demo.tsx` the hub previews |
+| `tokens/<system>/` | `youi.tokens/v1` tokens: DTCG 2025.10 plus two youi types, `spring` (stiffness, damping, mass, velocity) and `focusRing` (colour, width, offset, style); a resolver (base set plus a light/dark `theme` modifier). Values that reach CSS are kept from injecting declarations: token names and font family names hold only letters, digits, spaces (families) and hyphens |
+| `components/<name>/` | `youi.component/v1` contracts (with optional `states`: hover, active, focus and disabled → role → token), the owned implementations that sync vendors into products, and an optional `<name>.demo.tsx` the hub previews |
 | `rules/` | `youi.rule/v1` rules: prose for people, an instruction for agents, and an executable check |
 | `library/` | `youi.library/v1` Library items (`library/<source>/<name>.library.json`): ingested references, never built with; none yet, sources come later |
 | `systems/<system>/design.md` | The narrative; DESIGN.md is generated from it plus the tokens |
@@ -31,10 +31,10 @@ A design repo is any directory with a `youi.config.json`. A product names it wit
 
 | Path | Contents |
 | --- | --- |
-| `packages/` | `core` (schemas, loader), `tokens` (Terrazzo build, import, parity), `scanner` (usage map, checks, migrations, plans), `cli`, `mcp`, `workflow` (rule-editor service) |
+| `packages/` | `core` (schemas, loader), `tokens` (Terrazzo build, import, parity), `scanner` (usage map, checks, migrations, plans), `cli`, `mcp`, `workflow` (design-change service: rule and style drafts) |
 | `apps/web/` | The hub: find an element, see its contract, tokens and rules, preview it, see where it lives ([README](apps/web/README.md)) |
 | `schema/` | JSON Schemas, emitted from the Zod definitions in `packages/core` (`youi schema --write`) |
-| `examples/demo-design/` | **Demo**, a made-up design system (Button, Input and Card; 19 tokens; 6 rules) used by the tests, these docs and the hub's default data |
+| `examples/demo-design/` | **Demo**, a made-up design system (Button, Input and Card; 29 tokens including motion, springs and a focus ring; states on Button and Input; 6 rules) used by the tests, these docs and the hub's default data |
 | `examples/demo-app/` | A made-up product that uses Demo, with a few deliberate violations |
 | `.railway/`, `.github/workflows/web-preview.yml` | Per-PR preview deploys of the hub on Railway, demo data only ([how](apps/web/README.md#preview-deploys)) |
 
@@ -71,7 +71,7 @@ In a product repo:
 | `youi plan` / `youi migrate` | Classify a change and its impact; run a gated codemod: a dry run that prints the diff and the residual sites unless `--write` ([migrations](#migrations)) |
 | `youi library search <query>` / `youi library request <id> --reason …` | Browse the Library; draft a request to adopt an item into the System |
 | `youi mcp` | stdio MCP server: `system_*` tools (build with these, plus `system_plan`) and `library_*` tools (browse, draft a request); no publish, approve or merge tools |
-| `youi ui --project <dir>` | The hub on that product, with the local rule editor: drafts, impact preview against the project, approval, and a review branch in the design repo ([guide](packages/workflow/README.md)) |
+| `youi ui --project <dir>` | The hub on that product, with the local rule and style editors: drafts, impact preview against the project, approval, and a review branch in the design repo ([guide](packages/workflow/README.md)) |
 
 `show`, `where`, `bom`, `check`, `plan` and `migrate` work on the System.
 
@@ -95,7 +95,7 @@ In a design repo (the current directory, or `--design <dir>`):
 
 | Command | Does |
 | --- | --- |
-| `youi build` | Build the token outputs (`--out`, `--prefix`) |
+| `youi build` | Validate the token files with `youi.tokens/v1` and build the outputs (`--out`, `--prefix`): springs become a CSS `linear()` easing plus its settle duration, focus rings an outline shorthand plus offset, and contract states `--<prefix>-<component>-<state>-<role>` variables. Family names are written as escaped CSS strings and descriptions as comments that cannot be closed early |
 | `youi parity --css <file>` | Compare the generated CSS with a product's shipped CSS, light and dark |
 | `youi schema --check` | Check the repo's `schema/` copies against this tool's schemas (`--write` refreshes them) |
 

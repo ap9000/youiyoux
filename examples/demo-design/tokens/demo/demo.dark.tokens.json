@@ -72,6 +72,30 @@
         "hex": "#8c85ff"
       }
     },
+    "accent-hover": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.6353,
+          0.6157,
+          1.0
+        ],
+        "hex": "#a29dff"
+      }
+    },
+    "accent-active": {
+      "$type": "color",
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [
+          0.7216,
+          0.7059,
+          1.0
+        ],
+        "hex": "#b8b4ff"
+      }
+    },
     "on-accent": {
       "$type": "color",
       "$value": {

@@ -8,7 +8,7 @@
 import { clsx } from "clsx";
 import { PencilLine, Plus, ShieldCheck } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
-import { Link, useLocation, useParams } from "wouter";
+import { Link, Redirect, useLocation, useParams } from "wouter";
 import { elementHref, parseId } from "../../data/ids.ts";
 import { retryModel, useModelState, useUsageState } from "../../data/store.ts";
 import type { CatalogRule, RuleSpec } from "../../data/types.ts";
@@ -75,7 +75,7 @@ export function RulesScreen() {
 
 function liveRows(live: Live): RuleRow[] {
   return live.published.rules
-    .map(({ rule, components, flagged, notRun, places }) => ({ rule, components, flagged, ...(notRun ? { notRun } : {}), places, draft: live.drafts.find((d) => d.ruleId === rule.id && OPEN.has(d.status)) ?? null }))
+    .map(({ rule, components, flagged, notRun, places }) => ({ rule, components, flagged, ...(notRun ? { notRun } : {}), places, draft: live.drafts.find((d) => d.kind === "rule" && d.ruleId === rule.id && OPEN.has(d.status)) ?? null }))
     .sort((a, b) => a.rule.title.localeCompare(b.rule.title));
 }
 
@@ -325,6 +325,8 @@ function DraftPage({ id, live, onChanged }: { id: string; live: Live; onChanged:
   if (state.status === "loading") return <PaneSkeleton />;
   if (state.status === "error") return <ServiceDown error={state.error} onRetry={reload} />;
   const draft = state.value;
+  // Style drafts are reviewed in Changes.
+  if (draft.kind !== "rule") return <Redirect to={`/changes/${draft.id}`} replace />;
   const published = live.published.rules.some((r) => r.rule.id === draft.ruleId);
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">

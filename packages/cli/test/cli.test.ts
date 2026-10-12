@@ -170,7 +170,7 @@ describe("youi", () => {
     const dir = await mkdtemp(join(tmpdir(), "youi-build-"));
     try {
       expect(await main(["build", "--design", DEMO, "--out", dir, "--prefix", "demo", "--json"])).toBe(0);
-      expect(JSON.parse(out)).toMatchObject({ files: ["tokens.css", "theme.css", "tokens.ts", "tokens.native.ts"], tokens: 19 });
+      expect(JSON.parse(out)).toMatchObject({ files: ["tokens.css", "theme.css", "tokens.ts", "tokens.native.ts"], tokens: 29 });
       expect(await readFile(join(dir, "tokens.css"), "utf8")).toContain("--demo-color-accent:");
       expect(await main(["build", "--design", dir])).toBe(1);
       expect(err).toContain("not a design repo");
@@ -186,7 +186,7 @@ describe("youi", () => {
       expect(await main(["schema", "--check"])).toBe(0);
       out = "";
       expect(await main(["schema", "--check", "--design", dir, "--json"])).toBe(1);
-      expect((JSON.parse(out) as { stale: string[] }).stale).toHaveLength(9);
+      expect((JSON.parse(out) as { stale: string[] }).stale).toHaveLength(10);
       expect(await main(["schema", "--write", "--design", dir])).toBe(0);
       out = "";
       expect(await main(["schema", "--check", "--design", dir])).toBe(0);

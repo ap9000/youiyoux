@@ -6,6 +6,7 @@ import { posix } from "node:path";
 import { z } from "zod";
 import { LibraryEntry } from "./hierarchy.ts";
 import { ElementId } from "./ids.ts";
+import { TokenDocument } from "./tokens.ts";
 
 const SemVer = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, "expected semver x.y.z");
 /** `./src/ui/` and `src//ui` mean `src/ui`; compared with scanner paths, an unnormalized path would silently match nothing. */
@@ -139,6 +140,13 @@ export const PropSpec = z.discriminatedUnion("type", [
 ]);
 export type PropSpec = z.infer<typeof PropSpec>;
 
+/** Interaction states a contract may bind tokens for, in the order a person meets them. */
+export const COMPONENT_STATES = ["hover", "active", "focus", "disabled"] as const;
+export type ComponentState = (typeof COMPONENT_STATES)[number];
+
+/** A token role (`bg.default`, `ring`): it names a CSS variable, so lowercase words joined by dots or dashes. */
+const SlotName = z.string().regex(/^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$/, "expected lowercase words joined by . or - (bg.default)");
+
 export const ComponentContract = z.object({
   $schema: z.string().optional(),
   schema: z.literal("youi.component/v1"),
@@ -158,6 +166,12 @@ export const ComponentContract = z.object({
   /** Native element whose remaining props pass through (e.g. "button"). */
   passthrough: z.string().optional(),
   tokens: z.record(z.string(), ElementId).default({}),
+  /**
+   * Tokens per interaction state: state → role → token. A role may override one in `tokens`
+   * (`bg.default` on hover) or exist only in a state (`ring` on focus). The token build emits
+   * each as `--<prefix>-<component>-<state>-<role>`, which the owned implementation reads.
+   */
+  states: z.partialRecord(z.enum(COMPONENT_STATES), z.record(SlotName, ElementId)).optional(),
   a11y: z.object({ role: z.string().optional(), minTouchTarget: z.number().optional(), notes: z.array(z.string()).default([]) }).default({ notes: [] }),
   rules: z.array(ElementId).default([]),
   guidance: z.object({ do: z.array(z.string()).default([]), dont: z.array(z.string()).default([]) }).default({ do: [], dont: [] }),
@@ -426,6 +440,7 @@ export const PUBLISHED_SCHEMAS = {
   "youi.lock.schema.json": LockFile,
   "youi.library.schema.json": LibraryEntry,
   "youi.baseline.schema.json": Baseline,
+  "youi.tokens.schema.json": TokenDocument,
 } as const;
 
 /** Project config with every path normalized, so comparisons with scanned paths are exact. Loaders call this. */

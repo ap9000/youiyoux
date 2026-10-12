@@ -56,4 +56,37 @@ describe("loopback service", () => {
     expect(json.code).toBe("bad-request");
     expect((await call("GET", "/api/drafts/d-0000000000")).status).toBe(404);
   });
+
+  test("style drafts are created and saved over the same API", async () => {
+    const headers = { "x-youi-session": KEY };
+    const created = await call("POST", "/api/drafts", headers, { kind: "style" });
+    expect(created.status).toBe(201);
+    expect(created.json).toMatchObject({ kind: "style", revision: 1 });
+    const content = { title: "Rounder cards", tokens: [{ path: "radius.card", light: { value: 16, unit: "px" } }], states: [] };
+    const saved = await call("PUT", `/api/drafts/${created.json.id as string}`, headers, { revision: 1, content });
+    expect(saved.status).toBe(200);
+    expect(saved.json).toMatchObject({ revision: 2, problems: [], content });
+    expect((saved.json.content as { tokens: object[] }).tokens[0]).not.toHaveProperty("dark");
+    const bad = await call("PUT", `/api/drafts/${created.json.id as string}`, headers, { revision: 2, content: { ...content, states: [{ component: "youi:demo/component/button", state: "pressed", role: "bg", token: "youi:demo/token/color.card" }] } });
+    expect(bad.status).toBe(400);
+    expect((await call("GET", "/api/info")).json).toMatchObject({ kinds: ["rule", "style"] });
+  });
+
+  test("approving a style draft carries the contrast confirmation: refused (422, naming the pairs) without it, approved with it", async () => {
+    const headers = { "x-youi-session": KEY };
+    const id = (await call("POST", "/api/drafts", headers, { kind: "style" })).json.id as string;
+    const muted = { colorSpace: "srgb", components: [0.7686, 0.7686, 0.8], hex: "#c4c4cc" };
+    await call("PUT", `/api/drafts/${id}`, headers, { revision: 1, content: { title: "", tokens: [{ path: "color.muted", light: muted }], states: [] } });
+    const previewed = (await call("POST", `/api/drafts/${id}/preview`, headers)).json as { revision: number; preview: { id: string; contrast: Array<{ key: string; change: string }> } };
+    const keys = previewed.preview.contrast.filter((c) => c.change === "new").map((c) => c.key);
+    expect(keys.length).toBeGreaterThan(0);
+    const body = { revision: previewed.revision, previewId: previewed.preview.id };
+    const refused = await call("POST", `/api/drafts/${id}/approve`, headers, body);
+    expect(refused.status).toBe(422);
+    expect(refused.json.problems).toEqual(expect.arrayContaining([expect.stringMatching(/^color\.muted on color\.background, light: .*needs 4\.5:1 \(not confirmed\)$/)]));
+    expect((await call("POST", `/api/drafts/${id}/approve`, headers, { ...body, acknowledgeContrast: "all" })).status).toBe(400);
+    const approved = await call("POST", `/api/drafts/${id}/approve`, headers, { ...body, acknowledgeContrast: keys });
+    expect(approved.status).toBe(200);
+    expect(approved.json).toMatchObject({ status: "approved", approval: { contrastAcknowledged: [...keys].sort() } });
+  });
 });

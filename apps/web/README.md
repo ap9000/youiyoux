@@ -1,6 +1,6 @@
 # YouIyouX web
 
-The design language hub: find an element, see its contract, tokens and rules, preview the real component, and see exactly where it lives in each project. Local-only for now: no accounts. Everything reads a static snapshot except Rules and Changes, which talk to the local rule editor that `youi ui --project` starts.
+The design language hub: find an element, see its contract, tokens and rules, preview the real component, and see exactly where it lives in each project. Local-only for now: no accounts. Everything reads a static snapshot except Rules, Style (saving) and Changes, which talk to the local workflow service that `youi ui --project` starts.
 
 ```sh
 pnpm install        # at the repository root (apps/* is in the workspace)
@@ -25,7 +25,7 @@ Rules and Changes are live rather than a snapshot when the rule editor runs: `yo
 
 ## Screens
 
-The nav rail has three labelled groups: **System** (Overview, Components, Tokens, Rules, Screens: approved elements, their rules and live usage; what products build with), **Library** (Browse, Sources: what is ingested from outside, to browse and propose; never built with) and **Work** (Changes). Access stays reachable at `/access`.
+The nav rail has three labelled groups: **System** (Overview, Components, Tokens, Rules, Screens: approved elements, their rules and live usage; what products build with), **Library** (Browse, Sources: what is ingested from outside, to browse and propose; never built with) and **Work** (Style, Changes). Access stays reachable at `/access`.
 
 | Route | What it is |
 | --- | --- |
@@ -35,10 +35,11 @@ The nav rail has three labelled groups: **System** (Overview, Components, Tokens
 | `/rules[/<name>]`, `/rules/draft/<id>` | Every rule: what it checks, its level, where it is broken (counts and places). Edit and New rule open a draft on the rule's page: form, impact preview, approval, review branch. Live from the rule editor (`youi ui --project`, [guide](../../packages/workflow/README.md)); read-only from the snapshot without it |
 | `/screens[/<project>/<screen>]` | Each project screen as a screenshot with its element and issue counts; a screen opens with its full screenshot, the elements it renders and the rule issues in its files (`j`/`k` step between screens) |
 | `/library`, `/library/sources` | The Library (Browse): ingested candidates. Empty for now: explains the sources to come, the `library → candidate → adopted → in-use` path and what agents may do. Sources is planned |
-| `/changes` | Work: the review queue for every change: draft, waiting for approval, approved, sent for review, rolled out |
+| `/style`, `/style/draft/<id>` | Work: the style editor. Edit a system's colours (light and dark), type, spacing, radii, borders, shadows, motion (durations, easings, transitions, springs with their settle curve) and focus rings, and re-bind component states (hover, active, focus, disabled) where a contract declares them. A live preview renders the system's own demos and specimen screens (components, type and colour, space and shape, motion, focus) in light and dark, with any state pinned, and turns to the screen for the group being edited. Below 64rem (phones) it is a sticky strip under the header, light beside dark, that folds away; the token cards scroll beneath it, and the token-group tabs wrap. Colour pairs below WCAG AA are flagged as you edit (large text at 3:1, focus rings over component fills, unreadable colours as failures). Save draft (⌘S) puts the edits in Changes as a style draft. Editing and the preview work without the service; saving needs it |
+| `/changes`, `/changes/<id>` | Work: the review queue for every change (rule and style drafts): draft, waiting for approval, approved, sent for review, rolled out. A style draft opens here: its edits, then the impact preview (every changed token, every site of the components that change, every direct use, contrast), approval and review branch. Approving a style draft that puts colour pairs below WCAG AA opens one confirmation naming each pair; confirming sends exactly those pairs with the approval |
 | `/access` | Planned: access |
 
-Keyboard: `⌘K` palette, `/` search the list, `j`/`k` or arrows move, `g` then `o c t r s l i w` to jump, `?` for all shortcuts.
+Keyboard: `⌘K` palette, `/` search the list, `j`/`k` or arrows move, `g` then `o c t r s l i e w` to jump, `?` for all shortcuts. In Style, ↑/↓ step a number (Shift ×10), Escape puts a field back, ⌘S saves the draft.
 
 ## Data
 
@@ -52,7 +53,7 @@ Keyboard: `⌘K` palette, `/` search the list, `j`/`k` or arrows move, `g` then 
 
 ## Previews
 
-The element Overview shows a captured image (`<snapshot>/public/previews/<component>.<scheme>.webp`) until someone clicks; then it loads `preview.html`, which renders the system's own demo for that component with the system's tokens, in its own document. Demos live in the design repo, beside each contract: `components/<name>/<name>.demo.tsx`, a default-exported React component that imports the owned files by their vendored names (`./button`, `./utils`). A component with no demo says so in the frame. The frame gets its own Tailwind sheet, so a system's vocabulary (shadcn's `bg-primary`, or the demo's `bg-accent`) never collides with the hub's.
+The element Overview shows a captured image (`<snapshot>/public/previews/<component>.<scheme>.webp`) until someone clicks; then it loads `preview.html`, which renders the system's own demo for that component with the system's tokens, in its own document. Demos live in the design repo, beside each contract: `components/<name>/<name>.demo.tsx`, a default-exported React component that imports the owned files by their vendored names (`./button`, `./utils`). A component with no demo says so in the frame. The style editor uses the same frame with `?screen=components|type|scale|motion|focus` and posts it the unsaved edits as CSS-variable overrides (`yx-preview-vars`, per scheme) and a pinned state (`yx-preview-state`: the frame copies its `:hover`, `:active`, `:focus-visible` and `:disabled` rules under `[data-pin-state]`); see `src/preview/protocol.ts`. The frame's `system.css` writes aliases as `var()` references, so an override of one token reaches every token that reads it. The frame gets its own Tailwind sheet, so a system's vocabulary (shadcn's `bg-primary`, or the demo's `bg-accent`) never collides with the hub's.
 
 `scripts/capture.sh [base-url] [previews|screens|all]` refreshes the thumbnails (into the running snapshot) and the review screenshots in `screenshots/` (light and dark) with `chrome-devtools-axi`. The committed screenshots show the demo system.
 
@@ -127,7 +128,7 @@ src/data/          snapshot types (@youiyoux/core types, type-only), loading and
 src/search/        MiniSearch engine, Web Worker, client hook
 src/shell/         nav rail, keyboard layer, command palette, shortcuts sheet
 src/ui/            the hub's owned components
-src/screens/       home, catalog, element tabs, tokens, rules, screens, library, changes (rule editor), planned screens
+src/screens/       home, catalog, element tabs, tokens, rules, screens, library, style (style editor), changes (draft review), planned screens
 src/preview/       the isolated preview frame (loads the snapshot's demos through the @snapshot alias)
 snapshot/          the committed demo snapshot (data, previews, preview sources)
 test/              unit tests (pnpm test)

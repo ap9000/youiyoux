@@ -248,6 +248,29 @@
         "pattern": "^youi:([a-z][a-z0-9-]*)\\/(token|component|rule|migration)\\/([a-z0-9][a-z0-9.\\-]*)$"
       }
     },
+    "states": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "enum": [
+          "hover",
+          "active",
+          "focus",
+          "disabled"
+        ]
+      },
+      "additionalProperties": {
+        "type": "object",
+        "propertyNames": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)*$"
+        },
+        "additionalProperties": {
+          "type": "string",
+          "pattern": "^youi:([a-z][a-z0-9-]*)\\/(token|component|rule|migration)\\/([a-z0-9][a-z0-9.\\-]*)$"
+        }
+      }
+    },
     "a11y": {
       "default": {
         "notes": []

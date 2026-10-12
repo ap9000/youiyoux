@@ -244,7 +244,8 @@ export async function syncProject(project: Project, options: SyncOptions = {}): 
   for (const { contract } of system.components) {
     if ((await readTextOrNull(join(repo.root, system.config.components, contract.source.file))) === null) throw new Error(`${system.config.components}/${contract.source.file} is named by ${contract.id} but does not exist; nothing was written`);
   }
-  const build = await buildTokens(repo.root, system.config, config.outputs);
+  // Component state variables ship with the tokens: the vendored implementations read them.
+  const build = await buildTokens(repo.root, system.config, config.outputs, { contracts: system.components.map((c) => c.contract) });
   for (const file of build.files) await writer.generated(`${config.outputs.dir}/${file.path}`, file.content, "tokens");
 
   const narrative = system.config.design ? await readTextOrNull(join(repo.root, system.config.design)) : null;

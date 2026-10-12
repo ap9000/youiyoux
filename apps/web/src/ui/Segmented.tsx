@@ -13,10 +13,12 @@ interface SegmentedProps<T extends string> {
   options: readonly SegmentOption<T>[];
   onChange: (value: T) => void;
   label: string;
+  /** Wrap onto more rows when the options do not fit, instead of running off the edge. */
+  wrap?: boolean;
   className?: string;
 }
 
-export function Segmented<T extends string>({ value, options, onChange, label, className }: SegmentedProps<T>) {
+export function Segmented<T extends string>({ value, options, onChange, label, wrap = false, className }: SegmentedProps<T>) {
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     const step = event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
     if (!step) return;
@@ -28,7 +30,7 @@ export function Segmented<T extends string>({ value, options, onChange, label, c
     event.currentTarget.querySelector<HTMLButtonElement>(`[data-value="${next.value}"]`)?.focus();
   };
   return (
-    <div role="radiogroup" aria-label={label} onKeyDown={onKeyDown} className={clsx("inline-flex h-7 items-center gap-0.5 rounded-md bg-raised p-0.5", className)}>
+    <div role="radiogroup" aria-label={label} onKeyDown={onKeyDown} className={clsx(wrap ? "flex flex-wrap items-center gap-0.5" : "inline-flex h-7 items-center gap-0.5", "rounded-md bg-raised p-0.5", className)}>
       {options.map((option) => {
         const active = option.value === value;
         return (
