@@ -7,7 +7,7 @@ describe("navigation hierarchy", () => {
     const groups = navGroups().map((g) => ({ section: g.section, labels: g.items.map((i) => i.label) }));
     expect(groups).toEqual([
       { section: "system", labels: ["Overview", "Components", "Tokens", "Rules", "Screens"] },
-      { section: "library", labels: ["Browse", "Sources"] },
+      { section: "library", labels: ["Browse", "Inventory", "Sources"] },
       { section: "work", labels: ["Style", "Changes"] },
     ]);
     expect(NAV_SECTIONS.system.hint).toMatch(/build with/);

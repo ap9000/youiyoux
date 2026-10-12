@@ -103,7 +103,23 @@ Anywhere:
 
 | Command | Does |
 | --- | --- |
-| `youi ui [--design <dir>] [--project <dir>] [--config <file>] [--root <dir>]` | Start the hub on a design system (default: the demo); with `--project`, plus that product's usage map from a read-only scan |
+| `youi inventory [--project <dir>…] [--include <glob>…] [--exclude <glob>…] [--out <file>] [--json]` | Every UI element across one or more projects, with no design system: definitions, kits, library primitives and each rendered look grouped into families by shape ([inventory](#inventory)) |
+| `youi ui [--design <dir>] [--project <dir>] [--config <file>] [--root <dir>] [--inventory <file>]` | Start the hub on a design system (default: the demo); with `--project`, plus that product's usage map from a read-only scan; with `--inventory`, that inventory on the Inventory page |
+
+## Inventory
+
+`youi inventory --project ~/src/console --project ~/src/site` reads each directory as it is: no design repo and no `youi.project.json` needed (if one exists, only its `include`, `exclude`, `tsconfig` and `routes` are used; otherwise routes are detected from Expo Router, Next.js `app/**/page` and Astro `src/pages/` files). `--include <glob>` (repeatable) replaces each project's default or configured include globs, so a large repo can be limited without writing a config (`--include 'src/browser/**'`); stylesheets are always read, so the theme and class kits still resolve. `--exclude <glob>` (repeatable) adds to the exclude globs. It writes `youi.inventory/v1` to `.youi/inventory.json` in the first project (`--out` elsewhere) and prints roles by project, families, near-duplicates and flags.
+
+| Finds | How |
+| --- | --- |
+| Definitions | Exported PascalCase React components (from `.tsx`/`.jsx`; a plain `.ts` export is not one), every `.astro` component, and each member of a class kit |
+| Kits | A folder of components calling `cva()` (its base and `variants` tables are read), or a stylesheet's class kit: BEM blocks sharing a prefix (`.ui-button`, `.ui-button--sm`), and plain classes named for an element (`badge`, `pill`, `chip`, `tag`, `card`, `btn`, `button`, as the whole name or its first segment) whose rules set a shape (`.badge`) |
+| Primitives | Library packages rendered or imported as components (Radix, lucide…), with their sites |
+| Looks | Each rendered button, input, card, badge, dialog, tabs and link-as-button, from components and from styled native elements, with `file:line:column` and route |
+
+Roles come only from element and component names and ARIA roles (`<button>`, `role="tab"`, `*Badge`, `*Dialog`, a link inside `<Button asChild>`) and the kit member an element uses, never from utility class names. Each look's shape (height, horizontal and vertical padding, radius, font size, weight; colour ignored) is resolved from its classes: plain CSS rules first, then Tailwind utilities in order (a CVA base, its variants, the call site's `className`), including the CSS `font` shorthand's size, weight and line height, using the project's own theme (`@theme` and `:root` variables, a `tailwind.config.*` read statically and never run, `var()` and `calc()`, then Tailwind's defaults), so `rounded-md` is 8px where the project says so. A missing height is derived from padding, line height and border. Breakpoint and state classes (`md:`, `hover:`, `data-[state=active]:`) and pseudo-class or media rules are recorded on the look, not clustered; dynamic classes are listed as unresolved.
+
+Looks are grouped per role, across all projects, with complete-link clustering: two looks share a family only if every dimension is within tolerance of every other look in it (height, padding and radius ±2px, font size ±1px, weight ±100; an unknown dimension matches only an unknown). When both looks have a fixed height (set, not derived), vertical padding is not compared: a 32px `.ui-button` with 6px vertical padding and a CVA `h-8` button with none are one shape. Single-link would chain a 28, 30, 32…38px ladder into one family; complete-link never does. A family that spans more than one project or kit is a near-duplicate. Flags: a component name defined in more than one file, and a file importing two kits' versions of one role (with each import statement and its line).
 
 ## Migrations
 

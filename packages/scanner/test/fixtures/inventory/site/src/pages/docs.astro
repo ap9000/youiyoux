@@ -1,0 +1,15 @@
+---
+import Base from "../layouts/Base.astro";
+import Button from "../components/ui/Button.astro";
+
+const sections = ["Guide", "API"];
+---
+<Base title="Docs">
+  <div role="tablist" class="ui-tabs">
+    {sections.map((section, i) => (
+      <button role="tab" class={i === 0 ? "ui-tab ui-tab--active" : "ui-tab"}>{section}</button>
+    ))}
+    <button role="tab" class="ui-tab">Changelog</button>
+  </div>
+  <Button size="sm">Copy link</Button>
+</Base>

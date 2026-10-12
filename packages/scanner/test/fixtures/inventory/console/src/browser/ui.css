@@ -1,0 +1,16 @@
+/* The console's in-browser kit: plain CSS blocks, older than the CVA components. */
+.ui-button {
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font: 500 14px/20px system-ui, sans-serif;
+}
+
+.ui-input {
+  height: 32px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font: 14px/20px system-ui, sans-serif;
+}

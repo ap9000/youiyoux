@@ -25,7 +25,7 @@ Rules and Changes are live rather than a snapshot when the rule editor runs: `yo
 
 ## Screens
 
-The nav rail has three labelled groups: **System** (Overview, Components, Tokens, Rules, Screens: approved elements, their rules and live usage; what products build with), **Library** (Browse, Sources: what is ingested from outside, to browse and propose; never built with) and **Work** (Style, Changes). Access stays reachable at `/access`.
+The nav rail has three labelled groups: **System** (Overview, Components, Tokens, Rules, Screens: approved elements, their rules and live usage; what products build with), **Library** (Browse, Inventory, Sources: what is ingested from outside, to browse and propose; never built with) and **Work** (Style, Changes). Access stays reachable at `/access`.
 
 | Route | What it is |
 | --- | --- |
@@ -35,19 +35,21 @@ The nav rail has three labelled groups: **System** (Overview, Components, Tokens
 | `/rules[/<name>]`, `/rules/draft/<id>` | Every rule: what it checks, its level, where it is broken (counts and places). Edit and New rule open a draft on the rule's page: form, impact preview, approval, review branch. Live from the rule editor (`youi ui --project`, [guide](../../packages/workflow/README.md)); read-only from the snapshot without it |
 | `/screens[/<project>/<screen>]` | Each project screen as a screenshot with its element and issue counts; a screen opens with its full screenshot, the elements it renders and the rule issues in its files (`j`/`k` step between screens) |
 | `/library`, `/library/sources` | The Library (Browse): ingested candidates. Empty for now: explains the sources to come, the `library → candidate → adopted → in-use` path and what agents may do. Sources is planned |
+| `/inventory` | What products already built, from `youi inventory`: a role × project grid (families and looks per cell), then each role's families of look-alikes, one row each with its shape (height, padding, radius, font size, weight), kits, count, `file:line` examples with routes and, when it spans projects or kits, each side of the near-duplicate; duplicate-definition and mixed-kit flags; the kits and library primitives. On a phone the grid becomes one section per role. Empty until a snapshot carries an inventory |
 | `/style`, `/style/draft/<id>` | Work: the style editor. Edit a system's colours (light and dark), type, spacing, radii, borders, shadows, motion (durations, easings, transitions, springs with their settle curve) and focus rings, and re-bind component states (hover, active, focus, disabled) where a contract declares them. A live preview renders the system's own demos and specimen screens (components, type and colour, space and shape, motion, focus) in light and dark, with any state pinned, and turns to the screen for the group being edited. Below 64rem (phones) it is a sticky strip under the header, light beside dark, that folds away; the token cards scroll beneath it, and the token-group tabs wrap. Colour pairs below WCAG AA are flagged as you edit (large text at 3:1, focus rings over component fills, unreadable colours as failures). Save draft (⌘S) puts the edits in Changes as a style draft. Editing and the preview work without the service; saving needs it |
 | `/changes`, `/changes/<id>` | Work: the review queue for every change (rule and style drafts): draft, waiting for approval, approved, sent for review, rolled out. A style draft opens here: its edits, then the impact preview (every changed token, every site of the components that change, every direct use, contrast), approval and review branch. Approving a style draft that puts colour pairs below WCAG AA opens one confirmation naming each pair; confirming sends exactly those pairs with the approval |
 | `/access` | Planned: access |
 
-Keyboard: `⌘K` palette, `/` search the list, `j`/`k` or arrows move, `g` then `o c t r s l i e w` to jump, `?` for all shortcuts. In Style, ↑/↓ step a number (Shift ×10), Escape puts a field back, ⌘S saves the draft.
+Keyboard: `⌘K` palette, `/` search the list, `j`/`k` or arrows move, `g` then `o c t r s l v i e w` to jump, `?` for all shortcuts. In Style, ↑/↓ step a number (Shift ×10), Escape puts a field back, ⌘S saves the draft.
 
 ## Data
 
-`pnpm data [--design <dir>] [--project <dir>] [--config <file>] [--root <dir>] [--out <dir>] [--commit <sha>]` (`scripts/snapshot.ts`) builds a snapshot with this repository's `@youiyoux/core`, `@youiyoux/tokens` and `@youiyoux/scanner`; it never runs code from the design repo. With no options it rebuilds the committed demo: `examples/demo-design`, and a scan of `examples/demo-app`.
+`pnpm data [--design <dir>] [--project <dir>] [--config <file>] [--root <dir>] [--inventory <file>] [--out <dir>] [--commit <sha>]` (`scripts/snapshot.ts`) builds a snapshot with this repository's `@youiyoux/core`, `@youiyoux/tokens` and `@youiyoux/scanner`; it never runs code from the design repo. With no options it rebuilds the committed demo: `examples/demo-design`, a scan of `examples/demo-app`, and an inventory of the scanner's two inventory fixtures (`packages/scanner/test/fixtures/inventory/{console,site}`).
 
 - `--design` is the design repo checkout (the directory holding `youi.config.json`). `--project` (or `--config` with `--root`) scans a product repo, read-only, for the usage map; its `youi.project.json` (or `--config`) also names the design repo, the system, the CSS variable prefix and the Tailwind names its components use. The snapshot records the commit that last changed the definitions it read.
 - `<snapshot>/public/data/`: `manifest.json` plus content-hashed `<system>.catalog.<hash>.json` (tokens resolved per scheme, component contracts and their owned files, rules, the design narrative) and `<project>.usage.<hash>.json` (validated against `youi.usage/v1`). The browser keeps hashed files in Cache Storage, so repeat visits and offline work need only the manifest. Vite serves them beside `public/` and copies them into the build.
 - `<snapshot>/public/data/<project>.screen.<hash>.webp`: the project's screens, light and dark, when it has captured them (see [Project screens](#project-screens)). The manifest lists them per route; a route without a picture shows an empty state.
+- `<snapshot>/public/data/inventory.<hash>.json`: a `youi inventory` file (`--inventory`, validated against `youi.inventory/v1`; a bad file is refused with the failing field), named by the manifest's `inventory`. `youi ui --inventory <file>` passes it through.
 - `<snapshot>/preview/`: `system.css` (the system's variables scoped to `.system-scope`, the surface it sits on, and its Tailwind theme) and the system's owned component files, which the preview frame renders.
 - `src/styles/generated/`: the hub's own tokens (`design/youiyoux.*.json`, DTCG, built by `@youiyoux/tokens` like any system's) as CSS variables and a Tailwind v4 theme. The hub replaces Tailwind's colour, radius, shadow, type and easing scales with its tokens (the reserved names are mapped explicitly in `scripts/snapshot.ts`), so it uses no style that is not a YouIyouX token. Rebuilt with the default snapshot.
 
@@ -56,6 +58,16 @@ Keyboard: `⌘K` palette, `/` search the list, `j`/`k` or arrows move, `g` then 
 The element Overview shows a captured image (`<snapshot>/public/previews/<component>.<scheme>.webp`) until someone clicks; then it loads `preview.html`, which renders the system's own demo for that component with the system's tokens, in its own document. Demos live in the design repo, beside each contract: `components/<name>/<name>.demo.tsx`, a default-exported React component that imports the owned files by their vendored names (`./button`, `./utils`). A component with no demo says so in the frame. The style editor uses the same frame with `?screen=components|type|scale|motion|focus` and posts it the unsaved edits as CSS-variable overrides (`yx-preview-vars`, per scheme) and a pinned state (`yx-preview-state`: the frame copies its `:hover`, `:active`, `:focus-visible` and `:disabled` rules under `[data-pin-state]`); see `src/preview/protocol.ts`. The frame's `system.css` writes aliases as `var()` references, so an override of one token reaches every token that reads it. The frame gets its own Tailwind sheet, so a system's vocabulary (shadcn's `bg-primary`, or the demo's `bg-accent`) never collides with the hub's.
 
 `scripts/capture.sh [base-url] [previews|screens|all]` refreshes the thumbnails (into the running snapshot) and the review screenshots in `screenshots/` (light and dark) with `chrome-devtools-axi`. The committed screenshots show the demo system.
+
+The Inventory page is captured with Playwright instead: `playwright-core` (a pinned dev dependency) driving its headless-shell Chromium, never `chrome-devtools-axi`.
+
+```sh
+pnpm exec playwright-core install chromium-headless-shell   # once; the browser is not committed
+pnpm dev                                                    # in another terminal
+node scripts/capture-inventory.ts [--base http://localhost:5173] [--out screenshots]
+```
+
+It writes `inventory.{light,dark}.png` and `inventory-families.{light,dark}.png` at 1440×900, and `phone-inventory*.{light,dark}.png` at 390×844 (mobile, touch).
 
 ## Project screens
 
@@ -122,13 +134,14 @@ Budgets: search under 50 ms, navigation under 100 ms, initial download (first ro
 ```
 design/            YouIyouX DTCG tokens (light base, dark overrides, resolver)
 scripts/           snapshot.ts (data), measure.ts (budgets), capture.sh (hub images), capture-screens.ts (project screens),
+                   capture-inventory.ts (Inventory page, Playwright),
                    build-preview.ts + serve-preview.ts + preview/ (preview deploys)
 src/app/           shell, routes (preloadable chunks), theme
-src/data/          snapshot types (@youiyoux/core types, type-only), loading and cache, model, usage, contrast
+src/data/          snapshot types (@youiyoux/core types, type-only), loading and cache, model, usage, inventory, contrast
 src/search/        MiniSearch engine, Web Worker, client hook
 src/shell/         nav rail, keyboard layer, command palette, shortcuts sheet
 src/ui/            the hub's owned components
-src/screens/       home, catalog, element tabs, tokens, rules, screens, library, style (style editor), changes (draft review), planned screens
+src/screens/       home, catalog, element tabs, tokens, rules, screens, library, inventory, style (style editor), changes (draft review), planned screens
 src/preview/       the isolated preview frame (loads the snapshot's demos through the @snapshot alias)
 snapshot/          the committed demo snapshot (data, previews, preview sources)
 test/              unit tests (pnpm test)

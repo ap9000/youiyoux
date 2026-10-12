@@ -1,7 +1,7 @@
 /**
  * Builds everything the hub reads about one design system, from that system's own repo:
  *
- *   node scripts/snapshot.ts [--design <dir>] [--project <dir>] [--config <youi.project.json>] [--root <dir>] [--screens <dir>] [--out <dir>] [--commit <sha>] [--watch]
+ *   node scripts/snapshot.ts [--design <dir>] [--project <dir>] [--config <youi.project.json>] [--root <dir>] [--screens <dir>] [--inventory <file>] [--out <dir>] [--commit <sha>] [--watch]
  *
  * - <out>/public/data/*.json: the system catalog (tokens, contracts, rules, narrative)
  *   and the project's usage map, content-hashed so the browser can cache them forever.
@@ -9,6 +9,9 @@
  *   dark, from `--screens` or `<project>/.youi/screens` (screens.json plus images, written by
  *   scripts/capture-screens.ts). They belong to the project, like its usage map, so they never
  *   live in this repo; a route without a picture shows an empty state.
+ * - <out>/public/data/inventory.<hash>.json: a `youi inventory` file for the Inventory page,
+ *   from `--inventory` (validated against youi.inventory/v1). The committed default carries an
+ *   inventory of the scanner's two inventory fixtures, so the page has something to show.
  * - <out>/preview/: the system's owned component files and their demos (`*.demo.tsx`
  *   next to a contract in the design repo), plus system.css: the system's variables
  *   scoped to the preview frame and its Tailwind theme.
@@ -36,6 +39,8 @@ const APP = resolve(import.meta.dirname, "..");
 const TOOL = resolve(APP, "../..");
 const DEFAULT_OUT = join(APP, "snapshot");
 const DEMO_PROJECT = join(TOOL, "examples/demo-app");
+/** The default snapshot's inventory: the scanner's fixtures, modelled on a real console and marketing site. */
+const DEMO_INVENTORY = ["console", "site"].map((name) => join(TOOL, "packages/scanner/test/fixtures/inventory", name));
 const STYLES_DIR = join(APP, "src/styles/generated");
 const HASH_LENGTH = 10;
 const HUB_PREFIX = "yx";
@@ -64,6 +69,7 @@ interface ScannerModule {
   ruleCapability(rule: import("@youiyoux/core").RuleSpec): unknown;
   scanProject(project: ScannedProject, options?: { cache?: unknown }): Promise<{ report: unknown; identity: import("@youiyoux/core").CheckIdentity }>;
   describeIdentity(identity: import("@youiyoux/core").CheckIdentity): string;
+  buildInventory(dirs: readonly string[], options?: { cwd?: string }): Promise<unknown>;
   ProjectWatcher: {
     start<R>(options: {
       root: string;
@@ -325,6 +331,7 @@ interface Libraries {
 }
 
 type UsageRef = { project: string; file: string; screens?: ProjectShots };
+type InventoryReport = import("@youiyoux/core").InventoryReport;
 type Live = { generation: number; status: "complete" | "partial" | "failed"; updatedAt: string; rules?: string; message?: string };
 
 interface WrittenSystem {
@@ -375,14 +382,31 @@ function writeUsage(dataDir: string, report: ScanReport, screens: ProjectShots |
   return { project: report.project, file, ...(screens ? { screens } : {}) };
 }
 
+/** An inventory under its content hash; returns the file name the manifest records. */
+export function writeInventory(dataDir: string, inventory: InventoryReport): string {
+  const text = json(inventory);
+  const file = `inventory.${hash(text)}.json`;
+  write(join(dataDir, file), text);
+  return file;
+}
+
+/**
+ * `--inventory <file>`, validated against youi.inventory/v1 (a bad file names itself and each
+ * failing field); else, for the default snapshot only, a fresh inventory of the fixtures.
+ */
+export async function readInventory(path: string | undefined, isDefault: boolean, { core, scanner }: Pick<Libraries, "core" | "scanner">): Promise<InventoryReport | null> {
+  if (path) return core.parseDefinition(resolve(path), readFileSync(resolve(path), "utf8"), core.InventoryReport);
+  return isDefault ? core.InventoryReport.parse(await scanner.buildInventory(DEMO_INVENTORY, { cwd: TOOL })) : null;
+}
+
 /** Every data file a usage ref names: its usage map and its screenshots. */
 function usageFiles(usage: readonly UsageRef[]): string[] {
   return usage.flatMap((u) => [u.file, ...(u.screens?.screens ?? []).flatMap((shot) => [shot.light, shot.dark].flatMap((f) => (f ? [f.full, f.thumb] : [])))]);
 }
 
 /** The manifest last: written to a temporary name and renamed, so a reader never sees half of it. */
-function writeManifest(dataDir: string, system: WrittenSystem, usage: readonly UsageRef[], live?: Live): void {
-  const manifest = { schema: "youiyoux.manifest/v1", source: { commit: system.commit }, systems: [{ id: system.id, catalog: system.catalogFile, usage }], ...(live ? { live } : {}) };
+function writeManifest(dataDir: string, system: WrittenSystem, usage: readonly UsageRef[], live?: Live, inventory?: string | null): void {
+  const manifest = { schema: "youiyoux.manifest/v1", source: { commit: system.commit }, systems: [{ id: system.id, catalog: system.catalogFile, usage }], ...(inventory ? { inventory } : {}), ...(live ? { live } : {}) };
   const file = join(dataDir, "manifest.json");
   write(`${file}.tmp`, `${JSON.stringify(manifest, null, 2)}\n`);
   renameSync(`${file}.tmp`, file);
@@ -400,9 +424,12 @@ function pruneData(dataDir: string, keep: ReadonlySet<string>): void {
  * with an atomic manifest write, which the dev server announces to the open hub. A failed
  * run keeps the last good data and marks the manifest failed.
  */
-async function watchSnapshot(values: { design?: string; project?: string; config?: string; root?: string; commit?: string; screens?: string }, out: string, libs: Libraries): Promise<void> {
+async function watchSnapshot(values: { design?: string; project?: string; config?: string; root?: string; commit?: string; screens?: string; inventory?: string }, out: string, libs: Libraries): Promise<void> {
   const dataDir = join(out, "public/data");
   mkdirSync(dataDir, { recursive: true });
+  // The inventory is a file someone produced, not a view of the watched sources: written once.
+  const read = await readInventory(values.inventory, false, libs);
+  const inventory = read ? writeInventory(dataDir, read) : null;
   const root = projectArg(values) ?? (values.config ? dirname(resolve(values.config)) : DEMO_PROJECT);
   let previousId = previousSystemId(dataDir);
   let system: WrittenSystem | null = null;
@@ -441,8 +468,8 @@ async function watchSnapshot(values: { design?: string; project?: string; config
         update.status === "ok"
           ? { generation: update.generation, status: update.result.report.status, updatedAt: stamp(), rules: update.result.rules }
           : { generation: update.generation, status: "failed", updatedAt: stamp(), message: update.error };
-      writeManifest(dataDir, system, usage, live);
-      const current = new Set([system.catalogFile, ...usageFiles(usage)]);
+      writeManifest(dataDir, system, usage, live, inventory);
+      const current = new Set([system.catalogFile, ...usageFiles(usage), ...(inventory ? [inventory] : [])]);
       pruneData(dataDir, new Set([...current, ...previous]));
       previous = current;
       process.stdout.write(`youi ui: generation ${update.generation} ${live.status}${live.message ? `: ${live.message}` : ""}\n`);
@@ -462,7 +489,7 @@ export async function libraries(): Promise<Libraries> {
 }
 
 async function main(): Promise<void> {
-  const { values } = parseArgs({ options: { design: { type: "string" }, project: { type: "string" }, config: { type: "string" }, root: { type: "string" }, out: { type: "string" }, commit: { type: "string" }, screens: { type: "string" }, watch: { type: "boolean", default: false } } });
+  const { values } = parseArgs({ options: { design: { type: "string" }, project: { type: "string" }, config: { type: "string" }, root: { type: "string" }, out: { type: "string" }, commit: { type: "string" }, screens: { type: "string" }, inventory: { type: "string" }, watch: { type: "boolean", default: false } } });
   const libs = await libraries();
   const out = resolve(values.out ?? DEFAULT_OUT);
   if (values.watch) {
@@ -478,9 +505,11 @@ async function main(): Promise<void> {
   const shotsDir = source.usage ? screensDir(values.screens, source.projectDir) : null;
   const shots = source.usage && shotsDir ? writeScreens(shotsDir, dataDir, source.usage.project) : null;
   const usage = source.usage ? [writeUsage(dataDir, source.usage, shots)] : [];
-  writeManifest(dataDir, system, usage);
+  const read = await readInventory(values.inventory, out === DEFAULT_OUT, libs);
+  const inventory = read ? writeInventory(dataDir, read) : null;
+  writeManifest(dataDir, system, usage, undefined, inventory);
   if (out === DEFAULT_OUT) await buildHubTokens(libs.core, libs.lib);
-  process.stdout.write(`snapshot of ${system.summary}; ${usage.length ? `usage map of ${usage[0]!.project}${shots ? ` with ${shots.screens.length} screens` : ""}` : "no usage map"} → ${relative(process.cwd(), out) || "."}\n`);
+  process.stdout.write(`snapshot of ${system.summary}; ${usage.length ? `usage map of ${usage[0]!.project}${shots ? ` with ${shots.screens.length} screens` : ""}` : "no usage map"}${inventory ? `; ${inventory}` : ""} → ${relative(process.cwd(), out) || "."}\n`);
 }
 
 // Run as a script, not when a test imports readSource.

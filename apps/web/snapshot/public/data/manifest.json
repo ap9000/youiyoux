@@ -10,9 +10,10 @@
       "usage": [
         {
           "project": "demo-app",
-          "file": "demo-app.usage.459a44060d.json"
+          "file": "demo-app.usage.a0cad75fb2.json"
         }
       ]
     }
-  ]
+  ],
+  "inventory": "inventory.702ff7a9d6.json"
 }

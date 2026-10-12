@@ -136,7 +136,7 @@ class Collector {
   }
 }
 
-async function resolveTag(graph: ModuleGraph, module: ModuleInfo, tag: string): Promise<{ symbol: ResolvedSymbol; name: string }> {
+export async function resolveTag(graph: ModuleGraph, module: ModuleInfo, tag: string): Promise<{ symbol: ResolvedSymbol; name: string }> {
   const parts = tag.split(".");
   if (parts.length === 1) return { symbol: await graph.resolveLocal(module, tag), name: tag };
   const [head, member] = parts as [string, string];

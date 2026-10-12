@@ -1,0 +1,969 @@
+{
+  "$id": "https://design-language.local/schema/youi.inventory.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema": {
+      "type": "string",
+      "const": "youi.inventory/v1"
+    },
+    "scanner": {
+      "type": "string"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+    },
+    "durationMs": {
+      "type": "number"
+    },
+    "tolerance": {
+      "type": "object",
+      "properties": {
+        "height": {
+          "type": "number"
+        },
+        "padding": {
+          "type": "number"
+        },
+        "radius": {
+          "type": "number"
+        },
+        "fontSize": {
+          "type": "number"
+        },
+        "fontWeight": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "height",
+        "padding",
+        "radius",
+        "fontSize",
+        "fontWeight"
+      ]
+    },
+    "projects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "root": {
+            "type": "string"
+          },
+          "commit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "partial"
+            ]
+          },
+          "files": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "routes": {
+            "type": "string"
+          },
+          "failed": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "file": {
+                  "type": "string"
+                },
+                "reason": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "file",
+                "reason"
+              ]
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "root",
+          "commit",
+          "status",
+          "files",
+          "routes",
+          "failed",
+          "warnings"
+        ]
+      }
+    },
+    "definitions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "react",
+              "astro",
+              "class"
+            ]
+          },
+          "kit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "button",
+                  "link-as-button",
+                  "input",
+                  "card",
+                  "badge",
+                  "dialog",
+                  "tabs"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "variants": {
+            "default": {},
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "required": [
+          "project",
+          "file",
+          "line",
+          "id",
+          "name",
+          "kind",
+          "kit",
+          "role"
+        ]
+      }
+    },
+    "kits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "cva-folder",
+              "class-kit"
+            ]
+          },
+          "path": {
+            "type": "string"
+          },
+          "prefix": {
+            "type": "string"
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "role": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "button",
+                        "link-as-button",
+                        "input",
+                        "card",
+                        "badge",
+                        "dialog",
+                        "tabs"
+                      ]
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "file": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "variants": {
+                  "default": {},
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "required": [
+                "name",
+                "role",
+                "file",
+                "line"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "project",
+          "kind",
+          "path",
+          "members"
+        ]
+      }
+    },
+    "primitives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "package": {
+            "type": "string"
+          },
+          "project": {
+            "type": "string"
+          },
+          "exports": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "count": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "sites": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "project": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "column": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "export": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "project",
+                "file",
+                "line",
+                "column",
+                "export"
+              ]
+            }
+          }
+        },
+        "required": [
+          "package",
+          "project",
+          "exports",
+          "count",
+          "sites"
+        ]
+      }
+    },
+    "looks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "button",
+              "link-as-button",
+              "input",
+              "card",
+              "badge",
+              "dialog",
+              "tabs"
+            ]
+          },
+          "column": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "routes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "routeSource": {
+            "type": "string",
+            "enum": [
+              "route-file",
+              "imported-by",
+              "shell",
+              "unrouted"
+            ]
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "component",
+              "intrinsic",
+              "primitive"
+            ]
+          },
+          "tag": {
+            "type": "string"
+          },
+          "definition": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "kit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "shape": {
+            "type": "object",
+            "properties": {
+              "height": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "paddingX": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "paddingY": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "radius": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "fontSize": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "fontWeight": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "height",
+              "paddingX",
+              "paddingY",
+              "radius",
+              "fontSize",
+              "fontWeight"
+            ]
+          },
+          "derived": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "height",
+                "paddingX",
+                "paddingY",
+                "radius",
+                "fontSize",
+                "fontWeight"
+              ]
+            }
+          },
+          "unresolved": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "responsive": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "states": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "family": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "project",
+          "file",
+          "line",
+          "id",
+          "role",
+          "column",
+          "routes",
+          "routeSource",
+          "source",
+          "tag",
+          "definition",
+          "kit",
+          "shape",
+          "derived",
+          "unresolved",
+          "responsive",
+          "states",
+          "family"
+        ]
+      }
+    },
+    "families": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "button",
+              "link-as-button",
+              "input",
+              "card",
+              "badge",
+              "dialog",
+              "tabs"
+            ]
+          },
+          "shape": {
+            "type": "object",
+            "properties": {
+              "height": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "paddingX": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "paddingY": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "radius": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "fontSize": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              },
+              "fontWeight": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "height",
+              "paddingX",
+              "paddingY",
+              "radius",
+              "fontSize",
+              "fontWeight"
+            ]
+          },
+          "range": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string",
+              "enum": [
+                "height",
+                "paddingX",
+                "paddingY",
+                "radius",
+                "fontSize",
+                "fontWeight"
+              ]
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "number"
+                    }
+                  ],
+                  "items": false,
+                  "minItems": 2,
+                  "maxItems": 2
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "required": [
+              "height",
+              "paddingX",
+              "paddingY",
+              "radius",
+              "fontSize",
+              "fontWeight"
+            ]
+          },
+          "looks": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "shapes": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "projects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "kits": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "examples": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "project": {
+                  "type": "string"
+                },
+                "file": {
+                  "type": "string"
+                },
+                "line": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "column": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "tag": {
+                  "type": "string"
+                },
+                "routes": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "project",
+                "file",
+                "line",
+                "column",
+                "tag",
+                "routes"
+              ]
+            }
+          },
+          "nearDuplicate": {
+            "type": "boolean"
+          },
+          "sides": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "project": {
+                  "type": "string"
+                },
+                "kit": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "looks": {
+                  "type": "integer",
+                  "minimum": -9007199254740991,
+                  "maximum": 9007199254740991
+                },
+                "examples": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "project": {
+                        "type": "string"
+                      },
+                      "file": {
+                        "type": "string"
+                      },
+                      "line": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "column": {
+                        "type": "integer",
+                        "exclusiveMinimum": 0,
+                        "maximum": 9007199254740991
+                      },
+                      "tag": {
+                        "type": "string"
+                      },
+                      "routes": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "project",
+                      "file",
+                      "line",
+                      "column",
+                      "tag",
+                      "routes"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "project",
+                "kit",
+                "looks",
+                "examples"
+              ]
+            }
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "shape",
+          "range",
+          "looks",
+          "shapes",
+          "projects",
+          "kits",
+          "examples",
+          "nearDuplicate",
+          "sides"
+        ]
+      }
+    },
+    "flags": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "duplicate-definition"
+              },
+              "name": {
+                "type": "string"
+              },
+              "locations": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "project": {
+                      "type": "string"
+                    },
+                    "file": {
+                      "type": "string"
+                    },
+                    "line": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "kit": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "project",
+                    "file",
+                    "line",
+                    "kit"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "name",
+              "locations"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "const": "mixed-kits"
+              },
+              "project": {
+                "type": "string"
+              },
+              "file": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string",
+                "enum": [
+                  "button",
+                  "link-as-button",
+                  "input",
+                  "card",
+                  "badge",
+                  "dialog",
+                  "tabs"
+                ]
+              },
+              "imports": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "kit": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "specifier": {
+                      "type": "string"
+                    },
+                    "line": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "kit",
+                    "name",
+                    "specifier",
+                    "line"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "kind",
+              "project",
+              "file",
+              "role",
+              "imports"
+            ]
+          }
+        ]
+      }
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "looks": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "clustered": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "unshaped": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "notClustered": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "looks",
+        "clustered",
+        "unshaped",
+        "notClustered"
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "scanner",
+    "generatedAt",
+    "durationMs",
+    "tolerance",
+    "projects",
+    "definitions",
+    "kits",
+    "primitives",
+    "looks",
+    "families",
+    "flags",
+    "summary"
+  ]
+}

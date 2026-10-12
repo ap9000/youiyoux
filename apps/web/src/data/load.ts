@@ -3,7 +3,7 @@
  * names is content-hashed, so once fetched it is served from Cache Storage forever
  * (and the app keeps working offline). Stale hashed files are pruned on each load.
  */
-import type { Catalog, Manifest, ScanReport } from "./types.ts";
+import type { Catalog, InventoryReport, Manifest, ScanReport } from "./types.ts";
 
 const CACHE_NAME = "youiyoux-data-v1";
 const DATA_BASE = `${import.meta.env.BASE_URL}data/`;
@@ -67,11 +67,16 @@ export async function loadUsage(file: string): Promise<ScanReport> {
   return expectSchema<ScanReport>(await loadHashed(file), "youi.usage/v1", file);
 }
 
+export async function loadInventory(file: string): Promise<InventoryReport> {
+  return expectSchema<InventoryReport>(await loadHashed(file), "youi.inventory/v1", file);
+}
+
 /** Drop cached snapshot files the current manifest no longer names. */
 export async function pruneCache(manifest: Manifest): Promise<void> {
   const cache = await openCache();
   if (!cache) return;
-  const keep = new Set([MANIFEST_URL, ...manifest.systems.flatMap((s) => [s.catalog, ...s.usage.map((u) => u.file)]).map((f) => `${DATA_BASE}${f}`)]);
+  const files = [...manifest.systems.flatMap((s) => [s.catalog, ...s.usage.map((u) => u.file)]), ...(manifest.inventory ? [manifest.inventory] : [])];
+  const keep = new Set([MANIFEST_URL, ...files.map((f) => `${DATA_BASE}${f}`)]);
   const keys = await cache.keys();
   await Promise.all(keys.filter((request) => !keep.has(new URL(request.url).pathname)).map((request) => cache.delete(request)));
 }

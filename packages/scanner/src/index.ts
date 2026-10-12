@@ -18,3 +18,6 @@ export * from "./queries.ts";
 export * from "./capabilities.ts";
 export * from "./token-impact.ts";
 export * from "./watch.ts";
+export * from "./inventory/inventory.ts";
+export * from "./inventory/cluster.ts";
+export * from "./inventory/target.ts";

@@ -6,7 +6,7 @@ import { parseArgs, promisify, type ParseArgsConfig } from "node:util";
 import { parse as parseYaml } from "yaml";
 import { DefinitionError, getSystem, loadDesignRepo, loadLibrary, MigrationSpec, OutputConfig, renderJsonSchemas, writeFileAtomic } from "@youiyoux/core";
 import { buildTokens, compareParity } from "@youiyoux/tokens";
-import { adoptionRequest, checkCapabilities, componentCard, describeIdentity, evaluateRule, findContract, loadProject, planChange, PROJECT_FILE, type LoadProjectOptions, ProjectWatcher, ruleCapability, runMigration, scanProject, screenBom, searchLibrary, whereUsed, type CacheStats, type PlanInput, type Project, type WatchUpdate } from "@youiyoux/scanner";
+import { adoptionRequest, buildInventory, checkCapabilities, componentCard, describeIdentity, evaluateRule, findContract, loadProject, planChange, PROJECT_FILE, type LoadProjectOptions, ProjectWatcher, ruleCapability, runMigration, scanProject, screenBom, searchLibrary, whereUsed, type CacheStats, type PlanInput, type Project, type WatchUpdate } from "@youiyoux/scanner";
 import { baselinePath, exitCodeOf, runCheck, writeBaseline, type CheckResult } from "./check.ts";
 import { actionable, githubAnnotations, githubSummary, renderCheckText } from "./check-render.ts";
 import { runClaudeHook, runPreCommitHook, type HookTarget } from "./hooks.ts";
@@ -14,6 +14,7 @@ import { hookCommand, installClaudeHook, installPreCommit, installWorkflow, repo
 import { startRuleEditor, type RuleEditor } from "./editor.ts";
 import { DEFAULT_HUB_PORT, runHub } from "./hub.ts";
 import { initProject } from "./init.ts";
+import { renderInventory } from "./inventory.ts";
 import { renderAdoptionRequest, renderLibrarySearch } from "./library.ts";
 import { renderBom, renderMigration, renderPlan, renderRulePreview, renderRules, renderScan, renderShow, renderSync, renderWhere } from "./render.ts";
 import { syncProject } from "./sync.ts";
@@ -25,6 +26,18 @@ const TOOL_ROOT = resolve(import.meta.dirname, "../../..");
 const HELP = `${style.accent("youi")} ${style.dim("· YouIyouX design language")}
 
 ${style.bold("Usage")}  youi <command> [options]
+
+${style.bold("Anywhere")}  ${style.dim("no design system needed")}
+  inventory [--project <dir>…] [--include <glob>…] [--exclude <glob>…] [--out file] [--json]
+                           every UI element across one or more projects: definitions, kits (CVA folders,
+                           class kits), library primitives, and each rendered button, input, card,
+                           badge, dialog, tabs and link-as-button with file:line and route, grouped into
+                           families by resolved shape (Tailwind and CSS, the project's own theme; colour
+                           ignored). --project repeats; default: the current directory. --include
+                           (repeats) replaces each project's default or youi.project.json include globs,
+                           e.g. --include 'src/browser/**'; stylesheets still count. --exclude (repeats)
+                           adds to its exclude globs. Writes youi.inventory/v1 to
+                           <first project>/.youi/inventory.json unless --out
 
 ${style.bold("In a product repo")}
   init --design <dir>      write youi.project.json pointing at a design repo checkout, then sync
@@ -61,12 +74,13 @@ ${style.bold("Library")}  ${style.dim("ingested references: browse and request a
   library request <id> --reason <text>   draft an adoption request for a person to approve
 
 ${style.bold("The hub")}
-  ui [--design dir] [--project dir] [--config file] [--root dir] [--port n] [--watch] [--state dir]
+  ui [--design dir] [--project dir] [--config file] [--root dir] [--port n] [--watch] [--state dir] [--inventory file]
                            open the web hub on a design system (default: the demo system);
                            --project adds that product's usage map (read-only scan) and the
                            rule editor (System > Rules, Work > Changes): drafts, impact preview,
                            approval, a review branch in the design repo (drafts kept in --state);
-                           --watch re-scans on every save and updates the open hub
+                           --watch re-scans on every save and updates the open hub;
+                           --inventory shows a youi inventory file on the Inventory page
 
 ${style.bold("In a design repo")} ${style.dim("(the current directory, or --design)")}
   build [--out dir] [--prefix p]   build token outputs
@@ -123,10 +137,15 @@ const OPTIONS = {
   watch: { type: "boolean", default: false },
   dark: { type: "string" },
   state: { type: "string" },
+  inventory: { type: "string" },
   help: { type: "boolean", short: "h", default: false },
 } satisfies ParseArgsConfig["options"];
 
 type Values = ReturnType<typeof parseArgs<{ options: typeof OPTIONS; allowPositionals: true }>>["values"];
+
+/** `youi inventory` reads several projects: there, --project repeats, and so do --include and --exclude. */
+const INVENTORY_OPTIONS = { ...OPTIONS, project: { type: "string", multiple: true }, include: { type: "string", multiple: true }, exclude: { type: "string", multiple: true } } satisfies ParseArgsConfig["options"];
+type InventoryValues = ReturnType<typeof parseArgs<{ options: typeof INVENTORY_OPTIONS; allowPositionals: true }>>["values"];
 
 class UsageError extends Error {}
 
@@ -155,6 +174,16 @@ async function cmdScan(values: Values): Promise<number> {
   await writeFileAtomic(resolve(out), `${JSON.stringify(report)}\n`);
   if (values.json) json(report);
   else print(renderScan(report, out));
+  return 0;
+}
+
+async function cmdInventory(values: InventoryValues): Promise<number> {
+  const dirs = values.project?.length ? values.project : [process.cwd()];
+  const report = await buildInventory(dirs, { ...(values.include ? { include: values.include } : {}), ...(values.exclude ? { exclude: values.exclude } : {}) });
+  const out = resolve(values.out ?? join(dirs[0]!, ".youi/inventory.json"));
+  await writeFileAtomic(out, `${JSON.stringify(report, null, 2)}\n`);
+  if (values.json) json(report);
+  else print(renderInventory(report, relative(process.cwd(), out).startsWith("..") ? out : relative(process.cwd(), out)));
   return 0;
 }
 
@@ -461,7 +490,7 @@ async function cmdUi(values: Values): Promise<number> {
   const port = values.port ?? DEFAULT_HUB_PORT;
   const editor = await startEditor(values, port);
   try {
-    return await runHub(TOOL_ROOT, { ...(values.design ? { design: values.design } : {}), ...(values.project ? { project: values.project } : {}), ...(values.config ? { config: values.config } : {}), ...(values.root ? { root: values.root } : {}), ...(values.port || editor ? { port } : {}), ...(editor ? { api: editor.url } : {}), watch: values.watch });
+    return await runHub(TOOL_ROOT, { ...(values.inventory ? { inventory: values.inventory } : {}), ...(values.design ? { design: values.design } : {}), ...(values.project ? { project: values.project } : {}), ...(values.config ? { config: values.config } : {}), ...(values.root ? { root: values.root } : {}), ...(values.port || editor ? { port } : {}), ...(editor ? { api: editor.url } : {}), watch: values.watch });
   } finally {
     await editor?.close();
   }
@@ -482,6 +511,10 @@ const COMMANDS: Record<string, Command> = {
 export async function main(argv: string[]): Promise<number> {
   let parsed;
   try {
+    if (argv[0] === "inventory") {
+      const inventory = parseArgs({ args: argv, options: INVENTORY_OPTIONS, allowPositionals: true });
+      if (!inventory.values.help) return await guarded(() => cmdInventory(inventory.values));
+    }
     parsed = parseArgs({ args: argv, options: OPTIONS, allowPositionals: true });
   } catch (error: unknown) {
     process.stderr.write(`${style.error("✖")} ${error instanceof Error ? error.message : String(error)}\n\n${HELP}\n`);
@@ -497,8 +530,13 @@ export async function main(argv: string[]): Promise<number> {
     process.stderr.write(`${style.error("✖")} unknown command "${command}"\n\n${HELP}\n`);
     return 2;
   }
+  return guarded(() => handler(parsed.values, rest));
+}
+
+/** Run a command, turning its failure into a message and an exit code. */
+async function guarded(command: () => Promise<number>): Promise<number> {
   try {
-    return await handler(parsed.values, rest);
+    return await command();
   } catch (error: unknown) {
     if (error instanceof UsageError) process.stderr.write(`${style.error("✖")} usage: ${error.message}\n`);
     else if (error instanceof DefinitionError) process.stderr.write(`${style.error("✖")} invalid definition ${error.file}\n${error.issues.map((i) => `  · ${i}`).join("\n")}\n`);

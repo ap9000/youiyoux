@@ -1,0 +1,6 @@
+{
+  "name": "console",
+  "private": true,
+  "description": "Inventory fixture: a React + Tailwind v4 console with a shadcn-style CVA kit and a legacy class kit.",
+  "dependencies": { "@radix-ui/react-dialog": "*", "@radix-ui/react-slot": "*", "@radix-ui/react-tabs": "*", "class-variance-authority": "*", "lucide-react": "*", "tailwindcss": "*" }
+}

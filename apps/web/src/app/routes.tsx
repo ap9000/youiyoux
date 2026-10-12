@@ -1,5 +1,5 @@
 /** Route table: every screen is its own chunk, preloaded on hover/focus and on idle after first paint. */
-import { Boxes, LayoutGrid, Library, type LucideIcon, Monitor, Paintbrush, Palette, PlugZap, Scale, GitPullRequestArrow } from "lucide-react";
+import { Boxes, LayoutGrid, Library, type LucideIcon, Monitor, Paintbrush, Palette, PlugZap, Scale, ScanSearch, GitPullRequestArrow } from "lucide-react";
 import { type ComponentType, createElement } from "react";
 
 /**
@@ -42,6 +42,7 @@ const rules = preloadable(() => import("../screens/rules/RulesScreen.tsx"), (m) 
 const screens = preloadable(() => import("../screens/screens/ScreensScreen.tsx"), (m) => m.ScreensScreen);
 const library = preloadable(() => import("../screens/library/LibraryScreen.tsx"), (m) => m.LibraryScreen);
 const changes = preloadable(() => import("../screens/changes/ChangesScreen.tsx"), (m) => m.ChangesScreen);
+const inventory = preloadable(() => import("../screens/inventory/InventoryScreen.tsx"), (m) => m.InventoryScreen);
 const style = preloadable(() => import("../screens/style/StyleScreen.tsx"), (m) => m.StyleScreen);
 const loadStubs = () => import("../screens/stubs/StubScreens.tsx");
 const sources = preloadable(loadStubs, (m) => m.SourcesScreen);
@@ -56,6 +57,7 @@ export const ScreensScreen = screens.Component;
 export const RulesScreen = rules.Component;
 export const SourcesScreen = sources.Component;
 export const ChangesScreen = changes.Component;
+export const InventoryScreen = inventory.Component;
 export const StyleScreen = style.Component;
 export const AccessScreen = access.Component;
 export const NotFoundScreen = notFound.Component;
@@ -68,6 +70,7 @@ const loaders = {
   screens: screens.preload,
   library: library.preload,
   changes: changes.preload,
+  inventory: inventory.preload,
   style: style.preload,
   stubs: () => Promise.all([sources, access, notFound].map((s) => s.preload())).then(() => undefined),
 } as const;
@@ -102,6 +105,7 @@ export const NAV: readonly NavItem[] = [
   { href: "/rules", label: "Rules", icon: Scale, key: "r", loader: "rules", section: "system" },
   { href: "/screens", label: "Screens", icon: Monitor, key: "s", loader: "screens", section: "system" },
   { href: "/library", label: "Browse", icon: Library, key: "l", loader: "library", section: "library" },
+  { href: "/inventory", label: "Inventory", icon: ScanSearch, key: "v", loader: "inventory", section: "library" },
   { href: "/library/sources", label: "Sources", icon: PlugZap, key: "i", loader: "stubs", section: "library" },
   { href: "/style", label: "Style", icon: Paintbrush, key: "e", loader: "style", section: "work" },
   { href: "/changes", label: "Changes", icon: GitPullRequestArrow, key: "w", loader: "changes", section: "work" },

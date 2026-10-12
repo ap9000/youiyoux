@@ -429,6 +429,151 @@ export const LockFile = z.object({
 });
 export type LockFile = z.infer<typeof LockFile>;
 
+/* ------------------------------------------------------------- youi.inventory/v1 */
+
+/** What a look is for, read only from element and component names and ARIA roles, never from class names. */
+export const INVENTORY_ROLES = ["button", "link-as-button", "input", "card", "badge", "dialog", "tabs"] as const;
+export const InventoryRole = z.enum(INVENTORY_ROLES);
+export type InventoryRole = z.infer<typeof InventoryRole>;
+
+/** The dimensions a look is grouped by, in px (weight as a number); colour is never part of it. null: not resolved. */
+export const SHAPE_DIMENSIONS = ["height", "paddingX", "paddingY", "radius", "fontSize", "fontWeight"] as const;
+export type ShapeDimension = (typeof SHAPE_DIMENSIONS)[number];
+export const InventoryShape = z.object(Object.fromEntries(SHAPE_DIMENSIONS.map((d) => [d, z.number().nullable()])) as Record<ShapeDimension, z.ZodNullable<z.ZodNumber>>);
+export type InventoryShape = z.infer<typeof InventoryShape>;
+
+const ProjectPosition = z.object({ project: z.string(), file: z.string(), line: z.number().int().positive() });
+
+export const InventoryProject = z.object({
+  id: z.string(),
+  /** The directory inventoried, as it was named (relative to where youi ran, or absolute). */
+  root: z.string(),
+  commit: z.string().nullable(),
+  /** `partial`: some files could not be read or parsed, so some looks may be missing. */
+  status: z.enum(["complete", "partial"]),
+  files: z.number().int(),
+  /** How routes were found: the project config, a detected router, or none. */
+  routes: z.string(),
+  failed: z.array(z.object({ file: z.string(), reason: z.string() })),
+  /** Theme or config that could not be read statically (it falls back to Tailwind's defaults). */
+  warnings: z.array(z.string()),
+});
+
+export const InventoryDefinition = ProjectPosition.extend({
+  /** `<project>:<file>#<export>`. */
+  id: z.string(),
+  name: z.string(),
+  /** react: an exported JSX component; astro: an .astro file; class: a block in a class kit (`.ui-button`). */
+  kind: z.enum(["react", "astro", "class"]),
+  kit: z.string().nullable(),
+  role: InventoryRole.nullable(),
+  /** Variant name → values, from a CVA table or a class kit's `--modifier` classes. */
+  variants: z.record(z.string(), z.array(z.string())).default({}),
+});
+export type InventoryDefinition = z.infer<typeof InventoryDefinition>;
+
+export const InventoryKit = z.object({
+  /** `<project>:<folder or stylesheet>`. */
+  id: z.string(),
+  project: z.string(),
+  /** cva-folder: a folder of components calling cva(); class-kit: a stylesheet's BEM blocks sharing a prefix, and its plain classes named for an element that set a shape (`.badge`). */
+  kind: z.enum(["cva-folder", "class-kit"]),
+  path: z.string(),
+  /** The block prefix, when the stylesheet has exactly one prefixed kit. */
+  prefix: z.string().optional(),
+  members: z.array(z.object({ name: z.string(), role: InventoryRole.nullable(), file: z.string(), line: z.number().int().positive(), variants: z.record(z.string(), z.array(z.string())).default({}) })),
+});
+export type InventoryKit = z.infer<typeof InventoryKit>;
+
+export const InventoryPrimitive = z.object({
+  /** The npm package (`@radix-ui/react-tabs`, `lucide-react`). */
+  package: z.string(),
+  project: z.string(),
+  exports: z.array(z.string()),
+  count: z.number().int(),
+  /** The first sites, in file order. */
+  sites: z.array(ProjectPosition.extend({ column: z.number().int().positive(), export: z.string() })),
+});
+export type InventoryPrimitive = z.infer<typeof InventoryPrimitive>;
+
+export const InventoryLook = ProjectPosition.extend({
+  id: z.string(),
+  role: InventoryRole,
+  column: z.number().int().positive(),
+  routes: z.array(z.string()),
+  routeSource: z.enum(["route-file", "imported-by", "shell", "unrouted"]),
+  /** component: a rendered definition; intrinsic: a styled native element; primitive: a library tag. */
+  source: z.enum(["component", "intrinsic", "primitive"]),
+  tag: z.string(),
+  definition: z.string().nullable(),
+  kit: z.string().nullable(),
+  shape: InventoryShape,
+  /** Dimensions computed rather than declared (height from padding + line height + border). */
+  derived: z.array(z.enum(SHAPE_DIMENSIONS)),
+  /** Classes and values that could not be resolved statically (dynamic expressions, unknown utilities). */
+  unresolved: z.array(z.string()),
+  /** Breakpoint classes and media-query rules: recorded, not clustered. */
+  responsive: z.array(z.string()),
+  /** State classes and pseudo-class rules (hover:, focus:, data-[…]:, :hover): recorded, not clustered. */
+  states: z.array(z.string()),
+  /** The family it was grouped into; null when no dimension resolved, so it was not clustered. */
+  family: z.string().nullable(),
+});
+export type InventoryLook = z.infer<typeof InventoryLook>;
+
+const InventoryExample = ProjectPosition.extend({ column: z.number().int().positive(), tag: z.string(), routes: z.array(z.string()) });
+
+export const InventoryFamily = z.object({
+  id: z.string(),
+  role: InventoryRole,
+  /** The shape most of its looks have. */
+  shape: InventoryShape,
+  /** Smallest and largest value of each dimension across its looks: never wider than the tolerance. */
+  range: z.record(z.enum(SHAPE_DIMENSIONS), z.tuple([z.number(), z.number()]).nullable()),
+  looks: z.number().int(),
+  shapes: z.number().int(),
+  projects: z.array(z.string()),
+  kits: z.array(z.string()),
+  examples: z.array(InventoryExample),
+  /** It spans more than one project or kit: the same look built more than once. */
+  nearDuplicate: z.boolean(),
+  /** Each project-and-kit side of the family, with its own examples. */
+  sides: z.array(z.object({ project: z.string(), kit: z.string().nullable(), looks: z.number().int(), examples: z.array(InventoryExample) })),
+});
+export type InventoryFamily = z.infer<typeof InventoryFamily>;
+
+export const InventoryFlag = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("duplicate-definition"), name: z.string(), locations: z.array(ProjectPosition.extend({ kit: z.string().nullable() })) }),
+  z.object({ kind: z.literal("mixed-kits"), project: z.string(), file: z.string(), role: InventoryRole, imports: z.array(z.object({ kit: z.string(), name: z.string(), specifier: z.string(), line: z.number().int().positive() })) }),
+]);
+export type InventoryFlag = z.infer<typeof InventoryFlag>;
+
+export const InventoryReport = z.object({
+  $schema: z.string().optional(),
+  schema: z.literal("youi.inventory/v1"),
+  scanner: z.string(),
+  generatedAt: IsoTime,
+  durationMs: z.number(),
+  /** Two looks share a family only when every dimension is within these (px; weight in units) of every other look's. */
+  tolerance: z.object({ height: z.number(), padding: z.number(), radius: z.number(), fontSize: z.number(), fontWeight: z.number() }),
+  projects: z.array(InventoryProject),
+  definitions: z.array(InventoryDefinition),
+  kits: z.array(InventoryKit),
+  primitives: z.array(InventoryPrimitive),
+  looks: z.array(InventoryLook),
+  families: z.array(InventoryFamily),
+  flags: z.array(InventoryFlag),
+  summary: z.object({
+    looks: z.number().int(),
+    clustered: z.number().int(),
+    /** Looks with no resolved dimension: listed, never grouped. */
+    unshaped: z.number().int(),
+    /** Breakpoint and state classes and rules recorded on looks; they never decide a family. */
+    notClustered: z.number().int(),
+  }),
+});
+export type InventoryReport = z.infer<typeof InventoryReport>;
+
 /** Every published schema, keyed by its file name under `schema/`. */
 export const PUBLISHED_SCHEMAS = {
   "youi.config.schema.json": DesignConfig,
@@ -440,6 +585,7 @@ export const PUBLISHED_SCHEMAS = {
   "youi.lock.schema.json": LockFile,
   "youi.library.schema.json": LibraryEntry,
   "youi.baseline.schema.json": Baseline,
+  "youi.inventory.schema.json": InventoryReport,
   "youi.tokens.schema.json": TokenDocument,
 } as const;
 

@@ -24,6 +24,8 @@ export interface HubOptions {
   readonly watch?: boolean;
   /** The rule editor's service (`youi ui --project`), proxied at /api. */
   readonly api?: string;
+  /** A `youi inventory` file for the Inventory page. */
+  readonly inventory?: string;
 }
 
 export interface HubPlan {
@@ -43,8 +45,10 @@ export const DEFAULT_HUB_PORT = "5173";
 export function hubPlan(toolRoot: string, options: HubOptions): HubPlan {
   const web = join(toolRoot, "apps/web");
   const vite = [join(web, "node_modules/vite/bin/vite.js"), ...(options.port ? ["--port", options.port, "--strictPort"] : [])];
-  const named = (["design", "project", "config", "root"] as const).flatMap((key) => (options[key] ? [`--${key}`, resolve(options[key])] : []));
-  const flags = named.length === 0 && options.watch ? ["--project", join(toolRoot, "examples/demo-app")] : named;
+  const named = (["design", "project", "config", "root", "inventory"] as const).flatMap((key) => (options[key] ? [`--${key}`, resolve(options[key])] : []));
+  // --watch with nothing named keeps the demo project live (an inventory file alone names no project).
+  const watchesDemo = options.watch && !(["design", "project", "config", "root"] as const).some((key) => options[key]);
+  const flags = watchesDemo ? [...named, "--project", join(toolRoot, "examples/demo-app")] : named;
   const api: Record<string, string> = options.api ? { YOUI_API: options.api } : {};
   if (flags.length === 0) return { web, snapshot: null, env: api, vite, watch: null };
   const out = join(web, HUB_SNAPSHOT_DIR);

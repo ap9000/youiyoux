@@ -1,0 +1,7 @@
+---
+interface Props {
+  size?: "md" | "sm";
+}
+const { size = "md" } = Astro.props;
+---
+<button class={`ui-button ui-button--${size}`}><slot /></button>

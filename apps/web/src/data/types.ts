@@ -11,6 +11,13 @@ export type {
   ComponentContract,
   ElementId,
   ElementKind,
+  InventoryFamily,
+  InventoryFlag,
+  InventoryKit,
+  InventoryLook,
+  InventoryReport,
+  InventoryRole,
+  InventoryShape,
   Lookalike,
   PropSpec,
   PropValue,
@@ -118,5 +125,7 @@ export interface Manifest {
   schema: "youiyoux.manifest/v1";
   source: { commit: string | null };
   systems: Array<{ id: string; catalog: string; usage: Array<{ project: string; file: string; screens?: ProjectShots }> }>;
+  /** A `youi inventory` file (youi.inventory/v1) for the Inventory page; absent when none was given. */
+  inventory?: string;
   live?: LiveInfo;
 }

@@ -1,0 +1,6 @@
+{
+  "name": "site",
+  "private": true,
+  "description": "Inventory fixture: an Astro marketing site with a BEM .ui-* class kit and a little Tailwind v3.",
+  "dependencies": { "astro": "*", "tailwindcss": "^3" }
+}

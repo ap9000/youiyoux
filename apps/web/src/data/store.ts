@@ -8,8 +8,8 @@
  * is loaded in full and then swapped in for both at once.
  */
 import { useSyncExternalStore } from "react";
-import { DataError, loadCatalog, loadManifest, loadUsage, pruneCache } from "./load.ts";
-import type { Manifest } from "./types.ts";
+import { DataError, loadCatalog, loadInventory, loadManifest, loadUsage, pruneCache } from "./load.ts";
+import type { InventoryReport, Manifest } from "./types.ts";
 import { buildModel, type Model } from "./model.ts";
 import { indexUsage, type UsageIndex } from "./usage.ts";
 
@@ -111,6 +111,13 @@ const modelLoader = createLoader(async (): Promise<Model> => {
 });
 const usageLoader = createLoader(async (): Promise<UsageIndex> => usageFor(await pinnedManifest()));
 
+/** The inventory the manifest names, or null when the snapshot has none. */
+async function inventoryFor(manifest: Manifest): Promise<InventoryReport | null> {
+  return manifest.inventory ? loadInventory(manifest.inventory) : null;
+}
+
+const inventoryLoader = createLoader(async (): Promise<InventoryReport | null> => inventoryFor(await pinnedManifest()));
+
 let refreshing: Promise<void> | null = null;
 let again = false;
 
@@ -130,10 +137,12 @@ export function refreshSnapshot(): Promise<void> {
       try {
         const manifest = await loadManifest();
         const usageInUse = usageLoader.get().status !== "idle";
-        const [model, usage] = await Promise.all([modelFor(manifest), usageInUse ? usageFor(manifest) : null]);
+        const inventoryInUse = inventoryLoader.get().status !== "idle";
+        const [model, usage, inventory] = await Promise.all([modelFor(manifest), usageInUse ? usageFor(manifest) : null, inventoryInUse ? inventoryFor(manifest) : undefined]);
         pinned = Promise.resolve(manifest);
         modelLoader.replace(model);
         if (usage) usageLoader.replace(usage);
+        if (inventory !== undefined) inventoryLoader.replace(inventory);
         setLive({ manifest, error: null });
       } catch (error: unknown) {
         setLive({ ...live, error: messageOf(error) });
@@ -165,6 +174,15 @@ export const retryUsage = (): void => usageLoader.retry();
 
 export function useModelState(): Resource<Model> {
   return useSyncExternalStore(modelLoader.subscribe, modelLoader.get);
+}
+
+export const retryInventory = (): void => inventoryLoader.retry();
+
+/** The inventory (null when the snapshot has none); reading it starts the load. */
+export function useInventoryState(): Resource<InventoryReport | null> {
+  const state = useSyncExternalStore(inventoryLoader.subscribe, inventoryLoader.get);
+  if (state.status === "idle") queueMicrotask(() => inventoryLoader.start());
+  return state;
 }
 
 /** The usage index; reading it starts the (small, cached) load. */
