@@ -418,6 +418,30 @@
         "value": 180,
         "unit": "ms"
       }
+    },
+    "press": {
+      "$type": "duration",
+      "$value": {
+        "value": 160,
+        "unit": "ms"
+      },
+      "$description": "A pressed tile or button shrinking to 0.97, ease-out."
+    },
+    "enter": {
+      "$type": "duration",
+      "$value": {
+        "value": 200,
+        "unit": "ms"
+      },
+      "$description": "A drawer or sheet coming in, on the out curve."
+    },
+    "exit": {
+      "$type": "duration",
+      "$value": {
+        "value": 140,
+        "unit": "ms"
+      },
+      "$description": "A drawer or sheet leaving: faster than it came."
     }
   },
   "space": {

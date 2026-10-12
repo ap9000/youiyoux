@@ -104,7 +104,7 @@ Anywhere:
 | Command | Does |
 | --- | --- |
 | `youi inventory [--project <dir>…] [--include <glob>…] [--exclude <glob>…] [--out <file>] [--json]` | Every UI element across one or more projects, with no design system: definitions, kits, library primitives and each rendered look grouped into families by shape ([inventory](#inventory)) |
-| `youi ui [--design <dir>] [--project <dir>] [--config <file>] [--root <dir>] [--inventory <file>] [--detect <file>]` | Start the hub on a design system (default: the demo); with `--project`, plus that product's usage map from a read-only scan; with `--inventory`, that inventory on the Inventory page; with `--detect`, a `youi detect` report on Library > Stack |
+| `youi ui [--design <dir>] [--project <dir>] [--config <file>] [--root <dir>] [--inventory <file>] [--detect <file>]` | Start the hub on a design system (default: the demo); with `--project`, plus that product's usage map from a read-only scan; with `--inventory`, that inventory on the Inventory page; with `--detect`, a `youi detect` report on Library > Stack, whose library names (shadcn, Radix) the Inventory page's library filter then uses |
 | `youi detect <repo-path>` | Which UI libraries a repo uses: package.json files, the lockfile, `components.json` (shadcn/ui; without one, a `components/ui` folder of shadcn files), shadcn's own `data-slot` names and the code's actual imports, through path aliases, relative paths and barrels. A package that is declared but never imported is listed under `unused`, never counted |
 | `youi detect <url…> [--expose]` | Which UI libraries a website uses, read in headless Chromium, with one element screenshot per element type. `--expose` opens menus, dialogs and tabs so portals render |
 

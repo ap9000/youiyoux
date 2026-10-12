@@ -47,7 +47,13 @@
   --yx-color-warning: #a35200;
   --yx-color-warning-soft: #fdf1e3;
   --yx-duration-base: 180ms;
+  /* A drawer or sheet coming in, on the out curve. */
+  --yx-duration-enter: 200ms;
+  /* A drawer or sheet leaving: faster than it came. */
+  --yx-duration-exit: 140ms;
   --yx-duration-fast: 120ms;
+  /* A pressed tile or button shrinking to 0.97, ease-out. */
+  --yx-duration-press: 160ms;
   /* Every transition: quick out, soft landing. */
   --yx-easing-out: cubic-bezier(0.23, 1, 0.32, 1);
   --yx-font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", "Menlo", monospace;

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { join, resolve } from "node:path";
 import { readFileSync } from "node:fs";
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { InventoryReport as InventorySchema } from "@youiyoux/core";
 import { buildInventory } from "../../../packages/scanner/src/inventory/inventory.ts";
@@ -23,68 +23,318 @@ afterEach(cleanup);
 
 const text = (element: Element): string => (element.textContent ?? "").replace(/\s+/g, " ").trim();
 
-describe("Inventory page (c3)", () => {
-  test("a role × project grid with family and look counts", () => {
-    render(<InventoryView inventory={memorySource(inventory)} />);
-    const grid = screen.getByTestId("role-grid");
-    const headers = within(grid).getAllByRole("columnheader").map(text);
-    expect(headers).toEqual(["Role", "console", "site", "Across projects"]);
-    const rows = within(grid).getAllByRole("row").slice(1).map((row) => within(row).getAllByRole("rowheader").concat(within(row).getAllByRole("cell")).map(text));
-    expect(rows.map((r) => r[0])).toEqual(["Buttons", "Links as buttons", "Inputs", "Cards", "Badges", "Dialogs", "Tabs"]);
-    expect(rows[0]).toEqual(["Buttons", "5 families · 14 looks", "1 family · 2 looks", "1 shared across projects"]);
-    expect(rows[2]).toEqual(["Inputs", "2 families · 2 looks", "—", "none shared"]);
+const familyOf = (container: ParentNode, id: string): HTMLElement => container.querySelector<HTMLElement>(`[data-family="${id}"]`)!;
+const wallIds = (container: ParentNode): string[] => [...container.querySelectorAll<HTMLElement>("[data-family]")].map((t) => t.dataset.family!);
+
+describe("Inventory page: headline and wall (c2)", () => {
+  beforeEach(() => window.history.replaceState(null, "", "/inventory"));
+
+  test("the headline counts the families and what they could be, the top three fixes, and how grouping works", () => {
+    const source = memorySource(inventory);
+    render(<InventoryView inventory={source} />);
+    const headline = screen.getByTestId("inventory-headline");
+    expect(text(screen.getByTestId("consolidation"))).toMatch(new RegExp(`^${inventory.families.length} families → could be ~\\d+$`));
+    const estimate = Number(/~(\d+)/.exec(text(screen.getByTestId("consolidation")))![1]);
+    expect(estimate).toBeLessThan(inventory.families.length);
+    const fixes = within(screen.getByTestId("top-fixes")).getAllByRole("listitem");
+    expect(fixes).toHaveLength(3);
+    expect(text(fixes[0]!)).toContain("Button · 32px · radius 8");
+    expect(within(fixes[0]!).getByRole("link", { name: "Compare" }).getAttribute("href")).toBe("#compare-button-1");
+    expect(within(fixes[0]!).getByRole("link", { name: "Fix" }).getAttribute("href")).toBe("#fix-button-1");
+    const details = headline.querySelector("details")!;
+    expect(text(details.querySelector("summary")!)).toBe("How grouping works");
+    expect(text(details)).toContain("height ±2px, padding ±2px, radius ±2px, font size ±1px and weight ±100");
+    // The wall comes after the headline.
+    expect(headline.compareDocumentPosition(familyOf(document, "button-1")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  test("each family is a row with its shape, kits, count, file:line examples and near-duplicates across projects", () => {
+  test("one row per role; each family is a tile with its specimen, a unique plain name, uses and projects, and Open", () => {
     const { container } = render(<InventoryView inventory={memorySource(inventory)} />);
-    const button = container.querySelector('[data-family="button-1"]')!;
-    expect(button).not.toBeNull();
-    // Named by role and shape, with the shape spelled out.
-    expect(within(button as HTMLElement).getByRole("heading", { level: 3 }).textContent).toBe("Button · 32px · radius 8");
-    expect([...within(button as HTMLElement).getByLabelText("Shape").children].map(text)).toEqual(["height 32px", "padding 0 12px", "radius 8px", "size 14px", "weight 500"]);
-    expect(text(button)).toContain("10 looks");
-    expect(text(button)).toContain("Near-duplicate across projects");
-    const sides = within(button as HTMLElement).getByRole("list", { name: "Near-duplicates" });
-    // The console's CSS kit, its CVA kit and the ladder's hand-rolled 32px button, then the site's kit.
-    expect(sides.children).toHaveLength(4);
-    const sideText = within(sides).getAllByRole("listitem").filter((li) => li.parentElement === sides).map(text);
-    expect(sideText.some((s) => s.startsWith("consolesrc/browser/ui.css1 look") && s.includes("console:src/browser/toolbar.tsx:8"))).toBe(true);
-    expect(sideText.some((s) => s.startsWith("consolesrc/components/ui5 looks") && s.includes("console:src/app/page.tsx:13"))).toBe(true);
-    expect(sideText.some((s) => s.startsWith("sitesrc/styles/ui.css2 looks") && s.includes("site:src/pages/docs.astro:14") && s.includes("/docs"))).toBe(true);
-    // A family in one kit and one project: its kit, the project and its examples.
-    const legacy = container.querySelector('[data-family="button-5"]')!;
-    expect(text(legacy)).toContain("src/styles/legacy.css");
-    expect(text(legacy)).toContain("console:src/app/settings/page.tsx:14");
-    expect(text(legacy)).not.toContain("Near-duplicate");
+    expect([...container.querySelectorAll<HTMLElement>("[data-role]")].map((r) => r.dataset.role)).toEqual(["button", "link-as-button", "input", "card", "badge", "dialog", "tabs"]);
+    expect(wallIds(container).sort()).toEqual(inventory.families.map((f) => f.id).sort());
+    const names = inventory.families.map((f) => text(familyOf(container, f.id).querySelector("h3")!));
+    expect(new Set(names).size).toBe(names.length);
+    for (const family of inventory.families) {
+      const tile = familyOf(container, family.id);
+      expect(tile.closest("[data-role]")!.getAttribute("data-role")).toBe(family.role);
+      expect(tile.querySelector("[data-tile]")).not.toBeNull();
+      expect(text(tile)).toContain(`${family.looks} ${family.looks === 1 ? "use" : "uses"} · ${family.projects.length} ${family.projects.length === 1 ? "project" : "projects"}`);
+      expect(within(tile).getByRole("button", { name: /^Open / }).textContent).toBe("Open");
+    }
+    expect(text(familyOf(container, "button-1").querySelector("h3")!)).toBe("Button · 32px · radius 8 · shadcn-style");
+    expect(text(familyOf(container, "button-4").querySelector("h3")!)).toBe("Button · 28px · radius 4 · CSS kit");
+    // Families sit in cells by library or kit; no cell is empty.
+    const buttons = container.querySelector('[data-role="button"]')!;
+    expect([...buttons.querySelectorAll<HTMLElement>("[data-kit-cell]")].map((c) => c.dataset.kitCell)).toEqual(["shadcn", "css-lg", "plain"]);
+    for (const cell of container.querySelectorAll("[data-kit-cell]")) expect(cell.querySelectorAll("[data-family]").length).toBeGreaterThan(0);
+    // Two columns on a phone.
+    expect(buttons.querySelector("ul")!.className).toContain("max-md:grid-cols-2");
   });
 
-  test("badges and tabs show their cross-project families; flags and the not-clustered note appear", () => {
+  test("flags, kits and the not-clustered note stay below the wall", () => {
     const { container } = render(<InventoryView inventory={memorySource(inventory)} />);
-    expect(text(container.querySelector('[data-family="badge-1"]')!)).toContain("Badge · 20px · pill");
-    expect(text(container.querySelector('[data-family="badge-1"]')!)).toContain("site:src/pages/pricing.astro:6");
-    expect(text(container.querySelector('[data-family="tabs-1"]')!)).toContain("Near-duplicate across projects");
     expect(text(container)).toContain("Badge is defined 3 times");
     expect(text(container)).toContain("console:src/app/settings/page.tsx imports 2 kits’ button in 2 imports");
     expect(text(container)).toContain("LegacyButton, LegacyIconButton from src/styles/legacy.css · line 2");
     expect(text(container)).toMatch(/\d+ breakpoint and state classes recorded, not clustered/);
-    expect(screen.getByRole("heading", { name: "Kits and primitives" })).toBeTruthy();
-  });
-
-  test("on a phone the grid becomes one section per role", () => {
-    render(<InventoryView inventory={memorySource(inventory)} />);
-    expect(screen.getByTestId("role-grid").className).toContain("max-md:hidden");
-    const stack = screen.getByTestId("role-stack");
-    expect(stack.className).toContain("md:hidden");
-    const cards = within(stack).getAllByRole("listitem");
-    expect(cards.map((c) => /^(.*?)(?:\d+ shared|none shared)/.exec(text(c))?.[1])).toEqual(["Buttons", "Links as buttons", "Inputs", "Cards", "Badges", "Dialogs", "Tabs"]);
-    expect(text(cards[0]!)).toContain("console5 families · 14 looks");
-    expect(text(cards[0]!)).toContain("site1 family · 2 looks");
+    const kits = screen.getByRole("heading", { name: "Kits and primitives" });
+    expect(familyOf(container, "tabs-1").compareDocumentPosition(kits) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByTestId("role-grid")).toBeNull();
   });
 
   test("with no inventory the page says how to make one", () => {
     render(<InventoryView inventory={null} />);
     expect(screen.getByRole("heading", { name: "No inventory yet" })).toBeTruthy();
     expect(text(document.body)).toContain("youi ui --inventory");
+  });
+});
+
+describe("Inventory page: filters (c1)", () => {
+  beforeEach(() => window.history.replaceState(null, "", "/inventory"));
+
+  const bar = (): HTMLElement => screen.getByTestId("filter-bar");
+  const option = (group: string, name: RegExp): HTMLElement => within(within(bar()).getByRole("radiogroup", { name: group })).getByRole("radio", { name });
+
+  test("type, library, project, near-duplicates and search each narrow the wall, and are written to the URL", () => {
+    const { container } = render(<InventoryView inventory={memorySource(inventory)} />);
+    fireEvent.click(option("Type", /^Badges/));
+    expect(window.location.search).toBe("?type=badge");
+    expect(wallIds(container).sort()).toEqual(["badge-1", "badge-2"]);
+    fireEvent.click(option("Type", /^All/));
+    fireEvent.click(option("Library", /^\.lg-\* CSS kit/));
+    expect(window.location.search).toBe("?lib=css-lg");
+    expect(wallIds(container).sort()).toEqual(["badge-2", "button-4", "button-5"]);
+    fireEvent.click(option("Library", /^All/));
+    fireEvent.click(option("Project", /^site/));
+    expect(window.location.search).toBe("?project=site");
+    expect(wallIds(container).every((id) => inventory.families.find((f) => f.id === id)!.projects.includes("site"))).toBe(true);
+    fireEvent.click(option("Project", /^All/));
+    fireEvent.click(within(bar()).getByRole("button", { name: /Near-duplicates only/ }));
+    expect(window.location.search).toBe("?near=1");
+    expect(wallIds(container).sort()).toEqual(inventory.families.filter((f) => f.nearDuplicate).map((f) => f.id).sort());
+    fireEvent.click(within(bar()).getByRole("button", { name: /Near-duplicates only/ }));
+    fireEvent.change(within(bar()).getByRole("searchbox", { name: "Search by name or file" }), { target: { value: "settings/page" } });
+    expect(window.location.search).toBe("?q=settings%2Fpage");
+    const inSettings = new Set(inventory.looks.filter((l) => l.family && l.file.includes("settings/page")).map((l) => l.family!));
+    expect(inSettings.size).toBeGreaterThan(1);
+    expect(wallIds(container).sort()).toEqual([...inSettings].sort());
+    fireEvent.change(within(bar()).getByRole("searchbox", { name: "Search by name or file" }), { target: { value: "pill" } });
+    expect(wallIds(container)).toEqual(["badge-1"]);
+  });
+
+  test("filters combine, restore from the URL on load, and Clear filters empties it", () => {
+    window.history.replaceState(null, "", "/inventory?type=button&project=site&near=1");
+    const { container } = render(<InventoryView inventory={memorySource(inventory)} />);
+    expect(wallIds(container)).toEqual(["button-1"]);
+    expect(option("Type", /^Buttons/).getAttribute("aria-checked")).toBe("true");
+    expect(within(bar()).getByRole("button", { name: /Near-duplicates only/ }).getAttribute("aria-pressed")).toBe("true");
+    // Empty kit cells are hidden: only the family's own cell is left.
+    expect([...container.querySelectorAll<HTMLElement>("[data-kit-cell]")].map((c) => c.dataset.kitCell)).toHaveLength(1);
+    // Other roles' rows are gone.
+    expect([...container.querySelectorAll<HTMLElement>("[data-role]")].map((r) => r.dataset.role)).toEqual(["button"]);
+    fireEvent.click(within(bar()).getByRole("button", { name: "Clear filters" }));
+    expect(window.location.search).toBe("");
+    expect(wallIds(container)).toHaveLength(inventory.families.length);
+  });
+
+  test("each option shows how many families it would show with the other filters on", () => {
+    window.history.replaceState(null, "", "/inventory?near=1");
+    render(<InventoryView inventory={memorySource(inventory)} />);
+    const near = inventory.families.filter((f) => f.nearDuplicate);
+    expect(text(option("Type", /^Buttons/))).toBe(`Buttons${near.filter((f) => f.role === "button").length}`);
+    expect(text(option("Type", /^All/))).toBe(`All${near.length}`);
+    expect(text(option("Project", /^site/))).toBe(`site${near.filter((f) => f.projects.includes("site")).length}`);
+    expect(text(within(bar()).getByRole("button", { name: /Near-duplicates only/ }))).toBe(`Near-duplicates only${near.length}`);
+    expect(text(bar())).toContain(`${near.length} of ${inventory.families.length} families`);
+  });
+
+  test("a role or project filter fetches only its own chunk files; the others are never requested", async () => {
+    const preloaded = snapshotSource();
+    const files = new Map<string, unknown>();
+    for (const file of [preloaded.index.extras, ...preloaded.index.roles.flatMap((r) => Object.values(r.chunks))]) files.set(file, (preloaded.get(file) as { value: unknown }).value);
+    const fetchPart = vi.fn((file: string) => Promise.resolve(files.get(file) as InventoryChunk));
+    const source = createSource(preloaded.index, fetchPart, (file) => `http://hub.test/data/${file}`);
+    window.history.replaceState(null, "", "/inventory?type=button&project=site");
+    const { container } = render(<InventoryView inventory={source} />);
+    await waitFor(() => expect(wallIds(container)).toEqual(["button-1"]));
+    const siteButton = preloaded.index.roles.find((r) => r.role === "button")!.chunks.site!;
+    expect(fetchPart.mock.calls.map(([file]) => file).sort()).toEqual([preloaded.index.extras, siteButton].sort());
+    // Widening to every project fetches the console's button chunk, and still no other role.
+    fireEvent.click(option("Project", /^All/));
+    await waitFor(() => expect(wallIds(container)).toHaveLength(5));
+    expect(fetchPart.mock.calls.map(([file]) => file).filter((f) => f !== preloaded.index.extras).sort()).toEqual(Object.values(preloaded.index.roles.find((r) => r.role === "button")!.chunks).sort());
+  });
+
+  test("on a phone the filters sit in a bottom sheet behind a Filters button", () => {
+    render(<InventoryView inventory={memorySource(inventory)} />);
+    expect(bar().className).toContain("max-md:hidden");
+    const phone = screen.getByTestId("filter-phone");
+    expect(phone.className).toContain("md:hidden");
+    fireEvent.click(within(phone).getByRole("button", { name: /Filters/ }));
+    const sheet = screen.getByRole("dialog", { name: "Filters" });
+    expect(sheet.dataset.variant).toBe("sheet");
+    fireEvent.click(within(within(sheet).getByRole("radiogroup", { name: "Type" })).getByRole("radio", { name: /^Tabs/ }));
+    expect(window.location.search).toBe("?type=tabs");
+    fireEvent.click(within(sheet).getByRole("button", { name: /^Show 3 families$/ }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // The button counts the filters on.
+    expect(text(within(phone).getByRole("button", { name: /Filters/ }))).toBe("Filters1");
+  });
+});
+
+describe("Inventory page: compare and fix (c3)", () => {
+  beforeEach(() => window.history.replaceState(null, "", "/inventory"));
+
+  test("each near-duplicate has a compare card: both specimens stacked, a slider that moves the clip, and an attribute table", () => {
+    const { container } = render(<InventoryView inventory={memorySource(inventory)} />);
+    const cards = [...container.querySelectorAll<HTMLElement>("[data-compare]")].map((c) => c.dataset.compare);
+    expect(cards.sort()).toEqual(inventory.families.filter((f) => f.nearDuplicate).map((f) => f.id).sort());
+    const card = container.querySelector<HTMLElement>('[data-compare="button-1"]')!;
+    const stage = within(card).getByTestId("compare-stage");
+    expect(stage.querySelector('[data-layer="bottom"] [data-tile]')).not.toBeNull();
+    const top = stage.querySelector<HTMLElement>('[data-layer="top"]')!;
+    expect(top.querySelector("[data-tile]")).not.toBeNull();
+    expect(top.style.clipPath).toBe("inset(0 0 0 50%)");
+    const slider = within(card).getByRole("slider");
+    expect(slider.getAttribute("aria-valuenow")).toBe("50");
+    fireEvent.keyDown(slider, { key: "ArrowRight" });
+    expect(slider.getAttribute("aria-valuenow")).toBe("55");
+    expect(top.style.clipPath).toBe("inset(0 0 0 55%)");
+    fireEvent.keyDown(slider, { key: "Home" });
+    expect(top.style.clipPath).toBe("inset(0 0 0 0%)");
+    // Dragging: the handle follows the pointer across the stage.
+    vi.spyOn(stage, "getBoundingClientRect").mockReturnValue({ left: 100, width: 400, top: 0, height: 136, right: 500, bottom: 136, x: 100, y: 0, toJSON: () => ({}) });
+    fireEvent.pointerDown(stage, { clientX: 400, pointerId: 1, button: 0 });
+    expect(top.style.clipPath).toBe("inset(0 0 0 75%)");
+    fireEvent.pointerMove(stage, { clientX: 200, pointerId: 1 });
+    expect(slider.getAttribute("aria-valuenow")).toBe("25");
+    fireEvent.pointerUp(stage, { clientX: 200, pointerId: 1 });
+    fireEvent.pointerMove(stage, { clientX: 450, pointerId: 1 });
+    expect(slider.getAttribute("aria-valuenow")).toBe("25");
+    // The attribute table, differing rows marked.
+    const table = within(card).getByRole("table", { name: "Attributes" });
+    const rows = within(table).getAllByRole("row").slice(1);
+    expect(rows.map((r) => text(r.querySelector("th")!).replace(" (differs)", ""))).toEqual(["Height", "Padding", "Radius", "Font size", "Weight", "Uses", "Projects"]);
+    expect(rows.find((r) => text(r).startsWith("Uses"))!.hasAttribute("data-differs")).toBe(true);
+    expect(rows.find((r) => text(r).startsWith("Radius"))!.hasAttribute("data-differs")).toBe(false);
+    // Overlay / Side by side.
+    fireEvent.click(within(within(card).getByRole("radiogroup", { name: "Compare as" })).getByRole("radio", { name: "Side by side" }));
+    expect(within(card).queryByTestId("compare-stage")).toBeNull();
+    expect(within(card).getByTestId("compare-side-by-side").querySelectorAll("[data-tile]")).toHaveLength(2);
+  });
+
+  test("the fix list has a card per near-duplicate with every side's specimen, its files, and Merge turned off", () => {
+    const { container } = render(<InventoryView inventory={memorySource(inventory)} />);
+    const fix = container.querySelector<HTMLElement>('[data-fix="button-1"]')!;
+    expect(fix.id).toBe("fix-button-1");
+    expect(within(fix).getByRole("list", { name: "Ways it is built" }).querySelectorAll("[data-tile]")).toHaveLength(inventory.families.find((f) => f.id === "button-1")!.sides.length);
+    expect(text(fix)).toContain("console:src/app/page.tsx");
+    expect(text(fix)).toContain("site:src/pages/docs.astro");
+    const merge = within(fix).getByRole("button", { name: "Merge into one" }) as HTMLButtonElement;
+    expect(merge.disabled).toBe(true);
+    expect(document.getElementById(merge.getAttribute("aria-describedby")!)!.textContent).toContain("never changes them");
+  });
+});
+
+describe("Inventory page: a family opened (c4)", () => {
+  beforeEach(() => window.history.replaceState(null, "", "/inventory"));
+  afterEach(() => vi.unstubAllGlobals());
+
+  test("Open shows a drawer headed with its uses and projects; Usage lists every use; Variants and Code are tabs; Escape closes it", () => {
+    const { container } = render(<InventoryView inventory={memorySource(inventory)} />);
+    fireEvent.click(within(familyOf(container, "button-1")).getByRole("button", { name: /^Open / }));
+    const drawer = screen.getByRole("dialog", { name: "10 uses across 2 projects" });
+    expect(drawer.dataset.variant).toBe("drawer");
+    expect(text(drawer)).toContain("Button · 32px · radius 8 · shadcn-style");
+    const uses = within(drawer).getByRole("list", { name: "Every use" }).children;
+    expect(uses).toHaveLength(10);
+    const looks = inventory.looks.filter((l) => l.family === "button-1");
+    for (const look of looks) expect([...uses].some((u) => text(u).startsWith(`${look.project}${look.file}:${look.line}`))).toBe(true);
+    expect([...uses].find((u) => text(u).startsWith("sitesrc/pages/docs.astro"))!.textContent).toContain("/docs");
+    expect(within(drawer).getByRole("tab", { name: /Variants/ })).toBeTruthy();
+    expect(within(drawer).getByRole("tab", { name: /Code/ })).toBeTruthy();
+    fireEvent.keyDown(drawer, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  test("clicking anywhere on a tile opens it too", () => {
+    const { container } = render(<InventoryView inventory={memorySource(inventory)} />);
+    fireEvent.click(familyOf(container, "badge-2").querySelector("h3")!);
+    expect(screen.getByRole("dialog", { name: "1 use across 1 project" })).toBeTruthy();
+  });
+
+  test("on a phone it is a bottom sheet that a downward drag dismisses", () => {
+    vi.stubGlobal("matchMedia", (query: string) => ({ matches: !query.includes("min-width"), media: query, addEventListener: () => {}, removeEventListener: () => {} }));
+    const { container } = render(<InventoryView inventory={memorySource(inventory)} />);
+    fireEvent.click(within(familyOf(container, "badge-1")).getByRole("button", { name: /^Open / }));
+    const sheet = screen.getByRole("dialog", { name: /uses across/ });
+    expect(sheet.dataset.variant).toBe("sheet");
+    const handle = within(sheet).getByTestId("sheet-handle");
+    fireEvent.pointerDown(handle, { clientY: 100, pointerId: 7, button: 0 });
+    fireEvent.pointerMove(handle, { clientY: 400, pointerId: 7 });
+    expect(sheet.style.transform).toBe("translate3d(0, 300px, 0)");
+    fireEvent.pointerUp(handle, { clientY: 400, pointerId: 7 });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("Inventory page: motion (c5)", () => {
+  beforeEach(() => window.history.replaceState(null, "", "/inventory"));
+
+  test("wall tiles stagger on first load only; after a filter or role change none animate", () => {
+    const { container } = render(<InventoryView inventory={memorySource(inventory)} />);
+    const tiles = [...container.querySelectorAll<HTMLElement>("[data-family]")];
+    expect(tiles.every((t) => t.classList.contains("inv-enter"))).toBe(true);
+    expect(tiles.map((t) => Number(t.dataset.stagger))).toEqual(tiles.map((_, i) => i));
+    expect(tiles[3]!.style.getPropertyValue("--inv-i")).toBe("3");
+    const bar = screen.getByTestId("filter-bar");
+    // A role change from the keyboard: arrow keys move the type choice.
+    const all = within(within(bar).getByRole("radiogroup", { name: "Type" })).getByRole("radio", { name: /^All/ });
+    fireEvent.keyDown(all, { key: "ArrowRight" });
+    expect(window.location.search).toBe("?type=button");
+    expect(container.querySelectorAll(".inv-enter, [data-stagger]")).toHaveLength(0);
+    fireEvent.click(within(within(bar).getByRole("radiogroup", { name: "Type" })).getByRole("radio", { name: /^All/ }));
+    expect(container.querySelectorAll("[data-family]").length).toBe(inventory.families.length);
+    expect(container.querySelectorAll(".inv-enter, [data-stagger]")).toHaveLength(0);
+  });
+
+  test("tiles and buttons press to 0.97; motion names only transform and opacity, with the brief's timings, and hover only for a fine pointer", () => {
+    const { container } = render(<InventoryView inventory={memorySource(inventory)} />);
+    const tile = familyOf(container, "button-1");
+    expect(tile.classList.contains("inv-press")).toBe(true);
+    expect(within(tile).getByRole("button", { name: /^Open / }).classList.contains("inv-press")).toBe(true);
+    const css = readFileSync(join(import.meta.dirname, "../src/styles/inventory.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(readFileSync(join(import.meta.dirname, "../src/styles/app.css"), "utf8")).toContain('@import "./inventory.css";');
+    expect(css).toMatch(/\.inv-press\s*{\s*transition:\s*transform var\(--yx-duration-press\) ease-out;/);
+    expect(css).toMatch(/\.inv-press:active\s*{\s*transform:\s*scale\(0\.97\);/);
+    expect(css).toMatch(/\.inv-drawer\[data-state="open"\]\s*{\s*animation:\s*inv-slide-in var\(--yx-duration-enter\) var\(--yx-easing-out\)/);
+    expect(css).toMatch(/\.inv-drawer\[data-state="closed"\]\s*{\s*animation:\s*inv-slide-out var\(--yx-duration-exit\)/);
+    expect(css).toMatch(/animation-delay:\s*calc\(min\(var\(--inv-i, 0\), 12\) \* 40ms\)/);
+    const tokens = readFileSync(join(import.meta.dirname, "../src/styles/generated/tokens.css"), "utf8");
+    expect(tokens).toContain("--yx-easing-out: cubic-bezier(0.23, 1, 0.32, 1);");
+    for (const duration of ["--yx-duration-press: 160ms;", "--yx-duration-enter: 200ms;", "--yx-duration-exit: 140ms;"]) expect(tokens).toContain(duration);
+    // Transitions name transform only; keyframes move transform and opacity only.
+    for (const [, value] of css.matchAll(/transition(?:-property)?:\s*([^;]+);/g)) expect(value!.replace(/var\([^)]*\)/g, "").split(",").map((v) => v.trim().split(/\s+/)[0])).toEqual(["transform"]);
+    for (const [, body] of css.matchAll(/@keyframes [\w-]+\s*{([\s\S]*?)}\s*}/g)) for (const [, property] of body!.matchAll(/([\w-]+)\s*:/g)) expect(["transform", "opacity"]).toContain(property);
+    // Every :hover rule sits inside (hover: hover) and (pointer: fine).
+    const hoverBlock = /@media \(hover: hover\) and \(pointer: fine\)\s*{([\s\S]*?)\n}/.exec(css)![1]!;
+    expect(css.replace(hoverBlock, "").includes(":hover")).toBe(false);
+    // The page's own markup uses no Tailwind hover: or transition utilities.
+    for (const file of ["InventoryScreen.tsx", "Compare.tsx", "FilterBar.tsx", "FamilyDrawer.tsx", "Sheet.tsx"]) {
+      const source = readFileSync(join(import.meta.dirname, "../src/screens/inventory", file), "utf8");
+      expect(source, file).not.toMatch(/\bhover:|\btransition-(?:all|colors|shadow)\b|\banimate-(?:enter|pop|fade)\b/);
+    }
+  });
+
+  test("reduced motion drops movement and keeps the fades", () => {
+    const css = readFileSync(join(import.meta.dirname, "../src/styles/inventory.css"), "utf8").replace(/\/\*[\s\S]*?\*\//g, "");
+    const reduce = /@media \(prefers-reduced-motion: reduce\)\s*{([\s\S]*)}\s*$/.exec(css)![1]!;
+    expect(reduce).toMatch(/\.inv-press:active\s*{\s*transform:\s*none;/);
+    expect(reduce).toMatch(/\.inv-enter,\s*\.inv-scrim\[data-state="open"\],\s*\.inv-drawer\[data-state="open"\]\s*{\s*animation-name:\s*inv-fade-in !important;\s*animation-duration:\s*var\(--yx-duration-enter\) !important;/);
+    expect(reduce).toMatch(/animation-name:\s*inv-fade-out !important;/);
+    expect(/@keyframes inv-fade-in\s*{\s*from\s*{\s*opacity:\s*0;\s*}\s*}/.test(css)).toBe(true);
+    // The hub's global rule cuts animations to 0.01ms with !important on `*`; a class selector outranks it.
+    expect(readFileSync(join(import.meta.dirname, "../src/styles/app.css"), "utf8")).toMatch(/\*,\s*\*::before,\s*\*::after\s*{\s*animation-duration: 0\.01ms !important;/);
   });
 });
 
@@ -104,13 +354,9 @@ describe("inventory data", () => {
     expect(familyName({ role: "link-as-button", shape: { height: null, paddingX: null, paddingY: null, radius: null, fontSize: null, fontWeight: null } })).toBe("Link as button");
   });
 
-  test("a family row lists each file:line once, even with two looks on one line", () => {
+  test("examples list each file:line once, even with two looks on one line", () => {
     const example = (column: number) => ({ project: "p", file: "a.tsx", line: 3, column, tag: "Button", routes: [] });
     expect(uniqueExamples([example(5), example(20), { ...example(1), line: 4 }]).map((e) => `${e.line}:${e.column}`)).toEqual(["3:5", "4:1"]);
-    const family = { ...inventory.families[0]!, nearDuplicate: false, examples: [example(5), example(20)] };
-    const { container } = render(<InventoryView inventory={memorySource({ ...inventory, families: [family] })} />);
-    const row = container.querySelector(`[data-family="${family.id}"]`)!;
-    expect(text(row).match(/p:a\.tsx:3/g)).toHaveLength(1);
   });
 
   test("the committed snapshot names an inventory index of both fixtures, its chunks and specimen stylesheets", () => {
@@ -195,10 +441,22 @@ describe("specimen tiles (c1, c3)", () => {
   const tilesOf = (container: HTMLElement, family: string): HTMLElement[] => [...container.querySelectorAll<HTMLElement>(`[data-family="${family}"] [data-tile]`)];
   const rendering = (container: HTMLElement): number => container.querySelectorAll("iframe[data-rendering]").length;
   const caption = (tile: HTMLElement): string => text(tile.querySelector("p")!);
+  /** Open a family from the wall and show its Variants tab: every distinct specimen, as tiles. */
+  const variantsOf = (container: HTMLElement, family: string): HTMLElement[] => {
+    fireEvent.click(within(container.querySelector<HTMLElement>(`[data-family="${family}"]`)!).getByRole("button", { name: /^Open / }));
+    const drawer = screen.getByRole("dialog");
+    fireEvent.mouseDown(within(drawer).getByRole("tab", { name: /Variants/ }));
+    const tiles = [...within(drawer).getByRole("list", { name: "Specimens" }).querySelectorAll<HTMLElement>("[data-tile]")];
+    fireEvent.keyDown(drawer, { key: "Escape" });
+    return tiles;
+  };
 
-  test("each family shows its looks as tiles: the console's components, its class kits and the site's BEM and Astro looks", () => {
+  test("an opened family shows its looks as tiles: the console's components, its class kits and the site's BEM and Astro looks", () => {
+    window.history.replaceState(null, "", "/inventory");
     const { container } = render(<InventoryView inventory={snapshotSource()} />);
-    const buttons = tilesOf(container, "button-1");
+    // On the wall, the family's tile draws its most common specimen: the console's own Button.
+    expect(tilesOf(container, "button-1").map((t) => t.dataset.kind)).toEqual(["component"]);
+    const buttons = variantsOf(container, "button-1");
     // The family's ten looks: the CVA Button five times (each its own label), the CSS kit's,
     // the ladder's hand-rolled 32 and 34px ones and the site's two kit buttons.
     expect(buttons.map((t) => `${t.dataset.kind} ${caption(t)}`).sort()).toEqual([
@@ -214,7 +472,44 @@ describe("specimen tiles (c1, c3)", () => {
       "markup sitesrc/pages/index.astro:11",
     ]);
     // The Astro badge is drawn from its tag and classes.
-    expect(tilesOf(container, "badge-1").some((t) => t.dataset.kind === "markup" && caption(t).includes("src/pages/index.astro:9"))).toBe(true);
+    expect(variantsOf(container, "badge-1").some((t) => t.dataset.kind === "markup" && caption(t).includes("src/pages/index.astro:9"))).toBe(true);
+  });
+
+  test("a role's chunks load as its row nears the screen; the others one at a time when the browser is idle, never outside the filters", async () => {
+    const idle: Array<() => void> = [];
+    vi.stubGlobal("requestIdleCallback", (run: () => void) => idle.push(run));
+    vi.stubGlobal("cancelIdleCallback", () => {});
+    const preloaded = snapshotSource();
+    const files = new Map<string, unknown>();
+    for (const file of [preloaded.index.extras, ...preloaded.index.roles.flatMap((r) => Object.values(r.chunks))]) files.set(file, (preloaded.get(file) as { value: unknown }).value);
+    const fetchPart = vi.fn((file: string) => Promise.resolve(files.get(file) as InventoryChunk));
+    window.history.replaceState(null, "", "/inventory?project=console");
+    const { container } = render(<InventoryView inventory={createSource(preloaded.index, fetchPart, (file) => `http://hub.test/data/${file}`)} />);
+    const chunks = (): string[] => fetchPart.mock.calls.map(([file]) => file).filter((file) => file !== preloaded.index.extras);
+    // After the first paint: the extras, and one idle turn waiting; no chunk yet.
+    await waitFor(() => expect(idle).toHaveLength(1));
+    expect(chunks()).toEqual([]);
+    // The Tabs row comes within 800px of the scroll area: its console chunk loads now.
+    act(() => {
+      for (const observer of FakeObserver.all.filter((o) => o.options.rootMargin === "800px")) {
+        const row = [...observer.elements].find((e) => (e as HTMLElement).dataset.role === "tabs");
+        if (row) observer.callback([{ target: row, isIntersecting: true } as IntersectionObserverEntry], observer as unknown as IntersectionObserver);
+      }
+    });
+    const tabs = preloaded.index.roles.find((r) => r.role === "tabs")!.chunks.console!;
+    expect(chunks()).toEqual([tabs]);
+    await waitFor(() => expect(container.querySelector('[data-family="tabs-3"]')).not.toBeNull());
+    // Each idle turn fetches the next, one at a time, only the console's.
+    const scope = preloaded.index.roles.flatMap((r) => (r.chunks.console ? [r.chunks.console] : []));
+    for (let turn = 0; turn < scope.length && idle.length > 0; turn++) {
+      const before = chunks().length;
+      act(() => idle.shift()!());
+      expect(chunks().length).toBe(before + 1);
+      await waitFor(() => expect(idle.length > 0 || chunks().length === scope.length).toBe(true));
+    }
+    expect(chunks().sort()).toEqual([...scope].sort());
+    expect(new Set(chunks()).size).toBe(chunks().length);
+    await waitFor(() => expect(text(screen.getByTestId("consolidation"))).toMatch(/families → could be ~\d+$/));
   });
 
   test("frames mount only for tiles near the scroll area, and unmount when they are far", () => {
@@ -264,14 +559,19 @@ describe("specimen tiles (c1, c3)", () => {
   });
 
   test("without a stylesheet a project's looks fall back to their measured shape", () => {
+    window.history.replaceState(null, "", "/inventory");
     const { container } = render(<InventoryView inventory={snapshotSource((p) => p === "console")} />);
-    const site = tilesOf(container, "button-1").filter((t) => caption(t).startsWith("site"));
+    const variants = variantsOf(container, "button-1");
+    const site = variants.filter((t) => caption(t).startsWith("site"));
     expect(site.length).toBeGreaterThan(0);
     for (const tile of site) {
       expect(tile.dataset.kind).toBe("shape");
       expect(within(tile).getByTestId("shape-box").textContent).toContain("shape only");
     }
-    expect(tilesOf(container, "button-1").filter((t) => caption(t).startsWith("console")).every((t) => t.dataset.kind !== "shape")).toBe(true);
+    expect(variants.filter((t) => caption(t).startsWith("console")).every((t) => t.dataset.kind !== "shape")).toBe(true);
+    // The fix card's site side, too.
+    const sides = [...container.querySelectorAll<HTMLElement>('[data-fix="button-1"] [data-tile]')];
+    expect(sides.filter((t) => t.dataset.tile!.includes(":site:")).every((t) => t.dataset.kind === "shape")).toBe(true);
   });
 
   test("a strip of more than 100 tiles is virtualised: only the rows near its scroll position are in the DOM", () => {

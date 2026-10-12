@@ -22,6 +22,8 @@ const FRAME_HEIGHT = 480;
 /** The specimen's offset inside the frame, so a shadow or ring is not cut off. */
 const MARGIN = 32;
 export const TILE_HEIGHT = 88;
+/** A wall tile's specimen, drawn larger. */
+export const LARGE_TILE_HEIGHT = 136;
 const TILE_PAD = 10;
 export const MAX_RENDERING = 6;
 /** Frames mounted at once, loading or drawn (FrameBudget). */
@@ -264,7 +266,7 @@ function specimenBox(doc: Document): { x: number; y: number; width: number; heig
   return Number.isFinite(left) ? { x: left, y: top, width: right - left, height: bottom - top } : null;
 }
 
-function SpecimenFrame({ specimen, css, scheme, near }: { specimen: Specimen; css: string; scheme: Scheme; near: boolean }) {
+function SpecimenFrame({ specimen, css, scheme, near, height }: { specimen: Specimen; css: string; scheme: Scheme; near: boolean; height: number }) {
   const boxRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const slot = useFrameSlot(near);
@@ -287,9 +289,9 @@ function SpecimenFrame({ specimen, css, scheme, near }: { specimen: Specimen; cs
     const paint = [doc!.body, doc!.documentElement].map((e) => view?.getComputedStyle(e).backgroundColor).find((c) => c && c !== "transparent" && c !== "rgba(0, 0, 0, 0)");
     setBackground(paint);
     const width = tile.clientWidth || TILE_MIN_WIDTH;
-    const scale = Math.min(1, (width - 2 * TILE_PAD) / box.width, (TILE_HEIGHT - 2 * TILE_PAD) / box.height);
+    const scale = Math.min(1, (width - 2 * TILE_PAD) / box.width, (height - 2 * TILE_PAD) / box.height);
     const x = width / 2 - (box.x + box.width / 2) * scale;
-    const y = TILE_HEIGHT / 2 - (box.y + box.height / 2) * scale;
+    const y = height / 2 - (box.y + box.height / 2) * scale;
     setTransform(`translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${scale.toFixed(4)})`);
     slot.done();
   };
@@ -322,9 +324,9 @@ function SpecimenFrame({ specimen, css, scheme, near }: { specimen: Specimen; cs
 }
 
 /** The look's measured shape, drawn as a box: what is left when nothing renders it (or, `waiting`, until its frame may mount). */
-export function ShapeBox({ shape, caption = "shape only" }: { shape: InventoryShape; caption?: string }) {
+export function ShapeBox({ shape, caption = "shape only", tileHeight = TILE_HEIGHT }: { shape: InventoryShape; caption?: string; tileHeight?: number }) {
   const height = shape.height ?? (shape.fontSize !== null ? Math.round(shape.fontSize * 1.5 + 2 * (shape.paddingY ?? 0)) : 32);
-  const scale = Math.min(1, (TILE_HEIGHT - 2 * TILE_PAD - 14) / height);
+  const scale = Math.min(1, (tileHeight - 2 * TILE_PAD - 14) / height);
   return (
     <div className="flex h-full flex-col items-center justify-center gap-1" data-testid="shape-box">
       <span
@@ -338,17 +340,35 @@ export function ShapeBox({ shape, caption = "shape only" }: { shape: InventorySh
   );
 }
 
-export function SpecimenTile({ tile, scheme }: { tile: Tile; scheme: Scheme }) {
-  const ref = useRef<HTMLLIElement>(null);
+interface SpecimenTileProps {
+  tile: Tile;
+  scheme: Scheme;
+  /** small: a strip of looks; large: a wall tile or a compare card. */
+  size?: "small" | "large";
+  /** A list item in a strip; a plain box anywhere else. */
+  as?: "li" | "div";
+  /** The project and file:line under the specimen. */
+  caption?: boolean;
+  className?: string;
+}
+
+/**
+ * One look drawn: its frame (or its shape) in a box, sharing the near-viewport mounting, the
+ * six-at-once queue and the 48-frame budget with every other specimen on the page.
+ */
+export function SpecimenTile({ tile, scheme, size = "small", as: Tag = "li", caption = true, className }: SpecimenTileProps) {
+  const ref = useRef<HTMLElement>(null);
   const near = useNearViewport(ref);
   const visible = useInView(ref);
   const drawn = tile.specimen !== null && tile.css !== null;
   const mounted = useFrameBudget(drawn && near, visible);
+  const height = size === "large" ? LARGE_TILE_HEIGHT : TILE_HEIGHT;
   return (
-    <li ref={ref} className="min-w-0 space-y-1" data-tile={tile.key} data-kind={drawn ? tile.specimen!.kind : "shape"} data-frame={drawn && near ? (mounted ? "mounted" : "waiting") : undefined}>
-      <div className="relative overflow-hidden rounded-md border border-line bg-sunken" style={{ height: TILE_HEIGHT }}>
-        {!drawn ? <ShapeBox shape={tile.shape} /> : mounted ? <SpecimenFrame specimen={tile.specimen!} css={tile.css!} scheme={scheme} near={near} /> : near ? <ShapeBox shape={tile.shape} caption="waiting" /> : null}
+    <Tag ref={ref as RefObject<never>} className={clsx("min-w-0 space-y-1", className)} data-tile={tile.key} data-kind={drawn ? tile.specimen!.kind : "shape"} data-frame={drawn && near ? (mounted ? "mounted" : "waiting") : undefined}>
+      <div className="relative overflow-hidden rounded-md border border-line bg-sunken" style={{ height }}>
+        {!drawn ? <ShapeBox shape={tile.shape} tileHeight={height} /> : mounted ? <SpecimenFrame specimen={tile.specimen!} css={tile.css!} scheme={scheme} near={near} height={height} /> : near ? <ShapeBox shape={tile.shape} caption="waiting" tileHeight={height} /> : null}
       </div>
+      {caption && (
       <p className="flex min-w-0 items-baseline gap-1.5 text-caption text-muted">
         <span className="shrink-0 font-medium text-ink-2">{tile.project}</span>
         {tile.count > 1 && <span className="shrink-0 tabular">×{tile.count}</span>}
@@ -356,7 +376,8 @@ export function SpecimenTile({ tile, scheme }: { tile: Tile; scheme: Scheme }) {
           {tile.place}
         </span>
       </p>
-    </li>
+      )}
+    </Tag>
   );
 }
 

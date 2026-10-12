@@ -7,6 +7,7 @@
 @import "@fontsource-variable/geist";
 @import "@fontsource-variable/geist-mono";
 @import "./fonts.css";
+@import "./inventory.css";
 
 @source "../";
 @source not "../preview";

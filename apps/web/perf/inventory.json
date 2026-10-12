@@ -1,5 +1,5 @@
 {
-  "measuredAt": "2026-10-12T21:50:50.002Z",
+  "measuredAt": "2026-10-12T22:27:47.534Z",
   "runs": 5,
   "bounds": {
     "bytes": "≤ smallest + 10%",
@@ -10,19 +10,19 @@
       "looks": 50,
       "families": 16,
       "indexBytes": 3397,
-      "bytesBeforePaint": 165594,
-      "requestsBeforePaint": 23,
-      "inventoryPaintMs": 178.2,
-      "fcpMs": 192
+      "bytesBeforePaint": 183283,
+      "requestsBeforePaint": 28,
+      "inventoryPaintMs": 176.4,
+      "fcpMs": 188
     },
     {
       "looks": 5000,
       "families": 126,
       "indexBytes": 3467,
-      "bytesBeforePaint": 165647,
-      "requestsBeforePaint": 23,
-      "inventoryPaintMs": 173.8,
-      "fcpMs": 188
+      "bytesBeforePaint": 183334,
+      "requestsBeforePaint": 28,
+      "inventoryPaintMs": 170,
+      "fcpMs": 184
     }
   ],
   "raw": [
@@ -32,34 +32,34 @@
       "indexBytes": 3397,
       "runs": [
         {
-          "bytes": 165594,
-          "requests": 23,
-          "inventoryPaintMs": 218.9,
-          "fcpMs": 236
+          "bytes": 183283,
+          "requests": 28,
+          "inventoryPaintMs": 176.4,
+          "fcpMs": 188
         },
         {
-          "bytes": 165594,
-          "requests": 23,
-          "inventoryPaintMs": 178.2,
+          "bytes": 183283,
+          "requests": 28,
+          "inventoryPaintMs": 174.4,
+          "fcpMs": 188
+        },
+        {
+          "bytes": 183283,
+          "requests": 28,
+          "inventoryPaintMs": 169.8,
+          "fcpMs": 184
+        },
+        {
+          "bytes": 183283,
+          "requests": 28,
+          "inventoryPaintMs": 176.4,
           "fcpMs": 192
         },
         {
-          "bytes": 165594,
-          "requests": 23,
-          "inventoryPaintMs": 173.5,
-          "fcpMs": 188
-        },
-        {
-          "bytes": 165594,
-          "requests": 23,
-          "inventoryPaintMs": 179.8,
-          "fcpMs": 196
-        },
-        {
-          "bytes": 165594,
-          "requests": 23,
-          "inventoryPaintMs": 173.3,
-          "fcpMs": 188
+          "bytes": 183283,
+          "requests": 28,
+          "inventoryPaintMs": 177.3,
+          "fcpMs": 192
         }
       ]
     },
@@ -69,34 +69,34 @@
       "indexBytes": 3467,
       "runs": [
         {
-          "bytes": 165647,
-          "requests": 23,
-          "inventoryPaintMs": 176.1,
+          "bytes": 183334,
+          "requests": 28,
+          "inventoryPaintMs": 177.4,
           "fcpMs": 192
         },
         {
-          "bytes": 165647,
-          "requests": 23,
-          "inventoryPaintMs": 173.8,
-          "fcpMs": 188
-        },
-        {
-          "bytes": 165647,
-          "requests": 23,
-          "inventoryPaintMs": 171.3,
+          "bytes": 183334,
+          "requests": 28,
+          "inventoryPaintMs": 170,
           "fcpMs": 184
         },
         {
-          "bytes": 165647,
-          "requests": 23,
-          "inventoryPaintMs": 172.6,
-          "fcpMs": 188
+          "bytes": 183334,
+          "requests": 28,
+          "inventoryPaintMs": 170.2,
+          "fcpMs": 184
         },
         {
-          "bytes": 165647,
-          "requests": 23,
-          "inventoryPaintMs": 174,
-          "fcpMs": 188
+          "bytes": 183334,
+          "requests": 28,
+          "inventoryPaintMs": 168.2,
+          "fcpMs": 180
+        },
+        {
+          "bytes": 183334,
+          "requests": 28,
+          "inventoryPaintMs": 169.5,
+          "fcpMs": 184
         }
       ]
     }

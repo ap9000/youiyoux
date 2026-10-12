@@ -72,5 +72,8 @@
   --text-title--letter-spacing: var(--yx-typography-title-letter-spacing);
   --text-title--line-height: var(--yx-typography-title-line-height);
   --transition-duration-base: var(--yx-duration-base);
+  --transition-duration-enter: var(--yx-duration-enter);
+  --transition-duration-exit: var(--yx-duration-exit);
   --transition-duration-fast: var(--yx-duration-fast);
+  --transition-duration-press: var(--yx-duration-press);
 }

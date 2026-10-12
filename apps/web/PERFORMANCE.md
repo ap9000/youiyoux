@@ -64,18 +64,18 @@ What keeps it there:
 
 ## Inventory: first paint does not grow with the library (`pnpm measure:inventory`)
 
-The Inventory page paints from a small index (projects, roles by project, counts). Each role's looks, families and specimens are a chunk per project, fetched when that role's section comes within 800 px of the scroll area; kits, primitives and flags load right after the first paint. A specimen frame mounts within 600 px of the scroll area and unmounts beyond 1,800 px; at most six frames load at once; a family with more than 100 tiles is virtualised by rows.
+The Inventory page paints from a small index (projects, roles by project, counts): the filters and the headline. Each role's looks, families and specimens are a chunk per project, fetched only for the roles and projects the filters show: a role's when its row comes within 800 px of the scroll area, the rest one at a time when the browser is idle (the headline's estimate, the compare cards and the fix list need every family in view); kits, primitives and flags load right after the first paint. A specimen frame mounts within 600 px of the scroll area and unmounts beyond 1,800 px; at most six frames load at once; a family with more than 100 tiles is virtualised by rows.
 
-`scripts/measure-inventory.ts` makes synthetic inventories of the scanner's fixtures at 50 and 5,000 looks (each copy a little taller and with its own label, so families and specimens multiply), snapshots each with specimens, builds the hub against it, serves it with `vite preview` and opens `/inventory` cold in headless Chromium five times. It counts the bytes transferred (headers included, uncompressed preview server) until the frame after the roles-by-project grid is in the DOM, and reads FCP.
+`scripts/measure-inventory.ts` makes synthetic inventories of the scanner's fixtures at 50 and 5,000 looks (each copy a little taller and with its own label, so families and specimens multiply), snapshots each with specimens, builds the hub against it, serves it with `vite preview` and opens `/inventory` cold in headless Chromium five times. It counts the bytes transferred (headers included, uncompressed preview server) until the frame after the headline (filters, family count, drawn from the index alone) is in the DOM, and reads FCP.
 
 Measured 2026-10-12, Apple silicon laptop, median of 5:
 
 | Looks | Families | Index | Requests before the inventory paints | Bytes before it paints | Inventory paint | FCP |
 | --- | --- | --- | --- | --- | --- | --- |
-| 50 | 16 | 3.1 KB | 23 | 165,028 | 178 ms | 192 ms |
-| 5,000 | 126 | 3.2 KB | 23 | 165,078 | 179 ms | 192 ms |
+| 50 | 16 | 3.1 KB | 28 | 183,283 | 176 ms | 188 ms |
+| 5,000 | 126 | 3.2 KB | 28 | 183,334 | 170 ms | 184 ms |
 
-It exits 1 when the larger run transfers more than the smaller's bytes + 10%, or its median paint or FCP is over 1.5× the smaller's plus one frame (16 ms). Only counts grow in the index. What does grow is after the paint: at 5,000 looks the console's button chunk is 1 MB uncompressed (its 2,000-odd looks and their specimen HTML), loaded when the Buttons section nears the screen. The specimen stylesheets do not grow with looks: 33 KB per scheme for the console (its Tailwind build, with its 13 KB font inlined), 1.5 KB for the site. Full numbers are in [`perf/inventory.json`](perf/inventory.json).
+It exits 1 when the larger run transfers more than the smaller's bytes + 10%, or its median paint or FCP is over 1.5× the smaller's plus one frame (16 ms). Only counts grow in the index. What does grow is after the paint: at 5,000 looks the console's button chunk is 1 MB uncompressed (its 2,000-odd looks and their specimen HTML), loaded when the Buttons row nears the screen or the browser is next idle, unless a filter leaves buttons or the console out. The specimen stylesheets do not grow with looks: 33 KB per scheme for the console (its Tailwind build, with its 13 KB font inlined), 1.5 KB for the site. Full numbers are in [`perf/inventory.json`](perf/inventory.json).
 
 ## Live numbers
 

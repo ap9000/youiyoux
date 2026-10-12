@@ -1,0 +1,113 @@
+/* The Inventory page's motion, on the hub's duration tokens. Only transform and opacity move.
+ * A press shrinks to 0.97 in 160ms; the drawer enters in 200ms on the hub's out curve and
+ * leaves faster (140ms); wall tiles come in about 40ms apart on first load only (the page drops
+ * `inv-enter` after any filter or role change); hover styles apply only to a fine pointer that
+ * can hover. With reduced motion nothing moves or scales, but fades stay. Unlayered, so these
+ * win over the utility classes on the hub's own buttons. */
+
+.inv-press {
+  transition: transform var(--yx-duration-press) ease-out;
+}
+
+.inv-press:active {
+  transform: scale(0.97);
+}
+
+.inv-enter {
+  animation: inv-enter var(--yx-duration-enter) var(--yx-easing-out) both;
+  animation-delay: calc(min(var(--inv-i, 0), 12) * 40ms);
+}
+
+.inv-scrim[data-state="open"] {
+  animation: inv-fade-in var(--yx-duration-enter) var(--yx-easing-out) both;
+}
+
+.inv-scrim[data-state="closed"] {
+  animation: inv-fade-out var(--yx-duration-exit) ease-in both;
+}
+
+.inv-drawer {
+  --inv-from: translate3d(100%, 0, 0);
+}
+
+.inv-drawer[data-variant="sheet"] {
+  --inv-from: translate3d(0, 100%, 0);
+}
+
+.inv-drawer[data-state="open"] {
+  animation: inv-slide-in var(--yx-duration-enter) var(--yx-easing-out) both;
+}
+
+.inv-drawer[data-state="closed"] {
+  animation: inv-slide-out var(--yx-duration-exit) ease-in both;
+}
+
+/* A sheet let go short of closing settles back. */
+.inv-settle {
+  transition: transform var(--yx-duration-enter) var(--yx-easing-out);
+}
+
+@keyframes inv-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+@keyframes inv-slide-in {
+  from {
+    transform: var(--inv-from);
+  }
+}
+
+@keyframes inv-slide-out {
+  to {
+    transform: var(--inv-from);
+  }
+}
+
+@keyframes inv-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes inv-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .inv-tile:hover {
+    border-color: var(--color-line-strong);
+  }
+
+  .inv-tile:hover .inv-tile-name {
+    color: var(--color-accent);
+  }
+
+  .inv-link:hover {
+    color: var(--color-accent);
+  }
+}
+
+/* Reduced motion: the hub's rule cuts every animation short; here fades come back, without movement. */
+@media (prefers-reduced-motion: reduce) {
+  .inv-press:active {
+    transform: none;
+  }
+
+  .inv-enter,
+  .inv-scrim[data-state="open"],
+  .inv-drawer[data-state="open"] {
+    animation-name: inv-fade-in !important;
+    animation-duration: var(--yx-duration-enter) !important;
+  }
+
+  .inv-scrim[data-state="closed"],
+  .inv-drawer[data-state="closed"] {
+    animation-name: inv-fade-out !important;
+    animation-duration: var(--yx-duration-exit) !important;
+  }
+}

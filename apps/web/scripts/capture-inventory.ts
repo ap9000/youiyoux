@@ -15,11 +15,14 @@
  * shape-only fallback), builds the hub against it and serves the build with `vite preview`; no
  * app's dev server runs.
  *
- * Writes, light and dark: inventory.<scheme>.png (1440×900, the top: roles by project and
- * flags), inventory-families.<scheme>.png (scrolled to the button families and their
- * near-duplicates), inventory-buttons.<scheme>.png and inventory-badges.<scheme>.png (the 32px
- * button family and the pill badge family once every specimen frame has drawn), and the same
- * four at 390×844 on a touch phone as phone-inventory*.png.
+ * Writes, light and dark, at 1440×900: inventory.<scheme>.png (filters, the headline and the
+ * top of the wall; on a phone, the two-column wall), inventory-filtered.<scheme>.png (a filtered URL: the console's buttons),
+ * inventory-compare.<scheme>.png (the 32px button's compare card, its slider dragged to 45%),
+ * inventory-fixes.<scheme>.png (the fix list) and inventory-drawer.<scheme>.png (that family
+ * opened); and at 390×844 on a touch phone the same as phone-inventory*.png, with
+ * phone-inventory-filters.<scheme>.png (the filters' bottom sheet) and
+ * phone-inventory-sheet.<scheme>.png (the family's bottom sheet) for the last two. Each waits
+ * until every specimen frame on screen has drawn.
  */
 import { execFileSync } from "node:child_process";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
@@ -40,43 +43,78 @@ const VIEWPORTS = [
 ] as const;
 
 async function shoot(page: Page, out: string, name: string): Promise<string> {
+  await framesDrawn(page);
   await page.waitForTimeout(SETTLE_MS);
   const file = join(out, `${name}.png`);
   await page.screenshot({ path: file });
   return file;
 }
 
-/** Scroll to a family's role (its chunks load as it nears), then the family's row to the top; wait until every tile with a specimen has drawn it. */
-async function showFamily(page: Page, family: string): Promise<void> {
-  await page.locator(`#inventory-${family.replace(/-\d+$/, "")}`).evaluate((section) => section.scrollIntoView({ block: "start" }));
-  const row = page.locator(`[data-family="${family}"]`);
-  await row.waitFor();
-  await row.evaluate((element) => element.scrollIntoView({ block: "start" }));
+/** Every specimen tile on screen has drawn its frame (or shows its shape). */
+async function framesDrawn(page: Page): Promise<void> {
   await page.waitForFunction(
-    (id) => {
-      const tiles = [...document.querySelectorAll(`[data-family="${id}"] [data-tile]`)].filter((t) => t.getBoundingClientRect().top < innerHeight);
-      return tiles.length > 0 && tiles.every((t) => (t as HTMLElement).dataset.kind === "shape" || t.querySelector("iframe[data-placed]"));
-    },
-    family,
+    () =>
+      [...document.querySelectorAll("[data-tile]")]
+        .filter((t) => {
+          const r = t.getBoundingClientRect();
+          return r.bottom > 0 && r.top < innerHeight && r.width > 0;
+        })
+        .every((t) => (t as HTMLElement).dataset.kind === "shape" || t.querySelector("iframe[data-placed]")),
+    undefined,
     { timeout: FRAMES_TIMEOUT_MS },
   );
+}
+
+/** Scroll an element to the top of the page's scroll area. */
+async function scrollTo(page: Page, selector: string): Promise<void> {
+  const target = page.locator(selector).first();
+  await target.waitFor();
+  await target.evaluate((element) => element.scrollIntoView({ block: "start" }));
+}
+
+async function open(page: Page, base: string, query = ""): Promise<void> {
+  await page.goto(`${base}/inventory${query}`, { waitUntil: "networkidle" });
+  await page.getByTestId("inventory-headline").waitFor();
+  await page.locator("[data-family]").first().waitFor();
 }
 
 async function capture(browser: Browser, base: string, out: string): Promise<string[]> {
   const files: string[] = [];
   for (const { prefix, options } of VIEWPORTS) {
+    const phone = prefix.startsWith("phone");
     for (const scheme of SCHEMES) {
       const context = await browser.newContext({ ...options, colorScheme: scheme, reducedMotion: "reduce" });
       const page = await context.newPage();
-      await page.goto(`${base}/inventory`, { waitUntil: "networkidle" });
-      await page.getByRole("heading", { name: "Roles by project" }).waitFor();
+      await open(page, base);
+      // A phone shows the two-column wall; a desktop has room for the headline above it.
+      if (phone) await scrollTo(page, '[data-role="button"]');
       files.push(await shoot(page, out, `${prefix}.${scheme}`));
-      await page.locator("#inventory-button").evaluate((section) => section.scrollIntoView({ block: "start" }));
-      files.push(await shoot(page, out, `${prefix}-families.${scheme}`));
-      await showFamily(page, "button-1");
-      files.push(await shoot(page, out, `${prefix}-buttons.${scheme}`));
-      await showFamily(page, "badge-1");
-      files.push(await shoot(page, out, `${prefix}-badges.${scheme}`));
+
+      await open(page, base, "?type=button&project=console");
+      if (phone) {
+        await page.getByTestId("filter-phone").getByRole("button", { name: /Filters/ }).click();
+        await page.getByRole("dialog", { name: "Filters" }).waitFor();
+        files.push(await shoot(page, out, `${prefix}-filters.${scheme}`));
+        await page.keyboard.press("Escape");
+      } else files.push(await shoot(page, out, `inventory-filtered.${scheme}`));
+
+      await open(page, base);
+      await scrollTo(page, '[data-compare="button-1"]');
+      const stage = page.locator('[data-compare="button-1"] [data-testid="compare-stage"]');
+      const box = (await stage.boundingBox())!;
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width * 0.45, box.y + box.height / 2, { steps: 6 });
+      await page.mouse.up();
+      files.push(await shoot(page, out, `${prefix}-compare.${scheme}`));
+
+      await scrollTo(page, "#inventory-fixes");
+      files.push(await shoot(page, out, `${prefix}-fixes.${scheme}`));
+
+      await scrollTo(page, '[data-family="button-1"]');
+      await page.locator('[data-family="button-1"]').getByRole("button", { name: /^Open / }).click();
+      await page.getByTestId("family-drawer").getByRole("list", { name: "Every use" }).waitFor();
+      files.push(await shoot(page, out, phone ? `${prefix}-sheet.${scheme}` : `${prefix}-drawer.${scheme}`));
       await context.close();
     }
   }

@@ -9,7 +9,8 @@
  * snapshots it (scripts/snapshot.ts --out, specimens included), builds the hub against that
  * snapshot, serves the build with `vite preview` and opens /inventory in Playwright's headless
  * Chromium, cold, `--runs` times. Per run it records the bytes transferred until the page first
- * paints its inventory (the roles-by-project grid), that moment, and first contentful paint.
+ * paints its inventory (the headline, drawn from the index alone), that moment, and first
+ * contentful paint.
  *
  * Fails when the largest size transfers more than the smallest's bytes + 10%, or its median
  * inventory paint or FCP is over 1.5× the smallest's (plus one frame, 16 ms, for timer noise).
@@ -46,7 +47,7 @@ const median = (values: readonly number[]): number => {
   return sorted[Math.floor(sorted.length / 2)]!;
 };
 
-/** Bytes over the wire (headers included) until the grid paints, that moment, and FCP. */
+/** Bytes over the wire (headers included) until the headline paints, that moment, and FCP. */
 async function measure(browser: Browser, url: string): Promise<Run> {
   const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const page = await context.newPage();
@@ -54,7 +55,7 @@ async function measure(browser: Browser, url: string): Promise<Run> {
   const cdp = await context.newCDPSession(page);
   await cdp.send("Network.enable");
   await cdp.send("Network.setCacheDisabled", { cacheDisabled: true });
-  // The first frame after the grid exists, on the page's clock.
+  // The first frame after the headline exists, on the page's clock.
   await page.addInitScript(() => {
     new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) if (entry.name === "first-contentful-paint") (window as unknown as { __fcp: number }).__fcp = entry.startTime;
@@ -63,7 +64,7 @@ async function measure(browser: Browser, url: string): Promise<Run> {
       requestAnimationFrame(() => setTimeout(() => ((window as unknown as { __inventoryPaint: number }).__inventoryPaint = performance.now()), 0));
     };
     new MutationObserver((_, observer) => {
-      if (document.querySelector('[data-testid="role-grid"]')) {
+      if (document.querySelector('[data-testid="inventory-headline"]')) {
         observer.disconnect();
         done();
       }
