@@ -1,0 +1,22 @@
+/* The widgets' tokens: loaded only through the Tailwind entry's @import. */
+@theme {
+  --color-brand: #0f766e;
+  --color-brand-foreground: #f0fdfa;
+  --color-warning: #fef3c7;
+  --color-warning-foreground: #92400e;
+  --radius-md: 6px;
+}
+
+:root {
+  --ui-accent: #7c3aed;
+  --ui-accent-ink: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-brand: #2dd4bf;
+    --color-brand-foreground: #042f2e;
+    --ui-accent: #a78bfa;
+    --ui-accent-ink: #1e1b4b;
+  }
+}

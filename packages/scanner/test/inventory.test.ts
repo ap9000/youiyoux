@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeAll, describe, expect, test } from "vitest";
 import { InventoryReport, SHAPE_DIMENSIONS, type InventoryShape } from "@youiyoux/core";
-import { buildInventory, clusterShapeOf, clusterShapes, compatible, DEFAULT_TOLERANCE, detectRoutes, familiesOf } from "../src/index.ts";
+import { buildInventory, clusterShapeOf, clusterShapes, compatible, DEFAULT_TOLERANCE, detectRoutes, familiesOf, numericValue } from "../src/index.ts";
 import { readTemplate } from "../src/inventory/astro.ts";
 import { applyUtility, resolveClasses, ClassRules, StyleAccumulator } from "../src/inventory/style.ts";
 import { buildTheme, readStylesheet, Theme } from "../src/inventory/theme.ts";
@@ -189,7 +189,7 @@ describe("youi inventory on two projects (c1)", () => {
       ["site:src/styles/ui.css", "class-kit"],
     ]);
     const button = report.kits[1]!.members.find((m) => m.name === "Button")!;
-    expect(button.variants).toEqual({ variant: ["default", "outline", "ghost"], size: ["default", "sm", "lg", "icon"] });
+    expect(button.variants).toEqual({ variant: ["default", "outline", "ghost", "destructive"], size: ["default", "sm", "lg", "icon"] });
     expect(report.kits[4]!.members.find((m) => m.name === ".ui-button")).toMatchObject({ role: "button", variants: { modifier: ["sm"] } });
     expect(report.primitives.map((p) => p.package)).toEqual(["@radix-ui/react-dialog", "@radix-ui/react-slot", "@radix-ui/react-tabs", "lucide-react"]);
     expect(report.primitives.find((p) => p.package === "lucide-react")!.sites).toEqual([{ project: "console", file: "src/app/page.tsx", line: 14, column: 11, export: "Plus" }]);
@@ -232,6 +232,49 @@ describe("youi inventory on two projects (c1)", () => {
     expect(wrappers.map((l) => l.tag).sort()).toEqual(["Dialog", "Tabs"]);
     for (const look of wrappers) expect(SHAPE_DIMENSIONS.every((d) => look.shape[d] === null)).toBe(true);
     expect(report.summary).toMatchObject({ looks: report.looks.length, unshaped: 2, clustered: report.looks.length - 2 });
+  });
+});
+
+describe("recipes: how each look is drawn", () => {
+  const look = (project: string, file: string, line: number, column?: number) => report.looks.find((l) => l.project === project && l.file === file && l.line === line && (column === undefined || l.column === column))!;
+
+  test("a CVA component look names its export, the site's variant props and label, with its classes as the fallback", () => {
+    expect(look("console", "src/app/page.tsx", 16).recipe).toMatchObject({ kind: "component", file: "src/components/ui/button.tsx", export: "Button", props: { variant: "outline" }, label: "Export", wrappers: [], tag: "button" });
+    expect(look("console", "src/app/page.tsx", 16).recipe).toHaveProperty("classes", expect.arrayContaining(["border-input", "h-8"]));
+    // An icon beside the text is not part of the label; an asChild link gives its text and is drawn as the default element.
+    expect(look("console", "src/app/page.tsx", 13).recipe).toMatchObject({ label: "New run", props: {} });
+    expect(look("console", "src/app/page.tsx", 17).recipe).toMatchObject({ label: "Settings", props: {} });
+    expect(look("console", "src/app/page.tsx", 10).recipe).toMatchObject({ kind: "component", export: "Card", label: null });
+  });
+
+  test("compound parts carry the same module's components around them: Tabs > TabsList, and an open Dialog", () => {
+    expect(look("console", "src/app/page.tsx", 23).recipe).toEqual(
+      expect.objectContaining({
+        export: "TabsTrigger",
+        props: { value: "runs" },
+        label: "Runs",
+        wrappers: [
+          { file: "src/components/ui/tabs.tsx", export: "Tabs", props: { defaultValue: "runs" } },
+          { file: "src/components/ui/tabs.tsx", export: "TabsList", props: {} },
+        ],
+      }),
+    );
+    expect(look("console", "src/app/settings/page.tsx", 20).recipe).toMatchObject({ export: "DialogContent", label: "Are you sure?", wrappers: [{ export: "Dialog", props: { open: true } }] });
+    // A Button inside a DialogTrigger is from another module: no wrappers.
+    expect(look("console", "src/app/settings/page.tsx", 18).recipe).toMatchObject({ export: "Button", props: { variant: "ghost" }, wrappers: [] });
+  });
+
+  test("class kits, hand-styled elements and Astro components are a tag with classes", () => {
+    expect(look("console", "src/browser/toolbar.tsx", 8).recipe).toEqual({ kind: "class", tag: "button", classes: ["ui-button"], label: "Go" });
+    expect(look("console", "src/browser/toolbar.tsx", 7).recipe).toEqual({ kind: "class", tag: "input", classes: ["ui-input"], label: null });
+    expect(look("site", "src/pages/index.astro", 9).recipe).toEqual({ kind: "class", tag: "span", classes: ["ui-badge"], label: "New" });
+    expect(look("site", "src/pages/pricing.astro", 8).recipe).toEqual({ kind: "class", tag: "span", classes: ["badge", "badge--muted"], label: "Monthly" });
+  });
+
+  test("every look has a recipe, and an inventory written before recipes still validates", () => {
+    expect(report.looks.every((l) => l.recipe !== undefined)).toBe(true);
+    const old = { ...report, looks: report.looks.map(({ recipe: _, ...rest }) => rest) };
+    expect(InventoryReport.safeParse(old).success).toBe(true);
   });
 });
 
@@ -384,6 +427,48 @@ describe("style resolution", () => {
   test("without Tailwind's preflight a bare button's padding is unknown, not zero", () => {
     const rules = new ClassRules();
     expect(resolveClasses([], "button", new Theme(new Map(), null, []), rules).shape.paddingX).toBeNull();
+  });
+});
+
+describe("numeric props (c5)", () => {
+  test("numeric literals parse to the value JavaScript gives them; one with no finite value is not a number", () => {
+    expect(numericValue("2_000")).toBe(2000);
+    expect(numericValue("1_000_000.5")).toBe(1000000.5);
+    expect(numericValue("0xFF")).toBe(255);
+    expect(numericValue("0XfF_ff")).toBe(65535);
+    expect(numericValue("0o17")).toBe(15);
+    expect(numericValue("0b1010")).toBe(10);
+    expect(numericValue("017")).toBe(15);
+    expect(numericValue("1e3")).toBe(1000);
+    expect(numericValue("2.5E-1")).toBe(0.25);
+    expect(numericValue(".5")).toBe(0.5);
+    expect(numericValue("10n")).toBe(10);
+    expect(numericValue("0x1_0n")).toBe(16);
+    expect(numericValue("1e999")).toBeNull();
+  });
+
+  test("an inventory with separators, hex, bigint and exponent props records their values, never NaN or null, and validates", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "youi-numbers-"));
+    try {
+      await mkdir(join(dir, "src/components/ui"), { recursive: true });
+      await writeFile(join(dir, "src/components/ui/input.tsx"), 'import type { ComponentProps } from "react";\nexport function Input(props: ComponentProps<"input">) {\n  return <input className="h-8 rounded-md px-3 text-sm" {...props} />;\n}\n');
+      await writeFile(join(dir, "src/page.tsx"), 'import { Input } from "./components/ui/input";\nexport function Page() {\n  return <Input maxLength={2_000} size={0x10} tabIndex={10n} step={1e2} min={0b11} max={1e999} />;\n}\n');
+      const raw = await buildInventory([dir], { cwd: dir });
+      const text = JSON.stringify(raw);
+      expect(text).not.toMatch(/NaN|Infinity/);
+      // Before: maxLength={2_000} was NaN, which JSON writes as null, which the schema refuses.
+      const props = (raw as InventoryReport).looks.flatMap((l) => (l.recipe && "props" in l.recipe ? Object.values(l.recipe.props) : []));
+      expect(props.length).toBeGreaterThan(4);
+      expect(props.every((v) => v !== null && (typeof v !== "number" || Number.isFinite(v)))).toBe(true);
+      const parsed = InventoryReport.parse(JSON.parse(text));
+      const look = parsed.looks.find((l) => l.file === "src/page.tsx")!;
+      expect(look.recipe).toMatchObject({ kind: "component", export: "Input", props: { maxLength: 2000, size: 16, tabIndex: 10, step: 100, min: 3 } });
+      // No finite value: left out of the recipe as a computed prop, not recorded as null.
+      expect(look.recipe && "props" in look.recipe ? look.recipe.props : {}).not.toHaveProperty("max");
+      expect(InventoryReport.safeParse(JSON.parse(text)).success).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

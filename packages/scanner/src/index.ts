@@ -21,3 +21,4 @@ export * from "./watch.ts";
 export * from "./inventory/inventory.ts";
 export * from "./inventory/cluster.ts";
 export * from "./inventory/target.ts";
+export * from "./specimens/build.ts";

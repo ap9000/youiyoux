@@ -19,6 +19,8 @@ export interface TemplateTag {
   readonly attributes: readonly TemplateAttribute[];
   /** The first tag opened inside this one, for `asChild`-style checks. */
   readonly firstChild: string | null;
+  /** The plain text right inside it (`<Badge>New</Badge>` → `New`); null when none or an expression. */
+  readonly text: string | null;
 }
 
 export interface AstroFile {
@@ -82,10 +84,17 @@ interface Opened {
   firstChild: string | null;
 }
 
+/** Text from `start` to the next tag, collapsed; null when empty or it holds an expression. */
+function textAt(source: string, start: number): string | null {
+  const end = source.indexOf("<", start);
+  const text = source.slice(start, end < 0 ? undefined : end).replace(/\s+/g, " ").trim();
+  return text && !text.includes("{") ? text : null;
+}
+
 /** Tags in an Astro template; `offset` is where the template starts in the file. */
 export function readTemplate(source: string, offset: number): { tags: TemplateTag[]; styles: Array<{ css: string; line: number }>; problems: string[] } {
   const starts = lineStarts(source);
-  const found: Array<{ tag: string; index: number; attributes: TemplateAttribute[]; opened: Opened | null }> = [];
+  const found: Array<{ tag: string; index: number; attributes: TemplateAttribute[]; opened: Opened | null; text: string | null }> = [];
   const styles: Array<{ css: string; line: number }> = [];
   const problems: string[] = [];
   const stack: Opened[] = [];
@@ -184,16 +193,16 @@ export function readTemplate(source: string, offset: number): { tags: TemplateTa
       const close = source.indexOf(`</${lower}`, j);
       const end = close < 0 ? source.length : close;
       if (lower === "style") styles.push({ css: source.slice(j, end), line: positionAt(starts, j).line });
-      found.push({ tag, index: i, attributes, opened: null });
+      found.push({ tag, index: i, attributes, opened: null, text: null });
       i = close < 0 ? source.length : source.indexOf(">", close) + 1 || source.length;
       continue;
     }
     const opened: Opened | null = selfClosing ? null : { tag, index: i, firstChild: null };
     if (opened) stack.push(opened);
-    found.push({ tag, index: i, attributes, opened });
+    found.push({ tag, index: i, attributes, opened, text: opened ? textAt(source, j) : null });
     i = j;
   }
-  const tags = found.map(({ tag, index, attributes, opened }) => ({ tag, ...positionAt(starts, index), attributes, firstChild: opened?.firstChild ?? null }));
+  const tags = found.map(({ tag, index, attributes, opened, text }) => ({ tag, ...positionAt(starts, index), attributes, firstChild: opened?.firstChild ?? null, text }));
   return { tags, styles, problems };
 }
 

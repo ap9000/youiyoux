@@ -36,10 +36,32 @@ function position(node: SgNode): { line: number; column: number } {
   return { line: start.line + 1, column: start.column + 1 };
 }
 
+/**
+ * A numeric literal's value as JavaScript reads it: separators (`2_000`), hex, octal and binary
+ * (`0xff`, `0o17`, `0b101`, legacy `017`), exponents (`1e3`) and bigints (`10n`). Null when it
+ * has no finite value (`1e999`), so a prop never records NaN or Infinity (JSON would make them null).
+ */
+export function numericValue(text: string): number | null {
+  const clean = text.replace(/_/g, "").toLowerCase();
+  let value: number;
+  if (clean.endsWith("n")) {
+    try {
+      value = Number(BigInt(clean.slice(0, -1)));
+    } catch {
+      return null;
+    }
+  } else if (/^0[0-7]+$/.test(clean)) value = Number.parseInt(clean, 8);
+  else value = Number(clean);
+  return Number.isFinite(value) ? value : null;
+}
+
 function literalOf(node: SgNode): PropValue {
   const kind = node.kind();
   if (kind === "string") return { literal: unquote(node.text()) };
-  if (kind === "number") return { literal: Number(node.text()) };
+  if (kind === "number") {
+    const value = numericValue(node.text());
+    return value === null ? { dynamic: node.text() } : { literal: value };
+  }
   if (kind === "true" || kind === "false") return { literal: kind === "true" };
   if (kind === "template_string" && !node.text().includes("${")) return { literal: unquote(node.text()) };
   const text = node.text().replace(/\s+/g, " ");

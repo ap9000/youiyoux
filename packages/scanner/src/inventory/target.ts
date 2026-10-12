@@ -23,12 +23,18 @@ export interface InventoryTarget {
   /** How routes were found, for a reader. */
   readonly routeSource: string;
   readonly files: readonly string[];
+  /** HTML documents and server templates, for the stylesheets their links load (specimens). */
+  readonly templates: readonly string[];
+  /** youi.project.json `specimens.css`: the stylesheets specimens use, exactly and in order; null when not set. */
+  readonly specimenCss: readonly string[] | null;
 }
 
 export const DEFAULT_INCLUDE = ["**/*.{tsx,jsx,ts,js,mjs,astro,css}"];
 export const DEFAULT_EXCLUDE = ["**/*.d.ts", "**/*.test.*", "**/*.spec.*", "**/*.stories.*", "**/.next/**", "**/.astro/**", "**/build/**", "**/out/**", "**/coverage/**", "**/*.config.*"];
 /** Styles always count, even when a project config's globs name only components. */
 const STYLES = ["**/*.css"];
+
+const TEMPLATES = ["**/*.{html,htm,ejs,hbs,handlebars}"];
 
 const ROUTE_FILE = /\.(tsx|ts|jsx|js)$/;
 
@@ -97,5 +103,8 @@ export async function loadInventoryTarget(dir: string, globs: TargetGlobs = {}):
   const configured = config?.routes ? RouteConfig.safeParse(config.routes) : null;
   const routes = configured?.success && configured.data.strategy !== "none" ? { config: configured.data, source: `${PROJECT_FILE} (${configured.data.strategy})` } : detectRoutes(files);
   const id = typeof config?.id === "string" ? config.id : idOf(typeof pkg?.name === "string" ? pkg.name : basename(root));
-  return { id, root, label: dir, include, exclude, tsconfig, routes: routes.config, routeSource: routes.source, files };
+  const templates = await findFiles(root, TEMPLATES, exclude);
+  const specimens = config?.specimens as { css?: unknown } | undefined;
+  const specimenCss = Array.isArray(specimens?.css) ? specimens.css.filter((p): p is string => typeof p === "string") : null;
+  return { id, root, label: dir, include, exclude, tsconfig, routes: routes.config, routeSource: routes.source, files, templates, specimenCss };
 }

@@ -1,5 +1,5 @@
 /** The Inventory page's view of a youi.inventory/v1 file: roles by project, and each role's families. */
-import type { InventoryFamily, InventoryReport, InventoryRole, InventoryShape } from "./types.ts";
+import type { InventoryFamily, InventoryRole, InventoryShape } from "./types.ts";
 
 /** Every role, in the order the CLI reports them (core's INVENTORY_ROLES, kept type-only out of the browser bundle). */
 export const ROLES: readonly InventoryRole[] = ["button", "link-as-button", "input", "card", "badge", "dialog", "tabs"];
@@ -24,36 +24,6 @@ const ROLE_NAME: Readonly<Record<InventoryRole, string>> = {
   dialog: "Dialog",
   tabs: "Tabs",
 };
-
-export interface Cell {
-  readonly families: number;
-  readonly looks: number;
-}
-
-export interface RoleRow {
-  readonly role: InventoryRole;
-  /** Per project id, in report order. */
-  readonly cells: ReadonlyMap<string, Cell>;
-  readonly families: readonly InventoryFamily[];
-  readonly looks: number;
-  /** Looks of this role no dimension resolved for: listed, not grouped. */
-  readonly unshaped: number;
-}
-
-/** Roles with at least one look, with per-project family and look counts. */
-export function roleRows(report: InventoryReport): RoleRow[] {
-  return ROLES.flatMap((role) => {
-    const looks = report.looks.filter((l) => l.role === role);
-    if (looks.length === 0) return [];
-    const cells = new Map(
-      report.projects.map((p) => {
-        const mine = looks.filter((l) => l.project === p.id);
-        return [p.id, { families: new Set(mine.flatMap((l) => (l.family ? [l.family] : []))).size, looks: mine.length }] as const;
-      }),
-    );
-    return [{ role, cells, families: report.families.filter((f) => f.role === role), looks: looks.length, unshaped: looks.filter((l) => l.family === null).length }];
-  });
-}
 
 const PILL = 9999;
 const px = (n: number | null): string => (n === null ? "?" : `${n}px`);

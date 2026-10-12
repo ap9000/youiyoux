@@ -11,7 +11,14 @@
  *   live in this repo; a route without a picture shows an empty state.
  * - <out>/public/data/inventory.<hash>.json: a `youi inventory` file for the Inventory page,
  *   from `--inventory` (validated against youi.inventory/v1). The committed default carries an
- *   inventory of the scanner's two inventory fixtures, so the page has something to show.
+ *   inventory of the scanner's two inventory fixtures, so the page has something to show. It is
+ *   split for lazy loading (src/data/inventory-split.ts): that file is a small index, with
+ *   inventory.<project>.<role>.<hash>.json chunks and inventory.extras.<hash>.json beside it.
+ * - <out>/public/data/specimens.<project>.<light|dark>.<hash>.css: each inventoried project's
+ *   real CSS (and, in its chunks, static HTML per look), built here, never by `youi inventory`,
+ *   from the project's own Tailwind and components, read-only, and cached by commit and content
+ *   outside the project (scanner/src/specimens). A project root the inventory names that is not
+ *   on this machine gets no specimens; its looks show their shape.
  * - <out>/public/data/detect.<hash>.json and detect.shot.<hash>.png: a `youi detect` report
  *   (`--detect`, validated as youi.detect/v1) and its element screenshots, for Library > Stack.
  *   Like screens, it belongs to whoever ran it and never lives in this repo.
@@ -35,6 +42,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, w
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { pathToFileURL } from "node:url";
+import { splitInventory, type SplitSpecimens } from "../src/data/inventory-split.ts";
 import { screenSlug } from "../src/data/screens.ts";
 import type { ProjectShots } from "../src/data/types.ts";
 
@@ -73,6 +81,7 @@ interface ScannerModule {
   scanProject(project: ScannedProject, options?: { cache?: unknown }): Promise<{ report: unknown; identity: import("@youiyoux/core").CheckIdentity }>;
   describeIdentity(identity: import("@youiyoux/core").CheckIdentity): string;
   buildInventory(dirs: readonly string[], options?: { cwd?: string }): Promise<unknown>;
+  projectSpecimens(project: { id: string; root: string; commit: string | null; looks: ReadonlyArray<Pick<import("@youiyoux/core").InventoryLook, "id" | "role" | "recipe">> }): Promise<{ css: { light: string; dark: string } | null; specimens: SplitSpecimens["specimens"]; looks: Record<string, string>; warnings: readonly string[]; tailwind: string; used: readonly string[]; cached: boolean }>;
   ProjectWatcher: {
     start<R>(options: {
       root: string;
@@ -386,12 +395,58 @@ function writeUsage(dataDir: string, report: ScanReport, screens: ProjectShots |
   return { project: report.project, file, ...(screens ? { screens } : {}) };
 }
 
-/** An inventory under its content hash; returns the file name the manifest records. */
-export function writeInventory(dataDir: string, inventory: InventoryReport): string {
-  const text = json(inventory);
+/** A written inventory: the index the manifest names, and every file beside it. */
+export interface WrittenInventory {
+  readonly file: string;
+  readonly files: string[];
+}
+
+/** An inventory split for lazy loading, every file under its content hash; the index last. */
+export function writeInventory(dataDir: string, inventory: InventoryReport, specimens: Readonly<Record<string, SplitSpecimens>> = {}): WrittenInventory {
+  const { index, files } = splitInventory(inventory, specimens, (stem, ext, text) => `${stem}.${hash(text)}.${ext}`);
+  for (const f of files) write(join(dataDir, f.name), f.text);
+  const text = json(index);
   const file = `inventory.${hash(text)}.json`;
   write(join(dataDir, file), text);
-  return file;
+  return { file, files: files.map((f) => f.name) };
+}
+
+/**
+ * Where each inventoried project is on this machine: its root as the inventory names it, from
+ * the directory the inventory was made in (the tool's root for the default) or the file's own.
+ */
+export function inventoryRoots(inventory: InventoryReport, path: string | undefined): Map<string, string> {
+  const bases = path ? [process.cwd(), dirname(resolve(path))] : [TOOL];
+  const roots = new Map<string, string>();
+  for (const project of inventory.projects) {
+    const root = bases.map((base) => resolve(base, project.root)).find((dir) => existsSync(join(dir, "package.json")));
+    if (root) roots.set(project.id, root);
+  }
+  return roots;
+}
+
+/** Each project's specimens (scanner/src/specimens: cached, read-only); a project not on this machine gets none. */
+export async function buildSpecimens(inventory: InventoryReport, roots: ReadonlyMap<string, string>, scanner: ScannerModule): Promise<Record<string, SplitSpecimens>> {
+  const out: Record<string, SplitSpecimens> = {};
+  for (const project of inventory.projects) {
+    const root = roots.get(project.id);
+    if (!root) {
+      out[project.id] = { css: null, specimens: {}, looks: {}, notes: [`${project.root} is not on this machine: looks show their shape`] };
+      continue;
+    }
+    try {
+      const built = await scanner.projectSpecimens({ id: project.id, root, commit: project.commit, looks: inventory.looks.filter((l) => l.project === project.id) });
+      out[project.id] = { css: built.css, specimens: built.specimens, looks: built.looks, notes: [`CSS: ${built.tailwind}`, ...built.used, ...built.warnings] };
+    } catch (error: unknown) {
+      out[project.id] = { css: null, specimens: {}, looks: {}, notes: [`specimens failed: ${error instanceof Error ? error.message : String(error)}`] };
+    }
+  }
+  return out;
+}
+
+/** Specimens for an inventory, then its split files. */
+async function writeInventoryWithSpecimens(dataDir: string, inventory: InventoryReport, path: string | undefined, scanner: ScannerModule): Promise<WrittenInventory> {
+  return writeInventory(dataDir, inventory, await buildSpecimens(inventory, inventoryRoots(inventory, path), scanner));
 }
 
 /**
@@ -434,8 +489,8 @@ function usageFiles(usage: readonly UsageRef[]): string[] {
 }
 
 /** The manifest last: written to a temporary name and renamed, so a reader never sees half of it. */
-function writeManifest(dataDir: string, system: WrittenSystem, usage: readonly UsageRef[], live?: Live, inventory?: string | null, detect?: DetectRef | null): void {
-  const manifest = { schema: "youiyoux.manifest/v1", source: { commit: system.commit }, systems: [{ id: system.id, catalog: system.catalogFile, usage }], ...(inventory ? { inventory } : {}), ...(detect ? { detect: { file: detect.file, name: detect.name, kind: detect.kind } } : {}), ...(live ? { live } : {}) };
+function writeManifest(dataDir: string, system: WrittenSystem, usage: readonly UsageRef[], live?: Live, inventory?: WrittenInventory | null, detect?: DetectRef | null): void {
+  const manifest = { schema: "youiyoux.manifest/v1", source: { commit: system.commit }, systems: [{ id: system.id, catalog: system.catalogFile, usage }], ...(inventory ? { inventory: inventory.file, inventoryFiles: inventory.files } : {}), ...(detect ? { detect: { file: detect.file, name: detect.name, kind: detect.kind } } : {}), ...(live ? { live } : {}) };
   const file = join(dataDir, "manifest.json");
   write(`${file}.tmp`, `${JSON.stringify(manifest, null, 2)}\n`);
   renameSync(`${file}.tmp`, file);
@@ -458,7 +513,7 @@ async function watchSnapshot(values: { design?: string; project?: string; config
   mkdirSync(dataDir, { recursive: true });
   // The inventory and the detect report are files someone produced, not views of the watched sources: written once.
   const read = await readInventory(values.inventory, false, libs);
-  const inventory = read ? writeInventory(dataDir, read) : null;
+  const inventory = read ? await writeInventoryWithSpecimens(dataDir, read, values.inventory, libs.scanner) : null;
   const detect = values.detect ? writeDetect(values.detect, dataDir, libs.core) : null;
   const root = projectArg(values) ?? (values.config ? dirname(resolve(values.config)) : DEMO_PROJECT);
   let previousId = previousSystemId(dataDir);
@@ -499,7 +554,7 @@ async function watchSnapshot(values: { design?: string; project?: string; config
           ? { generation: update.generation, status: update.result.report.status, updatedAt: stamp(), rules: update.result.rules }
           : { generation: update.generation, status: "failed", updatedAt: stamp(), message: update.error };
       writeManifest(dataDir, system, usage, live, inventory, detect);
-      const current = new Set([system.catalogFile, ...usageFiles(usage), ...(inventory ? [inventory] : []), ...(detect ? [detect.file, ...detect.shots] : [])]);
+      const current = new Set([system.catalogFile, ...usageFiles(usage), ...(inventory ? [inventory.file, ...inventory.files] : []), ...(detect ? [detect.file, ...detect.shots] : [])]);
       pruneData(dataDir, new Set([...current, ...previous]));
       previous = current;
       process.stdout.write(`youi ui: generation ${update.generation} ${live.status}${live.message ? `: ${live.message}` : ""}\n`);
@@ -538,11 +593,11 @@ async function main(): Promise<void> {
   const shots = source.usage && shotsDir ? writeScreens(shotsDir, dataDir, source.usage.project) : null;
   const usage = source.usage ? [writeUsage(dataDir, source.usage, shots)] : [];
   const read = await readInventory(values.inventory, out === DEFAULT_OUT, libs);
-  const inventory = read ? writeInventory(dataDir, read) : null;
+  const inventory = read ? await writeInventoryWithSpecimens(dataDir, read, values.inventory, libs.scanner) : null;
   const detect = values.detect ? writeDetect(values.detect, dataDir, libs.core) : null;
   writeManifest(dataDir, system, usage, undefined, inventory, detect);
   if (out === DEFAULT_OUT) await buildHubTokens(libs.core, libs.lib);
-  process.stdout.write(`snapshot of ${system.summary}; ${usage.length ? `usage map of ${usage[0]!.project}${shots ? ` with ${shots.screens.length} screens` : ""}` : "no usage map"}${inventory ? `; ${inventory}` : ""}${detect ? `; detect report of ${detect.name} (${detect.shots.length} screenshots)` : ""} → ${relative(process.cwd(), out) || "."}\n`);
+  process.stdout.write(`snapshot of ${system.summary}; ${usage.length ? `usage map of ${usage[0]!.project}${shots ? ` with ${shots.screens.length} screens` : ""}` : "no usage map"}${inventory ? `; ${inventory.file} (+${inventory.files.length} chunks and stylesheets)` : ""}${detect ? `; detect report of ${detect.name} (${detect.shots.length} screenshots)` : ""} → ${relative(process.cwd(), out) || "."}\n`);
 }
 
 // Run as a script, not when a test imports readSource.

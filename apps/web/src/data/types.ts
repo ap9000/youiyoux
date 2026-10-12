@@ -4,7 +4,7 @@
  * browser: `pnpm data` validates every snapshot with core's schemas when it writes them.
  * The hub's snapshot shapes follow.
  */
-import type { ComponentContract, ElementId, RuleSpec, UsageSite } from "@youiyoux/core";
+import type { ComponentContract, ElementId, InventoryFamily, InventoryFlag, InventoryKit, InventoryReport, InventoryRole, InventoryShape, RuleSpec, UsageSite } from "@youiyoux/core";
 import type { RuleExecution } from "@youiyoux/core/rules";
 
 export type {
@@ -129,9 +129,99 @@ export interface Manifest {
   schema: "youiyoux.manifest/v1";
   source: { commit: string | null };
   systems: Array<{ id: string; catalog: string; usage: Array<{ project: string; file: string; screens?: ProjectShots }> }>;
-  /** A `youi inventory` file (youi.inventory/v1) for the Inventory page; absent when none was given. */
+  /**
+   * The Inventory page's index (youiyoux.inventory-index/v1, split from a `youi inventory` file
+   * by the snapshot), or a whole youi.inventory/v1 file in snapshots older than the split;
+   * absent when none was given.
+   */
   inventory?: string;
   /** A `youi detect` report (`youi ui --detect`), for Library > Stack; its screenshots are data files named in it. */
   detect?: { file: string; name: string; kind: "repo" | "site" };
+  /** Every file the index names (its chunks and specimen stylesheets), so caches keep them. */
+  inventoryFiles?: string[];
   live?: LiveInfo;
+}
+
+/* ------------------------------------------------------- the Inventory page's data */
+
+/** How a look is drawn: component, server-rendered from its project's code; markup, a tag with its classes. */
+export interface Specimen {
+  kind: "component" | "markup";
+  html: string;
+}
+
+export interface InventoryIndexProject {
+  id: string;
+  root: string;
+  commit: string | null;
+  status: "complete" | "partial";
+  files: number;
+  routes: string;
+  /** Files not fully read (the full list is in the inventory file). */
+  failed: number;
+  warnings: string[];
+  /** Its specimen stylesheets, light and dark; null when none was built (its looks show their shape). */
+  specimenCss: { light: string; dark: string } | null;
+  /** How the specimens were built, and what fell back. */
+  specimenNotes: string[];
+}
+
+export interface InventoryRoleIndex {
+  role: InventoryRole;
+  looks: number;
+  unshaped: number;
+  families: number;
+  /** Families with looks in more than one project. */
+  shared: number;
+  /** Per project id: its families and looks of this role. */
+  cells: Record<string, { families: number; looks: number }>;
+  /** Per project id with looks of this role: its chunk file. */
+  chunks: Record<string, string>;
+}
+
+/**
+ * What the Inventory page needs for its first paint, and no more: its size depends on the
+ * number of projects and roles, never on the number of looks.
+ */
+export interface InventoryIndex {
+  schema: "youiyoux.inventory-index/v1";
+  scanner: string;
+  generatedAt: string;
+  tolerance: InventoryReport["tolerance"];
+  projects: InventoryIndexProject[];
+  summary: InventoryReport["summary"] & { families: number; nearDuplicates: number; flags: number };
+  roles: InventoryRoleIndex[];
+  /** Kits, primitives and flags: loaded after the first paint. */
+  extras: string;
+}
+
+/** A trimmed look: where it is and what draws it. */
+export interface ChunkLook {
+  id: string;
+  file: string;
+  line: number;
+  column: number;
+  tag: string;
+  kit: string | null;
+  family: string | null;
+  shape: InventoryShape;
+  /** Its specimen's id in the chunk; null when none was built. */
+  specimen: string | null;
+}
+
+/** One project's looks of one role, the families they belong to, and their specimens. */
+export interface InventoryChunk {
+  schema: "youiyoux.inventory-chunk/v1";
+  project: string;
+  role: InventoryRole;
+  families: InventoryFamily[];
+  looks: ChunkLook[];
+  specimens: Record<string, Specimen>;
+}
+
+export interface InventoryExtras {
+  schema: "youiyoux.inventory-extras/v1";
+  kits: InventoryKit[];
+  primitives: InventoryReport["primitives"];
+  flags: InventoryFlag[];
 }

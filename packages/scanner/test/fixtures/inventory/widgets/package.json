@@ -1,0 +1,8 @@
+{
+  "name": "widgets",
+  "private": true,
+  "description": "Inventory fixture shaped like the Toolroll console: its Tailwind entry (src/browser/tailwind.css, which @imports src/design/tokens.css) is built by the Tailwind CLI and linked from index.html and the server's page template, not imported from JS; its plain kit (public/ui.css) is linked too.",
+  "scripts": { "build:css": "tailwindcss -i ./src/browser/tailwind.css -o ./public/assets/app.css" },
+  "dependencies": { "class-variance-authority": "*", "react": "*", "react-dom": "*", "tailwindcss": "^4" },
+  "devDependencies": { "@tailwindcss/cli": "^4" }
+}

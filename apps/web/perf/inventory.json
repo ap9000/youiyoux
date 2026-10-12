@@ -1,0 +1,105 @@
+{
+  "measuredAt": "2026-10-12T21:50:50.002Z",
+  "runs": 5,
+  "bounds": {
+    "bytes": "≤ smallest + 10%",
+    "time": "≤ 1.5× smallest + 16 ms (median)"
+  },
+  "summary": [
+    {
+      "looks": 50,
+      "families": 16,
+      "indexBytes": 3397,
+      "bytesBeforePaint": 165594,
+      "requestsBeforePaint": 23,
+      "inventoryPaintMs": 178.2,
+      "fcpMs": 192
+    },
+    {
+      "looks": 5000,
+      "families": 126,
+      "indexBytes": 3467,
+      "bytesBeforePaint": 165647,
+      "requestsBeforePaint": 23,
+      "inventoryPaintMs": 173.8,
+      "fcpMs": 188
+    }
+  ],
+  "raw": [
+    {
+      "looks": 50,
+      "families": 16,
+      "indexBytes": 3397,
+      "runs": [
+        {
+          "bytes": 165594,
+          "requests": 23,
+          "inventoryPaintMs": 218.9,
+          "fcpMs": 236
+        },
+        {
+          "bytes": 165594,
+          "requests": 23,
+          "inventoryPaintMs": 178.2,
+          "fcpMs": 192
+        },
+        {
+          "bytes": 165594,
+          "requests": 23,
+          "inventoryPaintMs": 173.5,
+          "fcpMs": 188
+        },
+        {
+          "bytes": 165594,
+          "requests": 23,
+          "inventoryPaintMs": 179.8,
+          "fcpMs": 196
+        },
+        {
+          "bytes": 165594,
+          "requests": 23,
+          "inventoryPaintMs": 173.3,
+          "fcpMs": 188
+        }
+      ]
+    },
+    {
+      "looks": 5000,
+      "families": 126,
+      "indexBytes": 3467,
+      "runs": [
+        {
+          "bytes": 165647,
+          "requests": 23,
+          "inventoryPaintMs": 176.1,
+          "fcpMs": 192
+        },
+        {
+          "bytes": 165647,
+          "requests": 23,
+          "inventoryPaintMs": 173.8,
+          "fcpMs": 188
+        },
+        {
+          "bytes": 165647,
+          "requests": 23,
+          "inventoryPaintMs": 171.3,
+          "fcpMs": 184
+        },
+        {
+          "bytes": 165647,
+          "requests": 23,
+          "inventoryPaintMs": 172.6,
+          "fcpMs": 188
+        },
+        {
+          "bytes": 165647,
+          "requests": 23,
+          "inventoryPaintMs": 174,
+          "fcpMs": 188
+        }
+      ]
+    }
+  ],
+  "problems": []
+}

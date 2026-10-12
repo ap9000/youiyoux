@@ -4,3 +4,7 @@ dist/
 .DS_Store
 # `youi ui` snapshots of other design systems
 .hub/
+# scripts/measure-inventory.ts snapshots and builds
+.measure/
+# scripts/capture-inventory.ts --serve snapshots and builds
+.capture/

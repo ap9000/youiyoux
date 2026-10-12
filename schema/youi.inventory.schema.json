@@ -515,6 +515,125 @@
               "string",
               "null"
             ]
+          },
+          "recipe": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "component"
+                  },
+                  "file": {
+                    "type": "string"
+                  },
+                  "export": {
+                    "type": "string"
+                  },
+                  "props": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": [
+                        "string",
+                        "number",
+                        "boolean"
+                      ]
+                    }
+                  },
+                  "label": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "wrappers": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "file": {
+                          "type": "string"
+                        },
+                        "export": {
+                          "type": "string"
+                        },
+                        "props": {
+                          "type": "object",
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "additionalProperties": {
+                            "type": [
+                              "string",
+                              "number",
+                              "boolean"
+                            ]
+                          }
+                        }
+                      },
+                      "required": [
+                        "file",
+                        "export",
+                        "props"
+                      ]
+                    }
+                  },
+                  "tag": {
+                    "type": "string"
+                  },
+                  "classes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "kind",
+                  "file",
+                  "export",
+                  "props",
+                  "label",
+                  "wrappers",
+                  "tag",
+                  "classes"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "class"
+                  },
+                  "tag": {
+                    "type": "string"
+                  },
+                  "classes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "label": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind",
+                  "tag",
+                  "classes",
+                  "label"
+                ]
+              }
+            ]
           }
         },
         "required": [

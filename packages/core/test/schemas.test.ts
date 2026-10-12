@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { ComponentContract, DefinitionError, formatId, loadDesignRepo, matchesQuery, parseDefinition, parseId, ProjectConfig, renderJsonSchemas, RuleSpec } from "../src/index.ts";
+import { ComponentContract, DefinitionError, formatId, InventoryLook, loadDesignRepo, matchesQuery, parseDefinition, parseId, ProjectConfig, renderJsonSchemas, RuleSpec } from "../src/index.ts";
 
 const REPO = join(import.meta.dirname, "../../..");
 const DEMO = join(REPO, "examples/demo-design");
@@ -70,6 +70,13 @@ describe("other formats", () => {
     expect(config.routes.strategy).toBe("none");
   });
 
+  test("project config may list the stylesheets specimens use, inside the project only (c6)", () => {
+    const base = { schema: "youi.project/v1", id: "app", system: "demo", source: { path: ".." }, include: ["src/**/*.tsx"], componentsDir: "src/ui" };
+    expect(ProjectConfig.parse({ ...base, specimens: { css: ["src/browser/tailwind.css", "src/design/tokens.css"] } }).specimens).toEqual({ css: ["src/browser/tailwind.css", "src/design/tokens.css"] });
+    expect(ProjectConfig.parse(base).specimens).toBeUndefined();
+    expect(ProjectConfig.safeParse({ ...base, specimens: { css: ["../other/x.css"] } }).success).toBe(false);
+  });
+
   test("every published schema is emitted as JSON Schema 2020-12 and matches the committed copy", async () => {
     const rendered = renderJsonSchemas();
     expect(rendered.map((s) => s.file)).toHaveLength(12);
@@ -78,6 +85,22 @@ describe("other formats", () => {
       expect(parsed.$schema).toBe("https://json-schema.org/draft/2020-12/schema");
       expect(await readFile(join(REPO, "schema", file), "utf8")).toBe(content);
     }
+  });
+});
+
+describe("youi.inventory/v1 recipes", () => {
+  const look = { project: "p", file: "a.tsx", line: 1, column: 1, id: "p:a.tsx:1:1", role: "button", routes: [], routeSource: "unrouted", source: "component", tag: "Button", definition: null, kit: null, shape: { height: 32, paddingX: 12, paddingY: 0, radius: 8, fontSize: 14, fontWeight: 500 }, derived: [], unresolved: [], responsive: [], states: [], family: null };
+
+  test("a look without a recipe is still valid: recipes are additive", () => {
+    expect(InventoryLook.safeParse(look).success).toBe(true);
+  });
+
+  test("component and class recipes validate; an unknown kind or computed prop does not", () => {
+    const component = { kind: "component", file: "src/ui/button.tsx", export: "Button", props: { variant: "outline", disabled: true }, label: "Save", wrappers: [{ file: "src/ui/tabs.tsx", export: "Tabs", props: { defaultValue: "a" } }], tag: "button", classes: ["h-8"] };
+    expect(InventoryLook.safeParse({ ...look, recipe: component }).success).toBe(true);
+    expect(InventoryLook.safeParse({ ...look, recipe: { kind: "class", tag: "span", classes: ["ui-badge"], label: null } }).success).toBe(true);
+    expect(InventoryLook.safeParse({ ...look, recipe: { ...component, kind: "astro" } }).success).toBe(false);
+    expect(InventoryLook.safeParse({ ...look, recipe: { ...component, props: { onClick: { dynamic: "go" } } } }).success).toBe(false);
   });
 });
 

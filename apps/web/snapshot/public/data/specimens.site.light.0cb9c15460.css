@@ -1,0 +1,90 @@
+/* src/styles/ui.css */
+/* The site's kit: one BEM block per element, modifiers with --. */
+:root {
+  --ui-radius: 8px;
+  --ui-control-height: 32px;
+  --ui-space: 4px;
+}
+
+.ui-button {
+  display: inline-flex;
+  align-items: center;
+  height: var(--ui-control-height);
+  padding: 0 calc(var(--ui-space) * 3);
+  border-radius: var(--ui-radius);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.ui-button--sm {
+  height: 28px;
+  padding: 0 10px;
+}
+
+.ui-button:hover {
+  background: #f4f4f5;
+}
+
+@media (max-width: 640px) {
+  .ui-button {
+    height: 40px;
+  }
+}
+
+.ui-badge {
+  display: inline-flex;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ui-card {
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px solid #e4e4e7;
+}
+
+.ui-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+}
+
+.ui-tab {
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--ui-radius);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.ui-tab--active {
+  background: #fff;
+}
+
+/* src/styles/marketing.css */
+/* The marketing pages' own styles: a plain .badge, with no kit prefix. */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 9999px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.badge--muted {
+  opacity: 0.7;
+}
+
+/* Named like an element, but sets no shape: not a kit member. */
+.tag-list {
+  display: flex;
+  gap: 8px;
+}
+
+:root { color-scheme: light; }

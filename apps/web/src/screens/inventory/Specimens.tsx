@@ -1,0 +1,405 @@
+/**
+ * Specimen tiles: each look drawn for real. A tile is an iframe at a fixed desk width (1280px,
+ * so the project's breakpoints see a desktop) holding the look's static HTML, linked to its
+ * project's one stylesheet for the hub's colour scheme, scaled and centred to fit the tile. No
+ * shadow roots: they would drop the sheet's `@font-face` and `:root` rules. The frame runs no
+ * script (sandboxed, same origin only so its box can be measured).
+ *
+ * Lazy by design: a frame mounts only when its tile nears the scroll area and unmounts when it
+ * is far; at most MAX_RENDERING frames load at once, the rest wait their turn; at most
+ * MAX_MOUNTED are mounted at all, visible tiles first; a strip of more than VIRTUALISE_AT tiles
+ * is virtualised. Without a stylesheet or a specimen, a tile draws the look's measured shape
+ * instead, and so does a near tile waiting for room to mount its frame.
+ */
+import { useVirtualizer } from "@tanstack/react-virtual";
+import { clsx } from "clsx";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import type { Scheme } from "../../app/theme.tsx";
+import type { InventoryShape, Specimen } from "../../data/types.ts";
+
+export const DESK_WIDTH = 1280;
+const FRAME_HEIGHT = 480;
+/** The specimen's offset inside the frame, so a shadow or ring is not cut off. */
+const MARGIN = 32;
+export const TILE_HEIGHT = 88;
+const TILE_PAD = 10;
+export const MAX_RENDERING = 6;
+/** Frames mounted at once, loading or drawn (FrameBudget). */
+export const MAX_MOUNTED = 48;
+export const VIRTUALISE_AT = 100;
+const TILE_MIN_WIDTH = 136;
+const ROW_HEIGHT = TILE_HEIGHT + 40;
+const VIRTUAL_ROWS_VISIBLE = 3.5;
+
+/* ---------------------------------------------------------------- near the viewport */
+
+/** The element the Inventory page scrolls in; IntersectionObserver measures nearness against it. */
+export const ScrollRoot = createContext<Element | null>(null);
+
+/**
+ * True when the element is within `near` of the scroll area; false again only once it is
+ * beyond `far`, so a tile at the edge does not mount and unmount as it moves. Without
+ * IntersectionObserver everything is near.
+ */
+export function useNearViewport(ref: RefObject<Element | null>, near = "600px", far = "1800px"): boolean {
+  const root = useContext(ScrollRoot);
+  const [isNear, setNear] = useState(() => typeof IntersectionObserver === "undefined");
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || typeof IntersectionObserver === "undefined") return;
+    const enter = new IntersectionObserver((entries) => entries.some((e) => e.isIntersecting) && setNear(true), { root, rootMargin: near });
+    const leave = new IntersectionObserver((entries) => entries.every((e) => !e.isIntersecting) && setNear(false), { root, rootMargin: far });
+    enter.observe(element);
+    leave.observe(element);
+    return () => {
+      enter.disconnect();
+      leave.disconnect();
+    };
+  }, [ref, root, near, far]);
+  return isNear;
+}
+
+/** True while the element is in the scroll area itself (no margin): visible tiles keep their frames first. */
+function useInView(ref: RefObject<Element | null>): boolean {
+  const root = useContext(ScrollRoot);
+  const [inView, setInView] = useState(false);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver((entries) => setInView(entries.some((e) => e.isIntersecting)), { root, rootMargin: "0px" });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [ref, root]);
+  return inView;
+}
+
+/* -------------------------------------------------------------- at most six at once */
+
+type Grant = () => void;
+
+/** Frames allowed to load at the same time; the others queue in the order they asked. */
+export class FrameQueue {
+  private readonly limit: number;
+  private readonly active = new Set<object>();
+  private waiting: Array<{ id: object; grant: Grant }> = [];
+
+  constructor(limit = MAX_RENDERING) {
+    this.limit = limit;
+  }
+
+  get rendering(): number {
+    return this.active.size;
+  }
+
+  request(id: object, grant: Grant): void {
+    if (this.active.has(id) || this.waiting.some((w) => w.id === id)) return;
+    if (this.active.size < this.limit) {
+      this.active.add(id);
+      grant();
+    } else this.waiting.push({ id, grant });
+  }
+
+  release(id: object): void {
+    this.active.delete(id);
+    this.waiting = this.waiting.filter((w) => w.id !== id);
+    while (this.active.size < this.limit && this.waiting.length > 0) {
+      const next = this.waiting.shift()!;
+      this.active.add(next.id);
+      next.grant();
+    }
+  }
+}
+
+export const frameQueue = new FrameQueue();
+
+/**
+ * A frame's turn: granted once a slot is free; `done` frees it (the frame stays mounted). Each
+ * effect run asks with a token of its own and its cleanup gives that token's slot back and goes
+ * back to waiting, so a grant for an earlier run (StrictMode mounts, unmounts and mounts again)
+ * is never taken for a later one, and no frame renders without a slot.
+ */
+function useFrameSlot(wanted: boolean, queue: FrameQueue = frameQueue): { granted: boolean; rendering: boolean; done: () => void } {
+  const [state, setState] = useState<"waiting" | "rendering" | "done">("waiting");
+  const token = useRef<object | null>(null);
+  useEffect(() => {
+    if (!wanted) return;
+    const mine = {};
+    token.current = mine;
+    queue.request(mine, () => {
+      if (token.current === mine) setState((s) => (s === "waiting" ? "rendering" : s));
+    });
+    return () => {
+      if (token.current === mine) token.current = null;
+      queue.release(mine);
+      setState("waiting");
+    };
+  }, [wanted, queue]);
+  const done = useCallback(() => {
+    const mine = token.current;
+    if (mine === null) return;
+    queue.release(mine);
+    setState((s) => (s === "rendering" ? "done" : s));
+  }, [queue]);
+  return { granted: wanted && state !== "waiting", rendering: wanted && state === "rendering", done };
+}
+
+/* ------------------------------------------------------- a bounded number mounted */
+
+/**
+ * How many specimen frames may be mounted at once, whether loading or drawn. Visible tiles come
+ * first, then tiles that already hold a frame (so frames do not churn), then the others in the
+ * order they came near; past the limit a tile shows its shape until there is room.
+ */
+export class FrameBudget {
+  private readonly limit: number;
+  private readonly entries = new Map<object, { visible: boolean; touched: number; mounted: boolean; set: (mounted: boolean) => void }>();
+  private clock = 0;
+
+  constructor(limit = MAX_MOUNTED) {
+    this.limit = limit;
+  }
+
+  get mounted(): number {
+    return [...this.entries.values()].filter((e) => e.mounted).length;
+  }
+
+  join(id: object, visible: boolean, set: (mounted: boolean) => void): void {
+    this.entries.set(id, { visible, touched: ++this.clock, mounted: false, set });
+    this.settle();
+  }
+
+  see(id: object, visible: boolean): void {
+    const entry = this.entries.get(id);
+    if (!entry || entry.visible === visible) return;
+    entry.visible = visible;
+    if (visible) entry.touched = ++this.clock;
+    this.settle();
+  }
+
+  leave(id: object): void {
+    if (this.entries.delete(id)) this.settle();
+  }
+
+  /** Visible first, then those mounted, then first come; the first `limit` are mounted. */
+  private settle(): void {
+    const ranked = [...this.entries.values()].sort((a, b) => Number(b.visible) - Number(a.visible) || Number(b.mounted) - Number(a.mounted) || a.touched - b.touched);
+    // Unmount before mounting, so the count never passes the limit even for a moment.
+    const keep = new Set(ranked.slice(0, this.limit));
+    for (const entry of ranked) {
+      if (entry.mounted && !keep.has(entry)) {
+        entry.mounted = false;
+        entry.set(false);
+      }
+    }
+    for (const entry of keep) {
+      if (!entry.mounted) {
+        entry.mounted = true;
+        entry.set(true);
+      }
+    }
+  }
+}
+
+export const frameBudget = new FrameBudget();
+
+/** Whether this near tile may mount its frame now (see FrameBudget); StrictMode-safe like useFrameSlot. */
+function useFrameBudget(near: boolean, visible: boolean, budget: FrameBudget = frameBudget): boolean {
+  const [mounted, setMounted] = useState(false);
+  const token = useRef<object | null>(null);
+  useEffect(() => {
+    if (!near) return;
+    const mine = {};
+    token.current = mine;
+    budget.join(mine, false, (value) => {
+      if (token.current === mine) setMounted(value);
+    });
+    return () => {
+      if (token.current === mine) token.current = null;
+      budget.leave(mine);
+      setMounted(false);
+    };
+  }, [near, budget]);
+  useEffect(() => {
+    if (token.current) budget.see(token.current, visible);
+  }, [visible, near, budget]);
+  return near && mounted;
+}
+
+/* ------------------------------------------------------------------------- tiles */
+
+export interface Tile {
+  readonly key: string;
+  readonly project: string;
+  readonly specimen: Specimen | null;
+  /** The project's stylesheet for the current scheme; null when none was built. */
+  readonly css: string | null;
+  readonly shape: InventoryShape;
+  readonly count: number;
+  readonly place: string;
+}
+
+/** The document a frame shows: static HTML and one stylesheet link, no script. */
+export function frameDocument(html: string, css: string, scheme: Scheme): string {
+  const escaped = css.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+  const dark = scheme === "dark";
+  return `<!doctype html><html lang="en"${dark ? ' class="dark"' : ""} data-theme="${scheme}" style="color-scheme:${scheme}"><head><meta charset="utf-8"><link rel="stylesheet" href="${escaped}"></head><body><div id="youi-specimen" style="display:inline-block;margin:${MARGIN}px">${html}</div></body></html>`;
+}
+
+/** The box every visible element of the specimen covers, in frame pixels. */
+function specimenBox(doc: Document): { x: number; y: number; width: number; height: number } | null {
+  const root = doc.getElementById("youi-specimen");
+  if (!root) return null;
+  let left = Infinity;
+  let top = Infinity;
+  let right = -Infinity;
+  let bottom = -Infinity;
+  for (const element of [root, ...root.querySelectorAll("*")]) {
+    const rect = element.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) continue;
+    left = Math.min(left, rect.left);
+    top = Math.min(top, rect.top);
+    right = Math.max(right, rect.right);
+    bottom = Math.max(bottom, rect.bottom);
+  }
+  return Number.isFinite(left) ? { x: left, y: top, width: right - left, height: bottom - top } : null;
+}
+
+function SpecimenFrame({ specimen, css, scheme, near }: { specimen: Specimen; css: string; scheme: Scheme; near: boolean }) {
+  const boxRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<HTMLIFrameElement>(null);
+  const slot = useFrameSlot(near);
+  const [transform, setTransform] = useState<string | null>(null);
+  const [background, setBackground] = useState<string | undefined>(undefined);
+  const srcDoc = frameDocument(specimen.html, css, scheme);
+  useLayoutEffect(() => setTransform(null), [srcDoc]);
+
+  const place = (): void => {
+    const doc = frameRef.current?.contentDocument;
+    const tile = boxRef.current;
+    const box = doc ? specimenBox(doc) : null;
+    if (!tile || !box) {
+      setTransform(`translate(${TILE_PAD}px, ${TILE_PAD}px)`);
+      slot.done();
+      return;
+    }
+    // The page's own background fills the whole tile, not just the moved frame.
+    const view = doc!.defaultView;
+    const paint = [doc!.body, doc!.documentElement].map((e) => view?.getComputedStyle(e).backgroundColor).find((c) => c && c !== "transparent" && c !== "rgba(0, 0, 0, 0)");
+    setBackground(paint);
+    const width = tile.clientWidth || TILE_MIN_WIDTH;
+    const scale = Math.min(1, (width - 2 * TILE_PAD) / box.width, (TILE_HEIGHT - 2 * TILE_PAD) / box.height);
+    const x = width / 2 - (box.x + box.width / 2) * scale;
+    const y = TILE_HEIGHT / 2 - (box.y + box.height / 2) * scale;
+    setTransform(`translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) scale(${scale.toFixed(4)})`);
+    slot.done();
+  };
+
+  const onLoad = (): void => {
+    const fonts = frameRef.current?.contentDocument?.fonts;
+    if (fonts) void fonts.ready.then(place, place);
+    else place();
+  };
+
+  return (
+    <div ref={boxRef} className="absolute inset-0" style={{ background }}>
+      {slot.granted && (
+        <iframe
+          ref={frameRef}
+          title="Specimen"
+          aria-hidden
+          tabIndex={-1}
+          sandbox="allow-same-origin"
+          srcDoc={srcDoc}
+          onLoad={onLoad}
+          data-rendering={slot.rendering || undefined}
+          data-placed={transform !== null || undefined}
+          className={clsx("pointer-events-none absolute left-0 top-0 origin-top-left border-0 bg-transparent", transform === null && "opacity-0")}
+          style={{ width: DESK_WIDTH, height: FRAME_HEIGHT, transform: transform ?? undefined, colorScheme: scheme }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** The look's measured shape, drawn as a box: what is left when nothing renders it (or, `waiting`, until its frame may mount). */
+export function ShapeBox({ shape, caption = "shape only" }: { shape: InventoryShape; caption?: string }) {
+  const height = shape.height ?? (shape.fontSize !== null ? Math.round(shape.fontSize * 1.5 + 2 * (shape.paddingY ?? 0)) : 32);
+  const scale = Math.min(1, (TILE_HEIGHT - 2 * TILE_PAD - 14) / height);
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-1" data-testid="shape-box">
+      <span
+        className="inline-flex items-center border border-dashed border-line-strong text-faint"
+        style={{ height: height * scale, paddingInline: (shape.paddingX ?? 12) * scale, borderRadius: Math.min(shape.radius ?? 0, 9999), fontSize: (shape.fontSize ?? 14) * scale, fontWeight: shape.fontWeight ?? undefined }}
+      >
+        Aa
+      </span>
+      <span className="text-caption text-faint">{caption}</span>
+    </div>
+  );
+}
+
+export function SpecimenTile({ tile, scheme }: { tile: Tile; scheme: Scheme }) {
+  const ref = useRef<HTMLLIElement>(null);
+  const near = useNearViewport(ref);
+  const visible = useInView(ref);
+  const drawn = tile.specimen !== null && tile.css !== null;
+  const mounted = useFrameBudget(drawn && near, visible);
+  return (
+    <li ref={ref} className="min-w-0 space-y-1" data-tile={tile.key} data-kind={drawn ? tile.specimen!.kind : "shape"} data-frame={drawn && near ? (mounted ? "mounted" : "waiting") : undefined}>
+      <div className="relative overflow-hidden rounded-md border border-line bg-sunken" style={{ height: TILE_HEIGHT }}>
+        {!drawn ? <ShapeBox shape={tile.shape} /> : mounted ? <SpecimenFrame specimen={tile.specimen!} css={tile.css!} scheme={scheme} near={near} /> : near ? <ShapeBox shape={tile.shape} caption="waiting" /> : null}
+      </div>
+      <p className="flex min-w-0 items-baseline gap-1.5 text-caption text-muted">
+        <span className="shrink-0 font-medium text-ink-2">{tile.project}</span>
+        {tile.count > 1 && <span className="shrink-0 tabular">×{tile.count}</span>}
+        <span className="truncate font-mono" title={tile.place}>
+          {tile.place}
+        </span>
+      </p>
+    </li>
+  );
+}
+
+/** A family's tiles: a wrapping grid, virtualised by rows past VIRTUALISE_AT. */
+export function TileGrid({ tiles, scheme }: { tiles: readonly Tile[]; scheme: Scheme }) {
+  if (tiles.length > VIRTUALISE_AT) return <VirtualTileGrid tiles={tiles} scheme={scheme} />;
+  return (
+    <ul className="grid gap-2" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${TILE_MIN_WIDTH}px, 1fr))` }} aria-label="Specimens">
+      {tiles.map((tile) => (
+        <SpecimenTile key={tile.key} tile={tile} scheme={scheme} />
+      ))}
+    </ul>
+  );
+}
+
+function VirtualTileGrid({ tiles, scheme }: { tiles: readonly Tile[]; scheme: Scheme }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  useLayoutEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    setWidth(element.clientWidth);
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => setWidth(element.clientWidth));
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  const columns = Math.max(1, Math.floor((width || 4 * TILE_MIN_WIDTH) / TILE_MIN_WIDTH));
+  const rows = Math.ceil(tiles.length / columns);
+  const virtualizer = useVirtualizer({ count: rows, getScrollElement: () => scrollRef.current, estimateSize: () => ROW_HEIGHT, overscan: 2, initialRect: { width: columns * TILE_MIN_WIDTH, height: ROW_HEIGHT * VIRTUAL_ROWS_VISIBLE } });
+  return (
+    <ScrollRoot.Provider value={scrollRef.current}>
+      <div ref={scrollRef} className="overflow-y-auto rounded-md border border-line p-2" style={{ height: ROW_HEIGHT * VIRTUAL_ROWS_VISIBLE }} data-testid="virtual-tiles">
+        <div className="relative" style={{ height: virtualizer.getTotalSize() }}>
+          {virtualizer.getVirtualItems().map((row) => (
+            <ul key={row.key} className="absolute inset-x-0 grid gap-2" style={{ top: row.start, height: ROW_HEIGHT, gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }} aria-label={`Specimens, row ${row.index + 1} of ${rows}`}>
+              {tiles.slice(row.index * columns, (row.index + 1) * columns).map((tile) => (
+                <SpecimenTile key={tile.key} tile={tile} scheme={scheme} />
+              ))}
+            </ul>
+          ))}
+        </div>
+      </div>
+    </ScrollRoot.Provider>
+  );
+}

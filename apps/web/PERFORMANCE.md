@@ -62,6 +62,21 @@ What keeps it there:
 - The catalog stays in memory.
 - Long lists are virtualized: element list and token list. Usage sites are collapsed per screen and render 50 at a time until someone asks for the rest.
 
+## Inventory: first paint does not grow with the library (`pnpm measure:inventory`)
+
+The Inventory page paints from a small index (projects, roles by project, counts). Each role's looks, families and specimens are a chunk per project, fetched when that role's section comes within 800 px of the scroll area; kits, primitives and flags load right after the first paint. A specimen frame mounts within 600 px of the scroll area and unmounts beyond 1,800 px; at most six frames load at once; a family with more than 100 tiles is virtualised by rows.
+
+`scripts/measure-inventory.ts` makes synthetic inventories of the scanner's fixtures at 50 and 5,000 looks (each copy a little taller and with its own label, so families and specimens multiply), snapshots each with specimens, builds the hub against it, serves it with `vite preview` and opens `/inventory` cold in headless Chromium five times. It counts the bytes transferred (headers included, uncompressed preview server) until the frame after the roles-by-project grid is in the DOM, and reads FCP.
+
+Measured 2026-10-12, Apple silicon laptop, median of 5:
+
+| Looks | Families | Index | Requests before the inventory paints | Bytes before it paints | Inventory paint | FCP |
+| --- | --- | --- | --- | --- | --- | --- |
+| 50 | 16 | 3.1 KB | 23 | 165,028 | 178 ms | 192 ms |
+| 5,000 | 126 | 3.2 KB | 23 | 165,078 | 179 ms | 192 ms |
+
+It exits 1 when the larger run transfers more than the smaller's bytes + 10%, or its median paint or FCP is over 1.5× the smaller's plus one frame (16 ms). Only counts grow in the index. What does grow is after the paint: at 5,000 looks the console's button chunk is 1 MB uncompressed (its 2,000-odd looks and their specimen HTML), loaded when the Buttons section nears the screen. The specimen stylesheets do not grow with looks: 33 KB per scheme for the console (its Tailwind build, with its 13 KB font inlined), 1.5 KB for the site. Full numbers are in [`perf/inventory.json`](perf/inventory.json).
+
 ## Live numbers
 
 Home → Speed shows search and navigation medians and p95 for the current tab against the budgets. `window.__youiyoux.samples()` in devtools returns the raw samples.
@@ -70,5 +85,6 @@ Home → Speed shows search and navigation medians and p95 for the current tab a
 
 ```sh
 pnpm build && pnpm measure          # download sizes and engine latency → perf/report.json
+pnpm measure:inventory              # Inventory first paint at 50 vs 5,000 looks → perf/inventory.json
 pnpm preview                        # then use the app, and read Home → Speed
 ```

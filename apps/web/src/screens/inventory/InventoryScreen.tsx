@@ -2,19 +2,29 @@
  * Inventory: every UI element across the inventoried projects, from `youi inventory`. A role ×
  * project grid on top; then, per role, each family of look-alikes as a row with its shape, kits,
  * count, file:line examples and, when it spans projects or kits, each side of the near-duplicate.
- * On a phone the grid becomes one section per role.
+ * On a phone the grid becomes one section per role. Each family shows its looks drawn for real
+ * (Specimens.tsx), in each project's own CSS and the hub's colour scheme.
+ *
+ * The first paint needs only the index (projects, roles by project, counts); a role's looks,
+ * families and specimens are fetched per project when its section nears the screen, and kits,
+ * primitives and flags right after the first paint, so it does not grow with the library.
  */
 import { clsx } from "clsx";
 import { Copy, Layers, ScanSearch, TriangleAlert } from "lucide-react";
-import type { ReactNode } from "react";
-import { familyName, kitLabel, ROLE_LABEL, roleAnchor, roleRows, shapeChips, uniqueExamples, type RoleRow } from "../../data/inventory.ts";
+import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useTheme, type Scheme } from "../../app/theme.tsx";
+import { familyName, kitLabel, ROLE_LABEL, roleAnchor, shapeChips, uniqueExamples } from "../../data/inventory.ts";
+import { useParts, type InventorySource } from "../../data/inventory-source.ts";
 import { retryInventory, useInventoryState } from "../../data/store.ts";
-import type { InventoryFamily, InventoryFlag, InventoryReport } from "../../data/types.ts";
+import type { InventoryChunk, InventoryExtras, InventoryFamily, InventoryFlag, InventoryIndex, InventoryRoleIndex } from "../../data/types.ts";
 import { Badge } from "../../ui/Badge.tsx";
 import { EmptyState } from "../../ui/EmptyState.tsx";
 import { PaneHeader, ResourceState } from "../../ui/Pane.tsx";
+import { ScrollRoot, TileGrid, useNearViewport, type Tile } from "./Specimens.tsx";
 
 const SHORT_SHA = 7;
+/** Height a role section keeps before its chunks arrive, per family, so the page does not jump. */
+const FAMILY_PLACEHOLDER = 136;
 
 export function InventoryScreen() {
   const state = useInventoryState();
@@ -22,47 +32,56 @@ export function InventoryScreen() {
   return <InventoryView inventory={state.value} />;
 }
 
-export function InventoryView({ inventory }: { inventory: InventoryReport | null }) {
-  if (!inventory || inventory.looks.length === 0) {
+export function InventoryView({ inventory }: { inventory: InventorySource | null }) {
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  const index = inventory?.index;
+  if (!inventory || !index || index.summary.looks === 0) {
     return (
       <div className="flex min-h-0 flex-1 flex-col">
         <PaneHeader title="Inventory" count={0} />
-        <EmptyState icon={ScanSearch} title={inventory ? "No elements found" : "No inventory yet"}>
-          {inventory ? "The inventoried projects render no buttons, inputs, cards, badges, dialogs or tabs this scanner recognises." : "Run youi inventory --project <dir> (once per project), then open the hub with youi ui --inventory .youi/inventory.json."}
+        <EmptyState icon={ScanSearch} title={index ? "No elements found" : "No inventory yet"}>
+          {index ? "The inventoried projects render no buttons, inputs, cards, badges, dialogs or tabs this scanner recognises." : "Run youi inventory --project <dir> (once per project), then open the hub with youi ui --inventory .youi/inventory.json."}
         </EmptyState>
       </div>
     );
   }
-  const rows = roleRows(inventory);
-  const near = inventory.families.filter((f) => f.nearDuplicate).length;
+  const near = index.summary.nearDuplicates;
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <PaneHeader title="Inventory" count={inventory.families.length}>
+      <PaneHeader title="Inventory" count={index.summary.families}>
         <Badge tone="outline">
-          {inventory.projects.length} {inventory.projects.length === 1 ? "project" : "projects"}
+          {index.projects.length} {index.projects.length === 1 ? "project" : "projects"}
         </Badge>
         {near > 0 && <Badge tone="warning">{near} {near === 1 ? "near-duplicate" : "near-duplicates"}</Badge>}
       </PaneHeader>
-      <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-6xl space-y-10 px-6 py-6 animate-enter max-sm:px-4">
-          <Intro inventory={inventory} />
-          <RoleGrid inventory={inventory} rows={rows} />
-          {inventory.flags.length > 0 && <Flags flags={inventory.flags} />}
-          {rows.map((row) => (
-            <RoleSection key={row.role} row={row} />
-          ))}
-          <Kits inventory={inventory} />
-          <p className="text-small text-muted">
-            {inventory.summary.notClustered} breakpoint and state classes recorded, not clustered: a family is decided by the resting shape.
-            {inventory.summary.unshaped > 0 && ` ${inventory.summary.unshaped} ${inventory.summary.unshaped === 1 ? "look has" : "looks have"} no resolved shape and ${inventory.summary.unshaped === 1 ? "is" : "are"} not grouped.`}
-          </p>
-        </div>
+      <div ref={setScroller} className="min-h-0 flex-1 overflow-y-auto">
+        <ScrollRoot.Provider value={scroller}>
+          <div className="mx-auto max-w-6xl space-y-10 px-6 py-6 animate-enter max-sm:px-4">
+            <Intro inventory={index} />
+            <RoleGrid inventory={index} />
+            <Extras source={inventory}>{(extras) => extras.flags.length > 0 && <Flags flags={extras.flags} />}</Extras>
+            {index.roles.map((row) => (
+              <RoleSection key={row.role} row={row} source={inventory} />
+            ))}
+            <Extras source={inventory}>{(extras) => <Kits extras={extras} />}</Extras>
+            <p className="text-small text-muted">
+              {index.summary.notClustered} breakpoint and state classes recorded, not clustered: a family is decided by the resting shape.
+              {index.summary.unshaped > 0 && ` ${index.summary.unshaped} ${index.summary.unshaped === 1 ? "look has" : "looks have"} no resolved shape and ${index.summary.unshaped === 1 ? "is" : "are"} not grouped.`}
+            </p>
+          </div>
+        </ScrollRoot.Provider>
       </div>
     </div>
   );
 }
 
-function Intro({ inventory }: { inventory: InventoryReport }) {
+/** Kits, primitives and flags: fetched right after the first paint, then shown. */
+function Extras({ source, children }: { source: InventorySource; children: (extras: InventoryExtras) => ReactNode }) {
+  const [state] = useParts<InventoryExtras>(source, [source.index.extras], true);
+  return state?.status === "ready" ? children(state.value) : null;
+}
+
+function Intro({ inventory }: { inventory: InventoryIndex }) {
   const t = inventory.tolerance;
   return (
     <div className="space-y-3">
@@ -76,7 +95,7 @@ function Intro({ inventory }: { inventory: InventoryReport }) {
         {inventory.projects.map((p) => (
           <li key={p.id}>
             <span className="font-medium text-ink">{p.id}</span> · {p.files} files{p.commit ? ` @${p.commit.slice(0, SHORT_SHA)}` : ""} · routes: {p.routes}
-            {p.status === "partial" && <span className="text-warning"> · partial ({p.failed.length} not fully read)</span>}
+            {p.status === "partial" && <span className="text-warning"> · partial ({p.failed} not fully read)</span>}
           </li>
         ))}
       </ul>
@@ -93,7 +112,8 @@ function CellText({ cell }: { cell: { families: number; looks: number } | undefi
   );
 }
 
-function RoleGrid({ inventory, rows }: { inventory: InventoryReport; rows: readonly RoleRow[] }) {
+function RoleGrid({ inventory }: { inventory: InventoryIndex }) {
+  const rows = inventory.roles;
   return (
     <section aria-labelledby="inventory-grid" className="space-y-3">
       <h2 id="inventory-grid" className="text-heading">
@@ -126,11 +146,11 @@ function RoleGrid({ inventory, rows }: { inventory: InventoryReport; rows: reado
                 </th>
                 {inventory.projects.map((p) => (
                   <td key={p.id}>
-                    <CellText cell={row.cells.get(p.id)} />
+                    <CellText cell={row.cells[p.id]} />
                   </td>
                 ))}
                 <td>
-                  <NearCount families={row.families} />
+                  <NearCount shared={row.shared} />
                 </td>
               </tr>
             ))}
@@ -145,7 +165,7 @@ function RoleGrid({ inventory, rows }: { inventory: InventoryReport; rows: reado
                 {ROLE_LABEL[row.role]}
               </a>
               <span className="ml-auto">
-                <NearCount families={row.families} />
+                <NearCount shared={row.shared} />
               </span>
             </div>
             <dl className="mt-2 grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-small">
@@ -153,7 +173,7 @@ function RoleGrid({ inventory, rows }: { inventory: InventoryReport; rows: reado
                 <div key={p.id} className="contents">
                   <dt className="text-muted">{p.id}</dt>
                   <dd>
-                    <CellText cell={row.cells.get(p.id)} />
+                    <CellText cell={row.cells[p.id]} />
                   </dd>
                 </div>
               ))}
@@ -165,9 +185,8 @@ function RoleGrid({ inventory, rows }: { inventory: InventoryReport; rows: reado
   );
 }
 
-function NearCount({ families }: { families: readonly InventoryFamily[] }) {
-  const near = families.filter((f) => f.nearDuplicate && f.projects.length > 1).length;
-  return near > 0 ? <Badge tone="warning">{near} shared across projects</Badge> : <span className="text-small text-faint">none shared</span>;
+function NearCount({ shared }: { shared: number }) {
+  return shared > 0 ? <Badge tone="warning">{shared} shared across projects</Badge> : <span className="text-small text-faint">none shared</span>;
 }
 
 function Flags({ flags }: { flags: readonly InventoryFlag[] }) {
@@ -252,7 +271,30 @@ function Examples({ examples }: { examples: InventoryFamily["examples"] }) {
   );
 }
 
-function FamilyRow({ family }: { family: InventoryFamily }) {
+/**
+ * A family's looks as tiles: one per distinct specimen in each project (looks drawn the same
+ * share one, with their count), and one per shape for looks nothing draws.
+ */
+export function familyTiles(family: InventoryFamily, chunks: readonly InventoryChunk[], source: InventorySource, scheme: Scheme): Tile[] {
+  const tiles: Tile[] = [];
+  for (const chunk of chunks) {
+    const file = source.index.projects.find((p) => p.id === chunk.project)?.specimenCss?.[scheme];
+    const css = file ? source.cssUrl(file) : null;
+    const groups = new Map<string, Tile & { count: number }>();
+    for (const look of chunk.looks) {
+      if (look.family !== family.id) continue;
+      const specimen = look.specimen ? (chunk.specimens[look.specimen] ?? null) : null;
+      const key = `${chunk.project}:${specimen && css ? `s:${look.specimen}` : `shape:${Object.values(look.shape).join("/")}`}`;
+      const group = groups.get(key);
+      if (group) group.count++;
+      else groups.set(key, { key, project: chunk.project, specimen, css: specimen ? css : null, shape: look.shape, count: 1, place: `${look.file}:${look.line}` });
+    }
+    tiles.push(...groups.values());
+  }
+  return tiles;
+}
+
+function FamilyRow({ family, tiles, scheme }: { family: InventoryFamily; tiles: readonly Tile[] | null; scheme: Scheme }) {
   return (
     <li className="space-y-3 border-b border-line py-4 last:border-0" data-family={family.id}>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -265,6 +307,7 @@ function FamilyRow({ family }: { family: InventoryFamily }) {
         </span>
         {family.nearDuplicate && <Badge tone="warning">{family.projects.length > 1 ? "Near-duplicate across projects" : "Near-duplicate across kits"}</Badge>}
       </div>
+      {tiles && tiles.length > 0 && <TileGrid tiles={tiles} scheme={scheme} />}
       {family.nearDuplicate ? (
         <ul className="grid gap-3 md:grid-cols-2" aria-label="Near-duplicates">
           {family.sides.map((side) => (
@@ -301,32 +344,51 @@ function Kit({ kit }: { kit: string | null }) {
   );
 }
 
-function RoleSection({ row }: { row: RoleRow }) {
+function RoleSection({ row, source }: { row: InventoryRoleIndex; source: InventorySource }) {
+  const ref = useRef<HTMLElement>(null);
+  const near = useNearViewport(ref, "800px", "100000px");
+  const { scheme } = useTheme();
+  const files = useMemo(() => Object.values(row.chunks), [row.chunks]);
+  const states = useParts<InventoryChunk>(source, files, near);
+  const ready = states.every((s) => s.status === "ready");
+  const chunks = ready ? states.map((s) => (s as { value: InventoryChunk }).value) : [];
+  const byId = new Map<string, InventoryFamily>();
+  for (const chunk of chunks) for (const family of chunk.families) byId.set(family.id, family);
+  // The report's order, which its ids number (button-1, button-2, …).
+  const families = [...byId.values()].sort((a, b) => Number(a.id.split("-").at(-1)) - Number(b.id.split("-").at(-1)));
+  const failed = states.find((s) => s.status === "error");
   return (
-    <section id={roleAnchor(row.role)} aria-labelledby={`${roleAnchor(row.role)}-title`} className="scroll-mt-4 space-y-1">
+    <section ref={ref} id={roleAnchor(row.role)} aria-labelledby={`${roleAnchor(row.role)}-title`} className="scroll-mt-4 space-y-1">
       <header className="flex flex-wrap items-baseline gap-x-3 border-b border-line pb-2">
         <h2 id={`${roleAnchor(row.role)}-title`} className="text-heading">
           {ROLE_LABEL[row.role]}
         </h2>
         <span className="tabular text-small text-muted">
-          {row.families.length} {row.families.length === 1 ? "family" : "families"} · {row.looks} {row.looks === 1 ? "look" : "looks"}
+          {row.families} {row.families === 1 ? "family" : "families"} · {row.looks} {row.looks === 1 ? "look" : "looks"}
           {row.unshaped > 0 && ` · ${row.unshaped} without a resolved shape`}
         </span>
       </header>
-      {row.families.length > 0 ? (
+      {row.families === 0 ? null : failed?.status === "error" ? (
+        <p className="py-3 text-small text-danger">{failed.message}</p>
+      ) : !ready ? (
+        <div aria-busy="true" className="py-3 text-small text-faint" style={{ minHeight: row.families * FAMILY_PLACEHOLDER }}>
+          Loading {row.families} {row.families === 1 ? "family" : "families"}…
+        </div>
+      ) : (
         <ul>
-          {row.families.map((family) => (
-            <FamilyRow key={family.id} family={family} />
+          {families.map((family) => (
+            <FamilyRow key={family.id} family={family} tiles={familyTiles(family, chunks, source, scheme)} scheme={scheme} />
           ))}
         </ul>
-      ) : (
+      )}
+      {row.families === 0 && (
         <p className="py-3 text-small text-muted">No look of this role has a resolved shape.</p>
       )}
     </section>
   );
 }
 
-function Kits({ inventory }: { inventory: InventoryReport }) {
+function Kits({ extras: inventory }: { extras: InventoryExtras }) {
   if (inventory.kits.length === 0 && inventory.primitives.length === 0) return null;
   return (
     <section aria-labelledby="inventory-kits" className="space-y-3">

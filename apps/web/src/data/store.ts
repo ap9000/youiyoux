@@ -8,8 +8,9 @@
  * is loaded in full and then swapped in for both at once.
  */
 import { useSyncExternalStore } from "react";
-import { DataError, loadCatalog, loadDetect, loadInventory, loadManifest, loadUsage, pruneCache } from "./load.ts";
-import type { DetectReport, InventoryReport, Manifest } from "./types.ts";
+import type { InventorySource } from "./inventory-source.ts";
+import { DataError, absoluteDataUrl, loadCatalog, loadDetect, loadInventory, loadInventoryPart, loadManifest, loadUsage, pruneCache } from "./load.ts";
+import type { DetectReport, InventoryChunk, InventoryExtras, Manifest } from "./types.ts";
 import { buildModel, type Model } from "./model.ts";
 import { indexUsage, type UsageIndex } from "./usage.ts";
 
@@ -111,12 +112,19 @@ const modelLoader = createLoader(async (): Promise<Model> => {
 });
 const usageLoader = createLoader(async (): Promise<UsageIndex> => usageFor(await pinnedManifest()));
 
-/** The inventory the manifest names, or null when the snapshot has none. */
-async function inventoryFor(manifest: Manifest): Promise<InventoryReport | null> {
-  return manifest.inventory ? loadInventory(manifest.inventory) : null;
+/**
+ * The inventory the manifest names, or null when the snapshot has none: its index now, each
+ * chunk when the page asks. A snapshot older than the split names the whole file; it is split
+ * in memory.
+ */
+async function inventoryFor(manifest: Manifest): Promise<InventorySource | null> {
+  if (!manifest.inventory) return null;
+  const [loaded, { createSource, memorySource }] = await Promise.all([loadInventory(manifest.inventory), import("./inventory-source.ts")]);
+  if (loaded.schema === "youi.inventory/v1") return memorySource(loaded);
+  return createSource(loaded, (file) => (file.startsWith("inventory.extras.") ? loadInventoryPart<InventoryExtras>(file, "youiyoux.inventory-extras/v1") : loadInventoryPart<InventoryChunk>(file, "youiyoux.inventory-chunk/v1")), absoluteDataUrl);
 }
 
-const inventoryLoader = createLoader(async (): Promise<InventoryReport | null> => inventoryFor(await pinnedManifest()));
+const inventoryLoader = createLoader(async (): Promise<InventorySource | null> => inventoryFor(await pinnedManifest()));
 
 /** The detect report the snapshot carries (`youi ui --detect`), or null when it has none. */
 const detectFor = async (manifest: Manifest): Promise<DetectReport | null> => (manifest.detect ? loadDetect(manifest.detect.file) : null);
@@ -185,8 +193,8 @@ export function useModelState(): Resource<Model> {
 
 export const retryInventory = (): void => inventoryLoader.retry();
 
-/** The inventory (null when the snapshot has none); reading it starts the load. */
-export function useInventoryState(): Resource<InventoryReport | null> {
+/** The inventory's index and parts (null when the snapshot has none); reading it starts the load. */
+export function useInventoryState(): Resource<InventorySource | null> {
   const state = useSyncExternalStore(inventoryLoader.subscribe, inventoryLoader.get);
   if (state.status === "idle") queueMicrotask(() => inventoryLoader.start());
   return state;

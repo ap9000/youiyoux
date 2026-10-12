@@ -124,6 +124,8 @@ export const ProjectConfig = z.object({
   routes: RouteConfig.default({ strategy: "none", appDir: "app", map: [], shell: [] }),
   outputs: OutputConfig.default({ dir: "src/design", cssVarPrefix: "youi", dark: DEFAULT_DARK_SELECTORS, targets: ["css-vars", "tailwind-v4", "ts"], tailwind: { includeAll: true, map: {} } }),
   agents: AgentConfig.default({ agentsMd: "AGENTS.md", designMd: "DESIGN.md", skillDir: ".agents/skills/youiyoux", claudeSkillLink: true }),
+  /** Hub specimens. css: the stylesheets a page loads, exactly and in this order, when finding them from its HTML and imports gets them wrong. */
+  specimens: z.object({ css: z.array(RelPath).optional() }).optional(),
 });
 export type ProjectConfig = z.infer<typeof ProjectConfig>;
 
@@ -497,6 +499,36 @@ export const InventoryPrimitive = z.object({
 });
 export type InventoryPrimitive = z.infer<typeof InventoryPrimitive>;
 
+/** Literal props a site passes (`variant="outline"`, `value="runs"`); computed ones are left out. */
+const RecipeProps = z.record(z.string(), z.union([z.string(), z.number(), z.boolean()]));
+
+/** A component of the same module the site renders the look inside (Tabs > TabsList for a TabsTrigger). */
+export const InventoryRecipeWrapper = z.object({ file: z.string(), export: z.string(), props: RecipeProps });
+export type InventoryRecipeWrapper = z.infer<typeof InventoryRecipeWrapper>;
+
+/**
+ * How to draw a look for real, at hub snapshot time. component: render the project's own
+ * export with these props and label, inside its wrappers (its tag and classes are the static
+ * fallback); class: a tag with these classes. Additive: inventories without it stay valid.
+ */
+export const InventoryRecipe = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("component"),
+    /** The defining module, relative to the project root, and the export to render. */
+    file: z.string(),
+    export: z.string(),
+    props: RecipeProps,
+    /** The site's text children (`Save`), null when it has none. */
+    label: z.string().nullable(),
+    /** Outermost first. */
+    wrappers: z.array(InventoryRecipeWrapper),
+    tag: z.string(),
+    classes: z.array(z.string()),
+  }),
+  z.object({ kind: z.literal("class"), tag: z.string(), classes: z.array(z.string()), label: z.string().nullable() }),
+]);
+export type InventoryRecipe = z.infer<typeof InventoryRecipe>;
+
 export const InventoryLook = ProjectPosition.extend({
   id: z.string(),
   role: InventoryRole,
@@ -519,6 +551,7 @@ export const InventoryLook = ProjectPosition.extend({
   states: z.array(z.string()),
   /** The family it was grouped into; null when no dimension resolved, so it was not clustered. */
   family: z.string().nullable(),
+  recipe: InventoryRecipe.optional(),
 });
 export type InventoryLook = z.infer<typeof InventoryLook>;
 

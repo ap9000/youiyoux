@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, test } from "vitest";
 import { libraries, readInventory, readSource, writeDetect, writeInventory } from "../scripts/snapshot.ts";
+import type { InventoryChunk, InventoryIndex } from "../src/data/types.ts";
 
 const TOOL = resolve(import.meta.dirname, "../../..");
 const DEMO_APP = join(TOOL, "examples/demo-app");
@@ -39,9 +40,17 @@ describe("snapshot source", () => {
       const report = await libs.scanner.buildInventory([join(fixtures, "console"), join(fixtures, "site")]);
       await writeFile(join(dir, "good.json"), JSON.stringify(report));
       const read = await readInventory(join(dir, "good.json"), false, libs);
-      const file = writeInventory(join(dir, "data"), read!);
+      const { file, files } = writeInventory(join(dir, "data"), read!);
       expect(file).toMatch(/^inventory\.[0-9a-f]{10}\.json$/);
-      expect(JSON.parse(await readFile(join(dir, "data", file), "utf8"))).toEqual(read);
+      const index = JSON.parse(await readFile(join(dir, "data", file), "utf8")) as InventoryIndex;
+      expect(index).toMatchObject({ schema: "youiyoux.inventory-index/v1", summary: { looks: read!.looks.length, families: read!.families.length } });
+      // Every look is in exactly one project-and-role chunk, under its content hash.
+      const chunks = await Promise.all(index.roles.flatMap((r) => Object.values(r.chunks)).map(async (f) => JSON.parse(await readFile(join(dir, "data", f), "utf8")) as InventoryChunk));
+      expect(chunks.flatMap((c) => c.looks.map((l) => l.id)).sort()).toEqual(read!.looks.map((l) => l.id).sort());
+      expect(files).toContain(index.extras);
+      for (const f of files) expect(f).toMatch(/\.[0-9a-f]{10}\.(?:json|css)$/);
+      // Without specimens, every project says so and its looks show their shape.
+      expect(index.projects.every((p) => p.specimenCss === null)).toBe(true);
       await writeFile(join(dir, "bad.json"), JSON.stringify({ ...(report as object), families: [{ id: 1 }] }));
       await expect(readInventory(join(dir, "bad.json"), false, libs)).rejects.toThrow(/bad\.json: families\.0\./);
       // Only the default snapshot makes an inventory of its own.

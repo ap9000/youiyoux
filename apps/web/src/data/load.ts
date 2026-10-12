@@ -3,7 +3,7 @@
  * names is content-hashed, so once fetched it is served from Cache Storage forever
  * (and the app keeps working offline). Stale hashed files are pruned on each load.
  */
-import type { Catalog, DetectReport, InventoryReport, Manifest, ScanReport } from "./types.ts";
+import type { Catalog, DetectReport, InventoryIndex, InventoryReport, Manifest, ScanReport } from "./types.ts";
 
 const CACHE_NAME = "youiyoux-data-v1";
 const DATA_BASE = `${import.meta.env.BASE_URL}data/`;
@@ -70,19 +70,30 @@ export async function loadUsage(file: string): Promise<ScanReport> {
   return expectSchema<ScanReport>(await loadHashed(file), "youi.usage/v1", file);
 }
 
-export async function loadInventory(file: string): Promise<InventoryReport> {
-  return expectSchema<InventoryReport>(await loadHashed(file), "youi.inventory/v1", file);
+/** The Inventory page's index, or a whole youi.inventory/v1 file from a snapshot older than the split. */
+export async function loadInventory(file: string): Promise<InventoryIndex | InventoryReport> {
+  const value = await loadHashed(file);
+  if ((value as { schema?: unknown } | null)?.schema === "youi.inventory/v1") return value as InventoryReport;
+  return expectSchema<InventoryIndex>(value, "youiyoux.inventory-index/v1", file);
 }
 
 export async function loadDetect(file: string): Promise<DetectReport> {
   return expectSchema<DetectReport>(await loadHashed(file), "youi.detect/v1", file);
 }
 
+/** A file the inventory index names (a chunk, the extras), checked against its schema. */
+export async function loadInventoryPart<T extends { schema: string }>(file: string, schema: T["schema"]): Promise<T> {
+  return expectSchema<T>(await loadHashed(file), schema, file);
+}
+
+/** Where a snapshot file is served from, absolute (a specimen frame's srcdoc links its stylesheet by it). */
+export const absoluteDataUrl = (file: string): string => new URL(`${DATA_BASE}${file}`, globalThis.location?.href ?? "http://localhost/").href;
+
 /** Drop cached snapshot files the current manifest no longer names. */
 export async function pruneCache(manifest: Manifest): Promise<void> {
   const cache = await openCache();
   if (!cache) return;
-  const files = [...manifest.systems.flatMap((s) => [s.catalog, ...s.usage.map((u) => u.file)]), ...(manifest.inventory ? [manifest.inventory] : []), ...(manifest.detect ? [manifest.detect.file] : [])];
+  const files = [...manifest.systems.flatMap((s) => [s.catalog, ...s.usage.map((u) => u.file)]), ...(manifest.inventory ? [manifest.inventory, ...(manifest.inventoryFiles ?? [])] : []), ...(manifest.detect ? [manifest.detect.file] : [])];
   const keep = new Set([MANIFEST_URL, ...files.map((f) => `${DATA_BASE}${f}`)]);
   const keys = await cache.keys();
   await Promise.all(keys.filter((request) => !keep.has(new URL(request.url).pathname)).map((request) => cache.delete(request)));

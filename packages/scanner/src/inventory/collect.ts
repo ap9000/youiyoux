@@ -7,7 +7,7 @@
 import { readFile } from "node:fs/promises";
 import { join, posix } from "node:path";
 import type { SgNode } from "@ast-grep/napi";
-import { matchesAny, type InventoryDefinition, type InventoryKit, type InventoryLook, type InventoryPrimitive, type InventoryRole, type PropValue } from "@youiyoux/core";
+import { matchesAny, type InventoryDefinition, type InventoryKit, type InventoryLook, type InventoryPrimitive, type InventoryRecipe, type InventoryRecipeWrapper, type InventoryRole, type PropValue } from "@youiyoux/core";
 import { readRules, splitTopLevel } from "@youiyoux/tokens";
 import { ModuleGraph, type ResolvedSymbol } from "../graph.ts";
 import { gitState } from "../identity.ts";
@@ -25,6 +25,10 @@ import { buildTheme, readStylesheet, type Stylesheet, type Theme } from "./theme
 /** Packages that are the framework itself, not a UI library. */
 const FRAMEWORK = new Set(["react", "react-dom", "astro", "preact", "solid-js", "vue"]);
 const MAX_PRIMITIVE_SITES = 50;
+/** The element a role draws as when nothing names its root tag, for a recipe's static fallback. */
+const ROLE_TAG: Readonly<Record<InventoryRole, string>> = { button: "button", "link-as-button": "a", input: "input", card: "div", badge: "span", dialog: "div", tabs: "button" };
+/** Props a recipe never passes on: computed values are already out; these change what renders, not how it looks. */
+const UNPASSED = /^(?:asChild|key|ref|on[A-Z].*|\{.*)$/;
 
 export interface CvaTable {
   readonly key: string;
@@ -110,6 +114,36 @@ const position = (node: SgNode): { line: number; column: number } => ({ line: no
 const pascal = (text: string): string => text.split(/[^A-Za-z0-9]+/).filter(Boolean).map((w) => w[0]!.toUpperCase() + w.slice(1)).join("");
 const packageOf = (specifier: string): string => (specifier.startsWith("@") ? specifier.split("/").slice(0, 2).join("/") : specifier.split("/")[0]!);
 const literalOf = (value: PropValue | undefined): string | null => (value && "literal" in value ? String(value.literal) : null);
+const exportOf = (definition: Definition): string => definition.entry.id.slice(definition.entry.id.lastIndexOf("#") + 1);
+
+/** A site's literal props, for a recipe. */
+function recipeProps(props: Readonly<Record<string, PropValue>>): Record<string, string | number | boolean> {
+  return Object.fromEntries(Object.entries(props).flatMap(([name, value]) => ("literal" in value && !UNPASSED.test(name) ? [[name, value.literal]] : [])));
+}
+
+/**
+ * The text a JSX element wraps (`<Button><Plus /> New run</Button>` → `New run`), and its only
+ * child element's (`<Button asChild><a>Settings</a></Button>`); a container's children are not a label.
+ */
+function jsxLabel(opening: SgNode): string | null {
+  const element = opening.parent();
+  if (opening.kind() !== "jsx_opening_element" || element?.kind() !== "jsx_element") return null;
+  const children = element.children();
+  const nestedOk = children.filter((c) => c.kind() === "jsx_element" || c.kind() === "jsx_self_closing_element").length === 1;
+  const parts: string[] = [];
+  for (const child of children) {
+    if (child.kind() === "jsx_text") parts.push(child.text());
+    else if (child.kind() === "jsx_expression") {
+      const inner = child.children().find((c) => c.isNamed() && c.kind() !== "comment");
+      if (inner?.kind() === "string") parts.push(unquote(inner.text()));
+    } else if (child.kind() === "jsx_element" && nestedOk) {
+      const nested = child.children().find((c) => c.kind() === "jsx_opening_element");
+      parts.push((nested && jsxLabel(nested)) ?? "");
+    }
+  }
+  const text = parts.join(" ").replace(/\s+/g, " ").trim();
+  return text || null;
+}
 
 /* ----------------------------------------------------------------- CVA tables */
 
@@ -412,7 +446,7 @@ class ProjectPass {
 
   /* ------------------------------------------------------------------ looks */
 
-  private addLook(input: { file: string; line: number; column: number; role: InventoryRole; source: InventoryLook["source"]; tag: string; definition: Definition | null; classes: readonly string[]; rootTag: string | null; unresolved: readonly string[] }): void {
+  private addLook(input: { file: string; line: number; column: number; role: InventoryRole; source: InventoryLook["source"]; tag: string; definition: Definition | null; classes: readonly string[]; rootTag: string | null; unresolved: readonly string[]; recipe: InventoryRecipe }): void {
     const resolved = resolveClasses(input.classes, input.rootTag, this.theme, this.rulesFor(input.file));
     const routes = this.routes.of(input.file);
     this.looks.push({
@@ -433,7 +467,41 @@ class ProjectPass {
       unresolved: [...new Set([...input.unresolved, ...resolved.unresolved])],
       responsive: resolved.responsive,
       states: resolved.states,
+      recipe: input.recipe,
     });
+  }
+
+  /** A recipe for a look: the project's own React export when there is one, else its tag and classes. */
+  private recipeFor(role: InventoryRole, definition: Definition | null, rootTag: string | null, classes: readonly string[], props: Readonly<Record<string, PropValue>>, label: string | null, wrappers: InventoryRecipeWrapper[]): InventoryRecipe {
+    const tag = rootTag ?? ROLE_TAG[role];
+    const text = /^(?:input|img|hr|br)$/.test(tag) ? null : label;
+    if (definition?.entry.kind !== "react") return { kind: "class", tag, classes: [...new Set(classes)], label: text };
+    return { kind: "component", file: definition.entry.file, export: exportOf(definition), props: recipeProps(props), label: text, wrappers, tag, classes: [...new Set(classes)] };
+  }
+
+  /**
+   * The components of the look's own module the site renders it inside, outermost first, with
+   * their literal props (Tabs and TabsList around a TabsTrigger). A dialog's compound root is
+   * opened, so its content renders.
+   */
+  private async wrappersOf(module: ModuleInfo, opening: SgNode, definition: Definition | null, role: InventoryRole): Promise<InventoryRecipeWrapper[]> {
+    if (definition?.entry.kind !== "react") return [];
+    const wrappers: InventoryRecipeWrapper[] = [];
+    const own = exportOf(definition);
+    for (let node = opening.parent()?.parent() ?? null; node; node = node.parent()) {
+      if (node.kind() !== "jsx_element") continue;
+      const open = node.children().find((c) => c.kind() === "jsx_opening_element");
+      const tag = open?.field("name")?.text();
+      if (!open || !tag || /^[a-z]/.test(tag)) continue;
+      const { symbol } = await resolveTag(this.graph, module, tag);
+      const wrapper = symbol.kind === "symbol" ? this.definitions.get(`${symbol.file}#${symbol.name}`) : undefined;
+      if (!wrapper || wrapper === definition || wrapper.entry.kind !== "react" || wrapper.entry.file !== definition.entry.file) continue;
+      const props = recipeProps(propsOf(open).props);
+      const name = exportOf(wrapper);
+      if (role === "dialog" && own.startsWith(name) && own !== name) props.open = true;
+      wrappers.unshift({ file: wrapper.entry.file, export: name, props });
+    }
+    return wrappers;
   }
 
   /** Classes for a rendered definition: CVA base, the variants chosen, its own classes, then the call site's. */
@@ -464,12 +532,13 @@ class ProjectPass {
     return { classes, unresolved };
   }
 
-  private intrinsicLook(file: string, at: { line: number; column: number }, tag: string, props: Readonly<Record<string, PropValue>>, site: ClassValue, inside: InventoryRole | null): void {
+  private intrinsicLook(file: string, at: { line: number; column: number }, tag: string, props: Readonly<Record<string, PropValue>>, site: ClassValue, inside: InventoryRole | null, label: string | null): void {
     let role = roleOfIntrinsic(tag, props);
     const block = site.certain.map((c) => this.blocks.get(c)).find(Boolean) ?? null;
     role ??= block?.entry.role ?? null;
     if (!role || role === inside) return;
-    this.addLook({ file, ...at, role, source: "intrinsic", tag, definition: block, classes: site.certain, rootTag: tag, unresolved: [...site.dynamic, ...site.conditional.map((c) => `${c} (conditional)`)] });
+    const recipe: InventoryRecipe = { kind: "class", tag, classes: [...new Set(site.certain)], label: /^(?:input|img|hr|br)$/.test(tag) ? null : label };
+    this.addLook({ file, ...at, role, source: "intrinsic", tag, definition: block, classes: site.certain, rootTag: tag, unresolved: [...site.dynamic, ...site.conditional.map((c) => `${c} (conditional)`)], recipe });
   }
 
   private primitiveSite(file: string, at: { line: number; column: number }, symbol: Extract<ResolvedSymbol, { kind: "external" }>): string | null {
@@ -539,14 +608,15 @@ class ProjectPass {
       // A primitive counts wherever it is rendered, a definition's own root included.
       if (symbol?.kind === "external") this.primitiveSite(module.file, at, symbol);
       if (isRoot) continue;
+      const label = jsxLabel(element.node);
       if (!symbol) {
-        this.intrinsicLook(module.file, at, element.tag, props, site, inside);
+        this.intrinsicLook(module.file, at, element.tag, props, site, inside, label);
         continue;
       }
       const firstChild = firstChildTag(element.node);
       if (symbol.kind === "external") {
         const role = roleOfComponent(componentName(element.tag), props, firstChild);
-        if (role && role !== inside) this.addLook({ file: module.file, ...at, role, source: "primitive", tag: element.tag, definition: null, classes: site.certain, rootTag: null, unresolved: [...site.dynamic, ...site.conditional.map((c) => `${c} (conditional)`)] });
+        if (role && role !== inside) this.addLook({ file: module.file, ...at, role, source: "primitive", tag: element.tag, definition: null, classes: site.certain, rootTag: null, unresolved: [...site.dynamic, ...site.conditional.map((c) => `${c} (conditional)`)], recipe: this.recipeFor(role, null, null, site.certain, props, label, []) });
         continue;
       }
       const definition = symbol.kind === "symbol" ? (this.definitions.get(`${symbol.file}#${symbol.name}`) ?? null) : null;
@@ -554,7 +624,9 @@ class ProjectPass {
       if (!role || role === inside) continue;
       const { classes, unresolved } = this.componentClasses(definition, props, site);
       if (!definition && symbol.kind !== "symbol") unresolved.unshift(`${element.tag}: ${symbol.kind === "unknown" ? symbol.detail : "a namespace object"}`);
-      this.addLook({ file: module.file, ...at, role, source: "component", tag: element.tag, definition, classes, rootTag: definition?.recipe?.tag ?? null, unresolved });
+      const rootTag = definition?.recipe?.tag ?? null;
+      const recipe = this.recipeFor(role, definition, rootTag, classes, props, label, await this.wrappersOf(module, element.node, definition, role));
+      this.addLook({ file: module.file, ...at, role, source: "component", tag: element.tag, definition, classes, rootTag, unresolved, recipe });
     }
   }
 
@@ -567,7 +639,7 @@ class ProjectPass {
       const site = await this.templateClasses(tag);
       const at = { line: tag.line, column: tag.column };
       if (/^[a-z]/.test(tag.tag) && !tag.tag.includes(".")) {
-        this.intrinsicLook(file, at, tag.tag, props, site, own?.entry.role ?? null);
+        this.intrinsicLook(file, at, tag.tag, props, site, own?.entry.role ?? null, tag.text);
         continue;
       }
       const { symbol, name } = await resolveTag(this.graph, astro.module, tag.tag);
@@ -580,7 +652,8 @@ class ProjectPass {
       if (!role || role === own?.entry.role) continue;
       const { classes, unresolved } = this.componentClasses(definition, props, site);
       if (!definition) unresolved.unshift(`${tag.tag}: ${symbol.kind === "unknown" ? symbol.detail : "not a known definition"}`);
-      this.addLook({ file, ...at, role, source: "component", tag: tag.tag, definition, classes, rootTag: definition?.recipe?.tag ?? null, unresolved });
+      const rootTag = definition?.recipe?.tag ?? null;
+      this.addLook({ file, ...at, role, source: "component", tag: tag.tag, definition, classes, rootTag, unresolved, recipe: this.recipeFor(role, definition, rootTag, classes, props, tag.text, []) });
     }
   }
 

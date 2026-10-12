@@ -1,0 +1,6 @@
+{
+  "name": "sketch",
+  "private": true,
+  "description": "Inventory fixture: a prototype with Tailwind classes and no stylesheet yet, so specimens have no CSS for it and its button shows its measured shape.",
+  "dependencies": { "react": "*", "tailwindcss": "^4" }
+}
