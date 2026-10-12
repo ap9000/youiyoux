@@ -1,0 +1,54 @@
+# Real-world check: Signal and Toolroll
+
+PR #8 integrated System/Library, change safety, live checks, Screens, the rule editor and previews, but only the demo tests ran. This is every integrated feature run against real data, the defects it found, and what changed.
+
+| | |
+| --- | --- |
+| Design repo | Signal, `~/Developer/toolroll-design` @ `86ab35b`, config `pilot/toolroll/youi.project.json`; read only |
+| Product | Toolroll, `~/Developer/standing-orders` @ `55caab73`, exported with `git archive HEAD` into `.scratch/toolroll` (gitignored), then `git init` and one commit there for the git steps |
+| Writes | only to `.scratch/`: the baseline, editor drafts, a local clone of the design repo for the review branch, and the hooks |
+| Runtime | Node 24.21.0, pnpm 10.13.1; Playwright 1.63 with Chromium for the hub |
+| Afterwards | `git status` in both real repos is unchanged |
+
+`P` is `~/Developer/toolroll-design/pilot/toolroll`, `C` is `$P/youi.project.json`, `T` is `.scratch/toolroll`.
+
+## Steps
+
+| # | Step | Command | Result | What was wrong | What changed | Test |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | Check from the pilot config | `youi check --project $P` | pass, after a fix | Scanned 0 files and said `tsconfig.browser.json could not be fully analysed`: the config's directory was taken as the product root, so a config kept beside the design repo could not reach its product, and 0 files looked like a near-pass | New product root: `root` in `youi.project.json` (relative to the config) or `--root <dir>`, on every product command, hooks, the hub, the rule editor and MCP. A missing root, or one where nothing matches `include`, now stops with the root, the config and how to set `root` | `packages/scanner/test/project.test.ts`, `packages/cli/test/cli.test.ts` (config outside the product) |
+| 2 | init | `youi init --dry-run --design ~/Developer/toolroll-design --project .scratch/toolroll-init` | pass, after a fix | Wrote `cssVarPrefix: "youi"`, so a real sync would have renamed all 162 `--so-*` variables Toolroll already ships in its youi-generated `src/design/tokens.css` | init reads the prefix of a tokens.css youi generated before and keeps it (`so`), and says so | `cli.test.ts` (init keeps the prefix) |
+| 3 | sync --dry-run | `youi sync --dry-run --project $P --root $T` | pass | Nothing. 4 updated, 5 created, 6 adopted, 1 conflict (exit 1): Toolroll's `ui/utils.ts` really differs from Signal's (it registers Signal's theme names with tailwind-merge). Token files differ only in the header line. Nothing written | none | n/a |
+| 4 | scan | `youi scan --config $C --root $T` | pass | Nothing. 42 files, complete, 404 ms in process (0.7 s wall); 265 sites, 5 unknown, 57 lookalikes | none | n/a |
+| 5 | check | `youi check --config $C --root $T` | pass, after a fix | 97 errors, 46 warnings in 19 files. Every canonical-import fix said `import { Button } from "src/browser/components/ui"`, which does not resolve in Toolroll (no `importFrom` alias) | Without `importFrom`, the fix is a path relative to the file (`./components/ui`, `../components/ui`); `youi show` and the agent docs say the path is relative instead of printing one that does not resolve | `scanner.test.ts` (lookalike fix) |
+| 6 | baseline | `youi baseline --config $C --root $T --baseline-file .scratch/toolroll.baseline.json` | pass | Nothing. 97 errors and 46 warnings accepted. Without `--baseline-file` the baseline goes beside the config, which is in the design repo, so it was kept in `.scratch/` | Baseline path now follows the config that was loaded, also when `--project` named the config's directory | covered by step 1 tests |
+| 7 | check --baseline | `youi check --baseline --config $C --root $T --baseline-file …` | pass | Nothing. 143 known, 0 new, exit 0; with one raw colour added: 1 new, exit 1 | none | n/a |
+| 8 | where | `youi where button --config $C --root $T` | pass | Nothing. 128 sites in 9 files on 7 screens plus the app shell, 39 lookalikes not counted; spot-checked lines (`flow-view.tsx:210`, `chat-cards.tsx:53`) are real Buttons | none | n/a |
+| 9 | bom | `youi bom <route> --config $C --root $T`, for all 7 routes the pilot declares | pass, after a fix | The text named no files, and a mistyped route (`/setings`) printed an empty screen with exit 0, a false zero | The bill lists the screen's files; a route no file reaches is an error that lists the known routes (also for `system_screen_bom`) | `cli.test.ts` (bom) |
+| 10 | Hub on Signal | `youi ui --design ~/Developer/toolroll-design --project $T --config $C --root $T --state .scratch/editor-state` | pass | Nothing blocking. Home, the Button page and the rule editor render Signal and Toolroll's usage (8 components, 75 tokens, 6 rules, 265 sites, 143 violations) at 1440 px and 390 px, with no console errors. At 390 px the draft breadcrumb's "All changes" wraps to two lines (cosmetic, left) | `--root` reaches the snapshot and the rule editor | `cli.test.ts`, typecheck |
+| 11 | Rule edit in the browser | the same, on a local clone `.scratch/toolroll-design` | pass | Nothing. Edit rule opened draft `d-188c24a748`; Statement edited and saved (revision 2); impact preview: 24 places in 9 files, 0 new, 24 already flagged, 0 no longer flagged; approved revision 2; review branch `youi/rules/components.no-native-controls-188c24` holds only the one-line rule change | none | n/a |
+| 12 | hooks install | `youi hooks install --claude --git --project $T --config $C` | pass, after a fix | Installed both. Installing with `--project $P --root $T` would have left the hook without the config's path, so it could not load the project | The installed command carries the config file whenever it is not in the product, plus `--root`; the CI workflow passes `--root` with an outside config | `hooks.test.ts` (config beside the design repo) |
+| 13 | Hooks run | `git commit` of a staged raw colour; `youi hooks run claude` with an Edit payload | pass | Nothing. Both report the file's findings (including the new `#ff00aa`) as advisory and exit 0. With no baseline beside the read-only pilot config they list every finding in the file, not only the new one | none | n/a |
+| 14 | MCP `system_get_rules` | `youi mcp --project $T --config $C`: initialize, initialized, tools/list, tools/call | pass | Nothing. 10 tools; `system_get_rules` returns Signal's 6 rules in 2.4 KB. The same with `--project $P --root $T` | `--root` reaches the server | `mcp.test.ts` (productRoot) |
+
+Totals: 14 steps, 14 pass; 5 defects fixed, each with a test.
+
+## Evidence
+
+Kept with this run's evidence (`evidence/`), not in the repository:
+
+| File | What |
+| --- | --- |
+| `transcripts/00-init-dry-run.txt` … `10-mcp-system_get_rules.txt` | Output of steps 2 to 14 |
+| `hub/desktop-{home,element-button,rule,rule-editor}.png` | The hub on Signal at 1440 × 900 |
+| `hub/phone-{home,element-button,rule,rule-editor}.png` | The same at 390 × 844 |
+| `hub/flow-{1-saved,2-preview,3-approved,4-review}.png`, `hub/hub-flow.log` | The rule-edit flow |
+
+## Left for later
+
+| What | Why not here |
+| --- | --- |
+| Signal's `schema/` copies are out of date (`youi schema --check --design ~/Developer/toolroll-design` lists 5 files, including the new `root`) | toolroll-design is read only for this work; run `youi schema --write --design .` there |
+| The pilot config could set `"root"` and drop the `--root` flag; its README still says to clone Toolroll to `/tmp` | same |
+| A scratch copy with no `.git` inside another repository reports that repository's commit as the product commit | only seen with `git archive` copies; `git init` in the copy fixes it |
+| `hsl(${hsv.h} 100% 50%)` in a template string counts as a raw colour | a rule judgement for Signal's owners, not a run failure |

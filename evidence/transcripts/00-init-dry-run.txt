@@ -1,0 +1,25 @@
+created /Users/alekseypelletier/.config/standing-orders/worktrees/youiyoux/toolroll-youi-real-world-e750ffce/.scratch/toolroll-init/youi.project.json
+  · design repo: /Users/alekseypelletier/Developer/toolroll-design (system signal)
+  · no expo-router app dir: add routes.map entries (file → route, with evidence) to attribute screens
+  · owned components: src/browser/components/ui
+  · src/design/tokens.css was generated with the prefix "so": kept, so the product's --so-* variables keep their names
+
+updated     src/design/tokens.css
+updated     src/design/theme.css
+created     src/design/tokens.ts
+skipped     DESIGN.md  hand-written file in the way; `youi sync --adopt` replaces it
+created     .agents/skills/youiyoux/SKILL.md
+created     youi-rules/color.no-raw-color.yml
+created     youi-rules/components.no-native-controls.yml
+updated     AGENTS.md  managed block only; the rest of the file is untouched
+created     .claude/skills/youiyoux  → ../../.agents/skills/youiyoux
+updated     .mcp.json  youiyoux MCP server entry; other servers kept
+adopted     src/browser/components/ui/badge.tsx  identical to upstream
+adopted     src/browser/components/ui/button.tsx  identical to upstream
+adopted     src/browser/components/ui/card.tsx  identical to upstream
+adopted     src/browser/components/ui/form-controls.tsx  identical to upstream
+adopted     src/browser/components/ui/switch.tsx  identical to upstream
+adopted     src/browser/components/ui/tabs.tsx  identical to upstream
+conflict    src/browser/components/ui/utils.ts  differs from upstream with no recorded base; compare with .youi/incoming/src/browser/components/ui/utils.ts, or `youi sync --adopt` to keep yours
+
+dry run · 4 updated · 5 created · 1 skipped · 6 adopted · 1 conflict

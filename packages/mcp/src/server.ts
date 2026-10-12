@@ -21,6 +21,7 @@ export interface ServerOptions {
   readonly projectRoot: string;
   readonly configPath?: string;
   readonly designRoot?: string;
+  readonly productRoot?: string;
   /** How long a scan stays fresh before a query rescans (ms). */
   readonly scanTtlMs?: number;
 }
@@ -57,7 +58,7 @@ class State {
   /** The definitions, re-read once they are older than the TTL: an approved, merged rule reaches a running agent without a restart. */
   loadProject(): Promise<Project> {
     if (!this.project || Date.now() - this.project.at > this.ttl) {
-      const value = loadProject(this.options.projectRoot, { ...(this.options.configPath ? { configPath: this.options.configPath } : {}), ...(this.options.designRoot ? { designRoot: this.options.designRoot } : {}) });
+      const value = loadProject(this.options.projectRoot, { ...(this.options.configPath ? { configPath: this.options.configPath } : {}), ...(this.options.designRoot ? { designRoot: this.options.designRoot } : {}), ...(this.options.productRoot ? { productRoot: this.options.productRoot } : {}) });
       // A failed load (a half-written definition) is retried on the next call, not cached.
       value.catch(() => {
         if (this.project?.value === value) this.project = null;

@@ -50,7 +50,7 @@ export async function repoRootOf(dir: string): Promise<string> {
 /** The command a hook runs: this youi, pointed at this project (and its out-of-repo config, if any). */
 export function hookCommand(toolRoot: string, kind: "claude" | "pre-commit", target: HookTarget, extra: readonly string[] = []): string {
   const args = ["node", join(toolRoot, "packages/cli/bin/youi.js"), "hooks", "run", kind];
-  for (const key of ["project", "config", "design"] as const) {
+  for (const key of ["project", "config", "design", "root"] as const) {
     const value = target[key];
     if (value) args.push(`--${key}`, resolve(value));
   }
@@ -147,7 +147,8 @@ export interface WorkflowInput {
 }
 
 export function workflowText(input: WorkflowInput): string {
-  const checkArgs = ["--baseline", "--format", "github", "--project", input.projectDir, "--design", ".youi-ci/design", ...(input.configPath ? ["--config", input.configPath] : [])].map(shellQuote).join(" ");
+  // A config from elsewhere may name its product with "root"; in CI the product is this checkout, so --root says so.
+  const checkArgs = ["--baseline", "--format", "github", "--project", input.projectDir, "--design", ".youi-ci/design", ...(input.configPath ? ["--config", input.configPath, "--root", input.projectDir] : [])].map(shellQuote).join(" ");
   return `${WORKFLOW_HEADER}
 # The authoritative design-system check: it fails on violations the baseline does not
 # accept, annotates them on the PR's lines, and states the rules version (design commit
@@ -196,7 +197,7 @@ jobs:
 export async function installWorkflow(project: Project, toolRoot: string, target: HookTarget, force: boolean): Promise<InstallResult> {
   const top = await gitOut(project.root, ["rev-parse", "--show-toplevel"]);
   const [tool, design] = await Promise.all([repoAt(toolRoot), repoAt(project.repo.root)]);
-  const configFile = resolve(target.config ?? join(project.root, PROJECT_FILE));
+  const configFile = resolve(target.config ?? project.configFile ?? join(project.root, PROJECT_FILE));
   const configPath = !target.config ? null : inside(project.repo.root, configFile) ? `.youi-ci/design/${posix(relative(project.repo.root, configFile))}` : inside(top, configFile) ? posix(relative(top, configFile)) : null;
   if (target.config && !configPath) throw new Error(`${configFile} is in neither this repo nor the design repo, so CI cannot read it`);
   const file = join(top, WORKFLOW);

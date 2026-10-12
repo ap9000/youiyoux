@@ -12,7 +12,7 @@ This repository is the tool. It holds no product's design data: each design syst
 | --- | --- |
 | The CLI, scanner, MCP server, hub and the published JSON Schemas | here |
 | A system's tokens, component contracts and owned implementations, rules and narrative | its design repo |
-| How a product uses a system (`youi.project.json`) | the product repo, or beside the system in its design repo |
+| How a product uses a system (`youi.project.json`) | the product repo, or beside the system in its design repo (then `root` or `--root` names the product) |
 | Scan results, permissions and approvals | the hosted database (not built yet); never in a repo |
 
 A design repo is any directory with a `youi.config.json`. A product names it with `source.path` in its `youi.project.json` (relative to the config, or absolute), or any command takes `--design <dir>`. A design repo keeps the layout below; [`examples/demo-design`](examples/demo-design) is a complete one.
@@ -75,7 +75,21 @@ In a product repo:
 
 `show`, `where`, `bom`, `check`, `plan` and `migrate` work on the System.
 
-Every product command takes `--design <dir>` (override the design repo) and `--config <file>` (a project config kept outside the product, for example in the design repo).
+Every product command takes `--design <dir>` (override the design repo), `--config <file>` (a project config kept outside the product, for example in the design repo) and `--root <dir>` (the product root, when the config does not sit in it).
+
+A config kept outside its product names the product's root:
+
+| Setting | Where | Wins over |
+| --- | --- | --- |
+| `--root <dir>` | any product command | everything below |
+| `"root"` in `youi.project.json` | relative to the config file, or absolute | `--project` |
+| `--project <dir>` | where the config is looked for, and the root when nothing above is set | the current directory |
+
+```sh
+youi check --project ~/src/acme-design/pilot/acme-app --root ~/src/acme-app
+```
+
+If the root is not a directory, or none of its files match `include`, the command stops and names the root, the config and how to set `root`; it never reports 0 files as a pass. A real run on Toolroll is recorded in [docs/real-world-check.md](docs/real-world-check.md).
 
 In a design repo (the current directory, or `--design <dir>`):
 
@@ -89,7 +103,7 @@ Anywhere:
 
 | Command | Does |
 | --- | --- |
-| `youi ui [--design <dir>] [--project <dir>] [--config <file>]` | Start the hub on a design system (default: the demo); with `--project`, plus that product's usage map from a read-only scan |
+| `youi ui [--design <dir>] [--project <dir>] [--config <file>] [--root <dir>]` | Start the hub on a design system (default: the demo); with `--project`, plus that product's usage map from a read-only scan |
 
 ## Guarantees
 

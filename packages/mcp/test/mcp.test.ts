@@ -1,3 +1,5 @@
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
@@ -112,5 +114,25 @@ describe("youiyoux MCP server", () => {
     const { isError, data } = await call("system_get_component", { name: "Carousel" });
     expect(isError).toBe(true);
     expect(String(data.error)).toContain("no component");
+  });
+});
+
+describe("a config kept outside its product", () => {
+  test("productRoot (--root) points the server's scans at the product", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "youi-mcp-root-"));
+    const config = JSON.parse(await readFile(join(FIXTURE, "youi.project.json"), "utf8")) as Record<string, unknown>;
+    await writeFile(join(dir, "youi.project.json"), JSON.stringify({ ...config, source: { path: join(FIXTURE, "../../../../../examples/demo-design") } }));
+    const server = createServer({ projectRoot: dir, productRoot: FIXTURE });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const outside = new Client({ name: "test", version: "0.0.0" });
+    await Promise.all([server.connect(serverTransport), outside.connect(clientTransport)]);
+    try {
+      const result = (await outside.callTool({ name: "system_where_used", arguments: { element: "button" } })) as { content: Array<{ text: string }>; isError?: boolean };
+      expect(result.isError).toBeFalsy();
+      expect(JSON.parse(result.content[0]!.text)).toMatchObject({ total: 7 });
+    } finally {
+      await outside.close();
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

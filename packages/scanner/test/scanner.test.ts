@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { normalizeProjectConfig, ScanReport } from "@youiyoux/core";
 import { beforeAll, describe, expect, test } from "vitest";
-import { expoRoute, loadProject, scanProject, type ScanResult } from "../src/index.ts";
+import { expoRoute, importSpecifier, loadProject, scanProject, type ScanResult } from "../src/index.ts";
 
 const FIXTURE = join(import.meta.dirname, "fixtures/expo-app");
 const BUTTON = "youi:demo/component/button";
@@ -138,6 +138,17 @@ describe("review regressions", () => {
     expect(report.coverage.failed.map((f) => f.file)).toContain("tsconfig.base.json");
     expect(report.unknowns.some((u) => u.reason === "unresolved-import" && u.candidate === BUTTON)).toBe(true);
     expect(report.lookalikes.filter((l) => l.resolved.startsWith("@/"))).toEqual([]);
+  });
+
+  test("a lookalike's fix imports the owned component by the alias, or by a path relative to the file without one", async () => {
+    const project = await loadProject(FIXTURE);
+    const fix = (report: ScanReport) => report.violations.find((v) => v.rule.endsWith("canonical-import"))?.suggestion;
+    expect(fix(result.report)).toBe('import { Button } from "@/components/ui"');
+    const { importFrom: _alias, ...plain } = project.config;
+    const report = (await scanProject({ ...project, config: plain })).report;
+    expect(fix(report)).toBe('import { Button } from "../../components/ui"');
+    expect(importSpecifier(plain, "components/form.tsx")).toBe("./ui");
+    expect(importSpecifier(plain, "src/browser/views/x.tsx")).toBe("../../../components/ui");
   });
 
   test("colour context, fragments, ignore scope and default exports", async () => {

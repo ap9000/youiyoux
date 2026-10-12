@@ -105,7 +105,7 @@ export function renderCheck(violations: readonly Violation[], lockIssues: readon
 }
 
 export function renderBom(bom: ScreenBom): string {
-  const lines = [`${style.accent(bom.route)}  ${style.dim(plural(bom.files.length, "file"))}`, rule()];
+  const lines = [`${style.accent(bom.route)}  ${style.dim(plural(bom.files.length, "file"))}`, ...bom.files.map((f) => style.dim(`  ${f}`)), rule()];
   for (const e of bom.elements) {
     lines.push(`${padEnd(e.name, 12)} ${padStart(String(e.sites), 4)}   ${style.dim(Object.entries(e.props).map(([p, n]) => `${p || "(no props)"} ×${n}`).join(" · "))}`);
   }

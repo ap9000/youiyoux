@@ -1,0 +1,2 @@
+created .scratch/toolroll.baseline.json: 97 errors · 46 warnings accepted
+  rules signal@1.0.0 · defs b5bd1a239a45 · design 86ab35b · project 3768e41+dirty

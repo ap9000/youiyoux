@@ -1,0 +1,171 @@
+src/browser/app.tsx
+  302:7     warn   Native <button> styled by hand; render Button (youi:signal/component/…  → <Button>  components.no-native-controls
+  303:7     warn   Native <button> styled by hand; render Button (youi:signal/component/…  → <Button>  components.no-native-controls
+  334:7     error  Label here is src/browser/ui/primitives.tsx#Label, not the design-sys…  → import { Label } from "./components/ui"  components.canonical-import
+  356:114   error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  397:28    error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  399:96    error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  401:7     error  Label here is src/browser/ui/primitives.tsx#Label, not the design-sys…  → import { Label } from "./components/ui"  components.canonical-import
+  402:7     error  Input here is src/browser/ui/primitives.tsx#Input, not the design-sys…  → import { Input } from "./components/ui"  components.canonical-import
+  418:41    error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  420:28    error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  497:74    warn   Native <button> styled by hand; render Button (youi:signal/component/…  → <Button>  components.no-native-controls
+  507:18    error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  507:132   error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  510:9     error  Label here is src/browser/ui/primitives.tsx#Label, not the design-sys…  → import { Label } from "./components/ui"  components.canonical-import
+  517:9     error  Textarea here is src/browser/ui/primitives.tsx#Textarea, not the desi…  → import { Textarea } from "./components/ui"  components.canonical-import
+  529:11    error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  588:9     warn   Native <textarea> styled by hand; render Textarea (youi:signal/compon…  → <Textarea>  components.no-native-controls
+  691:20    error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  692:20    error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  693:31    error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  700:46    error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  712:13    error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  723:13    error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  733:9     error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  735:11    warn   Native <button> styled by hand; render Button (youi:signal/component/…  → <Button>  components.no-native-controls
+  736:11    warn   Native <button> styled by hand; render Button (youi:signal/component/…  → <Button>  components.no-native-controls
+  744:9     error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  750:45    error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+src/browser/components/ui/badge.tsx
+  6:99      warn   Arbitrary value rounded-[5px] copies a token.  → rounded-badge  tokens.no-arbitrary-values
+  6:126     warn   Arbitrary value text-[11.5px] copies a token.  → text-badge  tokens.no-arbitrary-values
+src/browser/components/ui/button.tsx
+  8:88      warn   Arbitrary value text-[13px] copies a token.  → text-body or text-label  tokens.no-arbitrary-values
+  13:58     warn   Arbitrary value bg-[var(--so-signal-hover)] copies a token.  → bg-signal-hover  tokens.no-arbitrary-values
+  15:43     warn   Arbitrary value shadow-[var(--so-pill-shadow)] copies a token.  → shadow-pill  tokens.no-arbitrary-values
+  22:67     warn   Arbitrary value text-[13px] copies a token.  → text-body or text-label  tokens.no-arbitrary-values
+src/browser/components/ui/card.tsx
+  6:71      warn   Arbitrary value rounded-[10px] copies a token.  → rounded-card  tokens.no-arbitrary-values
+src/browser/components/ui/form-controls.tsx
+  11:132    warn   Arbitrary value text-[13px] copies a token.  → text-body or text-label  tokens.no-arbitrary-values
+  14:128    warn   Arbitrary value text-[13px] copies a token.  → text-body or text-label  tokens.no-arbitrary-values
+src/browser/components/ui/tabs.tsx
+  11:131    warn   Arbitrary value text-[13px] copies a token.  → text-body or text-label  tokens.no-arbitrary-values
+src/browser/first-run.tsx
+  15:5      error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  62:43     error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  79:40     warn   Native <button> styled by hand; render Button (youi:signal/component/…  → <Button>  components.no-native-controls
+  96:19     error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  112:8     error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+src/browser/team-chat.tsx
+  38:67     error  Badge here is src/browser/ui/primitives.tsx#Badge, not the design-sys…  → import { Badge } from "./components/ui"  components.canonical-import
+  125:30    error  Input here is src/browser/ui/primitives.tsx#Input, not the design-sys…  → import { Input } from "./components/ui"  components.canonical-import
+  128:5     error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  144:484   error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  145:1095  error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  150:70    error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  152:325   error  Input here is src/browser/ui/primitives.tsx#Input, not the design-sys…  → import { Input } from "./components/ui"  components.canonical-import
+  152:488   error  Textarea here is src/browser/ui/primitives.tsx#Textarea, not the desi…  → import { Textarea } from "./components/ui"  components.canonical-import
+  152:588   error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  154:111   error  Badge here is src/browser/ui/primitives.tsx#Badge, not the design-sys…  → import { Badge } from "./components/ui"  components.canonical-import
+  155:352   error  Label here is src/browser/ui/primitives.tsx#Label, not the design-sys…  → import { Label } from "./components/ui"  components.canonical-import
+  155:422   error  Textarea here is src/browser/ui/primitives.tsx#Textarea, not the desi…  → import { Textarea } from "./components/ui"  components.canonical-import
+  155:546   error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  155:602   error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  157:121   error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  157:213   error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  162:824   error  Input here is src/browser/ui/primitives.tsx#Input, not the design-sys…  → import { Input } from "./components/ui"  components.canonical-import
+  162:930   error  Textarea here is src/browser/ui/primitives.tsx#Textarea, not the desi…  → import { Textarea } from "./components/ui"  components.canonical-import
+  162:1277  error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  162:1540  error  Input here is src/browser/ui/primitives.tsx#Input, not the design-sys…  → import { Input } from "./components/ui"  components.canonical-import
+  162:1662  error  Textarea here is src/browser/ui/primitives.tsx#Textarea, not the desi…  → import { Textarea } from "./components/ui"  components.canonical-import
+  162:1711  error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  164:201   error  Label here is src/browser/ui/primitives.tsx#Label, not the design-sys…  → import { Label } from "./components/ui"  components.canonical-import
+  164:296   error  Textarea here is src/browser/ui/primitives.tsx#Textarea, not the desi…  → import { Textarea } from "./components/ui"  components.canonical-import
+  164:718   error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  164:954   error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  164:1313  error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  164:1488  error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+  172:431   error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "./components/ui"  components.canonical-import
+src/browser/ui/conversation.tsx
+  21:10     error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "../components/ui"  components.canonical-import
+src/browser/ui/primitives.tsx
+  38:10     warn   Native <input> styled by hand; render Input (youi:signal/component/in…  → <Input>  components.no-native-controls
+  41:10     warn   Native <textarea> styled by hand; render Textarea (youi:signal/compon…  → <Textarea>  components.no-native-controls
+src/browser/ui/workflow.tsx
+  54:10     error  Button here is src/browser/ui/primitives.tsx#Button, not the design-s…  → import { Button } from "../components/ui"  components.canonical-import
+src/browser/views/flow-view.tsx
+  24:197    warn   Arbitrary value text-[11px] copies a token.  → text-mono-count  tokens.no-arbitrary-values
+  25:27     error  Raw colour hsl(${hue} 45% 45%); use a colour token.  color.no-raw-color
+  28:50     error  Raw colour #64748b; use a colour token.  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  28:67     error  Raw colour #3b82f6; use a colour token.  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  28:86     error  Raw colour #8b5cf6; use a colour token.  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  28:104    error  Raw colour #d97706; use a colour token.  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  28:122    error  Raw colour #059669; use a colour token.  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  28:139    error  Raw colour #e11d48; use a colour token.  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  41:109    warn   Arbitrary value text-[11px] copies a token.  → text-mono-count  tokens.no-arbitrary-values
+  160:34    warn   Arbitrary value text-[11px] copies a token.  → text-mono-count  tokens.no-arbitrary-values
+  162:74    warn   Arbitrary value text-[11px] copies a token.  → text-mono-count  tokens.no-arbitrary-values
+  166:9     warn   Native <button> styled by hand; render Button (youi:signal/component/…  → <Button>  components.no-native-controls
+  178:62    warn   Arbitrary value text-[11px] copies a token.  → text-mono-count  tokens.no-arbitrary-values
+  179:60    warn   Arbitrary value text-[11px] copies a token.  → text-mono-count  tokens.no-arbitrary-values
+  183:92    warn   Arbitrary value text-[11px] copies a token.  → text-mono-count  tokens.no-arbitrary-values
+  187:55    warn   Arbitrary value text-[11px] copies a token.  → text-mono-count  tokens.no-arbitrary-values
+  188:52    warn   Arbitrary value text-[11px] copies a token.  → text-mono-count  tokens.no-arbitrary-values
+  200:54    warn   Arbitrary value text-[11px] copies a token.  → text-mono-count  tokens.no-arbitrary-values
+  206:9     warn   Native <button> styled by hand; render Button (youi:signal/component/…  → <Button>  components.no-native-controls
+  208:40    warn   Arbitrary value text-[11px] copies a token.  → text-mono-count  tokens.no-arbitrary-values
+  340:130   warn   Native <button> styled by hand; render Button (youi:signal/component/…  → <Button>  components.no-native-controls
+  839:61    warn   Native <button> styled by hand; render Button (youi:signal/component/…  → <Button>  components.no-native-controls
+  1322:13   warn   Native <button> styled by hand; render Button (youi:signal/component/…  → <Button>  components.no-native-controls
+  1326:132  warn   Arbitrary value text-[11.5px] copies a token.  → text-badge  tokens.no-arbitrary-values
+  1545:84   warn   Native <button> styled by hand; render Button (youi:signal/component/…  → <Button>  components.no-native-controls
+  1634:200  error  Raw colour #64748b; use a colour token.  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  1635:111  warn   Native <button> styled by hand; render Button (youi:signal/component/…  → <Button>  components.no-native-controls
+src/browser/views/home-view.tsx
+  114:20    warn   Native <button> styled by hand; render Button (youi:signal/component/…  → <Button>  components.no-native-controls
+src/browser/views/projects-view.tsx
+  42:15     warn   Native <button> styled by hand; render Button (youi:signal/component/…  → <Button>  components.no-native-controls
+  48:17     warn   Native <button> styled by hand; render Button (youi:signal/component/…  → <Button>  components.no-native-controls
+src/browser/views/settings-view.tsx
+  51:46     warn   Native <button> styled by hand; render Button (youi:signal/component/…  → <Button>  components.no-native-controls
+  87:51     error  Raw colour #000; use a colour token.  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  87:97     error  Raw colour #fff; use a colour token.  → var(--so-accent-hover) (color.accent-hover) or var(--so-nav-current) …  color.no-raw-color
+  87:103    error  Raw colour hsl(${hsv.h} 100% 50%); use a colour token.  color.no-raw-color
+  128:180   error  Raw colour #f00; use a colour token.  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  128:185   error  Raw colour #ff0; use a colour token.  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  128:190   error  Raw colour #0f0; use a colour token.  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  128:195   error  Raw colour #0ff; use a colour token.  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  128:200   error  Raw colour #00f; use a colour token.  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  128:205   error  Raw colour #f0f; use a colour token.  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  128:210   error  Raw colour #f00; use a colour token.  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  148:38    warn   Native <button> styled by hand; render Button (youi:signal/component/…  → <Button>  components.no-native-controls
+  438:33    warn   Native <button> styled by hand; render Button (youi:signal/component/…  → <Button>  components.no-native-controls
+src/browser/views/status-summary.tsx
+  52:13     warn   Native <button> styled by hand; render Button (youi:signal/component/…  → <Button>  components.no-native-controls
+src/browser/views/tasks-view.tsx
+  135:10    warn   Native <button> styled by hand; render Button (youi:signal/component/…  → <Button>  components.no-native-controls
+  162:64    error  Raw colour #000; use a colour token.  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  162:78    error  Raw colour #000; use a colour token.  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  162:142   error  Raw colour #000; use a colour token.  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+src/browser/workspace.css
+  162:203   error  Raw colour rgb(0 0 0 / .04) in box-shadow; use var(--so-…).  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+src/server/console.css
+  165:30    error  Raw colour #ab6400 in color; use var(--so-…).  → var(--so-warning) (color.warning): same value, check it is the right …  color.no-raw-color
+  867:35    error  Raw colour rgb(255 255 255 / .5) in box-shadow; use var(--so-…).  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  991:113   error  Raw colour rgb(0 0 0 / .1) in box-shadow; use var(--so-…).  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  1010:35   error  Raw colour #ab6400 in background; use var(--so-…).  → var(--so-warning) (color.warning): same value, check it is the right …  color.no-raw-color
+  1121:71   error  Raw colour #c98a1b in border-color; use var(--so-…).  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  1121:71   error  Raw colour #c98a1b in background; use var(--so-…).  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  1126:74   error  Raw colour #2f9e5f in background; use var(--so-…).  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  1127:75   error  Raw colour #c8453d in background; use var(--so-…).  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  1128:76   error  Raw colour #c98a1b in background; use var(--so-…).  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  1599:84   error  Raw colour #15803d in background; use var(--so-…).  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  1600:92   error  Raw colour #ab6400 in background; use var(--so-…).  → var(--so-warning) (color.warning): same value, check it is the right …  color.no-raw-color
+  2088:35   error  Raw colour rgb(0 0 0 / .8) in box-shadow; use var(--so-…).  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  2113:35   error  Raw colour rgb(0 0 0 / .9) in box-shadow; use var(--so-…).  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  2113:60   error  Raw colour rgb(255 255 255 / .07) in box-shadow; use var(--so-…).  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  2239:49   error  Raw colour rgb(255 255 255 / .65) in box-shadow; use var(--so-…).  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  2260:82   error  Raw colour rgb(0 0 0 / .18) in background; use var(--so-…).  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  2282:110  error  Raw colour rgb(0 0 0 / .18) in background; use var(--so-…).  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+  2700:34   error  Raw colour rgb(0 0 0 / .35) in box-shadow; use var(--so-…).  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+
+✖ 97 errors · 46 warnings in 19 files
+    57  components.canonical-import
+    40  color.no-raw-color
+    24  components.no-native-controls
+    22  tokens.no-arbitrary-values
+  no youi.lock.json yet: generated-file and drift checks start after `youi sync`
+scanned 42 files at 3768e41c2195 in 428 ms · complete
+rules signal@1.0.0 · defs b5bd1a239a45 · design 86ab35b · project 3768e41+dirty

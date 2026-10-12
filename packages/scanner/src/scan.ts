@@ -10,7 +10,7 @@ import { buildElementIndex, type ElementIndex } from "./elements.ts";
 import { ModuleGraph, type ModuleParser } from "./graph.ts";
 import { changedFiles, checkIdentity, definitionsDigest, gitState, SCANNER_VERSION } from "./identity.ts";
 import { langOf, parseModule, type ModuleInfo } from "./parse.ts";
-import type { Project } from "./project.ts";
+import { emptyRootProblem, ProjectRootError, type Project } from "./project.ts";
 import { ModuleResolver } from "./resolve.ts";
 import { RouteIndex } from "./routes.ts";
 import { analyzeModule, type ModuleAnalysis } from "./usage.ts";
@@ -92,6 +92,9 @@ export async function scanProject(project: Project, options: ScanOptions = {}): 
   const all = [...new Set([...discovered, ...Object.keys(overrides)])].filter((f) => langOf(f) !== null).sort();
   const focus = options.focus ? new Set(options.focus) : null;
   const files = focus ? all.filter((f) => focus.has(f)) : all;
+  // A whole-project scan of nothing is a wrong root (a config kept outside its product), never a clean pass.
+  const empty = focus ? null : await emptyRootProblem(project, all.length);
+  if (empty) throw new ProjectRootError(empty);
   const [{ modules, sources, failed }, build, consumerGit, designGit, changed, tsconfigText] = await Promise.all([
     parseAll(project, files, overrides, parse),
     buildTokens(project.repo.root, project.system.config, project.config.outputs),

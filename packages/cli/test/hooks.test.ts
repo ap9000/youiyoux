@@ -107,6 +107,23 @@ describe("git pre-commit hook", () => {
     await git("add", "-A");
     await expect(git("commit", "-qm", "good")).resolves.toBeTruthy();
   }, 60_000);
+
+  test("installed from a config kept beside the design repo (--project <its dir> --root <product>), the hook finds both", async () => {
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const pilot = join(dir, "demo-design/pilot");
+    await mkdir(pilot, { recursive: true });
+    const config = JSON.parse(await readFile(join(app, "youi.project.json"), "utf8")) as Record<string, unknown>;
+    await writeFile(join(pilot, "youi.project.json"), JSON.stringify({ ...config, $schema: undefined, source: { path: ".." } }));
+    await git("rm", "-q", "youi.project.json");
+    await git("commit", "-qm", "config lives in the design repo");
+    expect(await main(["hooks", "install", "--git", "--strict", "--project", pilot, "--root", app])).toBe(0);
+    const hook = await readFile(join(app, ".git/hooks/pre-commit"), "utf8");
+    expect(hook).toContain(`--config ${shellQuote(join(pilot, "youi.project.json"))}`);
+    expect(hook).toContain(`--root ${shellQuote(app)}`);
+    await writeFile(join(app, "components/extra file.tsx"), RAW_COLOR);
+    await git("add", "-A");
+    await expect(git("commit", "-qm", "bad")).rejects.toThrow(/commit blocked[\s\S]*components\/extra file\.tsx:2/);
+  }, 60_000);
 });
 
 describe("hooks install", () => {
@@ -157,6 +174,6 @@ describe("hooks install", () => {
     expect(githubSlug("https://gitlab.com/a/b")).toBeNull();
     const text = workflowText({ tool: { slug: "acme/youiyoux", commit: "a".repeat(40) }, design: { slug: "acme/acme-design", commit: "b".repeat(40) }, projectDir: ".", configPath: ".youi-ci/design/pilots/acme-app/youi.project.json" });
     expect(text).toContain(`ref: ${"b".repeat(40)}`);
-    expect(text).toContain("check --baseline --format github --project . --design .youi-ci/design --config .youi-ci/design/pilots/acme-app/youi.project.json");
+    expect(text).toContain("check --baseline --format github --project . --design .youi-ci/design --config .youi-ci/design/pilots/acme-app/youi.project.json --root .");
   });
 });

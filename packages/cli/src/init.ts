@@ -1,8 +1,9 @@
 /** `youi init`: write youi.project.json from what the project already looks like. */
 import { access, readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
-import { getSystem, loadDesignRepo, ProjectConfig, writeFileAtomic } from "@youiyoux/core";
+import { getSystem, loadDesignRepo, OutputConfig, ProjectConfig, readTextOrNull, writeFileAtomic } from "@youiyoux/core";
 import { PROJECT_FILE } from "@youiyoux/scanner";
+import { GENERATED_MARK } from "./agents.ts";
 
 export interface InitOptions {
   readonly root: string;
@@ -31,6 +32,20 @@ async function readJson(path: string): Promise<Record<string, unknown> | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * The variable prefix of a tokens.css youi already generated here (`--so-accent` → `so`), or null.
+ * Syncing with another prefix would rename every variable the product's CSS uses.
+ */
+export function generatedPrefix(css: string | null): string | null {
+  if (css === null || !css.slice(0, 400).includes(GENERATED_MARK)) return null;
+  const names = [...css.matchAll(/^\s*--([a-z][a-z0-9-]*)\s*:/gm)].map((m) => m[1]!);
+  if (names.length === 0) return null;
+  let common = names[0]!;
+  for (const name of names) while (!name.startsWith(common)) common = common.slice(0, -1);
+  const prefix = common.slice(0, common.lastIndexOf("-"));
+  return /^[a-z][a-z0-9-]*$/.test(prefix) ? prefix : null;
 }
 
 export async function initProject(options: InitOptions): Promise<InitResult> {
@@ -74,6 +89,10 @@ export async function initProject(options: InitOptions): Promise<InitResult> {
     )
   ).filter((g): g is string => g !== null);
 
+  const outputDir = OutputConfig.parse({}).dir;
+  const prefix = generatedPrefix(await readTextOrNull(join(root, outputDir, "tokens.css")));
+  if (prefix) notes.push(`${outputDir}/tokens.css was generated with the prefix "${prefix}": kept, so the product's --${prefix}-* variables keep their names`);
+
   const config = ProjectConfig.parse({
     $schema: `${relative(root, resolve(options.schemaDir))}/youi.project.schema.json`,
     schema: "youi.project/v1",
@@ -85,6 +104,7 @@ export async function initProject(options: InitOptions): Promise<InitResult> {
     componentsDir,
     ...(importFrom ? { importFrom } : {}),
     routes: expo ? { strategy: "expo-router", appDir } : { strategy: "none" },
+    ...(prefix ? { outputs: { cssVarPrefix: prefix } } : {}),
   });
   await writeFileAtomic(file, `${JSON.stringify(config, null, 2)}\n`);
   return { file, config, notes };

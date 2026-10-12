@@ -1,0 +1,9 @@
+src/browser/views/settings-view.tsx
+  490:50    error  Raw colour #ff00aa; use a colour token.  → no token has this value: pick the role it plays (system_get_tokens) o…  color.no-raw-color
+
+✖ 1 error · 0 warnings in 1 file
+     1  color.no-raw-color
+  no youi.lock.json yet: generated-file and drift checks start after `youi sync`
+scanned 42 files at 3768e41c2195 + 1 uncommitted file in 446 ms · complete
+baseline /Users/alekseypelletier/.config/standing-orders/worktrees/youiyoux/toolroll-youi-real-world-e750ffce/.scratch/toolroll.baseline.json: 143 known violations accepted · 1 new · 0 regressed
+rules signal@1.0.0 · defs b5bd1a239a45 · design 86ab35b · project 3768e41+dirty

@@ -77,8 +77,8 @@ export class RuleWorkflow {
   }
 
   private async current(): Promise<Current> {
-    const { projectRoot, configPath, designRoot } = this.options;
-    const project = await loadProject(projectRoot, { ...(configPath ? { configPath } : {}), ...(designRoot ? { designRoot } : {}) });
+    const { projectRoot, configPath, designRoot, productRoot } = this.options;
+    const project = await loadProject(projectRoot, { ...(configPath ? { configPath } : {}), ...(designRoot ? { designRoot } : {}), ...(productRoot ? { productRoot } : {}) });
     const repo = await locate(project.repo.root);
     if (!repo) throw new WorkflowError("invalid", `the design definitions at ${project.repo.root} are not in a git repository; drafts need a commit to start from`);
     const branch = await defaultBranch(repo.top);

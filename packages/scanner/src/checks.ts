@@ -8,6 +8,7 @@ import { matchesAny, type ElementId, type OutputConfig, type RuleRun, type RuleS
 import { parseCssColor, readRules, sameColor, tailwindTheme, type DtcgColor, type ResolvedToken } from "@youiyoux/tokens";
 import { AST_GREP_FILE_LANG, ruleCapability } from "./capabilities.ts";
 import type { ElementIndex } from "./elements.ts";
+import { importSpecifier } from "./project.ts";
 import type { ModuleInfo } from "./parse.ts";
 import type { LocalUsage, ModuleAnalysis } from "./usage.ts";
 
@@ -201,7 +202,7 @@ function propValues(usages: readonly LocalUsage[], elements: ElementIndex): Find
   return findings;
 }
 
-function lookalikes(analysis: ModuleAnalysis, elements: ElementIndex, componentsDir: string): Finding[] {
+function lookalikes(analysis: ModuleAnalysis, elements: ElementIndex, config: { componentsDir: string; importFrom?: string }): Finding[] {
   return analysis.lookalikes.map((site) => {
     const contract = elements.contracts.get(site.resembles);
     return {
@@ -210,7 +211,7 @@ function lookalikes(analysis: ModuleAnalysis, elements: ElementIndex, components
       column: site.column,
       text: `<${site.local}>`,
       message: `${site.local} here is ${site.resolved}, not the design-system ${contract?.name ?? site.resembles}.`,
-      suggestion: `import { ${contract?.name ?? site.local} } from "${componentsDir}"`,
+      suggestion: `import { ${contract?.name ?? site.local} } from "${importSpecifier(config, site.file)}"`,
     };
   });
 }
@@ -224,6 +225,8 @@ export interface CheckInput {
   readonly tokens: TokenIndex;
   readonly rules: readonly RuleSpec[];
   readonly componentsDir: string;
+  /** How code imports the owned components; default: a relative path to componentsDir. */
+  readonly importFrom?: string;
   readonly tokenSources: readonly string[];
   /** Generated output dir: never checked (it is the token source's copy). */
   readonly generatedDir: string;
@@ -275,7 +278,7 @@ function findingsFor(rule: RuleSpec, module: ModuleInfo, input: CheckInput): Fin
     case "prop-values":
       return analysis ? propValues(analysis.usages, input.elements) : [];
     case "lookalike-component":
-      return analysis ? lookalikes(analysis, input.elements, input.componentsDir) : [];
+      return analysis ? lookalikes(analysis, input.elements, input) : [];
   }
 }
 

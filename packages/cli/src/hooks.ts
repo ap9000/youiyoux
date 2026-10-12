@@ -29,6 +29,7 @@ export interface HookTarget {
   readonly project?: string;
   readonly config?: string;
   readonly design?: string;
+  readonly root?: string;
 }
 
 export interface HookOutcome {
@@ -59,7 +60,7 @@ async function findProjectRoot(start: string): Promise<string | null> {
 async function load(target: HookTarget, near: string): Promise<Project | null> {
   const root = target.project ?? (await findProjectRoot(near));
   if (!root) return null;
-  return loadProject(root, { ...(target.config ? { configPath: target.config } : {}), ...(target.design ? { designRoot: target.design } : {}) });
+  return loadProject(root, { ...(target.config ? { configPath: target.config } : {}), ...(target.design ? { designRoot: target.design } : {}), ...(target.root ? { productRoot: target.root } : {}) });
 }
 
 /** Whether a project-relative file is one youi checks: included, not excluded, not generated output, a checked language. */

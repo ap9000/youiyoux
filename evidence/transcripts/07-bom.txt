@@ -1,0 +1,87 @@
+=== youi bom '/work'
+/work  2 files
+  src/browser/views/status-summary.tsx
+  src/browser/views/tasks-view.tsx
+────────────────────────────────────────────────────────────────
+Button          8   asChild variant=outline size=sm ×3 · variant=attention ×2 · variant=outline size=sm ×1 · asChild size=sm ×1 · asChild variant=outline ×1
+Input           1   (defaults) ×1
+Card            1   (defaults) ×1
+
+   2  components.no-native-controls
+   3  color.no-raw-color
+exit=0
+=== youi bom '/work (task detail)'
+/work (task detail)  2 files
+  src/browser/views/status-summary.tsx
+  src/browser/views/task-view.tsx
+────────────────────────────────────────────────────────────────
+Button          7   variant=attention ×2 · asChild variant=outline ×2 · variant={variant} ×1 · variant=destructive ×1 · asChild variant={card.status.headline === "Needs you" ? …} ×1
+Card            3   (defaults) ×3
+Badge           3   (defaults) ×2 · tone=info ×1
+Input           1   (defaults) ×1
+Textarea        1   (defaults) ×1
+
+   1  components.no-native-controls
+exit=0
+=== youi bom '/review'
+/review  2 files
+  src/browser/views/result-view.tsx
+  src/browser/views/status-summary.tsx
+────────────────────────────────────────────────────────────────
+Button         14   variant={variant} {...spread} ×4 · variant=outline ×2 · variant=attention ×2 · variant=outline size=sm ×1 · variant=ghost ×1
+Card            8   (defaults) ×8
+Input           3   (defaults) ×3
+Badge           1   (defaults) ×1
+
+   1  components.no-native-controls
+exit=0
+=== youi bom '/projects'
+/projects  1 file
+  src/browser/views/projects-view.tsx
+────────────────────────────────────────────────────────────────
+Button          7   asChild variant=ghost size=sm ×3 · asChild variant=outline ×2 · variant=outline size=sm ×1 · asChild variant=outline size=sm ×1
+Badge           3   tone={chip.tone} ×2 · tone=success ×1
+
+   2  components.no-native-controls
+exit=0
+=== youi bom '/settings'
+/settings  1 file
+  src/browser/views/settings-view.tsx
+────────────────────────────────────────────────────────────────
+Button         21   variant=ghost size=sm ×6 · variant=outline ×6 · (defaults) ×5 · variant=ghost ×1 · variant=destructive size=sm ×1
+Label          19   (defaults) ×19
+Input          13   (defaults) ×13
+Card            4   (defaults) ×4
+Badge           4   tone=warning ×2 · tone=attention ×1 · tone={one.state === "failing" ? "warning" : "…} ×1
+Switch          2   defaultChecked={updates.check.on} disabled={!updates.check.canManage || updates.che…} ×1 · defaultChecked={!one.muted} ×1
+
+   3  components.no-native-controls
+  10  color.no-raw-color
+exit=0
+=== youi bom '/flows'
+/flows  1 file
+  src/browser/views/flow-view.tsx
+────────────────────────────────────────────────────────────────
+Button         67   size=sm variant=outline ×20 · size=sm ×15 · size=sm variant=ghost ×13 · variant=ghost size=icon ×12 · variant=ghost size=sm ×2
+Input          48   (defaults) ×48
+Textarea       18   (defaults) ×18
+Label           3   (defaults) ×3
+Badge           3   tone=attention ×2 · tone=neutral ×1
+
+  12  tokens.no-arbitrary-values
+   8  color.no-raw-color
+   7  components.no-native-controls
+exit=0
+=== youi bom '/chat'
+/chat  2 files
+  src/browser/chat-cards.tsx
+  src/browser/views/status-summary.tsx
+────────────────────────────────────────────────────────────────
+Button          7   size=sm ×2 · variant=attention ×2 · asChild variant=outline size=sm ×1 · asChild size=sm ×1 · variant=ghost size=sm ×1
+Input           1   (defaults) ×1
+
+   1  components.no-native-controls
+exit=0
+=== youi bom '/setings'
+✖ no screen "/setings"; known: /chat, /flows, /projects, /review, /settings, /work, /work (task detail)
+exit=1
