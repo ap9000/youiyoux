@@ -102,10 +102,11 @@ function ScreenGrid({ model, index, screens }: { model: Model; index: UsageIndex
               </summary>
               {screens.unattributed.total > 0 && <p className="mt-1">{issueBreakdown(screens.unattributed).join(", ")}</p>}
               <ul className="mt-3 space-y-3">
-                {screens.unattributedFiles.map(({ project, file, reason }) => (
+                {screens.unattributedFiles.map(({ project, file, sites, reason }) => (
                   <li key={`${project}:${file}`}>
                     <code className="font-mono text-mono-sm break-all text-ink-2">{project}/{file}</code>
-                    <p>{reason}</p>
+                    {sites > 0 && <span className="ml-2 inline-block">{sites} {sites === 1 ? "site" : "sites"}</span>}
+                    <p className="break-words">{reason}</p>
                   </li>
                 ))}
               </ul>

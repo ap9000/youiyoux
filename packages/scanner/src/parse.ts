@@ -36,6 +36,8 @@ export interface ModuleInfo {
   readonly imports: readonly ImportBinding[];
   /** Static imports and re-exports that can run, including side-effect imports; no type-only edges. */
   readonly runtimeSpecifiers: readonly string[];
+  /** Literal import(), require() and CSS @import dependencies. */
+  readonly dynamicSpecifiers: readonly string[];
   readonly exports: readonly ExportEntry[];
   /** `export * from "…"` specifiers, in order. */
   readonly starExports: readonly string[];
@@ -105,6 +107,31 @@ function runtimeSpecifiersOf(root: SgNode): string[] {
   return [...specifiers];
 }
 
+function dynamicSpecifiersOf(root: SgNode): string[] {
+  const specifiers = new Set<string>();
+  for (const call of root.findAll({ rule: { kind: "call_expression" } })) {
+    const callee = call.field("function")?.text();
+    if (callee !== "import" && callee !== "require") continue;
+    const args = call.field("arguments")?.children().filter((node) => node.isNamed() && node.kind() !== "comment") ?? [];
+    if ((callee === "import" || args.length === 1) && args[0]?.kind() === "string") specifiers.add(unquote(args[0].text()));
+  }
+  return [...specifiers];
+}
+
+function cssSpecifiersOf(source: string): string[] {
+  const specifiers = new Set<string>();
+  // Consume comments and ordinary strings too, so text resembling an @import
+  // inside either one cannot create a dependency.
+  const imports = /\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|@import\s+(?:["']([^"']+)["']|url\(\s*(?:["']([^"']+)["']|([^\s)]+))\s*\))/gi;
+  for (const match of source.matchAll(imports)) {
+    const specifier = match[1] ?? match[2] ?? match[3];
+    if (!specifier) continue;
+    // CSS filenames are relative even without "./"; package imports stay external.
+    specifiers.add(/^[^./@~#][^:]*\.css$/.test(specifier) ? `./${specifier}` : specifier);
+  }
+  return [...specifiers];
+}
+
 function declaredNames(node: SgNode): string[] {
   const kind = node.kind();
   if (kind === "function_declaration" || kind === "class_declaration" || kind === "generator_function_declaration") {
@@ -141,7 +168,7 @@ function exportsOf(root: SgNode): { exports: ExportEntry[]; starExports: string[
     }
     const clause = statement.find({ rule: { kind: "export_clause" } });
     if (!clause) {
-      if (source && /^export\s+\*\s+from/.test(statement.text())) starExports.push(unquote(source.text()));
+      if (source && /^export\s+(?:type\s+)?\*\s+from/.test(statement.text())) starExports.push(unquote(source.text()));
       continue;
     }
     for (const spec of clause.findAll({ rule: { kind: "export_specifier" } })) {
@@ -181,7 +208,7 @@ export async function parseModule(file: string, source: string): Promise<ModuleI
     // Stylesheets are read by youi's custom-property reader (tokens/css.ts); tree-sitter-css
     // rejects Tailwind at-rules (@theme, @custom-variant), so its errors say nothing here.
     const parseErrors = 0;
-    return { file, lang, source, root, imports: [], runtimeSpecifiers: [], exports: [], starExports: [], declarations: new Set(), jsx: [], parseErrors };
+    return { file, lang, source, root, imports: [], runtimeSpecifiers: [], dynamicSpecifiers: cssSpecifiersOf(source), exports: [], starExports: [], declarations: new Set(), jsx: [], parseErrors };
   }
   const parseErrors = top.findAll({ rule: { kind: "ERROR" } }).length;
   const { exports, starExports } = exportsOf(top);
@@ -192,6 +219,7 @@ export async function parseModule(file: string, source: string): Promise<ModuleI
     root,
     imports: importsOf(top),
     runtimeSpecifiers: runtimeSpecifiersOf(top),
+    dynamicSpecifiers: dynamicSpecifiersOf(top),
     exports,
     starExports,
     declarations: topLevelDeclarations(top),

@@ -2,9 +2,8 @@
  * Screens: every routed screen of every project, the elements it renders, the issues
  * in the files that make it up, and its captured screenshot.
  *
- * Issues reach a screen through files: a violation, lookalike or unresolved site belongs
- * to the routes the usage map gives that file's element sites. Issues in a file with no
- * element site (shared helpers, CSS) are counted as not attributed rather than guessed.
+ * Issues use the scanner's fileRoutes map, including files with no element sites.
+ * Unrouted sites and issues share one list, with the scanner's reason for each file.
  */
 import type { ElementId, Manifest, ProjectShots, ScanReport, ScreenShot } from "./types.ts";
 import { EVERY_SCREEN, type ProjectLookalike, type ProjectUnknown, type ProjectViolation, type Site, UNROUTED, type UsageIndex } from "./usage.ts";
@@ -87,11 +86,11 @@ export interface ScreenIndex {
 export interface UnattributedFile {
   readonly project: string;
   readonly file: string;
+  readonly sites: number;
   readonly reason: string;
 }
 
-const routeRank = (route: string): number => (route === EVERY_SCREEN ? 0 : route === UNROUTED ? 2 : 1);
-const routesOfSite = (site: Site): readonly string[] => (site.routes.length > 0 ? site.routes : [UNROUTED]);
+const routeRank = (route: string): number => (route === EVERY_SCREEN ? 0 : 1);
 
 export function projectShots(manifest: Manifest): Map<string, ProjectShots> {
   const shots = new Map<string, ProjectShots>();
@@ -125,8 +124,9 @@ class ScreenDraft {
 function projectScreens(report: ScanReport, sites: readonly Site[], shots: ProjectShots | undefined): { screens: Screen[]; unattributed: IssueCounts; unattributedFiles: UnattributedFile[] } {
   const { project } = report;
   const unattributedFiles = new Map<string, UnattributedFile>();
-  const unplaced = (file: string, reason?: string): void => {
-    unattributedFiles.set(file, { project, file, reason: report.fileRoutes?.[file]?.routeReason ?? reason ?? "This scan has no route information for this file. Scan the project again." });
+  const unplaced = (file: string, siteCount = 0, reason?: string): void => {
+    const existing = unattributedFiles.get(file);
+    unattributedFiles.set(file, { project, file, sites: (existing?.sites ?? 0) + siteCount, reason: report.fileRoutes?.[file]?.routeReason ?? existing?.reason ?? reason ?? "This scan has no route information for this file. Scan the project again." });
   };
   const drafts = new Map<string, ScreenDraft>();
   const draft = (route: string): ScreenDraft => {
@@ -138,8 +138,8 @@ function projectScreens(report: ScanReport, sites: readonly Site[], shots: Proje
   };
 
   for (const site of sites) {
-    if (site.routes.length === 0) unplaced(site.file, site.routeReason);
-    for (const route of routesOfSite(site)) {
+    if (site.routes.length === 0) unplaced(site.file, 1, site.routeReason);
+    for (const route of site.routes) {
       const d = draft(route);
       d.sites++;
       d.element(site.element).sites.push(site);
@@ -149,18 +149,18 @@ function projectScreens(report: ScanReport, sites: readonly Site[], shots: Proje
   const lost = { violations: [] as ProjectViolation[], lookalikes: [] as ProjectLookalike[], unresolved: [] as ProjectUnknown[] };
   for (const violation of report.violations) {
     const entry = { ...violation, project };
-    const routes = report.fileRoutes?.[violation.file]?.routes ?? violation.routes;
+    const routes = report.fileRoutes?.[violation.file]?.routes;
     if (!routes?.length) {
       lost.violations.push(entry);
-      unplaced(violation.file, violation.routeReason);
+      unplaced(violation.file);
     } else for (const route of routes) draft(route).violations.push(entry);
   }
   for (const lookalike of report.lookalikes) {
     const entry = { ...lookalike, project };
-    const routes = report.fileRoutes?.[lookalike.file]?.routes ?? lookalike.routes;
+    const routes = report.fileRoutes?.[lookalike.file]?.routes;
     if (!routes?.length) {
       lost.lookalikes.push(entry);
-      unplaced(lookalike.file, lookalike.routeReason);
+      unplaced(lookalike.file);
     } else
       for (const route of routes) {
         draft(route).lookalikes.push(entry);
@@ -169,10 +169,10 @@ function projectScreens(report: ScanReport, sites: readonly Site[], shots: Proje
   }
   for (const unknown of report.unknowns) {
     const entry = { ...unknown, project };
-    const routes = report.fileRoutes?.[unknown.file]?.routes ?? unknown.routes;
+    const routes = report.fileRoutes?.[unknown.file]?.routes;
     if (!routes?.length) {
       lost.unresolved.push(entry);
-      unplaced(unknown.file, unknown.routeReason);
+      unplaced(unknown.file);
     } else
       for (const route of routes) {
         draft(route).unresolved.push(entry);

@@ -78,8 +78,11 @@ Issues reach a screen through the scanner's file-to-route map, even when a file 
 | `map` | Files matched by each map entry and their imported files |
 | `shell` | Matching files and their imports belong to the app shell (`*`) |
 | `none` | No routes inferred; explicit shell entries still apply |
+| Import edges | Static imports, re-exports, literal `import()` (including `lazy`), `require()` and CSS `@import` are followed |
+| Route boundaries | Walks stop at other screen or shell files, except when forwarding a default component |
+| Finding routes | Violations, lookalikes and unresolved sites look up their file in `fileRoutes`; they do not repeat route lists |
 
-The usage map saves `fileRoutes` for every scanned file and route details on each finding. Static imports (including stylesheets) and re-exports are followed within the scan's include/exclude set; type-only imports are left out. Focused scans explain that routes were not checked.
+The usage map saves `fileRoutes` for every scanned file. Imports stay within the scan's include/exclude set; type-only imports are left out. Unrouted reasons explain what imports the file and how to place it; global stylesheets can go in `routes.shell`. Focused scans explain that routes were not checked.
 
 ## Preview deploys
 

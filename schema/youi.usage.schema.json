@@ -288,28 +288,6 @@
             "exclusiveMinimum": 0,
             "maximum": 9007199254740991
           },
-          "routes": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "routeSource": {
-            "type": "string",
-            "enum": [
-              "route-file",
-              "imported-by",
-              "shell",
-              "unrouted"
-            ]
-          },
-          "via": {
-            "type": "string"
-          },
-          "routeReason": {
-            "type": "string",
-            "minLength": 1
-          },
           "name": {
             "type": "string"
           },
@@ -366,28 +344,6 @@
             "exclusiveMinimum": 0,
             "maximum": 9007199254740991
           },
-          "routes": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "routeSource": {
-            "type": "string",
-            "enum": [
-              "route-file",
-              "imported-by",
-              "shell",
-              "unrouted"
-            ]
-          },
-          "via": {
-            "type": "string"
-          },
-          "routeReason": {
-            "type": "string",
-            "minLength": 1
-          },
           "resembles": {
             "type": "string",
             "pattern": "^youi:([a-z][a-z0-9-]*)\\/(token|component|rule|migration)\\/([a-z0-9][a-z0-9.\\-]*)$"
@@ -426,28 +382,6 @@
             "type": "integer",
             "exclusiveMinimum": 0,
             "maximum": 9007199254740991
-          },
-          "routes": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "routeSource": {
-            "type": "string",
-            "enum": [
-              "route-file",
-              "imported-by",
-              "shell",
-              "unrouted"
-            ]
-          },
-          "via": {
-            "type": "string"
-          },
-          "routeReason": {
-            "type": "string",
-            "minLength": 1
           },
           "rule": {
             "type": "string",

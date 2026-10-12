@@ -1,7 +1,7 @@
 /** `youi scan`: discover → parse (ast-grep, in parallel) → resolve identity → attribute routes → check. */
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { findFiles, readTextOrNull, sha256, shortHash, type CheckIdentity, type ScanReport, type UnknownSite, type UsageSite, type Lookalike, type Violation } from "@youiyoux/core";
+import { findFiles, readTextOrNull, sha256, shortHash, type CheckIdentity, type ScanReport, type UnknownSite, type UsageSite, type Lookalike } from "@youiyoux/core";
 import { buildTokens } from "@youiyoux/tokens";
 import type { ScanCache } from "./cache.ts";
 import { checkInputFor } from "./capabilities.ts";
@@ -123,8 +123,8 @@ export async function scanProject(project: Project, options: ScanOptions = {}): 
   const lookalikes: Lookalike[] = [];
   for (const analysis of analyses.values()) {
     for (const usage of analysis.usages) usages.push({ ...usage, ...routes.of(usage.file) });
-    for (const unknown of analysis.unknowns) unknowns.push({ ...unknown, ...routes.of(unknown.file) });
-    for (const lookalike of analysis.lookalikes) lookalikes.push({ ...lookalike, ...routes.of(lookalike.file) });
+    unknowns.push(...analysis.unknowns);
+    lookalikes.push(...analysis.lookalikes);
   }
   const { violations, suppressed, checks } = runChecks(checkInputFor(project, { modules: scanned, analyses, elements, tokens }, project.system.rules));
 
@@ -146,7 +146,7 @@ export async function scanProject(project: Project, options: ScanOptions = {}): 
     fileRoutes: Object.fromEntries(files.map((file) => [file, routes.of(file)])),
     unknowns: unknowns.sort(byPosition),
     lookalikes: lookalikes.sort(byPosition),
-    violations: violations.map((violation): Violation => ({ ...violation, ...routes.of(violation.file) })).sort(byPosition),
+    violations: violations.sort(byPosition),
     suppressed,
     checks,
   };

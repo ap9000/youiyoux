@@ -52,6 +52,19 @@ function routeEntries(files: readonly string[], config: RouteConfig): Map<string
   return entries;
 }
 
+/** A route may forward its default component through another route entry. */
+function defaultTargets(module: ModuleInfo, graph: ModuleGraph): Set<string> {
+  const targets = new Set<string>();
+  for (const entry of module.exports) {
+    if (entry.name !== "default") continue;
+    const specifier = entry.kind === "reexport" ? entry.specifier : module.imports.find((i) => i.local === entry.local && !i.typeOnly)?.specifier;
+    if (!specifier || !module.runtimeSpecifiers.includes(specifier)) continue;
+    const target = graph.resolveSpecifier(specifier, module.file);
+    if (target.kind === "file") targets.add(target.file);
+  }
+  return targets;
+}
+
 export class RouteIndex {
   private readonly attribution = new Map<string, RouteAttribution>();
   private readonly unroutedReason: string;
@@ -68,28 +81,35 @@ export class RouteIndex {
     const files = [...modules.keys()].sort();
     const scanned = new Set(files);
     const entries = routeEntries(files, config);
+    const dependencies = new Map(files.map((file) => {
+      const module = modules.get(file);
+      return [file, module ? graph.dependencies(module, { runtimeOnly: true }).filter((f) => scanned.has(f)) : []];
+    }));
+    const defaults = new Map(files.map((file) => [file, modules.get(file) ? defaultTargets(modules.get(file)!, graph) : new Set<string>()]));
     const reached = new Map<string, { routes: Set<string>; via: string; shellOnly: boolean }>();
-    // Screens first, so a component a screen imports is attributed to that screen; shells
-    // do not traverse into route files (an app shell imports every screen).
+    // Screens first, so shared components name a screen as their attribution source.
     const ordered = [...entries].sort(([, a], [, b]) => Number(a.shell) - Number(b.shell));
     for (const [entryFile, entry] of ordered) {
-      const stack = [entryFile];
+      const stack = [{ file: entryFile, viaDefault: false }];
       const visited = new Set<string>();
       while (stack.length > 0) {
-        const file = stack.pop()!;
+        const { file, viaDefault } = stack.pop()!;
+        // Importing a helper from another route does not render that route. Check
+        // before marking visited: a later default re-export may still reach it.
+        if (file !== entryFile && entries.has(file) && !viaDefault) continue;
         if (visited.has(file)) continue;
         visited.add(file);
-        if (entry.shell && file !== entryFile && entries.has(file) && !entries.get(file)!.shell) continue;
         if (file !== entryFile) {
           const record = reached.get(file) ?? { routes: new Set<string>(), via: entryFile, shellOnly: true };
           for (const route of entry.routes) record.routes.add(route);
           if (!entry.shell) record.shellOnly = false;
           reached.set(file, record);
         }
-        // Keep route attribution within the configured scan boundary, even when symbol
-        // resolution later loads other files on demand.
-        const module = scanned.has(file) ? modules.get(file) : null;
-        if (module) stack.push(...graph.dependencies(module, { runtimeOnly: true }));
+        // Dependencies stay within the scan boundary, even when symbol resolution
+        // later loads other files on demand.
+        for (const dependency of dependencies.get(file) ?? []) {
+          stack.push({ file: dependency, viaDefault: defaults.get(file)?.has(dependency) ?? false });
+        }
       }
     }
     for (const [file, entry] of entries) {
@@ -98,6 +118,31 @@ export class RouteIndex {
     for (const [file, record] of reached) {
       if (index.attribution.has(file)) continue;
       index.attribution.set(file, { routes: [...record.routes].sort(), routeSource: record.shellOnly ? "shell" : "imported-by", via: record.via });
+    }
+    const importers = new Map<string, { runtime: string[]; typeOnly: string[] }>();
+    for (const file of files) {
+      const module = modules.get(file);
+      if (!module) continue;
+      const runtime = new Set(dependencies.get(file));
+      for (const dependency of graph.dependencies(module)) {
+        if (!scanned.has(dependency)) continue;
+        const record = importers.get(dependency) ?? { runtime: [], typeOnly: [] };
+        (runtime.has(dependency) ? record.runtime : record.typeOnly).push(file);
+        importers.set(dependency, record);
+      }
+    }
+    for (const file of files) {
+      if (index.attribution.has(file)) continue;
+      const incoming = importers.get(file);
+      const reason = incoming?.runtime.length
+        ? `Only files not on any screen import this file, including ${incoming.runtime[0]}.`
+        : incoming?.typeOnly.length
+          ? `Only type imports reach this file, including from ${incoming.typeOnly[0]}; they do not render it.`
+          : "No scanned file imports this file.";
+      const fix = file.endsWith(".css")
+        ? "Import it from a route; for global styles, add it to routes.shell in youi.project.json."
+        : "Import it from a route, or add it to routes.map or routes.shell in youi.project.json.";
+      index.attribution.set(file, { routes: [], routeSource: "unrouted", routeReason: `${reason} ${fix}` });
     }
     return index;
   }

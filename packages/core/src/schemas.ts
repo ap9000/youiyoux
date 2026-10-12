@@ -248,9 +248,6 @@ export const RouteAttribution = z.object({
 });
 export type RouteAttribution = z.infer<typeof RouteAttribution>;
 
-// Older usage maps and checks run without a project have no route attribution.
-const FindingPosition = Position.extend(RouteAttribution.partial().shape);
-
 export const UsageSite = Position.extend(RouteAttribution.shape).extend({
   element: ElementId,
   /** render: `<Button>`; variants: `buttonVariants()` applied elsewhere; reference: passed as a value. */
@@ -264,7 +261,7 @@ export const UsageSite = Position.extend(RouteAttribution.shape).extend({
 });
 export type UsageSite = z.infer<typeof UsageSite>;
 
-export const UnknownSite = FindingPosition.extend({
+export const UnknownSite = Position.extend({
   name: z.string(),
   reason: z.enum(["unresolved-import", "external-module", "dynamic-component", "namespace-member", "parse-error", "unresolved-export"]),
   detail: z.string(),
@@ -273,7 +270,7 @@ export const UnknownSite = FindingPosition.extend({
 });
 export type UnknownSite = z.infer<typeof UnknownSite>;
 
-export const Lookalike = FindingPosition.extend({
+export const Lookalike = Position.extend({
   /** The design-system element whose name this shares. */
   resembles: ElementId,
   local: z.string(),
@@ -281,7 +278,7 @@ export const Lookalike = FindingPosition.extend({
 });
 export type Lookalike = z.infer<typeof Lookalike>;
 
-export const Violation = FindingPosition.extend({
+export const Violation = Position.extend({
   rule: ElementId,
   severity: z.enum(["error", "warn"]),
   message: z.string(),
