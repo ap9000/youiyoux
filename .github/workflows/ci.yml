@@ -37,6 +37,10 @@ jobs:
         env:
           YOUI_DETECT_SITE: "1"
 
+      # The hub's specimen and Try it tests draw in the headless shell of the hub's own playwright-core,
+      # which may be a different build from the one youi detect downloads.
+      - name: Headless shell for the hub's browser tests
+        run: pnpm --filter @youiyoux/web exec playwright-core install chromium-headless-shell
       - name: Web tests
         run: pnpm --filter @youiyoux/web test
       - name: Web typecheck and build
