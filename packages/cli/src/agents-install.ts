@@ -30,7 +30,7 @@ const CODEX_CONFIG = ".codex/config.toml";
 
 export interface AgentsResult {
   readonly file: string;
-  readonly action: "created" | "updated" | "unchanged" | "removed";
+  readonly action: "created" | "updated" | "unchanged" | "removed" | "skipped";
   /** What this entry does and does not guarantee. */
   readonly guarantee: string;
 }

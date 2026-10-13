@@ -4,7 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
-import { githubSlug, hookCommand, installClaudeHook, installPreCommit, main, runClaudeHook, runPreCommitHook, shellQuote, workflowText } from "../src/index.ts";
+import { loadProject } from "@youiyoux/scanner";
+import { githubSlug, hookCommand, installClaudeHook, installPreCommit, installWorkflow, main, runClaudeHook, runPreCommitHook, shellQuote, workflowText } from "../src/index.ts";
+import { addDrift, cli, driftFixture, repoModeWithOldFailures, type Fixture } from "./drift-fixture.ts";
 
 const run = promisify(execFile);
 const EXAMPLES = join(import.meta.dirname, "../../../examples");
@@ -17,6 +19,14 @@ let app = "";
 const git = (...args: string[]) => run("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { cwd: app });
 const payload = (file: string) => JSON.stringify({ hook_event_name: "PostToolUse", tool_name: "Write", cwd: app, tool_input: { file_path: file } });
 const contextOf = (stdout: string): string => (JSON.parse(stdout) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext;
+
+/** A clean component edit: only the pass line and how to see it, no findings, drift or older debt. */
+function expectOnlySeeIt(stdout: string, file: string): void {
+  const context = contextOf(stdout);
+  expect(context.startsWith(`youi: ${file} passes the design-system check. See it: youi render `)).toBe(true);
+  expect(context).not.toMatch(/Fix:|older findings|incomplete|#ff0000|parse/);
+  expect(context.split("\n")).toHaveLength(1);
+}
 
 // Git must not see the developer's own configuration (a global core.hooksPath would redirect installs).
 const savedEnv = { ...process.env };
@@ -53,7 +63,7 @@ describe("Claude Code PostToolUse hook", () => {
     expect(outcome.exitCode).toBe(0);
     const context = contextOf(outcome.stdout);
     expect(context).toContain("advisory");
-    expect(context).toMatch(/components\/extra file\.tsx:2:\d+ error color\.no-raw-color/);
+    expect(context).toMatch(/components\/extra file\.tsx:2:\d+ rule color\.no-raw-color/);
     expect(context).not.toContain("invite-form");
   });
 
@@ -87,7 +97,7 @@ describe("Claude Code PostToolUse hook", () => {
     await writeFile(settings, `${await readFile(settings, "utf8")}\nexport const Bad = () => <p style={{ color: "#00ff00" }} />;\n`);
     const context = contextOf((await runClaudeHook(payload(settings))).stdout);
     expect(context).toContain("#00ff00");
-    expect(context).toContain("1 older ones in this file are baselined");
+    expect(context).toContain("1 older findings on unchanged lines omitted");
   });
 });
 
@@ -196,4 +206,161 @@ describe("hooks install", () => {
     expect(text).toContain("check --baseline --format github --project . --design .youi-ci/design --config .youi-ci/design/pilots/acme-app/youi.project.json --root .\n");
     expect(text).not.toContain("''");
   });
+});
+
+describe("drift findings reach the agent after a UI edit", () => {
+  let fixture: Fixture;
+  beforeEach(async () => {
+    fixture = await driftFixture();
+  }, 60_000);
+  afterEach(async () => {
+    await rm(fixture.dir, { recursive: true, force: true });
+  });
+  const edit = (file: string) => JSON.stringify({ hook_event_name: "PostToolUse", tool_name: "Write", cwd: fixture.app, tool_input: { file_path: file } });
+
+  test("Claude Code PostToolUse: the edited file's drift, each with its fix, as additional context; exits 0", async () => {
+    await addDrift(fixture.app);
+    const promo = await runClaudeHook(edit("components/promo.tsx"));
+    expect(promo.exitCode).toBe(0);
+    const context = contextOf(promo.stdout);
+    expect(context).toContain("advisory");
+    expect(context).toMatch(/components\/promo\.tsx:1:1 off-library import: .*MUI.* Fix: import \{ Button \} from "@\/components\/ui"/);
+    expect(context).toMatch(/components\/promo\.tsx:2:1 off-library import: .* Fix: use the dialog from "@radix-ui\/react-dialog" instead/);
+    expect(context).toMatch(/components\/promo\.tsx:6:\d+ hardcoded value \(also rule tokens\.no-arbitrary-values\): .* Fix: use rounded-control \(radius\.control, var\(--demo-radius-control\)\)/);
+    expect(context).toContain("Fix: use p-[var(--demo-space-md)] (space.md)");
+    expect(context).toContain("Fix: use var(--demo-color-brand) (color.brand)");
+    // Only the edited file.
+    expect(context).not.toContain("quiet-button");
+    expect(context).not.toContain("app/index.tsx");
+
+    const quiet = contextOf((await runClaudeHook(edit(join(fixture.app, "components/quiet-button.tsx")))).stdout);
+    expect(quiet).toMatch(/components\/quiet-button\.tsx:3:1 near-duplicate: QuietButton is a new button that looks like the existing Button variant="ghost".* Fix: use <Button variant="ghost"> from "@\/components\/ui"/);
+  });
+
+  test("an edit that adds no drift adds nothing; the demo's committed violations are not drift", async () => {
+    const settings = join(fixture.app, "app/settings/index.tsx");
+    await writeFile(settings, (await readFile(settings, "utf8")).replace("<Button>Save</Button>", "<Button>Save now</Button>"));
+    expectOnlySeeIt((await runClaudeHook(edit("app/settings/index.tsx"))).stdout, "app/settings/index.tsx");
+  });
+
+  test("one edited line does not flood the agent with committed violations; clean edits are silent", async () => {
+    const file = join(fixture.app, "components/flood.tsx");
+    const old = 'export const Flood = () => <div>\n' + Array.from({length: 28}, (_, n) => `<p style={{ color: "#ff0000" }}>Old ${n}</p>`).join("\n") + '\n<p>Change me</p>\n</div>;\n';
+    await writeFile(file, old);
+    await fixture.git("add", "components/flood.tsx");
+    await fixture.git("commit", "-qm", "old debt");
+    const input = JSON.stringify({ cwd: fixture.app, tool_input: { file_path: file } });
+    await writeFile(file, old.replace("Change me", "Clean edit"));
+    expectOnlySeeIt((await runClaudeHook(input)).stdout, "components/flood.tsx");
+    await fixture.git("add", "components/flood.tsx");
+    expect((await runPreCommitHook({project: fixture.app}, {strict: true})).exitCode).toBe(0);
+    await writeFile(file, old.replace('<p>Change me</p>', '<p style={{ color: "#00ff00" }}>New</p>'));
+    const context = contextOf((await runClaudeHook(input)).stdout);
+    expect(context).toContain("#00ff00");
+    expect(context).not.toContain("#ff0000");
+    expect(context.match(/28 older findings/g)).toHaveLength(1);
+    const checked = await cli(["check", "--diff", "--project", fixture.app, "--json"]);
+    expect(JSON.parse(checked.out).findings.map((f: {line: number}) => f.line)).toEqual([30]);
+    const text = await cli(["check", "--diff", "--project", fixture.app]);
+    expect(text.out).not.toContain("#ff0000");
+  });
+
+  test("repo mode clean UI edits are silent despite untouched parse failures", async () => {
+    await repoModeWithOldFailures(fixture);
+    const home = join(fixture.app, "app/index.tsx");
+    await writeFile(home, (await readFile(home, "utf8")).replace("Projects</h1>", "My projects</h1>"));
+    const outcome = await runClaudeHook(edit("app/index.tsx"));
+    expect(outcome.exitCode).toBe(0);
+    expectOnlySeeIt(outcome.stdout, "app/index.tsx");
+  });
+
+  test("repo mode installs hooks and sends drift back after an edit without a project config", async () => {
+    await rm(join(fixture.app, "youi.project.json"));
+    await writeFile(join(fixture.app, "theme.css"), ':root { --color-brand: #4f46e5; --radius-card: 8px; }\n');
+    await fixture.git("add", "-A");
+    await fixture.git("commit", "-qm", "repo mode");
+    await writeFile(join(fixture.app, "AGENTS.md"), "# Project guidance\nKeep this text.\n");
+    const installed = await cli(["hooks", "install", "--claude", "--git", "--project", fixture.app, "--json"]);
+    expect(installed.code).toBe(0);
+    expect(await readFile(join(fixture.app, ".claude/settings.local.json"), "utf8")).toContain("--project");
+    const agents = await readFile(join(fixture.app, "AGENTS.md"), "utf8");
+    // The same youi the pre-commit hook runs, by absolute path: `youi` is usually not on an agent's PATH.
+    const youiJs = join(import.meta.dirname, "../bin/youi.js");
+    expect(agents).toContain(`After UI edits, run \`node ${youiJs} check --diff\``);
+    expect(await readFile(join(fixture.app, ".git/hooks/pre-commit"), "utf8")).toContain(`node ${youiJs} hooks run pre-commit`);
+    expect(agents).toContain("Keep this text.");
+    await cli(["hooks", "install", "--git", "--project", fixture.app]);
+    expect(await readFile(join(fixture.app, "AGENTS.md"), "utf8")).toBe(agents);
+    await addDrift(fixture.app);
+    const input = (file: string) => JSON.stringify({cwd: fixture.app, tool_input: {file_path: file}});
+    const context = contextOf((await runClaudeHook(input("components/promo.tsx"))).stdout);
+    expect(context).toContain("var(--color-brand)");
+    expect(context).toContain("var(--radius-card)");
+    expect(context).toContain("off-library");
+    expect(contextOf((await runClaudeHook(input("components/quiet-button.tsx"))).stdout)).toContain("near-duplicate");
+    await fixture.git("add", "components/promo.tsx");
+    await writeFile(join(fixture.app, "components/promo.tsx"), "export const Promo = () => <p>Fixed only in working tree</p>;\n");
+    const staged = await runPreCommitHook({project: fixture.app}, {strict: true});
+    expect(staged.exitCode).toBe(1);
+    expect(staged.stdout).toContain("var(--color-brand)");
+  });
+
+  test("outside git the hook explains why lines cannot be isolated without listing old findings", async () => {
+    await rm(join(fixture.app, ".git"), {recursive: true});
+    const context = contextOf((await runClaudeHook(JSON.stringify({cwd: fixture.app, tool_input: {file_path: "app/index.tsx"}}))).stdout);
+    expect(context).toContain("git init");
+    expect(context).not.toContain("#c62828");
+  });
+
+  test("git pre-commit: the staged drift, with fixes; --strict blocks the commit", async () => {
+    await addDrift(fixture.app);
+    await fixture.git("add", "-A");
+    const advisory = await runPreCommitHook({ project: fixture.app });
+    expect(advisory.exitCode).toBe(0);
+    expect(advisory.stdout).toContain('components/quiet-button.tsx:3:1 near-duplicate: QuietButton is a new button that looks like the existing Button variant="ghost"');
+    expect(advisory.stdout).toContain('Fix: use <Button variant="ghost"> from "@/components/ui"');
+    expect(advisory.stdout).toContain('components/promo.tsx:1:1 off-library import');
+    expect(advisory.stdout).toContain("Fix: use text-danger (color.danger)");
+    const strict = await runPreCommitHook({ project: fixture.app }, { strict: true });
+    expect(strict.exitCode).toBe(1);
+    expect(strict.stdout).toContain("commit blocked");
+  });
+
+  test("hooks install: Codex is covered by pre-commit and AGENTS.md, said plainly; sync tells agents to run check --diff", async () => {
+    const { code, out } = await cli(["hooks", "install", "--git", "--json", "--project", fixture.app]);
+    expect(code).toBe(0);
+    const codex = (JSON.parse(out) as Array<{ kind: string; action: string; file: string; guarantee: string }>).find((r) => r.kind === "Codex");
+    expect(codex).toMatchObject({ action: "skipped", file: join(fixture.app, "AGENTS.md") });
+    expect(codex?.guarantee).toMatch(/pre-commit/);
+    expect(await readFile(join(fixture.app, "AGENTS.md"), "utf8")).toContain("youi check --diff");
+  });
+
+  test("CI: --diff adds a pull-request step that fails on drift; reinstalling keeps it and changes nothing", async () => {
+    const remote = async (cwd: string, slug: string) => {
+      const g = (...args: string[]) => run("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { cwd });
+      await g("init", "-q");
+      await g("add", "-A");
+      await g("commit", "-qm", "init", "--allow-empty");
+      await g("remote", "add", "origin", `https://github.com/${slug}.git`);
+    };
+    const tool = join(fixture.dir, "tool");
+    await mkdir(tool);
+    await remote(tool, "acme/youiyoux");
+    await remote(join(fixture.dir, "demo-design"), "acme/demo-design");
+    await fixture.git("remote", "add", "origin", "https://github.com/acme/demo-app.git");
+    const project = await loadProject(fixture.app);
+    const first = await installWorkflow(project, tool, { project: fixture.app }, false, { diff: true });
+    const text = await readFile(first.file, "utf8");
+    expect(text).toContain("fetch-depth: 0");
+    expect(text).toContain("YOUI_BASE: ${{ github.base_ref }}");
+    expect(text).toContain('check --diff "origin/$YOUI_BASE" --strict --format github --project . --design .youi-ci/design');
+    expect(first.guarantee).toContain("drift");
+    expect((await installWorkflow(project, tool, { project: fixture.app }, false)).action).toBe("unchanged");
+  });
+});
+
+test("the CI workflow has no diff step unless asked", () => {
+  const text = workflowText({ tool: { slug: "acme/youiyoux", commit: "a".repeat(40) }, design: { slug: "acme/acme-design", commit: "b".repeat(40) }, projectDir: ".", configPath: null });
+  expect(text).not.toContain("--diff");
+  expect(text).not.toContain("fetch-depth");
 });

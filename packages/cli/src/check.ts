@@ -7,6 +7,7 @@
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { Baseline, readDefinition, readTextOrNull, writeFileAtomic, type CheckIdentity, type RuleRun, type Violation } from "@youiyoux/core";
 import { BASELINE_FILE, compareToBaseline, createBaseline, failedChecks, PROJECT_FILE, ratchetBaseline, scanProject, type BaselineComparison, type Project, type ScanCache, type ScanResult } from "@youiyoux/scanner";
+import { analyseChange, type ChangeSet, type DiffReport } from "./check-diff.ts";
 import { verifyLock, verifyWiring, type LockIssue } from "./sync.ts";
 
 export interface CheckOptions {
@@ -23,6 +24,8 @@ export interface CheckOptions {
   /** Verify the lockfile and generated-file wiring (default true; hooks skip it). */
   readonly lock?: boolean;
   readonly cache?: ScanCache;
+  /** Also report what this change adds (`youi check --diff`): its files are the scope unless `files` is given, its staged sources the content. */
+  readonly diff?: ChangeSet;
 }
 
 export interface CheckResult {
@@ -42,7 +45,12 @@ export interface CheckResult {
   /** What fails the check: errors (beyond the baseline, when there is one) plus lockfile errors. */
   readonly errors: number;
   readonly incomplete: boolean;
+  /** What the change adds that drifts from the System, when `diff` was given. */
+  readonly diff: DiffReport | null;
 }
+
+/** Common diff output for configured projects and inferred repositories. */
+export type DiffCheckResult = Pick<CheckResult, "diff" | "incomplete" | "unmatched" | "failed" | "notRun"> & { readonly identity: CheckIdentity | null };
 
 export const toProjectPath = (project: Project, file: string): string => relative(project.root, resolve(file)).split(sep).join("/");
 
@@ -57,8 +65,10 @@ export async function readBaseline(file: string): Promise<Baseline | null> {
 }
 
 export async function runCheck(project: Project, options: CheckOptions = {}): Promise<CheckResult> {
-  const scope = options.files ? new Set(options.files.map((f) => toProjectPath(project, f))) : null;
-  const scan = await scanProject(project, { ...(scope ? { focus: [...scope] } : {}), ...(options.overrides ? { overrides: options.overrides } : {}), ...(options.cache ? { cache: options.cache } : {}) });
+  const { diff } = options;
+  const scope = options.files ? new Set(options.files.map((f) => toProjectPath(project, f))) : diff ? new Set(diff.added.keys()) : null;
+  const overrides = { ...diff?.sources, ...options.overrides };
+  const scan = await scanProject(project, { ...(scope ? { focus: [...scope] } : {}), ...(Object.keys(overrides).length > 0 ? { overrides } : {}), ...(options.cache ? { cache: options.cache } : {}) });
   const { report } = scan;
   const checked = new Set(scan.files);
   const unmatched = scope ? [...scope].filter((f) => !checked.has(f)) : [];
@@ -66,14 +76,15 @@ export async function runCheck(project: Project, options: CheckOptions = {}): Pr
   const wantedRule = (id: string): boolean => !options.rule || id.endsWith(`/rule/${options.rule}`);
   const violations = report.violations.filter((v) => wantedRule(v.rule) && (!options.quiet || v.severity === "error"));
   const notRun = failedChecks(report.checks).filter((c) => wantedRule(c.rule));
-  const lock = options.lock === false ? null : await lockIssues(project);
+  const lock = options.lock === false || (diff && options.lock !== true) ? null : await lockIssues(project);
   const recorded = options.baseline ? await readBaseline(options.baseline) : null;
   if (options.baseline && !recorded) throw new Error(`no baseline at ${options.baseline}; record one with \`youi baseline\``);
   const baseline = recorded && options.baseline ? { file: options.baseline, recorded: recorded.identity, comparison: compareToBaseline(recorded, violations, scope ?? undefined) } : null;
   const failing = baseline ? [...baseline.comparison.new, ...baseline.comparison.regressed] : violations;
   const errors = failing.filter((v) => v.severity === "error").length + (lock ?? []).filter((i) => i.severity === "error").length;
+  const drift = diff ? await analyseChange(project, scan, diff, { violations }) : null;
   // A clean result only counts when everything asked about was actually checked.
-  return { identity: scan.identity, scan, scope, unmatched, failed, notRun, violations, lock, baseline, errors, incomplete: unmatched.length > 0 || failed.length > 0 || notRun.length > 0 };
+  return { identity: scan.identity, scan, scope, unmatched, failed, notRun, violations, lock, baseline, errors, incomplete: unmatched.length > 0 || failed.length > 0 || notRun.length > 0 || (drift?.incomplete.length ?? 0) > 0, diff: drift };
 }
 
 async function lockIssues(project: Project): Promise<LockIssue[] | null> {
@@ -83,6 +94,9 @@ async function lockIssues(project: Project): Promise<LockIssue[] | null> {
 
 /** 0 passes, 1 fails or is incomplete. */
 export const exitCodeOf = (result: CheckResult): number => (result.errors > 0 || result.incomplete ? 1 : 0);
+
+/** `youi check --diff`: advisory (0) unless `strict`, which fails on any finding or an incomplete result. */
+export const diffExitCodeOf = (result: DiffCheckResult, strict: boolean): number => (strict && ((result.diff?.findings.length ?? 0) > 0 || result.incomplete) ? 1 : 0);
 
 export interface BaselineWrite {
   readonly file: string;

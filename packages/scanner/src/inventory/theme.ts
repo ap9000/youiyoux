@@ -130,10 +130,13 @@ export const round = (n: number): number => Math.round(n * 100) / 100;
 export class Theme {
   readonly tailwind: 3 | 4 | null;
   readonly warnings: string[];
+  /** Project declarations only: excludes implicit Tailwind defaults. */
+  readonly declared: ReadonlyMap<string, string>;
   private readonly vars: Map<string, string>;
 
-  constructor(vars: Map<string, string>, tailwind: 3 | 4 | null, warnings: string[]) {
+  constructor(vars: Map<string, string>, tailwind: 3 | 4 | null, warnings: string[], declared: ReadonlyMap<string, string> = new Map()) {
     this.vars = vars;
+    this.declared = declared;
     this.tailwind = tailwind;
     this.warnings = warnings;
   }
@@ -267,13 +270,17 @@ export async function buildTheme(root: string, sheets: readonly Stylesheet[], us
   const v3 = config.file !== null || sheets.some((s) => /@tailwind\s+(base|components|utilities)/.test(s.source));
   const version = v4 ? 4 : v3 || usesTailwindPackage ? 3 : null;
   const vars = version ? defaults(version) : new Map<string, string>();
+  const declared = new Map(config.vars);
   for (const [name, value] of config.vars) vars.set(name, value);
   for (const sheet of sheets) {
     for (const rule of sheet.rules) {
       // Only top-level theme scopes: a dark-mode or media override is a different context.
       if (rule.preludes.length !== 1 || !THEME_SCOPES.has(rule.preludes[0]!.replace(/\s+/g, " "))) continue;
-      for (const declaration of rule.declarations) if (declaration.property.startsWith("--")) vars.set(declaration.property, declaration.value);
+      for (const declaration of rule.declarations) if (declaration.property.startsWith("--")) {
+        vars.set(declaration.property, declaration.value);
+        declared.set(declaration.property, declaration.value);
+      }
     }
   }
-  return new Theme(vars, version, config.warnings);
+  return new Theme(vars, version, config.warnings, declared);
 }

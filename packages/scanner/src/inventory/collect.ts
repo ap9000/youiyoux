@@ -214,8 +214,12 @@ export class ProjectPass {
   private readonly fileRules = new Map<string, ClassRules>();
   private readonly routeFiles: Set<string>;
 
-  constructor(target: InventoryTarget) {
+  /** Also record each role-bearing definition's own root as a look (its default shape), rendered or not. */
+  private readonly definitionRoots: boolean;
+
+  constructor(target: InventoryTarget, options: CollectOptions = {}) {
     this.target = target;
+    this.definitionRoots = options.definitionRoots === true;
     const map = target.routes.strategy === "map" ? target.routes.map.map((m) => m.file) : [];
     this.routeFiles = new Set(target.files.filter((f) => matchesAny(f, [...map, ...target.routes.shell]) || (target.routes.strategy === "expo-router" && f.startsWith(`${target.routes.appDir}/`))));
   }
@@ -384,6 +388,14 @@ export class ProjectPass {
     return symbol.kind === "symbol" ? (this.tables.get(`${symbol.file}#${symbol.name}`) ?? null) : null;
   }
 
+  private async resolvedRoot(module: ModuleInfo, tag: string): Promise<InventoryDefinition["root"]> {
+    if (/^[a-z]/.test(tag) && !tag.includes(".")) return { kind: "intrinsic", tag };
+    const { symbol } = await resolveTag(this.graph, module, tag);
+    if (symbol.kind === "symbol") return { kind: "definition", id: `${this.id}:${symbol.file}#${symbol.name}` };
+    if (symbol.kind === "external" && !FRAMEWORK.has(packageOf(symbol.module))) return { kind: "primitive", module: symbol.module, name: symbol.name };
+    return undefined;
+  }
+
   async reactDefinitions(): Promise<void> {
     for (const module of this.sortedModules()) for (const table of cvaTables(module)) this.tables.set(table.key, table);
     const cvaFolders = new Set([...this.tables.values()].map((t) => posix.dirname(t.file)));
@@ -410,12 +422,22 @@ export class ProjectPass {
         // Only a TSX tree has JSX node kinds; querying them on a TypeScript tree throws.
         const hasJsx = module.lang === "tsx" && declaration.node.find({ rule: { any: [{ kind: "jsx_opening_element" }, { kind: "jsx_self_closing_element" }] } }) !== null;
         const wrapper = value?.kind() === "member_expression" || (value?.kind() === "call_expression" && /(?:forwardRef|memo)$/.test(value.field("function")?.text() ?? ""));
-        if (!hasJsx && !wrapper) continue;
+        const alias = this.definitionRoots && value?.kind() === "identifier" && /^[A-Z]/.test(value.text());
+        if (!hasJsx && !wrapper && !alias) continue;
         const found = hasJsx ? await this.recipeOf(module, declaration.node) : null;
         const folder = posix.dirname(module.file);
         const kit = cvaFolders.has(folder) ? `${this.id}:${folder}` : found ? this.kitOfClasses(found.recipe.classes.certain) : null;
         const variants = found?.recipe.cva ? Object.fromEntries([...found.recipe.cva.table.variants].filter(([key]) => !found.recipe.cva!.fixed.has(key)).map(([key, values]) => [key, [...values.keys()]])) : {};
         const def: InventoryDefinition = { id: `${this.id}:${module.file}#${entry.name}`, project: this.id, name, file: module.file, ...position(declaration.name), kind: "react", kit, role: roleOfName(name), variants };
+        if (this.definitionRoots) {
+          let target = value;
+          while (target?.kind() === "call_expression" && /(?:forwardRef|memo)$/.test(target.field("function")?.text() ?? "")) {
+            target = target.field("arguments")?.children().find((c) => c.isNamed() && c.kind() !== "comment") ?? null;
+          }
+          const tag = found?.root.field("name")?.text() ?? (target && (target.kind() === "identifier" || target.kind() === "member_expression") ? target.text() : null);
+          const root = tag ? await this.resolvedRoot(module, tag) : undefined;
+          if (root) def.root = root;
+        }
         const range = declaration.node.range();
         this.definitions.set(`${module.file}#${entry.name}`, { entry: def, recipe: found?.recipe ?? null, range: { start: range.start.index, end: range.end.index }, rootId: found?.root.id() ?? null });
       }
@@ -644,7 +666,10 @@ export class ProjectPass {
       const { symbol, name } = intrinsic ? { symbol: null, name: element.tag } : await resolveTag(this.graph, module, element.tag);
       // A primitive counts wherever it is rendered, a definition's own root included.
       if (symbol?.kind === "external") this.primitiveSite(module.file, at, symbol);
-      if (isRoot) continue;
+      if (isRoot) {
+        if (this.definitionRoots) this.rootLook(module.file, at, owner);
+        continue;
+      }
       const label = jsxLabel(element.node);
       if (label === null && element.node.kind() === "jsx_opening_element" && element.node.parent()?.children().some((c) => c.kind() === "jsx_expression" && c.children().some((n) => n.isNamed() && n.kind() !== "comment"))) {
         props.children = { dynamic: "expression children" };
@@ -669,6 +694,14 @@ export class ProjectPass {
       const parent = await this.parentOf(module, element.node);
       this.addLook({ file: module.file, ...at, role, source: "component", tag: element.tag, definition, classes, rootTag, unresolved, recipe: recipe.kind === "component" && parent ? { ...recipe, parent } : recipe });
     }
+  }
+
+  /** A definition drawn as it is with no props: what a new component looks like before anything renders it. */
+  private rootLook(file: string, at: { line: number; column: number }, definition: Definition): void {
+    const role = definition.entry.role!;
+    const { classes, unresolved } = this.componentClasses(definition, {}, classValueOf(null));
+    const rootTag = definition.recipe?.tag ?? null;
+    this.addLook({ file, ...at, role, source: "component", tag: definition.entry.name, definition, classes, rootTag, unresolved, recipe: this.recipeFor(role, definition, rootTag, classes, {}, null, []) });
   }
 
   async astroLooks(file: string, astro: AstroFile): Promise<void> {
@@ -810,9 +843,14 @@ function firstChildTag(opening: SgNode): string | null {
   return null;
 }
 
+export interface CollectOptions {
+  /** Record each role-bearing definition's root as a look too (`youi check --diff` compares new components before anything renders them). */
+  readonly definitionRoots?: boolean;
+}
+
 /** One project read through every stage: definitions, kits, primitives and looks. */
-export async function readProject(target: InventoryTarget): Promise<ProjectPass> {
-  const pass = new ProjectPass(target);
+export async function readProject(target: InventoryTarget, options: CollectOptions = {}): Promise<ProjectPass> {
+  const pass = new ProjectPass(target, options);
   await pass.read();
   pass.classKits();
   await pass.reactDefinitions();
@@ -822,8 +860,8 @@ export async function readProject(target: InventoryTarget): Promise<ProjectPass>
   return pass;
 }
 
-export async function collectProject(target: InventoryTarget): Promise<ProjectInventory> {
-  const pass = await readProject(target);
+export async function collectProject(target: InventoryTarget, options: CollectOptions = {}): Promise<ProjectInventory> {
+  const pass = await readProject(target, options);
   const git = await gitState(target.root);
   const definitions = [...pass.definitions.values()].map((d) => d.entry).sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.name.localeCompare(b.name));
   const primitives = [...pass.primitives].map(([pkg, p]) => ({ package: pkg, project: target.id, exports: [...p.exports].sort(), count: p.count, sites: p.sites.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column) })).sort((a, b) => a.package.localeCompare(b.package));

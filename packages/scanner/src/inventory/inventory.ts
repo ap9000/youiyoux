@@ -17,6 +17,8 @@ export interface InventoryOptions extends TargetGlobs {
   readonly examples?: number;
   /** Where relative project roots are reported from (default: the current directory). */
   readonly cwd?: string;
+  /** Also record each role-bearing definition's own root as a look, rendered or not (off for `youi inventory`). */
+  readonly definitionRoots?: boolean;
 }
 
 const EXAMPLES = 5;
@@ -163,7 +165,7 @@ export async function buildInventory(dirs: readonly string[], options: Inventory
     ids.add(id);
     targets.push({ ...target, id, label: relative(cwd, target.root) || "." });
   }
-  const projects = await Promise.all(targets.map(collectProject));
+  const projects = await Promise.all(targets.map((target) => collectProject(target, { definitionRoots: options.definitionRoots === true })));
   const looks = projects.flatMap((p) => p.looks);
   const familyOf = new Map<string, string>();
   const families: InventoryFamily[] = [];

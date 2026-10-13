@@ -36,10 +36,16 @@ function isColor(value: unknown): value is DtcgColor {
   return typeof value === "object" && value !== null && "components" in value;
 }
 
-function colorSuggestion(literal: string, index: TokenIndex): string | undefined {
+/** Colour tokens (not aliases) whose light or dark value is this colour; null when it is not a colour. */
+export function colorTokens(literal: string, index: TokenIndex): ResolvedToken[] | null {
   const color = parseCssColor(literal);
-  if (!color) return undefined;
-  const matches = index.tokens.filter((t) => t.type === "color" && !t.aliasOf && [t.light, t.dark].some((v) => isColor(v) && sameColor(v, color)));
+  if (!color) return null;
+  return index.tokens.filter((t) => t.type === "color" && !t.aliasOf && [t.light, t.dark].some((v) => isColor(v) && sameColor(v, color)));
+}
+
+function colorSuggestion(literal: string, index: TokenIndex): string | undefined {
+  const matches = colorTokens(literal, index);
+  if (!matches) return undefined;
   if (matches.length === 0) return "no token has this value: pick the role it plays (system_get_tokens) or propose a token";
   const listed = matches.slice(0, 3).map((t) => `var(--${index.prefix}-${t.cssName}) (${t.id})`).join(" or ");
   return `${listed}: same value, check it is the right role`;
@@ -47,20 +53,20 @@ function colorSuggestion(literal: string, index: TokenIndex): string | undefined
 
 /* --------------------------------------------------------------- positions */
 
-function offsetToPosition(text: string, offset: number, start: { line: number; column: number }): { line: number; column: number } {
+export function offsetToPosition(text: string, offset: number, start: { line: number; column: number }): { line: number; column: number } {
   const before = text.slice(0, offset);
   const newlines = before.split("\n").length - 1;
   return newlines === 0 ? { line: start.line + 1, column: start.column + offset + 1 } : { line: start.line + newlines + 1, column: offset - before.lastIndexOf("\n") };
 }
 
-function stringNodes(module: ModuleInfo): SgNode[] {
+export function stringNodes(module: ModuleInfo): SgNode[] {
   return module.root.root().findAll({ rule: { any: [{ kind: "string" }, { kind: "template_string" }] } });
 }
 
 /* --------------------------------------------------------------- raw-color */
 
-const HEX = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![0-9a-zA-Z_-])/g;
-const COLOR_FN = /\b(?:rgba?|hsla?)\(\s*-?[\d.]+[^)]*\)/g;
+export const HEX = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![0-9a-zA-Z_-])/g;
+export const COLOR_FN = /\b(?:rgba?|hsla?)\(\s*-?[\d.]+[^)]*\)/g;
 
 /** Attributes whose strings are fragments, ids or URLs, never colours (`href="#fade"`). */
 const NON_COLOR_ATTRIBUTES = new Set(["href", "to", "id", "htmlFor", "key", "name", "src", "action", "formAction", "aria-controls", "aria-describedby", "aria-labelledby"]);
@@ -82,7 +88,7 @@ function attributeName(node: SgNode): string | null {
   return attribute?.children()[0]?.text() ?? null;
 }
 
-function rawColorsInScript(module: ModuleInfo, index: TokenIndex): Finding[] {
+export function rawColorsInScript(module: ModuleInfo, index: TokenIndex): Finding[] {
   const findings: Finding[] = [];
   for (const node of stringNodes(module)) {
     const attribute = attributeName(node);
@@ -101,7 +107,7 @@ function rawColorsInScript(module: ModuleInfo, index: TokenIndex): Finding[] {
   return findings;
 }
 
-function rawColorsInCss(module: ModuleInfo, index: TokenIndex, isTokenSource: boolean): Finding[] {
+export function rawColorsInCss(module: ModuleInfo, index: TokenIndex, isTokenSource: boolean): Finding[] {
   const findings: Finding[] = [];
   const lines = module.source.split("\n");
   for (const rule of readRules(module.source)) {
@@ -121,34 +127,64 @@ function rawColorsInCss(module: ModuleInfo, index: TokenIndex, isTokenSource: bo
 
 /* ---------------------------------------------------------- arbitrary-value */
 
-const ARBITRARY = /(?<=^|[\s"'`])(?:[a-z0-9-]+:)*!?(-?[a-z][a-z0-9]*(?:-[a-z][a-z0-9]*)*)-\[([^\]\s]+)\]/g;
+export const ARBITRARY = /(?<=^|[\s"'`])(?:[a-z0-9-]+:)*!?(-?[a-z][a-z0-9]*(?:-[a-z][a-z0-9]*)*)-\[([^\]\s]+)\]/g;
 const COLOR_UTILITIES = /^(bg|text|border(-[trblxy])?|ring|outline|fill|stroke|divide|decoration|caret|accent|from|via|to|placeholder)$/;
+const RADIUS_UTILITY = /^rounded(-[a-z]{1,2})?$/;
+/** Padding, margin and gap utilities: the ones a spacing token sets. */
+export const SPACING_UTILITY = /^-?(p[xytrblse]?|m[xytrblse]?|gap(-[xy])?|space-[xy])$/;
 
-function themeKeyToUtility(utility: string, key: string): string | null {
+export function themeKeyToUtility(utility: string, key: string): string | null {
   const [namespace, ...rest] = key.split("-");
   const name = rest.join("-");
   if (namespace === "color" && COLOR_UTILITIES.test(utility)) return `${utility}-${name}`;
-  if (namespace === "radius" && /^rounded(-[a-z]{1,2})?$/.test(utility)) return `${utility}-${name}`;
+  if (namespace === "radius" && RADIUS_UTILITY.test(utility)) return `${utility}-${name}`;
+  if (namespace === "spacing" && SPACING_UTILITY.test(utility)) return `${utility}-${name}`;
   if (namespace === "shadow" && utility === "shadow") return `shadow-${name}`;
   if (namespace === "text" && utility === "text" && !key.includes("--")) return `text-${name}`;
   return null;
 }
 
-function suggestUtility(utility: string, value: string, index: TokenIndex): string[] {
+/** A dimension token's light value in px (rem at 16px), or null. */
+export function tokenPx(token: ResolvedToken): number | null {
+  const value = token.light as { value?: unknown; unit?: unknown } | null;
+  if (token.type !== "dimension" || typeof value?.value !== "number") return null;
+  return value.unit === "rem" ? value.value * 16 : value.unit === "px" ? value.value : null;
+}
+
+/** What a length sets: a radius or a spacing (padding, margin, gap) token. */
+export type DimensionKind = "radius" | "spacing";
+const TOKEN_GROUPS: Record<DimensionKind, RegExp> = { radius: /^(radius|radii|rounded)\./, spacing: /^(space|spacing)\./ };
+
+/** Radius or spacing tokens whose value is exactly `px`. */
+export function dimensionTokens(kind: DimensionKind, px: number, index: TokenIndex): ResolvedToken[] {
+  return index.tokens.filter((t) => TOKEN_GROUPS[kind].test(t.id) && tokenPx(t) === px);
+}
+
+/** The kind of token a Tailwind utility's length is, or null. */
+export const utilityDimension = (utility: string): DimensionKind | null => (RADIUS_UTILITY.test(utility) ? "radius" : SPACING_UTILITY.test(utility) ? "spacing" : null);
+
+/** The tokens an arbitrary utility value copies: `rounded-[8px]` → radius.control, `var(--demo-x)` → that token. */
+export function arbitraryTokens(utility: string, value: string, index: TokenIndex): ResolvedToken[] {
   const viaVar = /^var\((--[a-z0-9-]+)\)$/.exec(value);
-  let candidates: ResolvedToken[] = [];
   if (viaVar) {
     const token = index.byVar.get(viaVar[1]!);
-    candidates = token ? [token] : [];
-  } else {
-    const px = /^(\d*\.?\d+)px$/.exec(value);
-    if (!px) return [];
-    const n = Number(px[1]);
-    if (/^rounded/.test(utility)) candidates = index.tokens.filter((t) => t.id.startsWith("radius.") && (t.light as { value: number }).value === n);
-    if (utility === "text") candidates = index.tokens.filter((t) => t.type === "typography" && (t.light as { fontSize: { value: number } }).fontSize.value === n);
+    return token ? [token] : [];
   }
-  const suggestions = candidates.flatMap((t) => (index.themeKeys.get(t.id) ?? []).map((key) => themeKeyToUtility(utility, key)).filter((u): u is string => u !== null));
-  return [...new Set(suggestions)];
+  const px = /^(\d*\.?\d+)px$/.exec(value);
+  if (!px) return [];
+  const n = Number(px[1]);
+  if (utility === "text") return index.tokens.filter((t) => t.type === "typography" && (t.light as { fontSize: { value: number } }).fontSize.value === n);
+  const kind = utilityDimension(utility);
+  return kind ? dimensionTokens(kind, n, index) : [];
+}
+
+/** Theme utilities that read the token (`rounded-control`), in the project's Tailwind theme. */
+export function tokenUtilities(utility: string, tokens: readonly ResolvedToken[], index: TokenIndex): string[] {
+  return [...new Set(tokens.flatMap((t) => (index.themeKeys.get(t.id) ?? []).map((key) => themeKeyToUtility(utility, key)).filter((u): u is string => u !== null)))];
+}
+
+function suggestUtility(utility: string, value: string, index: TokenIndex): string[] {
+  return tokenUtilities(utility, arbitraryTokens(utility, value, index), index);
 }
 
 function arbitraryValues(module: ModuleInfo, index: TokenIndex): Finding[] {

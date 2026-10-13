@@ -35,6 +35,12 @@ async function readJson(path: string): Promise<Record<string, unknown> | null> {
   }
 }
 
+/** The project's @/* path alias, shared by init and drift import suggestions. */
+export async function aliasRoot(root: string, tsconfig = "tsconfig.json"): Promise<string | undefined> {
+  const paths = ((await readJson(join(root, tsconfig)))?.compilerOptions as { paths?: Record<string, string[]> } | undefined)?.paths;
+  return paths?.["@/*"]?.[0]?.replace(/^\.\//, "").replace(/\*$/, "");
+}
+
 /**
  * The variable prefix of a tokens.css youi already generated here (`--so-accent` → `so`), or null.
  * Syncing with another prefix would rename every variable the product's CSS uses. The prefix is
@@ -80,8 +86,7 @@ export async function initProject(options: InitOptions): Promise<InitResult> {
   notes.push(`owned components: ${componentsDir}`);
 
   const tsconfig = (await exists(join(root, "tsconfig.json"))) ? "tsconfig.json" : "tsconfig.json";
-  const paths = ((await readJson(join(root, tsconfig)))?.compilerOptions as { paths?: Record<string, string[]> } | undefined)?.paths;
-  const alias = paths?.["@/*"]?.[0]?.replace(/^\.\//, "").replace(/\*$/, "");
+  const alias = await aliasRoot(root, tsconfig);
   const importFrom = alias !== undefined && componentsDir.startsWith(alias) ? `@/${componentsDir.slice(alias.length)}` : undefined;
   if (importFrom) notes.push(`imports use the @/ alias: ${importFrom}`);
 

@@ -4,7 +4,8 @@
  */
 import type { Violation } from "@youiyoux/core";
 import { describeIdentity } from "@youiyoux/scanner";
-import type { CheckResult } from "./check.ts";
+import type { CheckResult, DiffCheckResult } from "./check.ts";
+import type { DiffFinding } from "./check-diff.ts";
 import { renderCheck } from "./render.ts";
 import { plural, style } from "./ui.ts";
 
@@ -83,4 +84,77 @@ export function githubSummary(result: CheckResult): string {
     ["Baseline", baselineRow],
   ];
   return [`### youi check: ${verdict}`, "", "| | |", "|---|---|", ...rows.map(([k, v]) => `| ${k} | ${v} |`), ""].join("\n");
+}
+
+/* ------------------------------------------------------------ youi check --diff */
+
+const KIND_LABEL: Record<DiffFinding["kind"], string> = { "near-duplicate": "near-duplicate", "hardcoded-value": "hardcoded value", "off-library": "off-library import", rule: "rule" };
+
+/** Why a diff result is not a pass even with no findings: files or analyses that could not be checked. */
+export function diffGaps(result: DiffCheckResult): string[] {
+  return [
+    ...result.unmatched.map((f) => `${f} was not checked: it is not in this project's include globs`),
+    ...result.failed.map((f) => `${f.file} could not be fully analysed (${f.reason})`),
+    ...result.notRun.map((r) => `rule ${slug(r.rule)} did not run (${r.reason ?? r.state})`),
+    ...(result.diff?.incomplete ?? []),
+  ];
+}
+
+/** One finding as a line an agent or a person acts on: where, what, and the fix. */
+export const diffFindingLine = (f: DiffFinding): string => `${f.file}:${f.line}:${f.column} ${kindOf(f)}: ${f.message} Fix: ${f.fix}`;
+
+/** `hardcoded value (also rule raw-color)`, or `rule raw-color` for a plain rule violation. */
+const kindOf = (f: DiffFinding): string => (f.kind === "rule" ? `rule ${f.rule}` : `${KIND_LABEL[f.kind]}${f.rule ? ` (also rule ${f.rule})` : ""}`);
+
+/** `youi check --diff` in a terminal: each finding with its fix, then what to do next. */
+export function renderDiffText(result: DiffCheckResult): string {
+  const diff = result.diff!;
+  const lines: string[] = [style.dim(`youi check --diff against ${diff.base}: ${plural(diff.files.length, "changed file")}`)];
+  for (const [file, list] of Map.groupBy(diff.findings, (f) => f.file)) {
+    lines.push(style.bold(file));
+    for (const f of list) {
+      const label = f.severity === "error" ? style.error(kindOf(f)) : style.warn(kindOf(f));
+      lines.push(`  ${style.dim(`${f.line}:${f.column}`)}  ${label}  ${f.message}`, `      ${style.ok("→")} ${f.fix}`);
+    }
+  }
+  const gaps = diffGaps(result);
+  for (const gap of gaps) lines.push(style.warn(`! incomplete: ${gap}`));
+  for (const note of diff.notes) lines.push(style.dim(`note: ${note}`));
+  lines.push("");
+  if (diff.findings.length > 0) lines.push(style.error(`✖ ${plural(diff.findings.length, "finding")} in this change: apply each fix (→), then run \`youi check --diff\` again`));
+  else if (gaps.length > 0) lines.push(style.warn("! Not a pass: parts of this change could not be checked (above). Fix what could not be read, then run `youi check --diff` again"));
+  else if (diff.files.length === 0) lines.push(style.ok(`✓ No checked files changed against ${diff.base}: nothing to check. Compare with a branch: youi check --diff main`));
+  else lines.push(style.ok(`✓ No drift in this change: ${plural(diff.files.length, "file")} checked against ${diff.base}. Nothing to fix`));
+  return lines.join("\n");
+}
+
+/** The machine-readable result for agents: the base, the files and every finding with its fix. */
+export function diffJson(result: DiffCheckResult): Record<string, unknown> {
+  const diff = result.diff!;
+  return {
+    base: diff.base,
+    commit: diff.commit,
+    files: diff.files,
+    findings: diff.findings,
+    incomplete: result.incomplete,
+    gaps: diffGaps(result),
+    notes: diff.notes,
+    next: diff.findings.length > 0 ? "apply each finding's fix, then run youi check --diff again" : result.incomplete ? "not a pass: fix what could not be checked (gaps), then run youi check --diff again" : "nothing to fix",
+    identity: result.identity,
+  };
+}
+
+/** PR annotations for `youi check --diff --format github`: one per finding on its added line, plus what could not be checked. */
+export function githubDiffAnnotations(result: DiffCheckResult, prefix: string): string[] {
+  const lines = (result.diff?.findings ?? []).map((f) => command(f.severity === "error" ? "error" : "warning", `${f.message} Fix: ${f.fix}`, { file: `${prefix}${f.file}`, line: f.line, col: f.column, title: `youi ${kindOf(f)}` }));
+  for (const gap of diffGaps(result)) lines.push(command("error", `${gap}; a clean result here is not a pass`, { title: "youi incomplete" }));
+  return lines;
+}
+
+/** Markdown for $GITHUB_STEP_SUMMARY after `youi check --diff`. */
+export function githubDiffSummary(result: DiffCheckResult): string {
+  const diff = result.diff!;
+  const verdict = diff.findings.length > 0 ? `❌ ${plural(diff.findings.length, "finding")}` : result.incomplete ? "⚠️ incomplete" : "✅ no drift";
+  const byKind = [...Map.groupBy(diff.findings, (f) => KIND_LABEL[f.kind])].map(([kind, list]) => `${list.length} ${kind}`).join(" · ") || "none";
+  return [`### youi check --diff: ${verdict}`, "", "| | |", "|---|---|", `| Base | ${diff.base} |`, `| Changed files | ${diff.files.length} |`, `| Findings | ${byKind} |`, result.identity ? `| Rules | \`${result.identity.system.id}@${result.identity.system.version}\`, definitions \`${result.identity.definitions}\` |` : "| Rules | Repository inference; run youi init --design <dir> for rules |", ""].join("\n");
 }

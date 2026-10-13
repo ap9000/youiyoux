@@ -164,7 +164,7 @@ async function shadcnKit(root: string, shadcn: ShadcnConfig | null, files: reado
   return dirs.length === 0 ? null : { dirs, label: dirs[0]!, found: `ui kit at ${named.join("; ")}` };
 }
 
-interface ImportSite {
+export interface ImportSite {
   readonly specifier: string;
   /** Imported names (`default` for a default import, `*` for a namespace). */
   readonly names: readonly string[];
@@ -207,7 +207,7 @@ function readSource(file: string, text: string): { imports: ImportSite[]; slots:
 }
 
 /** The element type an import brings in: a named export (`Button`), a deep path (`@mui/material/Button`) or a one-element package. */
-function elementTypes(site: ImportSite, pkg: string, packageElements: Readonly<Record<string, DetectElementType>> | undefined): DetectElementType[] {
+export function elementTypes(site: ImportSite, pkg: string, packageElements: Readonly<Record<string, DetectElementType>> | undefined): DetectElementType[] {
   const types = new Set<DetectElementType>();
   const fromPackage = packageElements?.[pkg];
   if (fromPackage) types.add(fromPackage);

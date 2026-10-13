@@ -1,6 +1,6 @@
 # YouIyouX
 
-Tooling for a design language. Every token, component and rule has a stable id (`youi:<system>/<kind>/<name>`), a JSON contract, and a live map of where it is used in each product: file, line and screen. Every change is planned against those uses before it ships.
+The UI context and verification layer for coding agents. Every token, component and rule has a stable id (`youi:<system>/<kind>/<name>`), a JSON contract, and a live map of where it is used in each product: file, line and screen. Every change is planned against those uses before it ships.
 
 For coding agents it is the UI context and verification layer: `ui_find_component` tells an agent what the project already has before it writes UI (`youi agents install` sets that up), and `youi check` verifies what it wrote.
 
@@ -56,6 +56,7 @@ Try it on the demo:
 
 ```sh
 youi check --project examples/demo-app          # 1 error, 2 warnings
+youi check --diff main                          # in a product repo: only what this branch adds, with fixes
 youi where button --project examples/demo-app   # 6 sites on 3 screens
 youi ui                                         # the hub on the demo system: http://localhost:5173
 ```
@@ -70,6 +71,8 @@ In a product repo:
 | `youi where <component>` / `youi bom <route>` | Where a component lives, screen by screen; everything on one screen |
 | `youi show <component>` | The contract: import, legal values, guidance |
 | `youi check` | Rules plus lockfile drift; exits 1 on errors |
+| `youi check --diff [base] [--strict] [--json] [--format github]` | Only what a change adds: the working tree against HEAD, or against the merge-base with `base` (`--diff main`). Flags a new component that near-duplicates an existing one (same role, every shape dimension within the [inventory](#inventory)'s tolerance; fix: `use <Button variant="ghost"> from "@/components/ui"`), a hardcoded colour, spacing or radius a token holds (fix: `use rounded-control (radius.control, var(--demo-radius-control))`), and an import that brings an element in from a library other than the project's choice (the System's component, else the library the rest of the code imports it from, read by [detect](#detect)), plus rule violations on added lines. Each finding has its fix, and the output says what to do next. Exits 0 (advisory) unless `--strict`, then 1 on any finding or an incomplete check. Without git it stops and says why |
+| `youi hooks install [--claude] [--git] [--ci [--diff]] [--strict]` | Wire the checks in, keeping existing config. Claude Code (PostToolUse): after each Edit/Write/MultiEdit of a checked file, only the findings on its added or changed lines go back to Claude, each with its fix; never blocks. git pre-commit: the staged files and the drift their staged lines add (`--strict` blocks on new findings or incomplete analysis). Codex has no documented post-edit hook, so no native post-edit hook is installed for it: it follows AGENTS.md (which tells agents to run `youi check --diff`) and meets the pre-commit hook. `--ci` writes a pinned GitHub workflow; with `--diff`, pull requests also run `youi check --diff origin/<base> --strict --format github` |
 | `youi plan` / `youi migrate` | Classify a change and its impact; run a gated codemod: a dry run that prints the diff and the residual sites unless `--write` ([migrations](#migrations)) |
 | `youi library search <query>` / `youi library request <id> --reason …` | Browse the Library; draft a request to adopt an item into the System |
 | `youi discover sync [--icons]` | Build the local Discover index (`~/.cache/youiyoux/discover`, or `--cache` / `YOUI_DISCOVER_CACHE`): the official shadcn registry, the registry directory and selected community registries (defaults: coss, Kibo, Magic UI, Origin, Aceternity), headless catalogs for category names, npm search, and npm and GitHub signals. Polite (capped concurrency, timeouts, ETag/If-Modified-Since, npm/GitHub rate budgets, npm 429 backoff) and cached. Icon sets require `--icons`; mirrors collapse to originals. Reports total metadata catalog size. `GITHUB_TOKEN`, when set, is sent to GitHub only and never stored or printed |
@@ -81,6 +84,10 @@ In a product repo:
 | `youi mcp` | stdio MCP server: `ui_find_component` (call it before creating a component: the project's existing components for a need in words, best first, each with its import line, props, a real usage snippet, where it is used and its library, from the System, shadcn, Radix or hand-rolled; class kits include their stylesheet and real class usages; call APIs lead with how to call toast() and where its provider is already mounted; library labels are per component, and a Lacks line explains how to add a requested missing capability; names and aliases count, so toast = snackbar and dialog = modal; or "nothing fits" with a primitive the project already uses or Discover candidates to start from; read live from the code, with or without `youi.project.json`), `system_*` tools (build with these, plus `system_plan`), `library_*` tools (browse, draft a request), read-only `discover_search` / `discover_show`, and read-only `index_where_used` (family), `index_swap_impact` (candidate, family) and `index_rule_covers` (rule), which answer from the local index in about ten lines, and `ui_render` (target, base): what `youi render` prints, with absolute image paths ([render](#render)); no publish, approve, merge or install tools |
 | `youi index path\|stats\|rebuild\|history [project]` | The local index ([store](#the-local-index)): where it is, rows per table, delete and rebuild it from its sources, and inventory trends per project |
 | `youi ui --project <dir>` | The hub on that product, with the local rule and style editors: drafts, impact preview against the project, approval, and a review branch in the design repo ([guide](packages/workflow/README.md)) |
+
+`youi check --diff` also works without `youi.project.json`: it infers components, library choices and declared CSS/Tailwind theme variables from the repo. Pass `--project <dir>` to limit it to one product; otherwise it finds the git root. No Tailwind default is treated as a project token. Run `youi init --design <dir>` to add design-system rules. If a chosen library has a project wrapper, fixes name that wrapper. Components that compose existing components are not near-duplicates.
+
+The post-edit hook lists only findings on lines added or changed against HEAD, with older findings reduced to one count. An edit adding no findings is silent. `hooks install --claude --git` works in repo mode too, adding the post-edit check instruction to AGENTS.md for agents such as Codex. For CI without a config, run `youi check --diff <base> --strict --format github` after checking out full git history; installing the pinned design-rule workflow still requires `youi init --design <dir>`.
 
 `show`, `where`, `bom`, `check`, `plan` and `migrate` work on the System.
 

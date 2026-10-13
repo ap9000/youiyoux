@@ -478,6 +478,12 @@ export const InventoryProject = z.object({
 export type InventoryProject = z.infer<typeof InventoryProject>;
 
 export const InventoryDefinition = ProjectPosition.extend({
+  /** Resolved root or delegation target; emitted only when definitionRoots is requested. */
+  root: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("intrinsic"), tag: z.string() }),
+    z.object({ kind: z.literal("definition"), id: z.string() }),
+    z.object({ kind: z.literal("primitive"), module: z.string(), name: z.string() }),
+  ]).optional(),
   /** `<project>:<file>#<export>`. */
   id: z.string(),
   name: z.string(),

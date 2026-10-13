@@ -10,10 +10,12 @@ import { candidateSource, expandAll, selectSources, discoverCacheDir, discoverIn
 import { indexHome, storeLocation } from "@youiyoux/store";
 import { buildTokens, compareParity } from "@youiyoux/tokens";
 import { adoptionRequest, buildInventory, RenderUnavailableError, renderShots, shotsNext, type ShotsOptions, checkCapabilities, componentCard, describeIdentity, evaluateRule, findContract, loadProject, planChange, PROJECT_FILE, type LoadProjectOptions, ProjectWatcher, ruleCapability, runMigration, scanProject, screenBom, searchLibrary, whereUsed, type CacheStats, type PlanInput, type Project, type WatchUpdate } from "@youiyoux/scanner";
-import { baselinePath, exitCodeOf, runCheck, writeBaseline, type CheckResult } from "./check.ts";
-import { actionable, githubAnnotations, githubSummary, renderCheckText } from "./check-render.ts";
+import { baselinePath, diffExitCodeOf, exitCodeOf, runCheck, writeBaseline, type CheckResult } from "./check.ts";
+import { configured, loadCheckProject, runRepoCheck } from "./check-repo.ts";
+import { workingTreeChange, type ChangeProject } from "./check-diff.ts";
+import { actionable, diffJson, githubAnnotations, githubDiffAnnotations, githubDiffSummary, githubSummary, renderCheckText, renderDiffText } from "./check-render.ts";
 import { runClaudeHook, runPreCommitHook, type HookTarget } from "./hooks.ts";
-import { hookCommand, installClaudeHook, installPreCommit, installWorkflow, repoRootOf } from "./hooks-install.ts";
+import { codexFallback, installRepoAgentInstructions, hookCommand, installClaudeHook, installPreCommit, installWorkflow, repoRootOf } from "./hooks-install.ts";
 import { installAgentRule, installClaudeMcp, installCodexMcp, mcpCommand, relativeTo, removeAgentRule, removeClaudeMcp, removeCodexMcp, type AgentsResult } from "./agents-install.ts";
 import { detectTarget, renderDetect } from "./detect.ts";
 import { renderDiscoverSearch, renderDiscoverShow, renderDiscoverSync } from "./discover.ts";
@@ -69,11 +71,14 @@ ${style.bold("In a product repo")}
                            a marked rule in AGENTS.md and CLAUDE.md, and the youiyoux MCP server for
                            Claude Code (.mcp.json) and Codex (.codex/config.toml); default both.
                            Idempotent; remove takes out only youi's parts. No youi.project.json needed
-  hooks install [--claude] [--git] [--ci] [--strict]
+  hooks install [--claude] [--git] [--ci [--diff]] [--strict]
                            live checks, existing config kept (default: --claude --git):
-                           Claude Code PostToolUse (advisory context after each edit),
-                           git pre-commit (advisory on staged files; --strict blocks new errors),
-                           CI workflow (authoritative, pinned rules version, PR annotations)
+                           Claude Code PostToolUse (advisory context after each edit: violations
+                           plus the drift the edit adds, each with its fix),
+                           git pre-commit (advisory on staged files and their drift; --strict blocks
+                           new errors and drift; Codex has no post-edit hook, so this and AGENTS.md
+                           cover it), CI workflow (authoritative, pinned rules version, PR
+                           annotations; --diff also fails pull requests on drift they add)
 
 ${style.bold("System")}  ${style.dim("approved elements: build only with these")}
   show <component>         the contract: import, legal prop values, guidance, examples
@@ -83,6 +88,12 @@ ${style.bold("System")}  ${style.dim("approved elements: build only with these")
                            rule violations and lockfile drift; exits 1 on errors or an incomplete check.
                            --baseline fails only on violations the baseline does not accept;
                            --format github annotates PR lines and writes the job summary
+  check --diff [base] [--strict] [--json|--format github]
+                           only what a change adds (the working tree against HEAD, or against the
+                           merge-base with base): near-duplicate components, hardcoded colours, spacing
+                           and radii a token holds, and imports from a library other than the project's
+                           choice, plus rule violations on added lines, each with its fix. Exits 0
+                           (advisory) unless --strict: then 1 on any finding or an incomplete check
   baseline [--force]       record existing violations (youi.baseline.json beside the config);
                            later runs only remove fixed ones; --force accepts current ones as debt
   watch [--baseline] [--json]   re-check on every save (debounced; only edited files and their
@@ -180,6 +191,7 @@ const OPTIONS = {
   git: { type: "boolean", default: false },
   ci: { type: "boolean", default: false },
   strict: { type: "boolean", default: false },
+  base: { type: "string" },
   "baseline-file": { type: "string" },
   format: { type: "string" },
   adopt: { type: "boolean", default: false },
@@ -204,7 +216,6 @@ const OPTIONS = {
   "max-registries": { type: "string" },
   offset: { type: "string" },
   history: { type: "boolean", default: false },
-  base: { type: "string" },
   help: { type: "boolean", short: "h", default: false },
 } satisfies ParseArgsConfig["options"];
 
@@ -369,9 +380,10 @@ async function repoPrefix(root: string): Promise<string> {
 }
 
 async function cmdCheck(values: Values, positionals: string[]): Promise<number> {
-  const p = await project(values);
   const format = values.json ? "json" : (values.format ?? "text");
   if (!["text", "json", "github"].includes(format)) throw new UsageError("youi check --format text|json|github");
+  if (values.diff || values.base !== undefined) return cmdCheckDiff(values, positionals, await loadCheckProject(values.project ?? process.cwd(), loadOptions(values), !values.project), format);
+  const p = await project(values);
   const result = await runCheck(p, { ...(positionals.length > 0 ? { files: positionals } : {}), ...(values.rule ? { rule: values.rule } : {}), quiet: values.quiet, baseline: baselineFile(values, p) });
   if (format === "json") {
     const { report } = result.scan;
@@ -382,6 +394,33 @@ async function cmdCheck(values: Values, positionals: string[]): Promise<number> 
     if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, githubSummary(result));
   } else print(renderCheckText(result));
   return exitCodeOf(result);
+}
+
+/** `youi check --diff [base]`: what the change adds, with fixes. Never a pass it could not compute: without git it stops. */
+async function cmdCheckDiff(values: Values, positionals: string[], p: ChangeProject, format: string): Promise<number> {
+  if (values.baseline) throw new UsageError("youi check --diff looks only at added lines, so a baseline does not apply; drop --baseline");
+  const change = await workingTreeChange(p, values.base);
+  const result = configured(p) ? await runCheck(p, { ...(positionals.length > 0 ? { files: positionals } : {}), ...(values.rule ? { rule: values.rule } : {}), quiet: values.quiet, diff: change }) : await runRepoCheck(p, change);
+  if (format === "json") json(diffJson(result));
+  else if (format === "github") {
+    for (const line of githubDiffAnnotations(result, await repoPrefix(p.root))) print(line);
+    print(renderDiffText(result));
+    if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, githubDiffSummary(result));
+  } else print(renderDiffText(result));
+  return diffExitCodeOf(result, values.strict);
+}
+
+/** `--diff <base>` and `--diff=<base>` for check: the word after --diff is the base it compares with. */
+export function diffArgs(argv: readonly string[]): string[] {
+  if (argv[0] !== "check") return [...argv];
+  const out: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!;
+    if (arg.startsWith("--diff=")) out.push("--diff", "--base", arg.slice("--diff=".length));
+    else if (arg === "--diff" && argv[i + 1] !== undefined && !argv[i + 1]!.startsWith("-")) out.push("--diff", "--base", argv[++i]!);
+    else out.push(arg);
+  }
+  return out;
 }
 
 async function cmdBaseline(values: Values): Promise<number> {
@@ -545,17 +584,19 @@ async function cmdHooks(values: Values, positionals: string[]): Promise<number> 
     process.stdout.write(outcome.stdout);
     return outcome.exitCode;
   }
-  if (action !== "install") throw new UsageError("youi hooks install [--claude] [--git] [--ci] [--strict]   or   youi hooks run claude|pre-commit");
-  const p = await project(values);
+  if (action !== "install") throw new UsageError("youi hooks install [--claude] [--git] [--ci [--diff]] [--strict]   or   youi hooks run claude|pre-commit");
+  const p = await loadCheckProject(values.project ?? process.cwd(), loadOptions(values), !values.project);
+  if (values.ci && !configured(p)) throw new UsageError("Run youi init --design <dir> before installing the pinned CI workflow; repo-mode CI can run youi check --diff <base> --strict directly");
   // The hook finds the config it was installed with, even when --project named the config's directory and --root the product.
-  const target = { ...hookTarget(values), project: p.root, ...(p.configFile && p.configFile !== join(p.root, PROJECT_FILE) ? { config: p.configFile } : {}), ...(values.root !== undefined ? { root: p.root } : {}) };
+  const target = { ...hookTarget(values), project: p.root, ...(configured(p) && p.configFile && p.configFile !== join(p.root, PROJECT_FILE) ? { config: p.configFile } : {}), ...(values.root !== undefined ? { root: p.root } : {}) };
   const all = !values.claude && !values.git && !values.ci;
   const results = [];
   if (values.claude || all) results.push({ kind: "Claude Code", ...(await installClaudeHook(await repoRootOf(p.root), hookCommand(TOOL_ROOT, "claude", target))) });
   if (values.git || all) results.push({ kind: "git pre-commit", ...(await installPreCommit(p.root, hookCommand(TOOL_ROOT, "pre-commit", target, values.strict ? ["--strict"] : []), values.strict)) });
-  if (values.ci) results.push({ kind: "CI", ...(await installWorkflow(p, TOOL_ROOT, target, values.force)) });
+  if (values.git || all) results.push({ kind: "Codex", ...(configured(p) ? codexFallback(p.root, p.config.agents.agentsMd) : await installRepoAgentInstructions(p.root, TOOL_ROOT)) });
+  if (values.ci && configured(p)) results.push({ kind: "CI", ...(await installWorkflow(p, TOOL_ROOT, target, values.force, { diff: values.diff })) });
   if (values.json) json(results);
-  else for (const r of results) print(`${r.action === "unchanged" ? style.dim("unchanged") : style.ok(r.action)} ${r.kind}: ${r.file}
+  else for (const r of results) print(`${r.action === "unchanged" || r.action === "skipped" ? style.dim(r.action) : style.ok(r.action)} ${r.kind}: ${r.file}
   ${style.dim(r.guarantee)}`);
   return 0;
 }
@@ -771,7 +812,7 @@ export async function main(argv: string[], io: CliIo = {}): Promise<number> {
       const inventory = parseArgs({ args: argv, options: INVENTORY_OPTIONS, allowPositionals: true });
       if (!inventory.values.help) return await guarded(() => cmdInventory(inventory.values));
     }
-    parsed = parseArgs({ args: argv, options: OPTIONS, allowPositionals: true });
+    parsed = parseArgs({ args: diffArgs(argv), options: OPTIONS, allowPositionals: true });
   } catch (error: unknown) {
     process.stderr.write(`${style.error("✖")} ${error instanceof Error ? error.message : String(error)}\n\n${HELP}\n`);
     return 2;

@@ -194,6 +194,62 @@
             "exclusiveMinimum": 0,
             "maximum": 9007199254740991
           },
+          "root": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "intrinsic"
+                  },
+                  "tag": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "tag"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "definition"
+                  },
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "id"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "const": "primitive"
+                  },
+                  "module": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "module",
+                  "name"
+                ]
+              }
+            ]
+          },
           "id": {
             "type": "string"
           },
