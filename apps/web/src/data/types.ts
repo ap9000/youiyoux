@@ -170,6 +170,7 @@ export interface InventoryIndexProject {
 
 export interface InventoryRoleIndex {
   role: InventoryRole;
+  /** Real looks; Storybook stories are not uses and are counted apart. */
   looks: number;
   unshaped: number;
   families: number;
@@ -209,6 +210,8 @@ export interface ChunkLook {
   shape: InventoryShape;
   /** Its specimen's id in the chunk; null when none was built. */
   specimen: string | null;
+  /** A Storybook story: an authored state of its component, shown beside the uses, never counted as one. */
+  story?: { title: string; name: string; id: string };
 }
 
 /** One project's looks of one role, the families they belong to, and their specimens. */

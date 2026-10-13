@@ -1,0 +1,7 @@
+{
+  "name": "storybook",
+  "private": true,
+  "description": "Inventory fixture: a React + Tailwind v4 app with a CVA Button and Badge and CSF 3 stories beside them. Storybook itself is never installed.",
+  "dependencies": { "class-variance-authority": "*", "react": "*", "tailwindcss": "*" },
+  "devDependencies": { "@storybook/react-vite": "*" }
+}

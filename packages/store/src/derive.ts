@@ -72,7 +72,9 @@ export function inventoryRun(report: InventoryReport, source: string): Inventory
   const g = new GraphBuilder();
   const familyNode = (id: string, project: string) => g.node({ id: nodeId.family(source, id, project), kind: "family", ref: id, project });
   for (const family of report.families) for (const project of family.projects) familyNode(family.id, project);
-  for (const look of report.looks) {
+  // Storybook stories are authored states, not uses: no edges, rows or counts come from them.
+  const uses = report.looks.filter((l) => !l.story);
+  for (const look of uses) {
     if (!look.family) continue;
     const file = g.node({ id: nodeId.file(look.project, look.file), kind: "file", ref: `${look.project}:${look.file}` });
     g.edge(familyNode(look.family, look.project), file, "used-in");
@@ -90,7 +92,7 @@ export function inventoryRun(report: InventoryReport, source: string): Inventory
 
   const roles = (project: string): Record<string, number> => {
     const counts: Record<string, number> = {};
-    for (const look of report.looks) if (look.project === project) counts[look.role] = (counts[look.role] ?? 0) + 1;
+    for (const look of uses) if (look.project === project) counts[look.role] = (counts[look.role] ?? 0) + 1;
     return counts;
   };
   return {
@@ -99,10 +101,10 @@ export function inventoryRun(report: InventoryReport, source: string): Inventory
     scannedAt: report.generatedAt,
     projects: report.projects.map((p) => {
       const families = report.families.filter((f) => f.projects.includes(p.id));
-      return { project: p.id, root: p.root, commit: p.commit, status: p.status, files: p.files, looks: report.looks.filter((l) => l.project === p.id).length, families: families.length, nearDuplicates: families.filter((f) => f.nearDuplicate).length, roles: roles(p.id) };
+      return { project: p.id, root: p.root, commit: p.commit, status: p.status, files: p.files, looks: uses.filter((l) => l.project === p.id).length, families: families.length, nearDuplicates: families.filter((f) => f.nearDuplicate).length, roles: roles(p.id) };
     }),
     families: report.families.map((f) => ({ id: f.id, role: f.role, looks: f.looks, nearDuplicate: f.nearDuplicate, projects: f.projects, kits: f.kits, shape: f.shape })),
-    looks: report.looks.map((l) => ({ id: l.id, project: l.project, role: l.role, file: l.file, line: l.line, column: l.column, tag: l.tag, kit: l.kit, family: l.family, routes: l.routes, shape: l.shape })),
+    looks: uses.map((l) => ({ id: l.id, project: l.project, role: l.role, file: l.file, line: l.line, column: l.column, tag: l.tag, kit: l.kit, family: l.family, routes: l.routes, shape: l.shape })),
     graph: g.build(),
   };
 }

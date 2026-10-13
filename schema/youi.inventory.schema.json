@@ -103,6 +103,67 @@
             "items": {
               "type": "string"
             }
+          },
+          "stories": {
+            "type": "object",
+            "properties": {
+              "files": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "read": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "drawn": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              },
+              "skipped": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "file": {
+                      "type": "string"
+                    },
+                    "line": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "file",
+                    "line",
+                    "name",
+                    "reason"
+                  ]
+                }
+              },
+              "notes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "files",
+              "read",
+              "drawn",
+              "skipped",
+              "notes"
+            ]
           }
         },
         "required": [
@@ -634,6 +695,25 @@
                 ]
               }
             ]
+          },
+          "story": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "title",
+              "name",
+              "id"
+            ]
           }
         },
         "required": [
@@ -904,6 +984,14 @@
                 "examples"
               ]
             }
+          },
+          "stories": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          },
+          "authored": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -1057,6 +1145,11 @@
           "maximum": 9007199254740991
         },
         "notClustered": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "stories": {
           "type": "integer",
           "minimum": -9007199254740991,
           "maximum": 9007199254740991

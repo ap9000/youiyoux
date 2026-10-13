@@ -55,7 +55,7 @@ export function numericValue(text: string): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
-function literalOf(node: SgNode): PropValue {
+export function literalOf(node: SgNode): PropValue {
   const kind = node.kind();
   if (kind === "string") return { literal: unquote(node.text()) };
   if (kind === "number") {

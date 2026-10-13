@@ -7,7 +7,7 @@
 import { readFile } from "node:fs/promises";
 import { join, posix } from "node:path";
 import type { SgNode } from "@ast-grep/napi";
-import { matchesAny, type InventoryDefinition, type InventoryKit, type InventoryLook, type InventoryPrimitive, type InventoryRecipe, type InventoryRecipeWrapper, type InventoryRole, type PropValue } from "@youiyoux/core";
+import { matchesAny, type InventoryDefinition, type InventoryKit, type InventoryLook, type InventoryPrimitive, type InventoryProject, type InventoryRecipe, type InventoryRecipeWrapper, type InventoryRole, type PropValue } from "@youiyoux/core";
 import { readRules, splitTopLevel } from "@youiyoux/tokens";
 import { ModuleGraph, type ResolvedSymbol } from "../graph.ts";
 import { gitState } from "../identity.ts";
@@ -18,6 +18,7 @@ import { propsOf, resolveTag } from "../usage.ts";
 import { parseAstro, type AstroFile, type TemplateTag } from "./astro.ts";
 import { classValueOf, jsxClassAttribute, parseExpression, type ClassValue } from "./classes.ts";
 import { componentName, roleOfBlock, roleOfClass, roleOfComponent, roleOfIntrinsic, roleOfName } from "./roles.ts";
+import { findStoryFiles, readCsf, storyConfig, type CsfFile, type CsfStory } from "./stories.ts";
 import { ClassRules, resolveClasses, SHAPE_PROPERTIES } from "./style.ts";
 import type { InventoryTarget } from "./target.ts";
 import { buildTheme, readStylesheet, type Stylesheet, type Theme } from "./theme.ts";
@@ -76,7 +77,11 @@ export interface ProjectInventory {
   readonly looks: Array<Omit<InventoryLook, "family">>;
   /** Per file, the kits it imports a role from: the input for mixed-kit flags. */
   readonly kitImports: Map<string, ImportedKit[]>;
+  /** Its Storybook stories, when it has any (their looks are in `looks`, with `story`). */
+  readonly stories: StoriesRead | null;
 }
+
+export type StoriesRead = NonNullable<InventoryProject["stories"]>;
 
 /** Module graph that also resolves `.astro` specifiers, which TypeScript resolution does not. */
 class InventoryGraph extends ModuleGraph {
@@ -195,6 +200,7 @@ class ProjectPass {
   /** Class kit blocks: class name → its definition. */
   readonly blocks = new Map<string, Definition>();
   readonly kits: InventoryKit[] = [];
+  stories: StoriesRead | null = null;
   graph!: InventoryGraph;
   routes!: RouteIndex;
   theme!: Theme;
@@ -446,9 +452,10 @@ class ProjectPass {
 
   /* ------------------------------------------------------------------ looks */
 
-  private addLook(input: { file: string; line: number; column: number; role: InventoryRole; source: InventoryLook["source"]; tag: string; definition: Definition | null; classes: readonly string[]; rootTag: string | null; unresolved: readonly string[]; recipe: InventoryRecipe }): void {
+  private addLook(input: { file: string; line: number; column: number; role: InventoryRole; source: InventoryLook["source"]; tag: string; definition: Definition | null; classes: readonly string[]; rootTag: string | null; unresolved: readonly string[]; recipe: InventoryRecipe; story?: InventoryLook["story"] }): void {
     const resolved = resolveClasses(input.classes, input.rootTag, this.theme, this.rulesFor(input.file));
-    const routes = this.routes.of(input.file);
+    // A story is an authored state, rendered on no route.
+    const routes = input.story ? { routes: [], routeSource: "unrouted" as const } : this.routes.of(input.file);
     this.looks.push({
       id: `${this.id}:${input.file}:${input.line}:${input.column}`,
       role: input.role,
@@ -468,6 +475,7 @@ class ProjectPass {
       responsive: resolved.responsive,
       states: resolved.states,
       recipe: input.recipe,
+      ...(input.story ? { story: input.story } : {}),
     });
   }
 
@@ -666,6 +674,96 @@ class ProjectPass {
       else await this.reactLooks(module);
     }
   }
+
+  /* ---------------------------------------------------------------- stories */
+
+  /**
+   * Storybook stories as authored states of their components, read statically (stories.ts):
+   * each drawable story becomes a look of its meta's component, resolved and styled exactly like
+   * a JSX site of it, with simple provider decorators as its recipe's wrappers. Every story not
+   * drawn is listed with why; a file that fails is listed in `failed`, and the scan goes on.
+   */
+  async storyLooks(): Promise<void> {
+    const { root, exclude } = this.target;
+    let config: Awaited<ReturnType<typeof storyConfig>>;
+    let files: Awaited<ReturnType<typeof findStoryFiles>>;
+    try {
+      config = await storyConfig(root);
+      files = await findStoryFiles(root, config, exclude);
+    } catch (error: unknown) {
+      this.stories = { files: 0, read: 0, drawn: 0, skipped: [], notes: [`story files could not be listed (${error instanceof Error ? error.message : String(error)}); no stories were read`] };
+      return;
+    }
+    if (files.length === 0 && config.main === null) return;
+    const stories: StoriesRead = { files: files.length, read: 0, drawn: 0, skipped: [], notes: [...config.notes] };
+    for (const { file, specifier } of files) {
+      try {
+        const module = await parseModule(file, await readFile(join(root, file), "utf8"));
+        if (!module) continue;
+        if (module.parseErrors > 0) {
+          const error = module.root.root().find({ rule: { kind: "ERROR" } });
+          this.failed.push({ file, reason: `${module.parseErrors} parse error node(s); its stories were not read` });
+          stories.skipped.push({ file, line: error ? position(error).line : 1, name: "every story in it", reason: "the file did not parse; fix its syntax and run again" });
+          continue;
+        }
+        const csf = readCsf(module, specifier);
+        for (const story of csf.stories) {
+          stories.read++;
+          try {
+            const reason = story.skip ?? (await this.storyLook(module, csf, story, stories.notes));
+            if (reason) stories.skipped.push({ file, line: story.line, name: story.name, reason });
+            else stories.drawn++;
+          } catch (error: unknown) {
+            stories.skipped.push({ file, line: story.line, name: story.name, reason: `could not be drawn (${error instanceof Error ? error.message : String(error)})` });
+          }
+        }
+      } catch (error: unknown) {
+        this.failed.push({ file, reason: error instanceof Error ? error.message : String(error) });
+        stories.skipped.push({ file, line: 1, name: "every story in it", reason: "the file could not be read" });
+      }
+    }
+    stories.skipped.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line);
+    this.stories = stories;
+  }
+
+  /** One story as a look of its component; the reason when it cannot be one. */
+  private async storyLook(module: ModuleInfo, csf: CsfFile, story: CsfStory, notes: string[]): Promise<string | null> {
+    const tag = csf.component!;
+    const { symbol } = await resolveTag(this.graph, module, tag);
+    if (symbol.kind === "external") return `${symbol.name} comes from package ${packageOf(symbol.module)}, not this project`;
+    if (symbol.kind !== "symbol") return `${tag} could not be traced to its file (${symbol.kind === "unknown" ? symbol.detail : "a namespace object"})`;
+    const definition = this.definitions.get(`${symbol.file}#${symbol.name}`) ?? null;
+    if (definition?.entry.kind !== "react") return `${tag} in ${symbol.file} is not a component the inventory found (an exported component that renders JSX)`;
+    const role = roleOfComponent(definition.entry.name, story.props, null);
+    if (!role) return `${definition.entry.name} is not an element the inventory groups (buttons, inputs, cards, badges, dialogs, tabs)`;
+    const site = story.className ?? { certain: [], conditional: [], dynamic: [], calls: [], passthrough: false };
+    const { classes, unresolved } = this.componentClasses(definition, story.props, site);
+    const wrappers: InventoryRecipeWrapper[] = [];
+    for (const decorator of story.decorators) {
+      const skipped = "reason" in decorator ? decorator.reason : await this.decoratorWrappers(module, decorator.chain, wrappers);
+      const note = skipped && `${csf.file}: decorator at line ${decorator.line} skipped: ${skipped}; its stories are drawn without it`;
+      if (note && !notes.includes(note)) notes.push(note);
+    }
+    const rootTag = definition.recipe?.tag ?? null;
+    const recipe = this.recipeFor(role, definition, rootTag, classes, story.props, story.label, wrappers);
+    this.addLook({ file: csf.file, line: story.line, column: story.column, role, source: "component", tag, definition, classes, rootTag, unresolved: [...story.unresolved, ...unresolved], recipe, story: { title: csf.title, name: story.name, id: story.id } });
+    return null;
+  }
+
+  /** A decorator's tags as recipe wrappers, added only when every one is a component of this project; else why not. */
+  private async decoratorWrappers(module: ModuleInfo, chain: ReadonlyArray<{ tag: string; props: Record<string, PropValue> }>, into: InventoryRecipeWrapper[]): Promise<string | null> {
+    const found: InventoryRecipeWrapper[] = [];
+    for (const { tag, props } of chain) {
+      if (/^[a-z]/.test(tag)) return `a <${tag}> wrapper is layout, not a provider; only providers defined in this project are applied`;
+      const { symbol } = await resolveTag(this.graph, module, tag);
+      if (symbol.kind === "external") return `${symbol.name.split(".").at(-1)} comes from package ${packageOf(symbol.module)}; only providers defined in this project are applied`;
+      const definition = symbol.kind === "symbol" ? this.definitions.get(`${symbol.file}#${symbol.name}`) : undefined;
+      if (definition?.entry.kind !== "react") return `${tag} is not a component this project exports`;
+      found.push({ file: definition.entry.file, export: exportOf(definition), props: recipeProps(props) });
+    }
+    into.push(...found);
+    return null;
+  }
 }
 
 /** The first element a JSX element wraps (`<Button asChild><a …>`). */
@@ -686,9 +784,10 @@ export async function collectProject(target: InventoryTarget): Promise<ProjectIn
   await pass.reactDefinitions();
   await pass.astroDefinitions();
   await pass.collectLooks();
+  await pass.storyLooks();
   const git = await gitState(target.root);
   const definitions = [...pass.definitions.values()].map((d) => d.entry).sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.name.localeCompare(b.name));
   const primitives = [...pass.primitives].map(([pkg, p]) => ({ package: pkg, project: target.id, exports: [...p.exports].sort(), count: p.count, sites: p.sites.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column) })).sort((a, b) => a.package.localeCompare(b.package));
   const looks = pass.looks.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column);
-  return { id: target.id, target, commit: git.commit, failed: pass.failed.sort((a, b) => a.file.localeCompare(b.file)), warnings: pass.theme.warnings, definitions, kits: pass.kits.sort((a, b) => a.id.localeCompare(b.id)), primitives, looks, kitImports: pass.kitImports };
+  return { id: target.id, target, commit: git.commit, failed: pass.failed.sort((a, b) => a.file.localeCompare(b.file)), warnings: pass.theme.warnings, definitions, kits: pass.kits.sort((a, b) => a.id.localeCompare(b.id)), primitives, looks, kitImports: pass.kitImports, stories: pass.stories };
 }

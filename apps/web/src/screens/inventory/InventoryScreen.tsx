@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { useTheme, type Scheme } from "../../app/theme.tsx";
 import { kitLabel, ROLE_LABEL, roleAnchor } from "../../data/inventory.ts";
 import { useParts, type InventorySource } from "../../data/inventory-source.ts";
-import { activeFilters, consolidation, familyViews, filterCounts, filterFamilies, filtersToSearch, kitCells, Libraries, neededChunks, topFixes, type FamilyView, type Filters } from "../../data/inventory-view.ts";
+import { activeFilters, consolidation, familyViews, filterCounts, filterFamilies, filtersToSearch, kitCells, Libraries, neededChunks, topFixes, usesLabel, type FamilyView, type Filters } from "../../data/inventory-view.ts";
 import { retryInventory, useDetectState, useInventoryState } from "../../data/store.ts";
 import type { DetectReport, InventoryChunk, InventoryExtras, InventoryFlag, InventoryIndex, InventoryRoleIndex } from "../../data/types.ts";
 import { Badge } from "../../ui/Badge.tsx";
@@ -249,8 +249,10 @@ function Extras({ extras, children }: { extras: InventoryExtras | null; children
 
 /* ------------------------------------------------------------------------ headline */
 
-function Headline({ index, views, ready, filtered }: { index: InventoryIndex; views: readonly FamilyView[]; ready: boolean; filtered: boolean }) {
+function Headline({ index, views: all, ready, filtered }: { index: InventoryIndex; views: readonly FamilyView[]; ready: boolean; filtered: boolean }) {
   const t = index.tolerance;
+  // Families only Storybook stories have are on the wall, but nothing was built that way: not counted here.
+  const views = all.filter((v) => !v.authored);
   const families = ready ? views.length : filtered ? null : index.summary.families;
   const estimate = ready ? consolidation(views, t) : null;
   const fixes = ready ? topFixes(views) : [];
@@ -455,8 +457,8 @@ function WallTile({ view, chunks, source, scheme, libraries, stagger, onOpen }: 
       <LeadTile tiles={tiles} scheme={scheme} size="large" as="div" caption={false} tryIt />
       <div className="min-w-0 space-y-0.5 px-1">
         <h3 className="inv-tile-name text-small font-medium break-words text-ink">{view.name}</h3>
-        <p className="tabular text-caption text-muted">
-          {view.uses} {view.uses === 1 ? "use" : "uses"} · {view.projects} {view.projects === 1 ? "project" : "projects"}
+        <p className="tabular text-caption text-muted" data-uses="">
+          {usesLabel(view)}
         </p>
       </div>
       <div className="mt-auto flex flex-wrap items-center gap-2 px-1 pb-1">

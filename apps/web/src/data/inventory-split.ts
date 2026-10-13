@@ -42,24 +42,27 @@ export function splitInventory(report: InventoryReport, specimens: Readonly<Reco
     return { id: p.id, root: p.root, commit: p.commit, status: p.status, files: p.files, routes: p.routes, failed: p.failed.length, warnings: p.warnings, specimenCss, specimenNotes: built?.notes ?? ["no specimens were built: looks show their shape"] };
   });
   const roles = ROLES.flatMap((role) => {
-    const looks = report.looks.filter((l) => l.role === role);
-    if (looks.length === 0) return [];
+    // Chunks carry stories so their tiles can be drawn; every count is of real looks.
+    const all = report.looks.filter((l) => l.role === role);
+    if (all.length === 0) return [];
+    const looks = all.filter((l) => !l.story);
     const families = report.families.filter((f) => f.role === role);
     const cells: InventoryIndex["roles"][number]["cells"] = {};
     const chunks: Record<string, string> = {};
     for (const project of report.projects) {
-      const mine = looks.filter((l) => l.project === project.id);
-      cells[project.id] = { families: new Set(mine.flatMap((l) => (l.family ? [l.family] : []))).size, looks: mine.length };
+      const mine = all.filter((l) => l.project === project.id);
+      const used = mine.filter((l) => !l.story);
+      cells[project.id] = { families: new Set(mine.flatMap((l) => (l.family ? [l.family] : []))).size, looks: used.length };
       if (mine.length === 0) continue;
       const built = specimens[project.id];
-      const used: Record<string, Specimen> = {};
+      const drawn: Record<string, Specimen> = {};
       const chunkLooks: ChunkLook[] = mine.map((l) => {
         const id = built?.looks[l.id];
         const specimen = id ? built.specimens[id] : undefined;
-        if (id && specimen) used[id] = specimen;
-        return { id: l.id, file: l.file, line: l.line, column: l.column, tag: l.tag, kit: l.kit, family: l.family, shape: l.shape, specimen: id && specimen ? id : null };
+        if (id && specimen) drawn[id] = specimen;
+        return { id: l.id, file: l.file, line: l.line, column: l.column, tag: l.tag, kit: l.kit, family: l.family, shape: l.shape, specimen: id && specimen ? id : null, ...(l.story ? { story: l.story } : {}) };
       });
-      const chunk: InventoryChunk = { schema: "youiyoux.inventory-chunk/v1", project: project.id, role, families: families.filter((f) => f.projects.includes(project.id)), looks: chunkLooks, specimens: used };
+      const chunk: InventoryChunk = { schema: "youiyoux.inventory-chunk/v1", project: project.id, role, families: families.filter((f) => f.projects.includes(project.id)), looks: chunkLooks, specimens: drawn };
       chunks[project.id] = add(`inventory.${stemOf(project.id)}.${role}`, "json", json(chunk));
     }
     return [{ role, looks: looks.length, unshaped: looks.filter((l) => l.family === null).length, families: families.length, shared: families.filter((f) => f.nearDuplicate && f.projects.length > 1).length, cells, chunks }];
@@ -71,7 +74,8 @@ export function splitInventory(report: InventoryReport, specimens: Readonly<Reco
     generatedAt: report.generatedAt,
     tolerance: report.tolerance,
     projects,
-    summary: { ...report.summary, families: report.families.length, nearDuplicates: report.families.filter((f) => f.nearDuplicate).length, flags: report.flags.length },
+    // Families only stories have are drawn, but not counted among the families built.
+    summary: { ...report.summary, families: report.families.filter((f) => !f.authored).length, nearDuplicates: report.families.filter((f) => f.nearDuplicate).length, flags: report.flags.length },
     roles,
     extras: add("inventory.extras", "json", json(extras)),
   };

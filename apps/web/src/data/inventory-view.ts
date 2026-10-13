@@ -158,6 +158,10 @@ export interface FamilyView {
   readonly name: string;
   readonly uses: number;
   readonly projects: number;
+  /** Storybook stories drawn beside its uses (never counted among them). */
+  readonly stories: number;
+  /** Only stories have its shape: no use in any project does. */
+  readonly authored: boolean;
 }
 
 /** The report's order, which family ids number (button-1, button-2, …). */
@@ -192,7 +196,7 @@ export function familyViews(chunks: readonly InventoryChunk[], libraries: Librar
     const fallback = (family.sides.length > 0 ? family.sides.map((s) => s.kit) : [null]).map((kit) => libraries.primary(kit));
     const primary = tally.filter((t) => t.primary).sort((a, b) => b.looks - a.looks)[0]?.group ?? fallback[0]!;
     const libs = tally.length > 0 ? tally.map((t) => t.group) : fallback;
-    return { family, primary, libs: uniqueGroups(libs), looks: looks.get(family.id) ?? [], uses: family.looks, projects: family.projects.length };
+    return { family, primary, libs: uniqueGroups(libs), looks: looks.get(family.id) ?? [], uses: family.looks, projects: family.projects.length, stories: family.stories ?? 0, authored: family.authored === true };
   });
   const names = uniqueNames(base.map((v) => ({ id: v.family.id, family: v.family, kit: v.primary })));
   return base.map((v) => ({ ...v, name: names.get(v.family.id)! }));
@@ -405,13 +409,29 @@ export function attributeRows(a: { shape: InventoryShape; uses: number; projects
   return rows.map(([label, x, y]) => ({ label, a: x, b: y, differs: x !== y }));
 }
 
-/** Where a look is used: `project` + repo-relative `file:line` + its routes, from the family's examples (routes go by file). */
+/** `13 uses · 4 projects · 3 stories`, or `Only in Storybook · 2 stories` for a family no use has. */
+export function usesLabel(view: Pick<FamilyView, "uses" | "projects" | "stories" | "authored">): string {
+  const stories = `${view.stories} ${view.stories === 1 ? "story" : "stories"}`;
+  if (view.authored) return `Only in Storybook · ${stories}`;
+  return `${view.uses} ${view.uses === 1 ? "use" : "uses"} · ${view.projects} ${view.projects === 1 ? "project" : "projects"}${view.stories > 0 ? ` · ${stories}` : ""}`;
+}
+
+/** Where a look is used: `project` + repo-relative `file:line` + its routes, from the family's examples (routes go by file). Stories are not uses (storyRows). */
 export function usageRows(view: Pick<FamilyView, "family" | "looks">): Array<{ key: string; project: string; place: string; routes: string[] }> {
   const routes = new Map<string, string[]>();
   for (const e of [...view.family.examples, ...view.family.sides.flatMap((s) => s.examples)]) if (!routes.has(`${e.project}:${e.file}`)) routes.set(`${e.project}:${e.file}`, e.routes);
-  return [...view.looks]
+  return view.looks
+    .filter((l) => !l.story)
     .sort((a, b) => a.project.localeCompare(b.project) || a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column)
     .map((l) => ({ key: l.id, project: l.project, place: `${l.file}:${l.line}`, routes: routes.get(`${l.project}:${l.file}`) ?? [] }));
+}
+
+/** Its Storybook stories: `title / name`, with the story's `file:line`. */
+export function storyRows(view: Pick<FamilyView, "looks">): Array<{ key: string; project: string; story: string; place: string }> {
+  return view.looks
+    .filter((l) => l.story)
+    .sort((a, b) => a.project.localeCompare(b.project) || a.file.localeCompare(b.file) || a.line - b.line)
+    .map((l) => ({ key: l.id, project: l.project, story: `${l.story!.title} / ${l.story!.name}`, place: `${l.file}:${l.line}` }));
 }
 
 /* --------------------------------------------------------------------- the sheet */

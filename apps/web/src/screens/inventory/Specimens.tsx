@@ -248,7 +248,12 @@ export interface Tile {
   readonly specimenId?: string | null;
   /** A bundle already built for it (a Discover preview): Try it runs this script instead of asking for one. */
   readonly script?: string | null;
+  /** A Storybook story drawn as an authored state, beside the uses: labeled `Storybook · title / name`. */
+  readonly story?: { readonly title: string; readonly name: string; readonly id: string } | null;
 }
+
+/** `Storybook · UI/Button / Primary`. */
+export const storyLabel = (story: NonNullable<Tile["story"]>): string => `Storybook · ${story.title} / ${story.name}`;
 
 /** Where the hub serves a frame's files from, as a CSP source: its origin (`http://localhost:5173`), or its scheme for a file. */
 function hubSource(css: string): string {
@@ -549,9 +554,9 @@ export function SpecimenTile({ tile, scheme, size = "small", as: Tag = "li", cap
   const { state, start, ready, end, button } = useLive(near, ref);
   const [background, setBackground] = useState<string | undefined>(undefined);
   const staticFrame: ReactNode = !drawn ? <ShapeBox shape={tile.shape} tileHeight={height} /> : mounted ? <SpecimenFrame srcDoc={frameDocument(tile.specimen!.html, tile.css!, scheme)} scheme={scheme} near={near} height={height} onBlank={onBlank} onBackground={tryable ? setBackground : undefined} /> : near ? <ShapeBox shape={tile.shape} caption="waiting" tileHeight={height} /> : null;
-  const label = `${tile.project} ${tile.place}`;
+  const label = tile.story ? `${tile.project} ${storyLabel(tile.story)}` : `${tile.project} ${tile.place}`;
   return (
-    <Tag ref={ref as RefObject<never>} className={clsx("min-w-0 space-y-1", className)} data-tile={tile.key} data-kind={drawn ? tile.specimen!.kind : "shape"} data-frame={drawn && near ? (mounted ? "mounted" : "waiting") : undefined} data-live={state.status !== "static" ? state.status : undefined}>
+    <Tag ref={ref as RefObject<never>} className={clsx("min-w-0 space-y-1", className)} data-tile={tile.key} data-story={tile.story?.id} data-kind={drawn ? tile.specimen!.kind : "shape"} data-frame={drawn && near ? (mounted ? "mounted" : "waiting") : undefined} data-live={state.status !== "static" ? state.status : undefined}>
       {/* Try it and Done sit over the box's corner on a desk; on a phone, where a 44px button would cover the look, below it. */}
       <div className="relative">
         <div className="relative overflow-hidden rounded-md border border-line bg-sunken" style={{ height, background: backdrop }}>
@@ -584,7 +589,7 @@ export function SpecimenTile({ tile, scheme, size = "small", as: Tag = "li", cap
           {state.failure}
         </p>
       )}
-      {caption && (
+      {caption && (tile.story ? <StoryCaption story={tile.story} place={tile.place} /> : (
       <p className="flex min-w-0 items-baseline gap-1.5 text-caption text-muted">
         <span className="shrink-0 font-medium text-ink-2">{tile.project}</span>
         {tile.count > 1 && <span className="shrink-0 tabular">×{tile.count}</span>}
@@ -592,7 +597,7 @@ export function SpecimenTile({ tile, scheme, size = "small", as: Tag = "li", cap
           {tile.place}
         </span>
       </p>
-      )}
+      ))}
     </Tag>
   );
 }
@@ -645,6 +650,22 @@ export function StateStrip({ tile, scheme, label }: { tile: Tile; scheme: Scheme
         </ol>
       )}
     </div>
+  );
+}
+
+/** A story tile's caption: that it comes from Storybook, then its title and name; its file:line on hover. */
+export function StoryCaption({ story, place }: { story: NonNullable<Tile["story"]>; place: string }) {
+  return (
+    <p className="flex min-w-0 items-baseline gap-1.5 text-caption text-muted" title={place} aria-label={storyLabel(story)}>
+      <span className="shrink-0 font-medium text-accent">Storybook</span>
+      <span aria-hidden className="shrink-0 text-faint">
+        ·
+      </span>
+      {/* Its name is what tells stories apart: wrapped to a second line, never cut. */}
+      <span className="line-clamp-2 min-w-0 break-words">
+        {story.title} / {story.name}
+      </span>
+    </p>
   );
 }
 

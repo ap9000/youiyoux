@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+/* This app's own scale: rounded-md is 8px here, not Tailwind's 6px. */
+@theme {
+  --radius-md: 8px;
+  --color-primary: #1d4ed8;
+  --color-primary-foreground: #ffffff;
+  --color-background: #ffffff;
+  --color-accent: #eff6ff;
+  --color-input: #cbd5e1;
+  --color-muted: #f1f5f9;
+  --color-muted-foreground: #475569;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-primary: #93c5fd;
+    --color-primary-foreground: #0f172a;
+    --color-background: #0f172a;
+    --color-accent: #1e293b;
+    --color-input: #334155;
+    --color-muted: #1e293b;
+    --color-muted-foreground: #cbd5e1;
+  }
+}
+
+[data-theme="contrast"] {
+  --color-primary: #000000;
+  --color-primary-foreground: #ffff00;
+}

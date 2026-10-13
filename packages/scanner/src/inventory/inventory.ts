@@ -6,7 +6,7 @@
 import { relative } from "node:path";
 import { INVENTORY_ROLES, SHAPE_DIMENSIONS, type InventoryFamily, type InventoryFlag, type InventoryLook, type InventoryReport, type InventoryShape } from "@youiyoux/core";
 import { SCANNER_VERSION } from "../identity.ts";
-import { clusterShapeOf, clusterShapes, compareShapes, DEFAULT_TOLERANCE, type ClusterShape, type Tolerance } from "./cluster.ts";
+import { clusterShapeOf, clusterShapes, compareShapes, DEFAULT_TOLERANCE, shapeDistance, type ClusterShape, type Tolerance } from "./cluster.ts";
 import { collectProject, type ProjectInventory } from "./collect.ts";
 import { hasShape } from "./style.ts";
 import { loadInventoryTarget, type TargetGlobs } from "./target.ts";
@@ -86,6 +86,35 @@ export function familiesOf(role: InventoryLook["role"], looks: readonly Look[], 
   return families;
 }
 
+/**
+ * Stories beside the families real looks made: each story joins the family of its role it fits
+ * best, within tolerance of every shape already in it, so no family grows wider; the rest are
+ * grouped among themselves into families marked `authored` (only stories have that shape), numbered
+ * after the real ones. Families keep their looks, sides and near-duplicate verdict: a story is
+ * never a use.
+ */
+export function attachStories(role: InventoryLook["role"], families: ReadonlyArray<{ family: InventoryFamily; members: readonly Look[] }>, stories: readonly Look[], tolerance: Tolerance = DEFAULT_TOLERANCE, projectOrder: readonly string[] = [], examples = EXAMPLES): Array<{ family: InventoryFamily; members: Look[] }> {
+  const shapes = families.map(({ members }) => [...new Map(members.map((m) => [shapeKey(clusterShapeOf(m)), clusterShapeOf(m)])).values()]);
+  const attached = families.map(() => [] as Look[]);
+  const rest: Look[] = [];
+  for (const story of stories) {
+    const shape = clusterShapeOf(story);
+    let best = -1;
+    let bestDistance = Infinity;
+    shapes.forEach((list, i) => {
+      const distance = Math.max(...list.map((s) => shapeDistance(shape, s, tolerance)));
+      if (distance <= 1 + 1e-9 && distance < bestDistance) [best, bestDistance] = [i, distance];
+    });
+    if (best === -1) rest.push(story);
+    else attached[best]!.push(story);
+  }
+  attached.forEach((list, i) => {
+    if (list.length > 0) families[i]!.family.stories = list.length;
+  });
+  const authored = familiesOf(role, rest, tolerance, projectOrder, examples).map(({ family, members }, i) => ({ family: { ...family, id: `${role}-${families.length + i + 1}`, looks: 0, nearDuplicate: false, sides: [], stories: members.length, authored: true }, members }));
+  return [...families.map(({ family }, i) => ({ family, members: attached[i]! })), ...authored];
+}
+
 function flagsOf(projects: readonly ProjectInventory[]): InventoryFlag[] {
   const flags: InventoryFlag[] = [];
   const byName = new Map<string, ProjectInventory["definitions"]>();
@@ -138,21 +167,27 @@ export async function buildInventory(dirs: readonly string[], options: Inventory
   const looks = projects.flatMap((p) => p.looks);
   const familyOf = new Map<string, string>();
   const families: InventoryFamily[] = [];
+  const order = targets.map((t) => t.id);
   for (const role of INVENTORY_ROLES) {
+    // Real looks make the families; stories are placed beside them afterwards.
     const shaped = looks.filter((l) => l.role === role && hasShape(l.shape));
-    for (const { family, members } of familiesOf(role, shaped, tolerance, targets.map((t) => t.id), options.examples)) {
+    const real = familiesOf(role, shaped.filter((l) => !l.story), tolerance, order, options.examples);
+    for (const { family, members } of real) for (const member of members) familyOf.set(member.id, family.id);
+    for (const { family, members } of attachStories(role, real, shaped.filter((l) => l.story), tolerance, order, options.examples)) {
       families.push(family);
       for (const member of members) familyOf.set(member.id, family.id);
     }
   }
   const allLooks = looks.map((look) => ({ ...look, family: familyOf.get(look.id) ?? null }));
+  const uses = allLooks.filter((l) => !l.story);
+  const stories = allLooks.length - uses.length;
   return {
     schema: "youi.inventory/v1",
     scanner: SCANNER_VERSION,
     generatedAt: new Date().toISOString(),
     durationMs: Math.round(performance.now() - started),
     tolerance,
-    projects: projects.map((p) => ({ id: p.id, root: p.target.label, commit: p.commit, status: p.failed.length > 0 ? "partial" : "complete", files: p.target.files.length, routes: p.target.routeSource, failed: p.failed, warnings: p.warnings })),
+    projects: projects.map((p) => ({ id: p.id, root: p.target.label, commit: p.commit, status: p.failed.length > 0 ? "partial" : "complete", files: p.target.files.length, routes: p.target.routeSource, failed: p.failed, warnings: p.warnings, ...(p.stories ? { stories: p.stories } : {}) })),
     definitions: projects.flatMap((p) => p.definitions),
     kits: projects.flatMap((p) => p.kits),
     primitives: projects.flatMap((p) => p.primitives),
@@ -160,10 +195,11 @@ export async function buildInventory(dirs: readonly string[], options: Inventory
     families,
     flags: flagsOf(projects),
     summary: {
-      looks: allLooks.length,
-      clustered: allLooks.filter((l) => l.family !== null).length,
-      unshaped: allLooks.filter((l) => l.family === null).length,
-      notClustered: allLooks.reduce((n, l) => n + l.responsive.length + l.states.length, 0),
+      looks: uses.length,
+      clustered: uses.filter((l) => l.family !== null).length,
+      unshaped: uses.filter((l) => l.family === null).length,
+      notClustered: uses.reduce((n, l) => n + l.responsive.length + l.states.length, 0),
+      ...(stories > 0 ? { stories } : {}),
     },
   };
 }

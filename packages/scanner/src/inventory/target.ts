@@ -30,7 +30,7 @@ export interface InventoryTarget {
 }
 
 export const DEFAULT_INCLUDE = ["**/*.{tsx,jsx,ts,js,mjs,astro,css}"];
-export const DEFAULT_EXCLUDE = ["**/*.d.ts", "**/*.test.*", "**/*.spec.*", "**/*.stories.*", "**/.next/**", "**/.astro/**", "**/build/**", "**/out/**", "**/coverage/**", "**/*.config.*"];
+export const DEFAULT_EXCLUDE = ["**/*.d.ts", "**/*.test.*", "**/*.spec.*", "**/*.stories.*", "**/.storybook/**", "**/.next/**", "**/.astro/**", "**/build/**", "**/out/**", "**/coverage/**", "**/*.config.*"];
 /** Styles always count, even when a project config's globs name only components. */
 const STYLES = ["**/*.css"];
 

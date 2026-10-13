@@ -8,6 +8,7 @@ import { hubPlan, main } from "../src/index.ts";
 const FIXTURES = join(import.meta.dirname, "../../scanner/test/fixtures/inventory");
 const CONSOLE = join(FIXTURES, "console");
 const SITE = join(FIXTURES, "site");
+const STORYBOOK = join(FIXTURES, "storybook");
 
 let out = "";
 let err = "";
@@ -56,6 +57,48 @@ describe("youi inventory", () => {
       expect(out).toContain("Badge is defined 3 times");
       expect(out).toContain("console:src/app/settings/page.tsx imports 2 kits' button in 2 imports: LegacyButton, LegacyIconButton from src/styles/legacy.css (line 2), Button from src/components/ui (line 3)");
       expect(out).toMatch(/\d+ breakpoint\/state classes recorded, not clustered/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("Storybook: stories added beside their components, each skipped one with file:line and why, then what to do next; exit 0", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "youi-inventory-"));
+    try {
+      const file = join(dir, "i.json");
+      expect(await main(["inventory", "--project", STORYBOOK, "--out", file])).toBe(0);
+      expect(out).toContain("4 looks in 3 families · 8 stories beside them");
+      // Counts are of real uses; stories are added beside them.
+      expect(out).toMatch(/button\s+1f 3\n/);
+      expect(out).toMatch(/button-1\s+h32 px12 py0 r8 14px 500\s+3 looks\s+storybook\s+\+ 5 stories/);
+      expect(out).toMatch(/button-2\s+h44 px32 py0 r8 16px 500\s+0 looks\s+storybook\s+only in Storybook: 1 story/);
+      expect(out).toContain("Storybook: 12 stories in 5 files, 8 added as authored states beside their components; 5 skipped:");
+      for (const line of [
+        "src/components/ui/button.stories.tsx:59 With Icon — has its own render function; only args stories are drawn",
+        "src/components/ui/button.stories.tsx:67 Legacy — a CSF 2 function story; only CSF 3 object stories are read",
+        "src/stories/broken.stories.tsx:9 every story in it — the file did not parse; fix its syntax and run again",
+        "src/stories/introduction.stories.tsx:5 Welcome — meta names no component",
+        "src/stories/remote-button.stories.tsx:8 From Package — Button comes from package @acme/ui, not this project",
+        "src/components/ui/button.stories.tsx: decorator at line 51 skipped: ThemeProvider comes from package next-themes; only providers defined in this project are applied; its stories are drawn without it",
+      ])
+        expect(out).toContain(line);
+      expect(out).toContain(`Next: rewrite the skipped stories as CSF 3 args stories of a component in this project (or fix the file), run youi inventory again, then see them beside their real uses with youi ui --inventory ${file}`);
+      out = "";
+      expect(await main(["inventory", "--project", STORYBOOK, "--json", "--out", file])).toBe(0);
+      const printed = InventoryReport.parse(JSON.parse(out));
+      expect(printed.projects[0]!.stories).toMatchObject({ files: 5, read: 12, drawn: 8, skipped: expect.arrayContaining([expect.objectContaining({ file: "src/stories/introduction.stories.tsx", line: 5, reason: "meta names no component" })]) });
+      expect(printed.looks.filter((l) => l.story).map((l) => l.story!.name)).toContain("High contrast");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a project with no Storybook prints no Storybook section", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "youi-inventory-"));
+    try {
+      expect(await main(["inventory", "--project", CONSOLE, "--out", join(dir, "i.json")])).toBe(0);
+      expect(out).not.toContain("Storybook");
+      expect(out).not.toContain("stories");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

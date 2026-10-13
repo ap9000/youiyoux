@@ -460,7 +460,22 @@ export const InventoryProject = z.object({
   failed: z.array(z.object({ file: z.string(), reason: z.string() })),
   /** Theme or config that could not be read statically (it falls back to Tailwind's defaults). */
   warnings: z.array(z.string()),
+  /**
+   * Its Storybook stories, read statically (never run), when it has any: story files found, stories
+   * read, stories drawn as authored looks, and each one skipped with file:line and why. `notes`:
+   * what was left out of stories that were drawn (a decorator, global decorators). Additive.
+   */
+  stories: z
+    .object({
+      files: z.number().int(),
+      read: z.number().int(),
+      drawn: z.number().int(),
+      skipped: z.array(ProjectPosition.omit({ project: true }).extend({ name: z.string(), reason: z.string() })),
+      notes: z.array(z.string()),
+    })
+    .optional(),
 });
+export type InventoryProject = z.infer<typeof InventoryProject>;
 
 export const InventoryDefinition = ProjectPosition.extend({
   /** `<project>:<file>#<export>`. */
@@ -552,6 +567,11 @@ export const InventoryLook = ProjectPosition.extend({
   /** The family it was grouped into; null when no dimension resolved, so it was not clustered. */
   family: z.string().nullable(),
   recipe: InventoryRecipe.optional(),
+  /**
+   * A Storybook story (`file:line` is its export): an authored state of its component, not a use.
+   * It joins the family of its role it fits within tolerance, and never counts as a look of it.
+   */
+  story: z.object({ title: z.string(), name: z.string(), id: z.string() }).optional(),
 });
 export type InventoryLook = z.infer<typeof InventoryLook>;
 
@@ -573,6 +593,10 @@ export const InventoryFamily = z.object({
   nearDuplicate: z.boolean(),
   /** Each project-and-kit side of the family, with its own examples. */
   sides: z.array(z.object({ project: z.string(), kit: z.string().nullable(), looks: z.number().int(), examples: z.array(InventoryExample) })),
+  /** Storybook stories drawn as authored states of it, beside its looks (never counted in `looks`). */
+  stories: z.number().int().optional(),
+  /** Only stories have this shape: no look in any project does (`looks` is 0; `examples` are the stories). */
+  authored: z.boolean().optional(),
 });
 export type InventoryFamily = z.infer<typeof InventoryFamily>;
 
@@ -604,6 +628,8 @@ export const InventoryReport = z.object({
     unshaped: z.number().int(),
     /** Breakpoint and state classes and rules recorded on looks; they never decide a family. */
     notClustered: z.number().int(),
+    /** Storybook stories drawn as authored looks; `looks`, `clustered` and `unshaped` count real looks only. */
+    stories: z.number().int().optional(),
   }),
 });
 export type InventoryReport = z.infer<typeof InventoryReport>;

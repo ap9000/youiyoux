@@ -7,14 +7,15 @@
  *   node scripts/capture-inventory.ts [--base http://localhost:5173] [--out screenshots]
  *   node scripts/capture-inventory.ts --serve [--out screenshots]  # or: build and serve a fixture snapshot itself
  *
- * `--serve` snapshots the scanner's five inventory fixtures into apps/web/.capture (console:
+ * `--serve` snapshots the scanner's six inventory fixtures into apps/web/.capture (console:
  * Tailwind v4 CVA kit; site: BEM class kit and Astro components; widgets: shaped like the Toolroll
  * console, its Tailwind entry built by the CLI and linked from index.html and a server template,
  * its tokens @imported by that entry, so its CVA Button and Badge and its .ui-button draw in
  * their real colours; sketch: Tailwind classes and no stylesheet, so its button shows the
  * shape-only fallback; mobile: a back button whose most used look is display:none at the 1280px
- * desk width), builds the hub against it and serves the build with `vite preview`; no app's dev
- * server runs.
+ * desk width; storybook: a CVA Button and Badge with CSF 3 stories beside them, read statically,
+ * Storybook never installed or run), builds the hub against it and serves the build with
+ * `vite preview`; no app's dev server runs.
  *
  * Writes, light and dark, at 1440×900: inventory.<scheme>.png (filters, the headline and the
  * top of the wall; on a phone, the two-column wall), inventory-filtered.<scheme>.png (a filtered URL: the console's buttons),
@@ -26,7 +27,10 @@
  * opened), inventory-states.<scheme>.png (its Variants tab showing States: each look default,
  * hover, focus, pressed and disabled side by side) and inventory-try-tabs.<scheme>.png (the
  * console's Tabs after Try it, its second trigger clicked in the live sandboxed frame, so it is
- * the active tab; `--serve` answers Try it from `vite preview`); and at 390×844 on a touch phone
+ * the active tab; `--serve` answers Try it from `vite preview`), inventory-stories-wall.<scheme>.png
+ * (the storybook project's buttons: a family's uses and stories counted apart, and a family only
+ * stories have) and inventory-stories.<scheme>.png (that family opened on Variants: its
+ * Storybook-labeled story tiles beside the discovered looks); and at 390×844 on a touch phone
  * the same as phone-inventory*.png, with
  * phone-inventory-filters.<scheme>.png (the filters' bottom sheet) and
  * phone-inventory-sheet.<scheme>.png (the family's bottom sheet) for the last two. Each waits
@@ -45,7 +49,7 @@ import { chromium, type Browser, type Page } from "playwright-core";
 
 const APP = resolve(import.meta.dirname, "..");
 const TOOL = resolve(APP, "../..");
-const FIXTURES = ["console", "site", "widgets", "sketch", "mobile"].map((name) => join(TOOL, "packages/scanner/test/fixtures/inventory", name));
+const FIXTURES = ["console", "site", "widgets", "sketch", "mobile", "storybook"].map((name) => join(TOOL, "packages/scanner/test/fixtures/inventory", name));
 const SCHEMES = ["light", "dark"] as const;
 const SETTLE_MS = 400;
 const FRAMES_TIMEOUT_MS = 20_000;
@@ -77,6 +81,33 @@ async function framesDrawn(page: Page): Promise<void> {
           return r.bottom > 0 && r.top < innerHeight && r.width > 0;
         })
         .every((t) => (t as HTMLElement).dataset.kind === "shape" || t.querySelector("iframe[data-placed]")),
+    undefined,
+    { timeout: FRAMES_TIMEOUT_MS },
+  );
+}
+
+/** The open drawer's scroll area, nearest scrollable ancestor of `element`, scrolled so `element` sits `share` of the way down. */
+function scrollInDrawer(element: Element, share: number): void {
+  let scroller = element.parentElement;
+  while (scroller && !(scroller.scrollHeight > scroller.clientHeight && /auto|scroll/.test(getComputedStyle(scroller).overflowY))) scroller = scroller.parentElement;
+  if (scroller) scroller.scrollTop += element.getBoundingClientRect().top - scroller.getBoundingClientRect().top - scroller.clientHeight * share;
+}
+
+/** Every tile wholly inside the open drawer's scroll area has drawn (tiles scrolled under its header do not mount, and are not waited for). */
+async function drawerFramesDrawn(page: Page): Promise<void> {
+  await page.waitForFunction(
+    () => {
+      const tiles = [...document.querySelectorAll('[data-testid="family-drawer"] [data-tile]')];
+      let scroller = tiles[0]?.parentElement ?? null;
+      while (scroller && !(scroller.scrollHeight > scroller.clientHeight && /auto|scroll/.test(getComputedStyle(scroller).overflowY))) scroller = scroller.parentElement;
+      const area = (scroller ?? document.documentElement).getBoundingClientRect();
+      return tiles
+        .filter((t) => {
+          const r = t.getBoundingClientRect();
+          return r.width > 0 && r.top >= area.top && r.bottom <= Math.min(area.bottom, innerHeight);
+        })
+        .every((t) => (t as HTMLElement).dataset.kind === "shape" || t.querySelector("iframe[data-placed]"));
+    },
     undefined,
     { timeout: FRAMES_TIMEOUT_MS },
   );
@@ -275,6 +306,26 @@ async function capture(browser: Browser, base: string, out: string, checks: Chec
       await open(page, base, "?project=mobile");
       await scrollTo(page, '[data-role="button"]');
       files.push(await shoot(page, out, `${prefix}-lead.${scheme}`));
+
+      // Storybook stories as authored states: counted apart on the wall, labeled tiles beside the uses.
+      await open(page, base, "?type=button&project=storybook");
+      await scrollTo(page, '[data-role="button"]');
+      files.push(await shoot(page, out, `${prefix}-stories-wall.${scheme}`));
+      const storied = page.locator("[data-family]").filter({ has: page.locator("[data-uses]", { hasText: /uses? · .* stor(?:y|ies)$/ }) }).first();
+      await storied.getByRole("button", { name: /^Open / }).click();
+      const stories = page.getByTestId("family-drawer");
+      await stories.getByRole("list", { name: "Storybook stories" }).waitFor();
+      await stories.getByRole("tab", { name: /Variants/ }).click();
+      const firstStory = stories.locator("[data-story]").first();
+      await firstStory.waitFor();
+      // Only the drawer's own scroll area moves, so the wall behind it stays where it was.
+      await firstStory.evaluate(scrollInDrawer, phone ? 0.1 : 0.4);
+      await drawerFramesDrawn(page);
+      await page.waitForTimeout(SETTLE_MS);
+      const storiesFile = join(out, `${prefix}-stories.${scheme}.png`);
+      await page.screenshot({ path: storiesFile });
+      files.push(storiesFile);
+      await page.keyboard.press("Escape");
 
       await open(page, base);
       await check(page, phone, prefix, scheme, checks);
