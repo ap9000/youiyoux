@@ -1,6 +1,6 @@
 /**
- * The YouIyouX MCP server (stdio). Two families of read tools, named for the
- * side of the tool they read:
+ * The YouIyouX MCP server (stdio). Read tools, named for the side of the tool
+ * they read:
  *   system_*   approved elements: build with these (contracts, tokens, rules,
  *              where-used, check) and plan a change to them.
  *   library_*  ingested references: browse and draft an adoption request only.
@@ -9,6 +9,9 @@
  *   index_*    the local index's graph (`youi inventory`, `youi scan`, `youi index rebuild`
  *              fill it): where an inventory family is used, what swapping a candidate in
  *              for one would touch, what a rule covers. A few plain lines each.
+ *   ui_find_component  call before writing UI: the project's own components that fit a need
+ *              (import, props, a real usage, where used, library), read live from the code with
+ *              or without a youi.project.json, or "nothing fits" and where to start. Plain lines.
  * There is no publish, approve, merge or install tool, so an agent can look things up,
  * plan a change and draft a request, but never ship one.
  *
@@ -18,12 +21,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { existsSync, realpathSync } from "node:fs";
-import { isAbsolute, resolve, sep } from "node:path";
+import { isAbsolute, join, resolve, sep } from "node:path";
 import { isLibraryId, loadLibrary, MigrationSpec, normalizeRelPath, type Library, type McpTool } from "@youiyoux/core";
-import { DISCOVER_RULE, DiscoverConstraints, discoverCacheDir, discoverIndexPath, MissingIndexError, readCatalog, searchCatalog, sharedStore, showFromCatalog } from "@youiyoux/discover";
+import { DISCOVER_RULE, DiscoverConstraints, discoverCacheDir, discoverIndexPath, MissingIndexError, readCatalog, searchCatalog, sharedStore, showFromCatalog, type DiscoverHit } from "@youiyoux/discover";
 import { storeLocation, type Store } from "@youiyoux/store";
-import { adoptionRequest, findLibraryEntry, componentCard, describeIdentity, failedChecks, findContract, formatProps, loadProject, planChange, ruleRows, ScanCache, scanProject, screenBom, searchElements, searchLibrary, tokenRows, whereUsed, type PlanInput, type Project, type ScanResult } from "@youiyoux/scanner";
+import { adoptionRequest, collectComponents, findLibraryEntry, componentCard, describeIdentity, failedChecks, findContract, formatProps, loadProject, planChange, PROJECT_FILE, ruleRows, ScanCache, scanProject, screenBom, searchElements, searchLibrary, tokenRows, whereUsed, type PlanInput, type Project, type ProjectComponents, type ScanResult } from "@youiyoux/scanner";
 import { z } from "zod";
+import { findComponents, matchesText, noneFitsText } from "./find-component.ts";
 import { ruleCoversText, swapImpactText, whereUsedText } from "./index-tools.ts";
 
 export interface ServerOptions {
@@ -58,6 +62,7 @@ class State {
   private project: { at: number; value: Promise<Project> } | null = null;
   private library: { project: Promise<Project>; value: Promise<Library> } | null = null;
   private scan: { at: number; project: Promise<Project>; result: Promise<ScanResult> } | null = null;
+  private inventory: { at: number; root: string; value: Promise<ProjectComponents> } | null = null;
   private readonly cache = new ScanCache();
   private readonly options: ServerOptions;
 
@@ -95,6 +100,24 @@ class State {
       this.scan = { at: Date.now(), project: current, result: current.then((project) => scanProject(project, { cache: this.cache })) };
     }
     return { project: await current, scan: await this.scan.result };
+  }
+
+  /**
+   * The project's own components (inventory pass, no design system needed), re-read after the
+   * TTL. With a youi.project.json, the System and its scan come too.
+   */
+  async components(): Promise<{ components: ProjectComponents; system: { project: Project; scan: ScanResult } | null }> {
+    // No youi.project.json is the common case: the project's own components still answer.
+    const system = existsSync(resolve(this.options.configPath ?? join(this.options.projectRoot, PROJECT_FILE))) ? await this.scanned() : null;
+    const root = system?.project.root ?? resolve(this.options.productRoot ?? this.options.projectRoot);
+    if (!this.inventory || this.inventory.root !== root || Date.now() - this.inventory.at > this.ttl) {
+      const value = collectComponents(root);
+      value.catch(() => {
+        if (this.inventory?.value === value) this.inventory = null;
+      });
+      this.inventory = { at: Date.now(), root, value };
+    }
+    return { components: await this.inventory.value, system };
   }
 
   /** A fresh, focused check through the shared cache (only changed files are re-analysed). */
@@ -140,7 +163,7 @@ export function createServer(options: ServerOptions): McpServer {
     { name: "youiyoux", version: VERSION },
     {
       instructions:
-        "YouIyouX design-language lookups for this project. Build only with System elements: call system_get_component before using a component's props, system_get_tokens instead of writing colours or sizes, and system_check on code before finishing. system_plan shows the impact of a change to the System. The Library (library_* tools, lib: ids) holds ingested references that are not approved: browse them with library_search, never import, copy or build with them, and use library_request to draft an adoption request for a person to approve. discover_search and discover_show find outside candidates by need (shadcn registries, npm) with licence, signals and install command: they are references, never install or copy one; propose one with library_request. index_where_used, index_swap_impact and index_rule_covers answer from the local index in a few lines: where an inventory family (button-2) is used, what swapping a candidate in for it would touch, and what a rule covers. There are no tools to publish, approve or install anything.",
+        "YouIyouX: the UI context and verification layer for this project. Before creating any UI component, call ui_find_component with the need in words: reuse the existing component it names, or start where it says when nothing fits. Build only with System elements: call system_get_component before using a component's props, system_get_tokens instead of writing colours or sizes, and system_check on code before finishing. system_plan shows the impact of a change to the System. The Library (library_* tools, lib: ids) holds ingested references that are not approved: browse them with library_search, never import, copy or build with them, and use library_request to draft an adoption request for a person to approve. discover_search and discover_show find outside candidates by need (shadcn registries, npm) with licence, signals and install command: they are references, never install or copy one; propose one with library_request. index_where_used, index_swap_impact and index_rule_covers answer from the local index in a few lines: where an inventory family (button-2) is used, what swapping a candidate in for it would touch, and what a rule covers. There are no tools to publish, approve or install anything.",
     },
   );
 
@@ -347,6 +370,28 @@ export function createServer(options: ServerOptions): McpServer {
       if ("choices" in covers) return ["Choose a project or full node id:", ...covers.choices.slice(0, 8).map((n) => `${n.project ?? "unknown"} · ${n.id}`)].join("\n");
       const spec = await state.loadProject().then((p) => p.system.rules.find((r) => r.id === covers.rule), () => undefined);
       return ruleCoversText(covers, spec ? { title: spec.title, severity: spec.severity, files: spec.files } : {});
+    }),
+  );
+
+  server.registerTool(
+    "ui_find_component" satisfies McpTool,
+    {
+      title: "Find the project's existing component for a UI need",
+      description: "Call this before creating any UI component. Given a need in words (\"dismissible alert\", \"primary button with icon\", \"toast\"), returns the project's existing components that fit, best first: import line, props, a real usage from the codebase, where it is used and its library (System, shadcn, Radix, hand-rolled…). Names and aliases count (toast = snackbar, dialog = modal). When nothing fits it says so plainly and names where to start: a library primitive the project already uses, or Discover candidates. Every answer ends with what to do next.",
+      inputSchema: { need: z.string().min(1).describe("What the UI needs, in words, e.g. \"dismissible alert\""), limit: z.number().int().min(1).max(5).optional() },
+      annotations: READ_ONLY,
+    },
+    lines(async ({ need, limit }) => {
+      const { components, system } = await state.components();
+      const result = findComponents(need.trim(), components, system ? { project: system.project, report: system.scan.report } : null, limit);
+      if (result.kind === "matches") return matchesText(result, system !== null);
+      let discover: DiscoverHit[] | null = null;
+      try {
+        discover = [...(await searchCatalog(await catalog(), need.trim(), { limit: 3 })).hits];
+      } catch (error: unknown) {
+        if (!(error instanceof MissingIndexError)) throw error;
+      }
+      return noneFitsText({ result, discover, componentsDir: system?.project.config.componentsDir ?? components.componentsDir, inSystem: system !== null });
     }),
   );
 

@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 import { sha256 } from "@youiyoux/core";
 import { loadProject, type Project } from "@youiyoux/scanner";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { BLOCK_BEGIN, BLOCK_END, mcpArgs, mergeThreeWay, readLock, syncProject, verifyLock } from "../src/index.ts";
+import { BLOCK_BEGIN, BLOCK_END, FIND_FIRST_RULE, mcpArgs, mergeThreeWay, readLock, syncProject, verifyLock } from "../src/index.ts";
 
 const DEMO = join(import.meta.dirname, "../../../examples/demo-design");
 const FIXTURE = join(import.meta.dirname, "../../scanner/test/fixtures/expo-app");
@@ -56,6 +56,8 @@ describe("first sync", () => {
     const skill = await read(".agents/skills/youiyoux/SKILL.md");
     expect(skill).toContain("## System and Library");
     expect(skill).toContain("`library → candidate → adopted → in-use`");
+    // One find-first rule, worded the same wherever an agent reads it.
+    for (const text of [agents, skill]) expect(text).toContain(FIND_FIRST_RULE);
     for (const text of [agents, skill, await read("DESIGN.md")]) expect(text).not.toMatch(/\byoui_[a-z]/);
     expect(await readLock(app)).toEqual(lock);
   });

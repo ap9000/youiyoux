@@ -57,7 +57,8 @@ export function hookCommand(toolRoot: string, kind: "claude" | "pre-commit", tar
   return [...args, ...extra].map(shellQuote).join(" ");
 }
 
-async function write(file: string, content: string, before: string | null, guarantee: string, mode?: number): Promise<InstallResult> {
+/** Write `content` unless it is already there; created, updated or unchanged. */
+export async function write(file: string, content: string, before: string | null, guarantee: string, mode?: number): Promise<InstallResult> {
   if (before === content) return { file, action: "unchanged", guarantee };
   await mkdir(dirname(file), { recursive: true });
   await writeFileAtomic(file, content);

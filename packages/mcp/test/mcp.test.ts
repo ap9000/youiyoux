@@ -28,13 +28,13 @@ async function call(name: string, args: Record<string, unknown> = {}): Promise<{
 }
 
 describe("youiyoux MCP server", () => {
-  test("exposes system_*, library_*, discover_* and index_* read tools, and nothing that writes, approves or installs", async () => {
+  test("exposes system_*, library_*, discover_*, index_* and ui_* read tools, and nothing that writes, approves or installs", async () => {
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["discover_search", "discover_show", "index_rule_covers", "index_swap_impact", "index_where_used", "library_request", "library_search", "system_check", "system_get_component", "system_get_rules", "system_get_tokens", "system_plan", "system_screen_bom", "system_search", "system_where_used"]);
+    expect(tools.map((t) => t.name).sort()).toEqual(["discover_search", "discover_show", "index_rule_covers", "index_swap_impact", "index_where_used", "library_request", "library_search", "system_check", "system_get_component", "system_get_rules", "system_get_tokens", "system_plan", "system_screen_bom", "system_search", "system_where_used", "ui_find_component"]);
     expect(tools.map((t) => t.name).sort()).toEqual([...MCP_TOOLS].sort());
     for (const tool of tools) expect(tool.annotations?.readOnlyHint).toBe(true);
     expect(tools.some((t) => /propose|publish|approve|merge|write|apply|install|sync/.test(t.name))).toBe(false);
-    expect(tools.every((t) => /^(system|library|discover|index)_/.test(t.name))).toBe(true);
+    expect(tools.every((t) => /^(system|library|discover|index|ui)_/.test(t.name))).toBe(true);
   });
 
   test("component cards carry usage, and claim no stage from a partial scan", async () => {

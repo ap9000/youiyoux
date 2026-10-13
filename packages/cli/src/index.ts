@@ -1,4 +1,5 @@
 export * from "./agents.ts";
+export * from "./agents-install.ts";
 export * from "./check.ts";
 export * from "./check-render.ts";
 export * from "./hooks.ts";

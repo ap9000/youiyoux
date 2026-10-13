@@ -225,6 +225,9 @@ importers:
       '@youiyoux/core':
         specifier: workspace:*
         version: link:../core
+      '@youiyoux/detect':
+        specifier: workspace:*
+        version: link:../detect
       '@youiyoux/discover':
         specifier: workspace:*
         version: link:../discover

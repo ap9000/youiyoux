@@ -17,6 +17,7 @@ export const CONCEPTS: readonly Concept[] = [
   { id: "date-picker", names: ["date picker", "datepicker", "calendar", "date range picker", "day picker", "date input"], packages: ["react-day-picker", "react-datepicker"] },
   { id: "combobox", names: ["combobox", "autocomplete", "typeahead", "searchable select", "multi select", "multiselect"], packages: ["downshift", "react-select"] },
   { id: "dialog", names: ["dialog", "modal", "alert dialog", "lightbox"], packages: [] },
+  { id: "alert", names: ["alert", "callout", "banner", "notice"], packages: [] },
   { id: "drawer", names: ["drawer", "sheet", "bottom sheet", "side panel", "off canvas"], packages: ["vaul"] },
   { id: "menu", names: ["dropdown menu", "context menu", "menubar", "dropdown", "menu"], packages: [] },
   { id: "popover", names: ["popover", "hover card", "popup", "flyout"], packages: [] },

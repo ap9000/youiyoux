@@ -48,7 +48,7 @@ interface Recipe {
   readonly cva: { readonly table: CvaTable; readonly fixed: ReadonlyMap<string, string>; readonly fromProps: ReadonlyMap<string, string> } | null;
 }
 
-interface Definition {
+export interface Definition {
   readonly entry: InventoryDefinition;
   readonly recipe: Recipe | null;
   /** Source range of the declaration (React only), to tell its own elements from sites. */
@@ -102,12 +102,12 @@ class InventoryGraph extends ModuleGraph {
   }
 }
 
-/** `paths` aliases (`@/*` → `src/*`) from a tsconfig, read leniently (comments and trailing commas allowed). */
-async function pathAliases(root: string, tsconfig: string): Promise<Array<[string, string]>> {
+/** `paths` aliases (`@/*` → `src/*`) from a tsconfig, read leniently (comments and trailing commas allowed; comment markers inside strings, as in an include glob, are kept). */
+export async function pathAliases(root: string, tsconfig: string): Promise<Array<[string, string]>> {
   const text = await readFile(join(root, tsconfig), "utf8").catch(() => null);
   if (!text) return [];
   try {
-    const json = JSON.parse(text.replace(/\/\*[\s\S]*?\*\/|(^|[^:"])\/\/.*$/gm, "$1").replace(/,(\s*[}\]])/g, "$1")) as { compilerOptions?: { baseUrl?: string; paths?: Record<string, string[]> } };
+    const json = JSON.parse(text.replace(/("(?:[^"\\\n]|\\.)*")|\/\*[\s\S]*?\*\/|\/\/.*$/gm, (_, string: string | undefined) => string ?? "").replace(/,(\s*[}\]])/g, "$1")) as { compilerOptions?: { baseUrl?: string; paths?: Record<string, string[]> } };
     const base = json.compilerOptions?.baseUrl ?? ".";
     return Object.entries(json.compilerOptions?.paths ?? {}).flatMap(([key, [target]]) => (target ? [[key.replace(/\*$/, ""), posix.normalize(posix.join(base, target.replace(/\*$/, "")))] as [string, string]] : []));
   } catch {
@@ -117,7 +117,7 @@ async function pathAliases(root: string, tsconfig: string): Promise<Array<[strin
 
 const position = (node: SgNode): { line: number; column: number } => ({ line: node.range().start.line + 1, column: node.range().start.column + 1 });
 const pascal = (text: string): string => text.split(/[^A-Za-z0-9]+/).filter(Boolean).map((w) => w[0]!.toUpperCase() + w.slice(1)).join("");
-const packageOf = (specifier: string): string => (specifier.startsWith("@") ? specifier.split("/").slice(0, 2).join("/") : specifier.split("/")[0]!);
+export const packageOf = (specifier: string): string => (specifier.startsWith("@") ? specifier.split("/").slice(0, 2).join("/") : specifier.split("/")[0]!);
 const literalOf = (value: PropValue | undefined): string | null => (value && "literal" in value ? String(value.literal) : null);
 const exportOf = (definition: Definition): string => definition.entry.id.slice(definition.entry.id.lastIndexOf("#") + 1);
 
@@ -186,7 +186,7 @@ function cvaTables(module: ModuleInfo): CvaTable[] {
 
 /* ---------------------------------------------------------------- the pass */
 
-class ProjectPass {
+export class ProjectPass {
   readonly target: InventoryTarget;
   readonly modules = new Map<string, ModuleInfo | null>();
   readonly astro = new Map<string, AstroFile>();
@@ -777,7 +777,8 @@ function firstChildTag(opening: SgNode): string | null {
   return null;
 }
 
-export async function collectProject(target: InventoryTarget): Promise<ProjectInventory> {
+/** One project read through every stage: definitions, kits, primitives and looks. */
+export async function readProject(target: InventoryTarget): Promise<ProjectPass> {
   const pass = new ProjectPass(target);
   await pass.read();
   pass.classKits();
@@ -785,6 +786,11 @@ export async function collectProject(target: InventoryTarget): Promise<ProjectIn
   await pass.astroDefinitions();
   await pass.collectLooks();
   await pass.storyLooks();
+  return pass;
+}
+
+export async function collectProject(target: InventoryTarget): Promise<ProjectInventory> {
+  const pass = await readProject(target);
   const git = await gitState(target.root);
   const definitions = [...pass.definitions.values()].map((d) => d.entry).sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.name.localeCompare(b.name));
   const primitives = [...pass.primitives].map(([pkg, p]) => ({ package: pkg, project: target.id, exports: [...p.exports].sort(), count: p.count, sites: p.sites.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column) })).sort((a, b) => a.package.localeCompare(b.package));

@@ -1,0 +1,15 @@
+.button {
+  display: inline-flex;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+}
+
+.button--primary {
+  background: #2563eb;
+  color: white;
+}
+
+.card {
+  padding: 1rem;
+  border-radius: 8px;
+}

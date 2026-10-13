@@ -1,5 +1,6 @@
 /** `youi`: the YouIyouX command line. */
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
 import { appendFile, readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { parseArgs, promisify, type ParseArgsConfig } from "node:util";
@@ -13,6 +14,7 @@ import { baselinePath, exitCodeOf, runCheck, writeBaseline, type CheckResult } f
 import { actionable, githubAnnotations, githubSummary, renderCheckText } from "./check-render.ts";
 import { runClaudeHook, runPreCommitHook, type HookTarget } from "./hooks.ts";
 import { hookCommand, installClaudeHook, installPreCommit, installWorkflow, repoRootOf } from "./hooks-install.ts";
+import { installAgentRule, installClaudeMcp, installCodexMcp, mcpCommand, relativeTo, removeAgentRule, removeClaudeMcp, removeCodexMcp, type AgentsResult } from "./agents-install.ts";
 import { detectTarget, renderDetect } from "./detect.ts";
 import { renderDiscoverSearch, renderDiscoverShow, renderDiscoverSync } from "./discover.ts";
 import { startRuleEditor, type RuleEditor } from "./editor.ts";
@@ -22,7 +24,7 @@ import { noteSource, rebuildIndex, recordInventory, recordProject, renderHistory
 import { renderInventory } from "./inventory.ts";
 import { renderAdoptionRequest, renderLibrarySearch } from "./library.ts";
 import { renderBom, renderMigration, renderPlan, renderRulePreview, renderRules, renderScan, renderShow, renderSync, renderWhere } from "./render.ts";
-import { syncProject } from "./sync.ts";
+import { mcpArgs, syncProject } from "./sync.ts";
 import { ms, plural, style } from "./ui.ts";
 
 /** This tool's own checkout: the published JSON Schemas live here. Design systems live in their own repos. */
@@ -51,8 +53,14 @@ ${style.bold("In a product repo")}
   sync [--dry-run] [--adopt]   tokens, DESIGN.md, skill, AGENTS.md block, owned components (3-way merge), lockfile
   scan [--out file]        build the usage map (default .youi/usage.json)
   mcp [--cache dir]        stdio MCP server: system_* tools (build with), library_* tools (browse, request),
-                           discover_* tools (read the Discover index; never fetch) and index_* tools
+                           discover_* tools (read the Discover index; never fetch), index_* tools
                            (where a family is used, swap impact, what a rule covers; read the local index)
+                           and ui_find_component (the project's existing component for a need, or where to start)
+  agents install|remove [--claude] [--codex]
+                           tell coding agents to call ui_find_component before creating a component:
+                           a marked rule in AGENTS.md and CLAUDE.md, and the youiyoux MCP server for
+                           Claude Code (.mcp.json) and Codex (.codex/config.toml); default both.
+                           Idempotent; remove takes out only youi's parts. No youi.project.json needed
   hooks install [--claude] [--git] [--ci] [--strict]
                            live checks, existing config kept (default: --claude --git):
                            Claude Code PostToolUse (advisory context after each edit),
@@ -160,6 +168,7 @@ const OPTIONS = {
   "dry-run": { type: "boolean", default: false },
   baseline: { type: "boolean", default: false },
   claude: { type: "boolean", default: false },
+  codex: { type: "boolean", default: false },
   git: { type: "boolean", default: false },
   ci: { type: "boolean", default: false },
   strict: { type: "boolean", default: false },
@@ -542,6 +551,35 @@ async function cmdHooks(values: Values, positionals: string[]): Promise<number> 
   return 0;
 }
 
+/**
+ * `youi agents install|remove`: the find-first rule in AGENTS.md and CLAUDE.md, and the youi MCP
+ * server for Claude Code (.mcp.json) and Codex (.codex/config.toml), at the repo root. Works with
+ * or without a youi.project.json: ui_find_component reads the code either way.
+ */
+async function cmdAgents(values: Values, positionals: string[]): Promise<number> {
+  const [action] = positionals;
+  if (action !== "install" && action !== "remove") throw new UsageError("youi agents install|remove [--claude] [--codex] [--json]");
+  const projectRoot = resolve(values.project ?? process.cwd());
+  const repoRoot = await repoRootOf(projectRoot);
+  const target = { project: projectRoot, ...(values.config ? { config: resolve(values.config) } : {}), ...(values.design ? { design: resolve(values.design) } : {}), ...(values.root !== undefined ? { root: resolve(values.root || ".") } : {}) };
+  const server = mcpCommand(TOOL_ROOT, target);
+  // In a System project at the repo root, the same entry youi sync writes, so the two never fight over it.
+  const system = existsSync(resolve(values.config ?? join(projectRoot, PROJECT_FILE))) ? await project(values) : null;
+  const claudeServer = system && system.root === repoRoot ? { command: "node", args: mcpArgs(system) } : relativeTo(repoRoot, server);
+  const both = !values.claude && !values.codex;
+  const results: Array<AgentsResult & { kind: string }> = [];
+  const rule = action === "install" ? await installAgentRule(repoRoot) : await removeAgentRule(repoRoot);
+  results.push(...rule.map((r) => ({ kind: "agent rule", ...r })));
+  if (values.claude || both) results.push({ kind: "Claude Code MCP", ...(action === "install" ? await installClaudeMcp(repoRoot, claudeServer) : await removeClaudeMcp(repoRoot)) });
+  if (values.codex || both) results.push({ kind: "Codex MCP", ...(action === "install" ? await installCodexMcp(repoRoot, server) : await removeCodexMcp(repoRoot)) });
+  if (values.json) json(results);
+  else {
+    for (const r of results) print(`${r.action === "unchanged" ? style.dim("unchanged") : style.ok(r.action)} ${r.kind}: ${r.file}\n  ${style.dim(r.guarantee)}`);
+    print(action === "install" ? `Next: restart your agent so it loads the ${style.bold("youiyoux")} MCP server; it will call ui_find_component before creating a component. Undo with youi agents remove.` : "Next: restart your agent to drop the youiyoux MCP server.");
+  }
+  return 0;
+}
+
 function watchLine(update: WatchUpdate<CheckResult>, stats: CacheStats): string {
   const time = new Date().toLocaleTimeString();
   if (update.status === "failed") return `${style.dim(time)} ${style.error("✖ incomplete")}  ${update.error}`;
@@ -696,7 +734,7 @@ async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Pr
 type Command = (values: Values, positionals: string[], io: CliIo) => Promise<number>;
 
 const COMMANDS: Record<string, Command> = {
-  show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+  show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
 
 export async function main(argv: string[], io: CliIo = {}): Promise<number> {
