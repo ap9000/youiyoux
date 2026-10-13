@@ -16,6 +16,6 @@
     "skipLibCheck": true,
     "noEmit": true
   },
-  "include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts"],
+  "include": ["packages/*/src/**/*.ts", "packages/*/test/**/*.ts", "packages/store/bench/**/*.ts", "vitest.setup.ts"],
   "exclude": ["**/fixtures/**"]
 }

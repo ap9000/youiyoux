@@ -1,5 +1,5 @@
 {
-  "measuredAt": "2026-10-12T23:39:36.107Z",
+  "measuredAt": "2026-10-13T02:23:10.386Z",
   "runs": 5,
   "bounds": {
     "bytes": "≤ smallest + 10%",
@@ -9,120 +9,132 @@
     {
       "looks": 50,
       "families": 16,
-      "indexBytes": 3413,
-      "bytesBeforePaint": 186050,
+      "indexBytes": 3389,
+      "bytesBeforePaint": 186188,
       "requestsBeforePaint": 28,
-      "inventoryPaintMs": 171.4,
-      "fcpMs": 184,
+      "inventoryPaintMs": 178.3,
+      "fcpMs": 196,
       "tryRequests": 0,
-      "strips": 0
+      "strips": 0,
+      "queryRequests": 0
     },
     {
       "looks": 5000,
       "families": 126,
-      "indexBytes": 3483,
-      "bytesBeforePaint": 186103,
+      "indexBytes": 3459,
+      "bytesBeforePaint": 186240,
       "requestsBeforePaint": 28,
-      "inventoryPaintMs": 175,
-      "fcpMs": 188,
+      "inventoryPaintMs": 170.5,
+      "fcpMs": 184,
       "tryRequests": 0,
-      "strips": 0
+      "strips": 0,
+      "queryRequests": 0
     }
   ],
   "raw": [
     {
       "looks": 50,
       "families": 16,
-      "indexBytes": 3413,
+      "indexBytes": 3389,
       "tryJsonInBuild": false,
       "runs": [
         {
-          "bytes": 186050,
+          "bytes": 186188,
           "requests": 28,
-          "inventoryPaintMs": 206.8,
-          "fcpMs": 224,
+          "inventoryPaintMs": 209.5,
+          "fcpMs": 228,
           "tryRequests": 0,
-          "strips": 0
+          "strips": 0,
+          "queryRequests": 0
         },
         {
-          "bytes": 186050,
+          "bytes": 186188,
           "requests": 28,
-          "inventoryPaintMs": 171.1,
+          "inventoryPaintMs": 178.3,
+          "fcpMs": 196,
+          "tryRequests": 0,
+          "strips": 0,
+          "queryRequests": 0
+        },
+        {
+          "bytes": 186188,
+          "requests": 28,
+          "inventoryPaintMs": 173,
+          "fcpMs": 188,
+          "tryRequests": 0,
+          "strips": 0,
+          "queryRequests": 0
+        },
+        {
+          "bytes": 186188,
+          "requests": 28,
+          "inventoryPaintMs": 179.4,
+          "fcpMs": 196,
+          "tryRequests": 0,
+          "strips": 0,
+          "queryRequests": 0
+        },
+        {
+          "bytes": 186188,
+          "requests": 28,
+          "inventoryPaintMs": 170.6,
           "fcpMs": 184,
           "tryRequests": 0,
-          "strips": 0
-        },
-        {
-          "bytes": 186050,
-          "requests": 28,
-          "inventoryPaintMs": 175.6,
-          "fcpMs": 192,
-          "tryRequests": 0,
-          "strips": 0
-        },
-        {
-          "bytes": 186050,
-          "requests": 28,
-          "inventoryPaintMs": 171.4,
-          "fcpMs": 184,
-          "tryRequests": 0,
-          "strips": 0
-        },
-        {
-          "bytes": 186050,
-          "requests": 28,
-          "inventoryPaintMs": 169.9,
-          "fcpMs": 180,
-          "tryRequests": 0,
-          "strips": 0
+          "strips": 0,
+          "queryRequests": 0
         }
       ]
     },
     {
       "looks": 5000,
       "families": 126,
-      "indexBytes": 3483,
+      "indexBytes": 3459,
       "tryJsonInBuild": false,
       "runs": [
         {
-          "bytes": 186103,
+          "bytes": 186240,
           "requests": 28,
-          "inventoryPaintMs": 172.9,
-          "fcpMs": 188,
+          "inventoryPaintMs": 170.5,
+          "fcpMs": 184,
           "tryRequests": 0,
-          "strips": 0
+          "strips": 0,
+          "queryRequests": 0
         },
         {
-          "bytes": 186103,
+          "bytes": 186240,
           "requests": 28,
-          "inventoryPaintMs": 178.5,
-          "fcpMs": 196,
+          "inventoryPaintMs": 171.1,
+          "fcpMs": 184,
           "tryRequests": 0,
-          "strips": 0
+          "strips": 0,
+          "queryRequests": 0
         },
         {
-          "bytes": 186103,
+          "bytes": 186240,
           "requests": 28,
-          "inventoryPaintMs": 174.9,
-          "fcpMs": 188,
+          "inventoryPaintMs": 168.4,
+          "fcpMs": 180,
           "tryRequests": 0,
-          "strips": 0
+          "strips": 0,
+          "queryRequests": 0
         },
         {
-          "bytes": 186103,
+          "bytes": 186240,
           "requests": 28,
-          "inventoryPaintMs": 180.1,
-          "fcpMs": 196,
+          "inventoryPaintMs": 169.6,
+          "fcpMs": 184,
           "tryRequests": 0,
-          "strips": 0
+          "strips": 0,
+          "queryRequests": 0
         },
         {
-          "bytes": 186103,
+          "bytes": 186240,
           "requests": 28,
-          "inventoryPaintMs": 175,
-          "fcpMs": 188,
+          "inventoryPaintMs": 171,
+          "fcpMs": 184,
           "tryRequests": 0,
-          "strips": 0
+          "strips": 0,
+          "queryRequests": 0
         }
       ]
     }

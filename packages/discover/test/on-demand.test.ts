@@ -1,8 +1,8 @@
-import { mkdtemp, readFile, readdir, rm, mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, mkdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { candidateSource, catalogBytes, CURATED, dedupe, expandAll, loadIndex, readSources, registryEntry, parseRegistryItems, searchIndex, selectSources, SHADCN, syncIndex, writeJson } from "../src/index.ts";
+import { candidateSource, catalogBytes, CURATED, readAllIndex, dedupe, expandAll, loadIndex, readSources, registryEntry, parseRegistryItems, searchIndex, selectSources, SHADCN, syncIndex, writeJson } from "../src/index.ts";
 import * as text from "../src/text.ts";
 import { fixtureFetcher } from "./fixture-fetcher.ts";
 
@@ -49,12 +49,17 @@ test("all fetches other listings once, metadata stays lean, source fetches exact
   const first = fixtures();
   await expandAll(dir, { fetcher: first.fetcher });
   expect(first.requests.map((r) => r.url)).toEqual(["https://extra.test/r/registry.json"]);
-  const entry = (await loadIndex(dir)).entries.find((e) => e.source.ref === "@extra/command")!;
+  // Kept apart from the index: a default search stays on the chosen sources.
+  expect((await loadIndex(dir)).entries.some((e) => e.source.ref === "@extra/command")).toBe(false);
+  const entry = (await readAllIndex(dir))!.entries.find((e) => e.source.ref === "@extra/command")!;
   expect(entry.install?.implicitDeps).toEqual(["@floating-ui/react"]);
   expect(entry.provenance?.files[0]?.sha256).toMatch(/^[a-f0-9]{64}$/);
   const second = fixtures();
+  const written = (await stat(join(dir, "index-all.json"))).mtimeMs;
   await expandAll(dir, { fetcher: second.fetcher });
   expect(second.requests).toEqual([]);
+  // Unchanged listings are not rewritten, so the store has nothing to reload.
+  expect((await stat(join(dir, "index-all.json"))).mtimeMs).toBe(written);
   const files = await readdir(dir, { recursive: true, withFileTypes: true });
   expect(files.some((f) => f.name === "bodies" || f.name === "http.json")).toBe(false);
   for (const file of files.filter((f) => f.isFile())) {

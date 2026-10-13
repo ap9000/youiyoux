@@ -59,9 +59,22 @@ export interface DiscoverSearch {
   readonly total: number;
   readonly indexBuiltAt: string;
   readonly note: string;
+  /** Where this page starts in the ranked matches (store searches page; the JSON index does not). */
+  readonly offset?: number;
+  /** `all` when --all listings were searched too. */
+  readonly scope?: "chosen" | "all";
+  /** Matches by role, source, licence and headless/styled, when asked for. */
+  readonly facets?: DiscoverFacets;
 }
 
-interface Fields {
+export interface DiscoverFacets {
+  readonly role: Readonly<Record<string, number>>;
+  readonly source: Readonly<Record<string, number>>;
+  readonly licence: Readonly<Record<string, number>>;
+  readonly style: Readonly<Record<string, number>>;
+}
+
+export interface Fields {
   readonly name: string;
   readonly title: string;
   readonly description: string;
@@ -70,7 +83,7 @@ interface Fields {
 }
 
 const fieldCache = new WeakMap<LibraryEntry, Fields>();
-function fieldsOf(entry: LibraryEntry): Fields {
+export function fieldsOf(entry: LibraryEntry): Fields {
   const hit = fieldCache.get(entry);
   if (hit) return hit;
   const fields = {
@@ -87,7 +100,7 @@ function fieldsOf(entry: LibraryEntry): Fields {
 const W = { nameExact: 10, nameHas: 6, titleExact: 9, titleHas: 5, category: 4, dependsOn: 6, description: 3 } as const;
 
 /** The best a concept scores on a candidate, plus a little for every other field that agrees. */
-function conceptScore(concept: Concept, f: Fields, why: string[]): number {
+export function conceptScore(concept: Concept, f: Fields, why: string[]): number {
   const names = concept.names.map(normalize);
   const scores: Array<[number, string]> = [];
   const exact = names.find((n) => f.name === n);
@@ -137,13 +150,13 @@ export function signalBoost(entry: LibraryEntry): number {
   return Math.max(-2, Math.min(3, boost));
 }
 
-function registryName(entry: LibraryEntry): string {
+export function registryName(entry: LibraryEntry): string {
   if (entry.source.kind === "npm") return "npm";
   const ref = entry.source.ref ?? "";
   return ref.includes("/") ? ref.slice(0, ref.indexOf("/")) : entry.source.name;
 }
 
-function passes(entry: LibraryEntry, c: DiscoverConstraints | undefined): boolean {
+export function passes(entry: LibraryEntry, c: DiscoverConstraints | undefined): boolean {
   if (!c) return true;
   if (c.licenses?.length) {
     const spdx = entry.license && entry.license !== "unknown" ? entry.license.spdx : null;
@@ -159,7 +172,7 @@ function passes(entry: LibraryEntry, c: DiscoverConstraints | undefined): boolea
 }
 
 /** Does the candidate play this role? The role's concept must match it; a role no concept knows is matched as words. */
-function playsRole(role: string, f: Fields): boolean {
+export function playsRole(role: string, f: Fields): boolean {
   const concept = conceptForRole(role);
   if (concept) return conceptScore(concept, f, []) > 0;
   const n = normalize(role);
@@ -196,12 +209,19 @@ function frameworkOf(entry: LibraryEntry): string {
   return "react";
 }
 
-export function searchIndex(index: DiscoverIndex, need: string, options: SearchOptions = {}): DiscoverSearch {
+export interface Ranked {
+  readonly need: string;
+  readonly concepts: readonly string[];
+  /** Best first: score, then id. */
+  readonly scored: ReadonlyArray<{ readonly entry: LibraryEntry; readonly score: number; readonly why: readonly string[] }>;
+}
+
+/** Score candidates for a need, best first. The one ranking: the JSON index and the store both use it. */
+export function rankEntries(entries: Iterable<LibraryEntry>, need: string, options: Omit<SearchOptions, "limit"> = {}): Ranked {
   need = cleanText(need);
   const read = readNeed(need);
-  const limit = options.limit ?? 10;
   const scored: Array<{ entry: LibraryEntry; score: number; why: string[] }> = [];
-  for (const entry of index.entries) {
+  for (const entry of entries) {
     if (!passes(entry, options.constraints)) continue;
     const f = fieldsOf(entry);
     if (options.role && !playsRole(options.role, f)) continue;
@@ -220,11 +240,16 @@ export function searchIndex(index: DiscoverIndex, need: string, options: SearchO
     scored.push({ entry, score: (text * KIND_WEIGHT[entry.kind] + signalBoost(entry)) * suitability, why });
   }
   scored.sort((a, b) => b.score - a.score || a.entry.id.localeCompare(b.entry.id));
+  return { need, concepts: read.concepts.map((c) => c.id), scored };
+}
+
+export function searchIndex(index: DiscoverIndex, need: string, options: SearchOptions = {}): DiscoverSearch {
+  const ranked = rankEntries(index.entries, need, options);
   return {
-    need,
-    concepts: read.concepts.map((c) => c.id),
-    hits: scored.slice(0, limit).map((s) => hitOf(s.entry, s.score, s.why)),
-    matched: scored.length,
+    need: ranked.need,
+    concepts: ranked.concepts,
+    hits: ranked.scored.slice(0, options.limit ?? 10).map((s) => hitOf(s.entry, s.score, s.why)),
+    matched: ranked.scored.length,
     total: index.entries.length,
     indexBuiltAt: index.builtAt,
     note: DISCOVER_RULE,

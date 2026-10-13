@@ -1,0 +1,9 @@
+{
+  "name": "@youiyoux/store",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": { "@youiyoux/core": "workspace:*", "pg": "8.23.1" },
+  "devDependencies": { "@electric-sql/pglite": "0.5.9", "@types/pg": "8.23.1" }
+}

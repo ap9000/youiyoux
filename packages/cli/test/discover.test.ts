@@ -50,9 +50,10 @@ describe("youi discover", () => {
     expect(summary.registries).toMatchObject({ listed: 9, fetched: 4, skipped: 5, failed: 0 });
     expect(summary.requests.maxInFlight).toBeLessThanOrEqual(6);
     expect(summary.failures.map((f) => f.id).sort()).toEqual([]);
-    expect((await readdir(dir)).sort()).toEqual(["directory.json", "health.json", "index.json", "listings", "signals.json"]);
+    // The JSON catalog, and beside it (an explicit --cache) the store it was loaded into and what a rebuild reloads.
+    expect((await readdir(dir)).filter((f) => !/^index\.db-(?:wal|shm)$/.test(f)).sort()).toEqual(["directory.json", "health.json", "index-sources.json", "index.db", "index.json", "listings", "signals.json"]);
     expect(out).not.toContain(TOKEN);
-    for (const file of ["index.json", "health.json", "signals.json"]) expect(await readFile(join(dir, file), "utf8")).not.toContain(TOKEN);
+    for (const file of ["index.json", "health.json", "signals.json", "index.db"]) expect(await readFile(join(dir, file), "utf8")).not.toContain(TOKEN);
   }, 60_000);
 
   test("sync prints a readable summary", async () => {
@@ -119,6 +120,7 @@ test("legacy index text is cleaned in CLI text and JSON, including echoed need",
     command.summary = "\x1b[2JCommand menu";
     command.categories.push("\x90payload\x9ccommand");
     await writeFile(join(isolated, "index.json"), JSON.stringify(raw));
+    expect(await main(["index", "rebuild", "--cache", isolated])).toBe(0);
     for (const args of [["command\x1b[2J menu"], ["command menu", "--json"], ["show", "command"], ["show", "command", "--json"]]) {
       out = "";
       expect(await main(["discover", ...args, "--cache", isolated])).toBe(0);

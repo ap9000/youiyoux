@@ -8,9 +8,12 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import { LibraryEntry, sha256, writeFileAtomic } from "@youiyoux/core";
+import { defaultIndexPath, INDEX_FILE as STORE_FILE } from "@youiyoux/store";
 import type { CachedResponse } from "./http.ts";
 
 export const INDEX_FILE = "index.json";
+/** Listings `youi discover --all` added: kept apart from the index, so a default search stays on the chosen sources. */
+export const ALL_INDEX_FILE = "index-all.json";
 export const HEALTH_FILE = "health.json";
 export const SIGNALS_FILE = "signals.json";
 export const HTTP_FILE = "http.json";
@@ -21,6 +24,18 @@ export function discoverCacheDir(explicit?: string, env: NodeJS.ProcessEnv = pro
   if (explicit) return explicit;
   if (env.YOUI_DISCOVER_CACHE) return env.YOUI_DISCOVER_CACHE;
   return join(env.XDG_CACHE_HOME || join(homedir(), ".cache"), "youiyoux", "discover");
+}
+
+/**
+ * The store Discover reads (and `youi inventory` records into): beside an explicit cache
+ * (`--cache`), else YOUI_INDEX, else beside YOUI_DISCOVER_CACHE, else the default
+ * `$XDG_CACHE_HOME/youiyoux/index.db`. DATABASE_URL, when set, wins over all of them.
+ */
+export function discoverIndexPath(explicit?: string, env: NodeJS.ProcessEnv = process.env): string {
+  if (explicit) return join(explicit, STORE_FILE);
+  if (env.YOUI_INDEX) return env.YOUI_INDEX;
+  if (env.YOUI_DISCOVER_CACHE) return join(env.YOUI_DISCOVER_CACHE, STORE_FILE);
+  return defaultIndexPath(env);
 }
 
 const Iso = z.string().datetime({ offset: true });
@@ -124,6 +139,12 @@ export async function readIndex(cacheDir: string): Promise<DiscoverIndex | null>
 
 const loaded = new Map<string, { mtimeMs: number; index: DiscoverIndex }>();
 
+/** The listings --all added (an index of their own), or null when --all never ran. */
+export async function readAllIndex(cacheDir: string): Promise<DiscoverIndex | null> {
+  const raw = await readJson(join(cacheDir, ALL_INDEX_FILE));
+  return raw === null ? null : DiscoverIndex.parse(cleanData(raw));
+}
+
 /** The index, parsed once per file version: a long-lived reader (the MCP server) re-reads only after a sync. */
 export async function loadIndex(cacheDir: string): Promise<DiscoverIndex> {
   const file = join(cacheDir, INDEX_FILE);
@@ -206,7 +227,8 @@ export async function writeSources(cacheDir: string, names: readonly string[]): 
 }
 export async function catalogBytes(cacheDir: string): Promise<number> {
   const files = await readdir(cacheDir, { recursive: true, withFileTypes: true });
-  const sizes = await Promise.all(files.filter((f) => f.isFile() && !f.parentPath.includes(join(cacheDir, "source"))).map((f) => stat(join(f.parentPath, f.name)).then((s) => s.size)));
+  // The store beside the catalog (index.db) is derived from it, not part of it.
+  const sizes = await Promise.all(files.filter((f) => f.isFile() && !f.parentPath.includes(join(cacheDir, "source")) && !f.name.startsWith(STORE_FILE)).map((f) => stat(join(f.parentPath, f.name)).then((s) => s.size)));
   return sizes.reduce((a, b) => a + b, 0);
 }
 

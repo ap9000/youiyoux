@@ -64,10 +64,10 @@ export function conceptById(id: string): Concept | undefined {
 
 /** Lowercase words: kebab, snake and camel case split, punctuation dropped (`DatePicker` → `date picker`). */
 export function normalize(text: string): string {
-  return text
+  return text.normalize("NFC")
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
     .trim();
 }
 

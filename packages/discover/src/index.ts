@@ -8,3 +8,4 @@ export * from "./sync.ts";
 export * from "./text.ts";
 export * from "./urls.ts";
 export * from "./on-demand.ts";
+export * from "./catalog.ts";

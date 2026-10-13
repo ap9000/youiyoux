@@ -4,5 +4,5 @@
   "private": true,
   "type": "module",
   "exports": { ".": "./src/index.ts" },
-  "dependencies": { "@youiyoux/core": "workspace:*", "zod": "4.6.5" }
+  "dependencies": { "@youiyoux/core": "workspace:*", "@youiyoux/store": "workspace:*", "zod": "4.6.5" }
 }

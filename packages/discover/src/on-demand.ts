@@ -1,10 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { sha256 } from "@youiyoux/core";
+import { sha256, writeFileAtomic } from "@youiyoux/core";
 import { PoliteClient, type PoliteOptions } from "./http.ts";
 import { isIconEntry, showCandidate } from "./search.ts";
 import { SHADCN, isCandidate, parseRegistryItems, registryEntry, registryUrl, skipReason, type DirectoryRegistry } from "./sources.ts";
-import { loadIndex, readHttpCache, readSignals, readSources, writeHttpCache, writeJson, writeSources } from "./store.ts";
+import { ALL_INDEX_FILE, loadIndex, readAllIndex, readHttpCache, readSignals, readSources, writeHttpCache, writeJson, writeSources } from "./store.ts";
 import { applySignals } from "./signals.ts";
 import { dedupe } from "./sync.ts";
 import { cleanData } from "./text.ts";
@@ -29,7 +29,10 @@ export async function selectSources(cacheDir: string, action = "list", name?: st
   return next;
 }
 
-/** CLI-only expansion. MCP only reads the resulting local index. */
+/**
+ * CLI-only expansion. The listings it adds go to index-all.json, never into index.json, so a
+ * default search stays on the chosen sources; `--all` searches both. MCP only reads.
+ */
 export async function expandAll(cacheDir: string, options: PoliteOptions & { icons?: boolean } = {}): Promise<void> {
   const index = await loadIndex(cacheDir);
   const cache = await readHttpCache(cacheDir);
@@ -46,12 +49,28 @@ export async function expandAll(cacheDir: string, options: PoliteOptions & { ico
     return !options.icons && entries.length && entries.filter(isIconEntry).length / entries.length >= 0.8 ? [] : entries.map((entry) => applySignals(entry, signals));
   }));
   await writeHttpCache(cacheDir, cache, new Map());
-  await writeJson(join(cacheDir, "index.json"), cleanData({ ...index, format: 2, entries: dedupe([...index.entries, ...extra.flat()]).entries }));
+  // Deduplicated against the index (official and selected listings win), then only what is new.
+  const chosen = new Set(index.entries.map((e) => e.id));
+  const entries = dedupe([...index.entries, ...extra.flat()]).entries.filter((e) => !chosen.has(e.id));
+  // Written only when it changed: the store reloads the --all listings whenever this file does.
+  const next = `${JSON.stringify(cleanData({ schema: index.schema, format: 2, builtAt: index.builtAt, sources: [], categories: index.categories, entries }))}\n`;
+  if ((await readFile(join(cacheDir, ALL_INDEX_FILE), "utf8").catch(() => null)) !== next) await writeFileAtomic(join(cacheDir, ALL_INDEX_FILE), next);
+}
+
+/** A listing by id or ref, from the index or, failing that, the --all listings. */
+async function findListing(cacheDir: string, id: string) {
+  try {
+    return showCandidate(await loadIndex(cacheDir), id);
+  } catch (error) {
+    const all = await readAllIndex(cacheDir);
+    if (!all) throw error;
+    try { return showCandidate(all, id); } catch { throw error; }
+  }
 }
 
 /** Fetch exactly one registry item. Source lives separately from the metadata catalog. */
 export async function candidateSource(cacheDir: string, id: string, options: PoliteOptions = {}): Promise<unknown> {
-  const { entry } = showCandidate(await loadIndex(cacheDir), id);
+  const { entry } = await findListing(cacheDir, id);
   if (entry.source.kind !== "shadcn-registry") throw new Error("Source is available for registry items only");
   const ref = entry.source.ref!;
   const slash = ref.indexOf("/");

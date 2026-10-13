@@ -4,8 +4,9 @@ import { appendFile, readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { parseArgs, promisify, type ParseArgsConfig } from "node:util";
 import { parse as parseYaml } from "yaml";
-import { DefinitionError, getSystem, loadDesignRepo, loadLibrary, MigrationSpec, OutputConfig, renderJsonSchemas, writeFileAtomic } from "@youiyoux/core";
-import { candidateSource, expandAll, selectSources, discoverCacheDir, loadIndex, searchIndex, showCandidate, syncIndex, type Fetcher } from "@youiyoux/discover";
+import { DefinitionError, getSystem, loadDesignRepo, loadLibrary, MigrationSpec, OutputConfig, renderJsonSchemas, writeFileAtomic, type InventoryReport, type ScanReport } from "@youiyoux/core";
+import { candidateSource, expandAll, selectSources, discoverCacheDir, discoverIndexPath, ingestCatalog, readCatalog, searchCatalog, sharedStore, showFromCatalog, syncIndex, type Fetcher } from "@youiyoux/discover";
+import { indexHome, storeLocation } from "@youiyoux/store";
 import { buildTokens, compareParity } from "@youiyoux/tokens";
 import { adoptionRequest, buildInventory, checkCapabilities, componentCard, describeIdentity, evaluateRule, findContract, loadProject, planChange, PROJECT_FILE, type LoadProjectOptions, ProjectWatcher, ruleCapability, runMigration, scanProject, screenBom, searchLibrary, whereUsed, type CacheStats, type PlanInput, type Project, type WatchUpdate } from "@youiyoux/scanner";
 import { baselinePath, exitCodeOf, runCheck, writeBaseline, type CheckResult } from "./check.ts";
@@ -17,6 +18,7 @@ import { renderDiscoverSearch, renderDiscoverShow, renderDiscoverSync } from "./
 import { startRuleEditor, type RuleEditor } from "./editor.ts";
 import { DEFAULT_HUB_PORT, runHub } from "./hub.ts";
 import { initProject } from "./init.ts";
+import { noteSource, rebuildIndex, recordInventory, recordProject, renderHistory, renderRebuild, SCANS_LOG, SOURCES_FILE } from "./index-store.ts";
 import { renderInventory } from "./inventory.ts";
 import { renderAdoptionRequest, renderLibrarySearch } from "./library.ts";
 import { renderBom, renderMigration, renderPlan, renderRulePreview, renderRules, renderScan, renderShow, renderSync, renderWhere } from "./render.ts";
@@ -40,14 +42,17 @@ ${style.bold("Anywhere")}  ${style.dim("no design system needed")}
                            (repeats) replaces each project's default or youi.project.json include globs,
                            e.g. --include 'src/browser/**'; stylesheets still count. --exclude (repeats)
                            adds to its exclude globs. Writes youi.inventory/v1 to
-                           <first project>/.youi/inventory.json unless --out
+                           <first project>/.youi/inventory.json unless --out, and records the scan
+                           (project, commit, time, counts, families) in the local index for trends
+  inventory --history      every recorded scan per project, newest first, with what changed
 
 ${style.bold("In a product repo")}
   init --design <dir>      write youi.project.json pointing at a design repo checkout, then sync
   sync [--dry-run] [--adopt]   tokens, DESIGN.md, skill, AGENTS.md block, owned components (3-way merge), lockfile
   scan [--out file]        build the usage map (default .youi/usage.json)
-  mcp [--cache dir]        stdio MCP server: system_* tools (build with), library_* tools (browse, request)
-                           and discover_* tools (read the Discover index; never fetch)
+  mcp [--cache dir]        stdio MCP server: system_* tools (build with), library_* tools (browse, request),
+                           discover_* tools (read the Discover index; never fetch) and index_* tools
+                           (where a family is used, swap impact, what a rule covers; read the local index)
   hooks install [--claude] [--git] [--ci] [--strict]
                            live checks, existing config kept (default: --claude --git):
                            Claude Code PostToolUse (advisory context after each edit),
@@ -82,11 +87,21 @@ ${style.bold("Discover")}  ${style.dim("UI components by need, across shadcn reg
                            refresh cached candidates, licences and signals; add --icons for icon sets
                            GITHUB_TOKEN raises GitHub limits when set; never stored or printed
   discover sources [list|add|remove] <name>  choose community sources
-  discover "<need>" [--all] [--role r] [--license spdx,…] [--limit n] [--json]
+  discover "<need>" [--all] [--role r] [--license spdx,…] [--limit n] [--offset n] [--json]
                            candidates ranked by match (names, aliases: command menu = cmdk, toast =
-                           snackbar…) plus signals, with licence (or unknown) and the install command
+                           snackbar…) plus signals, with licence (or unknown) and the install command,
+                           and facets (role, source, licence, headless/styled); --all also lists
+                           every other registry, kept apart from the default search
   discover show <id|ref> [--source] [--json]   one candidate: provenance, licence evidence, dependencies
                            (cache: --cache, else YOUI_DISCOVER_CACHE, else ~/.cache/youiyoux/discover)
+
+${style.bold("Index")}  ${style.dim("the local store of derived data: rebuildable, never the authority")}
+  index path               where it lives: YOUI_INDEX, else ~/.cache/youiyoux/index.db (beside --cache
+                           when given); DATABASE_URL puts it on Postgres instead
+  index stats              rows per table
+  index rebuild            delete it and fill it again from the Discover cache, the scan log, the
+                           inventory files and the projects' rules and usage maps
+  index history [project]  inventory trends per project (as inventory --history)
 
 ${style.bold("Detect")}  ${style.dim("which UI libraries a repo or website uses (youi.detect/v1)")}
   detect <repo-path>       package.json, lockfile, components.json and the code's real imports;
@@ -170,6 +185,8 @@ const OPTIONS = {
   icons: { type: "boolean" },
   source: { type: "boolean" },
   "max-registries": { type: "string" },
+  offset: { type: "string" },
+  history: { type: "boolean", default: false },
   help: { type: "boolean", short: "h", default: false },
 } satisfies ParseArgsConfig["options"];
 
@@ -204,19 +221,85 @@ async function cmdScan(values: Values): Promise<number> {
   const { report } = await scanProject(p);
   const out = values.out ?? join(p.root, ".youi/usage.json");
   await writeFileAtomic(resolve(out), `${JSON.stringify(report)}\n`);
+  const recorded = await recordUsage(values, p, report, resolve(out));
   if (values.json) json(report);
-  else print(renderScan(report, out));
+  else print([renderScan(report, out), ...(recorded ? [recorded] : [])].join("\n"));
   return 0;
 }
 
+/** The project's rules and usage, as graph edges in the local index (rule governs component, used in file and route). */
+async function recordUsage(values: Values, p: Project, report: ScanReport, usage: string): Promise<string | null> {
+  const { path, home } = indexOf(values);
+  try {
+    await recordProject(await sharedStore(path), p, report);
+    await noteSource(home, { project: { root: resolve(values.project ?? process.cwd()), options: Object.fromEntries(Object.entries(loadOptions(values)).map(([key, value]) => [key, resolve(value)])), usage } });
+    return null;
+  } catch (error: unknown) {
+    return style.warn(`! not recorded in the local index: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/** The store this run reads and records into (DATABASE_URL, else a SQLite file), and the directory its sources are noted in. */
+function indexOf(values: Pick<Values, "cache">): { path: string; home: string } {
+  const path = discoverIndexPath(values.cache);
+  return { path, home: indexHome(path) };
+}
+
 async function cmdInventory(values: InventoryValues): Promise<number> {
+  if (values.history) return cmdHistory(values, []);
   const dirs = values.project?.length ? values.project : [process.cwd()];
   const report = await buildInventory(dirs, { ...(values.include ? { include: values.include } : {}), ...(values.exclude ? { exclude: values.exclude } : {}) });
   const out = resolve(values.out ?? join(dirs[0]!, ".youi/inventory.json"));
   await writeFileAtomic(out, `${JSON.stringify(report, null, 2)}\n`);
+  const recorded = await recordScan(values, report, out);
   if (values.json) json(report);
-  else print(renderInventory(report, relative(process.cwd(), out).startsWith("..") ? out : relative(process.cwd(), out)));
+  else print([renderInventory(report, relative(process.cwd(), out).startsWith("..") ? out : relative(process.cwd(), out)), recorded].join("\n"));
   return 0;
+}
+
+/** Record an inventory in the local index; the inventory itself never fails for it (a warning says why). */
+async function recordScan(values: Pick<Values, "cache">, report: InventoryReport, out: string): Promise<string> {
+  const { path, home } = indexOf(values);
+  try {
+    const store = await sharedStore(path);
+    await recordInventory(store, home, report, out);
+    const scans = (await store.history({ limit: 500 })).filter((s) => report.projects.some((p) => p.id === s.project)).length;
+    return style.dim(`history → ${store.location} (${plural(scans, "scan")} of these projects; youi inventory --history)`);
+  } catch (error: unknown) {
+    return style.warn(`! not recorded in the local index: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+async function cmdHistory(values: Pick<Values, "cache" | "json" | "limit">, positionals: string[]): Promise<number> {
+  const { path } = indexOf(values);
+  const scans = await (await sharedStore(path, process.env, { readOnly: true })).history({ ...(positionals[0] ? { project: positionals[0] } : {}), limit: positiveInt(values.limit, "--limit") ?? 50 });
+  if (values.json) json(scans);
+  else print(renderHistory(scans));
+  return 0;
+}
+
+async function cmdIndex(values: Values, positionals: string[]): Promise<number> {
+  const [action, ...rest] = positionals;
+  const { path, home } = indexOf(values);
+  if (action === "path") {
+    if (values.json) json({ store: storeLocation({ path }), sources: join(home, SOURCES_FILE), scans: join(home, SCANS_LOG) });
+    else print(storeLocation({ path }));
+    return 0;
+  }
+  if (action === "stats") {
+    const stats = await (await sharedStore(path, process.env, { readOnly: true })).stats();
+    if (values.json) json(stats);
+    else print([`${style.bold("index")} ${stats.location} ${style.dim(`· ${stats.engine} · schema ${stats.schema} · generation ${stats.generation ?? "not rebuilt"}`)}`, ...Object.entries(stats.tables).map(([table, n]) => `  ${table.padEnd(16)} ${n.toLocaleString("en-US")}`)].join("\n"));
+    return 0;
+  }
+  if (action === "rebuild") {
+    const summary = await rebuildIndex(path, values.cache ? { discoverCache: resolve(values.cache) } : {});
+    if (values.json) json(summary);
+    else print(renderRebuild(summary));
+    return 0;
+  }
+  if (action === "history") return cmdHistory(values, rest);
+  throw new UsageError("youi index path|stats|rebuild|history [project]");
 }
 
 async function cmdWhere(values: Values, positionals: string[]): Promise<number> {
@@ -560,12 +643,14 @@ export interface CliIo {
 function positiveInt(value: string | undefined, flag: string): number | undefined {
   if (value === undefined) return undefined;
   const n = Number(value);
-  if (!Number.isInteger(n) || n < 0) throw new UsageError(`${flag} takes a whole number`);
+  if (!Number.isSafeInteger(n) || n < 0) throw new UsageError(`${flag} takes a whole number`);
   return n;
 }
 
 async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Promise<number> {
   const cacheDir = resolve(discoverCacheDir(values.cache));
+  const { path, home } = indexOf(values);
+  const catalog = () => readCatalog(cacheDir, path);
   const [action, ...rest] = positionals;
   if (action === "sources") {
     const names = await selectSources(cacheDir, rest[0], rest[1]);
@@ -577,8 +662,10 @@ async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Pr
     // The token goes into request headers and nowhere else: not the index, not the output.
     const token = process.env.GITHUB_TOKEN || undefined;
     const summary = await syncIndex({ ...(io.sleep ? { sleep: io.sleep } : {}), cacheDir, icons: values.icons ?? false, ...(io.fetcher ? { fetcher: io.fetcher } : {}), ...(io.timeoutMs ? { timeoutMs: io.timeoutMs } : {}), ...(token ? { token } : {}), ...(maxRegistries !== undefined ? { maxRegistries } : {}) });
+    const loaded = await ingestCatalog(await sharedStore(path), cacheDir);
+    await noteSource(home, { discover: cacheDir });
     if (values.json) json(summary);
-    else print(renderDiscoverSync(summary));
+    else print(`${renderDiscoverSync(summary)}\n${style.dim(`store → ${storeLocation({ path })} (${plural(loaded.chosen, "listing")})`)}`);
     return 0;
   }
   if (action === "show") {
@@ -587,7 +674,7 @@ async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Pr
       json(await candidateSource(cacheDir, rest.join(" "), io));
       return 0;
     }
-    const shown = showCandidate(await loadIndex(cacheDir), rest.join(" "));
+    const shown = await showFromCatalog(await catalog(), rest.join(" "));
     if (values.json) json(shown);
     else print(renderDiscoverShow(shown));
     return 0;
@@ -595,8 +682,12 @@ async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Pr
   const need = positionals.join(" ").trim();
   if (!need) throw new UsageError("youi discover \"<need>\" [--role r] [--json]   or   youi discover sync   or   youi discover show <id>");
   const licenses = values.license?.split(",").map((l) => l.trim()).filter(Boolean);
-  if (values.all) await expandAll(cacheDir, { ...io, icons: values.icons ?? false });
-  const result = searchIndex(await loadIndex(cacheDir), need, { ...(values.role ? { role: values.role } : {}), ...(licenses?.length ? { constraints: { licenses } } : {}), limit: positiveInt(values.limit, "--limit") ?? 10 });
+  if (values.all) {
+    await expandAll(cacheDir, { ...io, icons: values.icons ?? false });
+    await ingestCatalog(await sharedStore(path), cacheDir);
+    await noteSource(home, { discover: cacheDir });
+  }
+  const result = await searchCatalog(await catalog(), need, { ...(values.role ? { role: values.role } : {}), ...(licenses?.length ? { constraints: { licenses } } : {}), limit: positiveInt(values.limit, "--limit") ?? 10, offset: positiveInt(values.offset, "--offset") ?? 0, all: values.all, facets: true });
   if (values.json) json(result);
   else print(renderDiscoverSearch(result));
   return 0;
@@ -605,7 +696,7 @@ async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Pr
 type Command = (values: Values, positionals: string[], io: CliIo) => Promise<number>;
 
 const COMMANDS: Record<string, Command> = {
-  show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+  show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
 
 export async function main(argv: string[], io: CliIo = {}): Promise<number> {

@@ -10,6 +10,7 @@ export default defineConfig({
     include: ["packages/*/test/**/*.test.ts"],
     exclude: [...configDefaults.exclude, ...(site ? [] : [SITE_TEST])],
     testTimeout: 30_000,
+    setupFiles: ["./vitest.setup.ts"],
     pool: "threads",
   },
 });

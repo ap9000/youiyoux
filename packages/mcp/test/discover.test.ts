@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
-import { syncIndex } from "@youiyoux/discover";
+import { closeSharedStores, openCatalog, syncIndex } from "@youiyoux/discover";
 import { fixtureFetcher } from "../../discover/test/fixture-fetcher.ts";
 import { createServer } from "../src/index.ts";
 
@@ -32,10 +32,12 @@ beforeAll(async () => {
   cache = await mkdtemp(join(tmpdir(), "youi-mcp-discover-"));
   empty = await mkdtemp(join(tmpdir(), "youi-mcp-discover-empty-"));
   await syncIndex({ sleep: async () => {}, cacheDir: cache, fetcher: fixtureFetcher().fetcher, now: () => new Date("2026-10-12T12:00:00Z"), timeoutMs: 100 });
+  await openCatalog(cache, join(cache, "index.db"));
 });
 
 afterAll(async () => {
   for (const client of clients) await client.close();
+  await closeSharedStores();
   await rm(cache, { recursive: true, force: true });
   await rm(empty, { recursive: true, force: true });
 });
@@ -104,11 +106,14 @@ describe("discover MCP tools", () => {
   });
 
   test("the tools only read: the index is unchanged after searching and showing", async () => {
+    await closeSharedStores();
+    const beforeDb = await readFile(join(cache, "index.db"));
     const before = (await stat(join(cache, "index.json"))).mtimeMs;
     const client = await connect(cache);
     await call(client, "discover_search", { need: "toast" });
     await call(client, "discover_show", { id: "lib:npm/component/sonner" });
     expect((await stat(join(cache, "index.json"))).mtimeMs).toBe(before);
+    expect(await readFile(join(cache, "index.db"))).toEqual(beforeDb);
   });
 
   test("adoption stays library_request: a Discover candidate can be drafted by its lib: id, nothing filed", async () => {
@@ -129,6 +134,7 @@ test("old indexes are cleaned for read-only search and show, with framework cons
     command.summary = "\x1b[2JCommand menu";
     command.categories.push("\x90payload\x9ccommand");
     await writeFile(join(isolated, "index.json"), JSON.stringify(raw));
+    await openCatalog(isolated, join(isolated, "index.db"));
     const client = await connect(isolated);
     const result = await call(client, "discover_search", { need: "\x1b[2Jcommand menu", constraints: { framework: "react" } });
     expect(result.isError).toBe(false);

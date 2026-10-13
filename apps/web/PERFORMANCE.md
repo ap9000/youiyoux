@@ -77,6 +77,26 @@ Measured 2026-10-12 (with state strips and Try it), Apple silicon laptop, median
 
 It exits 1 when the larger run transfers more than the smaller's bytes + 10%, or its median paint or FCP is over 1.5× the smaller's plus one frame (16 ms). It also exits 1 when, a second after the paint with nothing clicked, the page has asked for any of Try it (the `try-live` chunk or a `/__youi/try` bundle) or mounted a state strip, or when the build carries `try.json`: in both runs above, none. State strips and Try it added 2.8 KB before the paint at both sizes (183,283 → 186,050 bytes at 50 looks): the Try it button, the one-live-tile store and the strip component in the Inventory chunk. The live frame is its own chunk, fetched on the first Try it; a look's bundle (the console's Tabs with React and Radix: about 250 KB, built in about 150 ms) is fetched only for the tile clicked, and cached by its content hash. The forced-state twins add about 3% to a project's specimen stylesheet (33.2 KB → 34.2 KB for the console), once per sheet, whatever the number of looks. Only counts grow in the index. What does grow is after the paint: at 5,000 looks the console's button chunk is 1 MB uncompressed (its 2,000-odd looks and their specimen HTML), loaded when the Buttons row nears the screen or the browser is next idle, unless a filter leaves buttons or the console out. The specimen stylesheets do not grow with looks: 33 KB per scheme for the console (its Tailwind build, with its 13 KB font inlined), 1.5 KB for the site. Full numbers are in [`perf/inventory.json`](perf/inventory.json).
 
+Re-measured 2026-10-12 with the local index in place (`/__youi/query` on the preview server): the page asks the index nothing before it paints, or after, with nothing clicked, and `measure:inventory` now fails if it ever does.
+
+| Looks | Families | Index | Requests before the inventory paints | Bytes before it paints | Inventory paint | FCP | Index queries |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 50 | 16 | 3.4 KB | 28 | 186,188 | 178 ms | 196 ms | 0 |
+| 5,000 | 126 | 3.5 KB | 28 | 186,240 | 171 ms | 184 ms | 0 |
+
+## The local index at 100,000 Library items
+
+`packages/store/bench/library.ts` builds 100,000 synthetic Library listings shaped like Discover's (about 1 KB each, with provenance: 1% official, 70% community registries, 29% npm) and an inventory of 5,000 looks, loads them into each engine, and times 20 needs (command menu, toast, date picker, …), five runs each after a warm-up. A search is what `youi discover` and `discover_search` do: the full-text index narrows the catalog to at most 400 listings per source class, Discover's scorer ranks them, the first page is shaped for output. `YOUI_PERF=1 pnpm vitest run packages/store/test/store.perf.test.ts` runs it and fails when SQLite's p95 is 50 ms or more; `node packages/store/bench/library.ts` prints the same.
+
+Measured 2026-10-12, Apple silicon laptop, Node 24.21:
+
+| Engine | Load 100,000 items + 5,000 looks | Search p50 | Search p95 | Max | where_used | swap_impact |
+| --- | --- | --- | --- | --- | --- | --- |
+| SQLite (node:sqlite, FTS5) | 11.5 s | 27.5 ms | 40.0 ms | 44.6 ms | 24 ms | 23 ms |
+| Postgres (PGlite, in-process) | 17.9 s | 109 ms | 146 ms | 174 ms | 70 ms | 69 ms |
+
+What keeps SQLite there: the full-text table carries each listing's scope and source class as tag words, so a search ranks inside the index with one `ORDER BY bm25 LIMIT 400` per source class and reads only those listings; a phrase's generic words (`react` in react-day-picker) are not sent, since one specific word of each phrase already keeps every listing the scorer could match. PGlite is Postgres compiled to WebAssembly on one thread, used for tests; it is reported, not budgeted. A Postgres server is expected to be faster, and was not measured here.
+
 ## Live numbers
 
 Home → Speed shows search and navigation medians and p95 for the current tab against the budgets. `window.__youiyoux.samples()` in devtools returns the raw samples.
@@ -86,5 +106,6 @@ Home → Speed shows search and navigation medians and p95 for the current tab a
 ```sh
 pnpm build && pnpm measure          # download sizes and engine latency → perf/report.json
 pnpm measure:inventory              # Inventory first paint at 50 vs 5,000 looks → perf/inventory.json
+YOUI_PERF=1 pnpm vitest run packages/store/test/store.perf.test.ts   # (from the repo root) the local index at 100,000 items
 pnpm preview                        # then use the app, and read Home → Speed
 ```

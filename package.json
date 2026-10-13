@@ -21,6 +21,7 @@
     "@youiyoux/discover": "workspace:*",
     "@youiyoux/mcp": "workspace:*",
     "@youiyoux/scanner": "workspace:*",
+    "@youiyoux/store": "workspace:*",
     "@youiyoux/tokens": "workspace:*",
     "@youiyoux/workflow": "workspace:*",
     "@types/node": "26.6.3",

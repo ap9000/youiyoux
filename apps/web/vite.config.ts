@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import type { Plugin } from "vite";
 import { defineConfig } from "vitest/config";
+import { queryMiddleware } from "./scripts/query-server.ts";
 import { tryIndexDeny, tryMiddleware } from "./scripts/try-server.ts";
 
 const root = import.meta.dirname;
@@ -62,8 +63,25 @@ function tryIt(): Plugin {
   };
 }
 
+/**
+ * Paged queries over the local index (scripts/query-server.ts), beside Try it on the dev and
+ * preview servers; localhost only. A static host has no such endpoint and the hub never needs it
+ * to paint: its pages read the snapshot's JSON chunks.
+ */
+function query(): Plugin {
+  return {
+    name: "youiyoux-query",
+    configureServer(server) {
+      server.middlewares.use(queryMiddleware({}, server.config.base));
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(queryMiddleware({}, server.config.base));
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss(), snapshotFiles(), tryIt()],
+  plugins: [react(), tailwindcss(), snapshotFiles(), tryIt(), query()],
   resolve: { alias: { "@snapshot": snapshot } },
   // A system's demos may use any of the hub's UI packages. Pre-bundled up front, so the preview
   // frame's first visit to such a demo never makes the dev server re-optimize and reload mid-render.

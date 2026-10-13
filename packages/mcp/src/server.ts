@@ -6,6 +6,9 @@
  *   library_*  ingested references: browse and draft an adoption request only.
  *   discover_* candidates from the local Discover index (`youi discover sync` builds it):
  *              search by need and show one; read-only, they never fetch.
+ *   index_*    the local index's graph (`youi inventory`, `youi scan`, `youi index rebuild`
+ *              fill it): where an inventory family is used, what swapping a candidate in
+ *              for one would touch, what a rule covers. A few plain lines each.
  * There is no publish, approve, merge or install tool, so an agent can look things up,
  * plan a change and draft a request, but never ship one.
  *
@@ -14,11 +17,14 @@
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { isAbsolute } from "node:path";
+import { existsSync, realpathSync } from "node:fs";
+import { isAbsolute, resolve, sep } from "node:path";
 import { isLibraryId, loadLibrary, MigrationSpec, normalizeRelPath, type Library, type McpTool } from "@youiyoux/core";
-import { DiscoverConstraints, discoverCacheDir, loadIndex, MissingIndexError, searchIndex, showCandidate } from "@youiyoux/discover";
+import { DISCOVER_RULE, DiscoverConstraints, discoverCacheDir, discoverIndexPath, MissingIndexError, readCatalog, searchCatalog, sharedStore, showFromCatalog } from "@youiyoux/discover";
+import { storeLocation, type Store } from "@youiyoux/store";
 import { adoptionRequest, findLibraryEntry, componentCard, describeIdentity, failedChecks, findContract, formatProps, loadProject, planChange, ruleRows, ScanCache, scanProject, screenBom, searchElements, searchLibrary, tokenRows, whereUsed, type PlanInput, type Project, type ScanResult } from "@youiyoux/scanner";
 import { z } from "zod";
+import { ruleCoversText, swapImpactText, whereUsedText } from "./index-tools.ts";
 
 export interface ServerOptions {
   readonly projectRoot: string;
@@ -29,6 +35,8 @@ export interface ServerOptions {
   readonly scanTtlMs?: number;
   /** The Discover index directory (default: YOUI_DISCOVER_CACHE, else ~/.cache/youiyoux/discover). */
   readonly discoverCache?: string;
+  /** The store (index.db); default beside an explicit discoverCache, else YOUI_INDEX, else ~/.cache/youiyoux/index.db. DATABASE_URL wins. */
+  readonly index?: string;
 }
 
 const VERSION = "0.1.0";
@@ -38,6 +46,7 @@ const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: 
 type ToolResult = { content: Array<{ type: "text"; text: string }>; isError?: boolean };
 
 const ok = (value: unknown): ToolResult => ({ content: [{ type: "text", text: JSON.stringify(value) }] });
+const text = (value: string): ToolResult => ({ content: [{ type: "text", text: value }] });
 const fail = (error: unknown): ToolResult => ({ content: [{ type: "text", text: JSON.stringify({ error: error instanceof Error ? error.message : String(error) }) }], isError: true });
 
 /**
@@ -107,15 +116,21 @@ function guard<A>(handler: (args: A) => Promise<unknown>): (args: A) => Promise<
 export function createServer(options: ServerOptions): McpServer {
   const state = new State(options);
   const discoverDir = discoverCacheDir(options.discoverCache);
-  /** Read the index; a missing one is an error that says how to build it, never a fetch. */
-  const discoverIndex = () => loadIndex(discoverDir);
+  const indexPath = options.index ?? discoverIndexPath(options.discoverCache);
+  /** The store with the catalog in it; no index is an error that says how to build it, never a fetch. */
+  const catalog = () => readCatalog(discoverDir, indexPath);
+  /** The store for the index_* tools. A store that does not exist yet is not created here: it says what fills it. */
+  async function graph(): Promise<Store> {
+    if (!process.env.DATABASE_URL && !existsSync(indexPath)) throw new Error(`no local index at ${storeLocation({ path: indexPath })}: run youi inventory (families), youi scan (rules and usage) or youi index rebuild`);
+    return sharedStore(indexPath, process.env, { readOnly: true });
+  }
 
   /** A Discover candidate can be requested by its lib: id, as if it were in the Library; the Library's own entry wins. */
   async function withCandidate(library: Library, item: string): Promise<Library> {
     if (findLibraryEntry(library, item) || !isLibraryId(item)) return library;
     try {
-      const candidate = (await discoverIndex()).entries.find((e) => e.id === item.trim());
-      return candidate ? { entries: [...library.entries, candidate] } : library;
+      const candidate = await (await catalog()).getDiscoverItem(item.trim(), ["chosen"]);
+      return candidate ? { entries: [...library.entries, candidate.entry as Library["entries"][number]] } : library;
     } catch (error: unknown) {
       if (error instanceof MissingIndexError) return library;
       throw error;
@@ -125,7 +140,7 @@ export function createServer(options: ServerOptions): McpServer {
     { name: "youiyoux", version: VERSION },
     {
       instructions:
-        "YouIyouX design-language lookups for this project. Build only with System elements: call system_get_component before using a component's props, system_get_tokens instead of writing colours or sizes, and system_check on code before finishing. system_plan shows the impact of a change to the System. The Library (library_* tools, lib: ids) holds ingested references that are not approved: browse them with library_search, never import, copy or build with them, and use library_request to draft an adoption request for a person to approve. discover_search and discover_show find outside candidates by need (shadcn registries, npm) with licence, signals and install command: they are references, never install or copy one; propose one with library_request. There are no tools to publish, approve or install anything.",
+        "YouIyouX design-language lookups for this project. Build only with System elements: call system_get_component before using a component's props, system_get_tokens instead of writing colours or sizes, and system_check on code before finishing. system_plan shows the impact of a change to the System. The Library (library_* tools, lib: ids) holds ingested references that are not approved: browse them with library_search, never import, copy or build with them, and use library_request to draft an adoption request for a person to approve. discover_search and discover_show find outside candidates by need (shadcn registries, npm) with licence, signals and install command: they are references, never install or copy one; propose one with library_request. index_where_used, index_swap_impact and index_rule_covers answer from the local index in a few lines: where an inventory family (button-2) is used, what swapping a candidate in for it would touch, and what a rule covers. There are no tools to publish, approve or install anything.",
     },
   );
 
@@ -264,13 +279,75 @@ export function createServer(options: ServerOptions): McpServer {
       },
       annotations: READ_ONLY,
     },
-    guard(async ({ need, role, constraints, limit }) => searchIndex(await discoverIndex(), need, { ...(role ? { role } : {}), ...(constraints ? { constraints } : {}), limit: limit ?? 8 })),
+    guard(async ({ need, role, constraints, limit }) => searchCatalog(await catalog(), need, { ...(role ? { role } : {}), ...(constraints ? { constraints } : {}), limit: limit ?? 8 })),
   );
 
   server.registerTool(
     "discover_show" satisfies McpTool,
     { title: "Show one Discover candidate", description: "One candidate in full: source, provenance (fetch time, sha256 of the item and its files, registry health), licence evidence, signals and install dependencies (npm, registry, and implicit ones its code imports without declaring).", inputSchema: { id: z.string().min(1).describe("A lib: id or ref from discover_search, e.g. @coss/command") }, annotations: READ_ONLY },
-    guard(async ({ id }) => showCandidate(await discoverIndex(), id)),
+    guard(async ({ id }) => showFromCatalog(await catalog(), id, { all: false })),
+  );
+
+  /** A tool that answers in plain lines; a failure is an error result with the reason. */
+  const lines = <A>(handler: (args: A) => Promise<string>) => async (args: A): Promise<ToolResult> => {
+    try {
+      return text(await handler(args));
+    } catch (error: unknown) {
+      return { ...text(error instanceof Error ? error.message : String(error)), isError: true };
+    }
+  };
+  /** The project an index tool answers for when none is named: the System project's id when this
+   * root has a youi.project.json, else the scanned project whose root is (or holds) this server's
+   * root. Undefined when neither fits; the store then answers with the choices instead of guessing. */
+  const real = (path: string): string => { try { return realpathSync(path); } catch { return resolve(path); } };
+  const defaultProject = async (store: Store): Promise<string | undefined> => {
+    try { return (await state.loadProject()).config.id; } catch { /* no youi.project.json here: fall back to the scans */ }
+    const here = real(options.projectRoot);
+    const scans = await store.history({ limit: 100 });
+    const exact = scans.find((s) => real(s.root) === here);
+    const holding = scans.filter((s) => here.startsWith(real(s.root) + sep)).sort((a, b) => b.root.length - a.root.length)[0];
+    return (exact ?? holding)?.project;
+  };
+  const knownFamilies = async (store: Store): Promise<string> => {
+    const { rows, total } = await store.families({ limit: 12 });
+    return total ? `known: ${rows.map((f) => f.id).join(", ")}${total > rows.length ? ", …" : ""}` : "no inventory recorded: run youi inventory";
+  };
+
+  server.registerTool(
+    "index_where_used" satisfies McpTool,
+    { title: "Where an inventory family is used", description: "Where one inventory family (a look the project builds, e.g. button-2 from youi inventory) is used: its files and routes, walked through the local index's graph, and the families it is a near-duplicate of. About ten plain lines.", inputSchema: { project: z.string().min(1).optional(), family: z.string().min(1).describe("An inventory family id, e.g. button-2") }, annotations: READ_ONLY },
+    lines(async ({ family, project }) => {
+      const store = await graph();
+      const where = await store.whereUsed(family.trim(), { project: project ?? (await defaultProject(store)) });
+      if (!where) throw new Error(`no family "${family}" in the index (${await knownFamilies(store)})`);
+      if ("choices" in where) return ["Choose a project or full node id:", ...where.choices.slice(0, 8).map((n) => `${n.project ?? "unknown"} · ${n.id}`)].join("\n");
+      return whereUsedText(where, (await store.latestRun(where.source))?.scannedAt ?? null);
+    }),
+  );
+
+  server.registerTool(
+    "index_swap_impact" satisfies McpTool,
+    { title: "Impact of swapping a candidate in for a family", description: "What swapping a Discover or Library candidate (lib: id) in for an inventory family would touch: the family and its near-duplicates, their looks, files and routes, whether the candidate is a listed could-replace match, and the other candidates. Read-only: it changes nothing; propose a swap with library_request.", inputSchema: { project: z.string().min(1).optional(), candidate: z.string().min(1).describe("A lib: id, e.g. lib:shadcn/component/button"), family: z.string().min(1).describe("An inventory family id, e.g. button-2") }, annotations: READ_ONLY },
+    lines(async ({ candidate, family, project }) => {
+      const store = await graph();
+      const swap = await store.swapImpact(candidate.trim(), family.trim(), { project: project ?? (await defaultProject(store)) });
+      if (!swap) throw new Error(`no family "${family}" in the index (${await knownFamilies(store)})`);
+      if ("choices" in swap) return ["Choose a project or full node id:", ...swap.choices.slice(0, 8).map((n) => `${n.project ?? "unknown"} · ${n.id}`)].join("\n");
+      return swapImpactText(swap, DISCOVER_RULE);
+    }),
+  );
+
+  server.registerTool(
+    "index_rule_covers" satisfies McpTool,
+    { title: "What a System rule covers", description: "The System components a rule governs, and the files and routes that use them, from the local index's graph (youi scan records the rules and the usage map). About ten plain lines.", inputSchema: { project: z.string().min(1).optional(), rule: z.string().min(1).describe("A rule id, full (youi:demo/rule/color.no-raw-color) or short (color.no-raw-color)") }, annotations: READ_ONLY },
+    lines(async ({ rule, project }) => {
+      const store = await graph();
+      const covers = await store.ruleCovers(rule.trim(), { project: project ?? (await defaultProject(store)) });
+      if (!covers) throw new Error(`no rule "${rule}" in the index: youi scan records the project's rules and usage`);
+      if ("choices" in covers) return ["Choose a project or full node id:", ...covers.choices.slice(0, 8).map((n) => `${n.project ?? "unknown"} · ${n.id}`)].join("\n");
+      const spec = await state.loadProject().then((p) => p.system.rules.find((r) => r.id === covers.rule), () => undefined);
+      return ruleCoversText(covers, spec ? { title: spec.title, severity: spec.severity, files: spec.files } : {});
+    }),
   );
 
   return server;

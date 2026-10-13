@@ -56,7 +56,7 @@ export function canMove(from: ElementStage, to: ElementStage, actor: StageActor)
 /* ------------------------------------------------------------------ MCP tools */
 
 /** Every tool the youiyoux MCP server exposes, named for the side it reads; the server registers exactly these. */
-export const MCP_TOOLS = ["system_search", "system_get_component", "system_get_tokens", "system_get_rules", "system_where_used", "system_screen_bom", "system_check", "system_plan", "library_search", "library_request", "discover_search", "discover_show"] as const;
+export const MCP_TOOLS = ["system_search", "system_get_component", "system_get_tokens", "system_get_rules", "system_where_used", "system_screen_bom", "system_check", "system_plan", "library_search", "library_request", "discover_search", "discover_show", "index_where_used", "index_swap_impact", "index_rule_covers"] as const;
 export type McpTool = (typeof MCP_TOOLS)[number];
 
 /* -------------------------------------------------------------- youi.library/v1 */
