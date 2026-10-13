@@ -7,8 +7,8 @@ import type { PinnedState } from "./pin.ts";
 
 export type PreviewScheme = "light" | "dark";
 
-/** Representative screens the style editor previews, beside one component's demo. */
-export type PreviewScreen = "components" | "type" | "scale" | "motion" | "focus";
+/** Representative screens the style editor previews, beside one component's demo; `token` is the phone's edited-token view. */
+export type PreviewScreen = "components" | "type" | "scale" | "motion" | "focus" | "token";
 
 export const PREVIEW_SCREENS: ReadonlyArray<{ readonly value: PreviewScreen; readonly label: string }> = [
   { value: "components", label: "Components" },
@@ -25,6 +25,33 @@ export interface PreviewToken {
   readonly cssVar: string;
 }
 
+/**
+ * Where a token shows: text, a surface, a border, a ring, a shape's corners, a gap. `on` is the
+ * surface under a text sample, `fg` the text on a surface sample (CSS variables, from the same
+ * component), and `demo` the component's demo when the use is a component's role.
+ */
+export interface PreviewTokenUse {
+  readonly kind: "text" | "surface" | "border" | "ring" | "shadow" | "radius" | "space" | "type";
+  readonly label: string;
+  /** The type of the token behind `cssVar`. */
+  readonly type: string;
+  /** The variable that carries the token here: its own, or a composite's (`--x-border-control`) that reads it. */
+  readonly cssVar: string;
+  readonly on?: string;
+  readonly fg?: string;
+  readonly demo?: string;
+}
+
+/** The token the phone preview shows: its own variable and its direct uses. */
+export interface PreviewFocus {
+  readonly path: string;
+  readonly type: string;
+  readonly cssVar: string;
+  readonly uses: readonly PreviewTokenUse[];
+  /** The uses come from the token's name, as nothing in the system reads it directly. */
+  readonly byName: boolean;
+}
+
 /** CSS variable → value, per scheme: set on the system's root, over the generated sheet. */
 export interface PreviewVars {
   readonly light: Readonly<Record<string, string>>;
@@ -36,6 +63,7 @@ export type ToFrame =
   | { readonly type: "yx-preview-vars"; readonly vars: PreviewVars }
   | { readonly type: "yx-preview-state"; readonly state: PinnedState | null }
   | { readonly type: "yx-preview-tokens"; readonly tokens: readonly PreviewToken[] }
+  | { readonly type: "yx-preview-focus"; readonly focus: PreviewFocus | null }
   | { readonly type: "yx-preview-replay" };
 
 export type FromFrame = { readonly type: "yx-preview-size"; readonly height: number } | { readonly type: "yx-preview-ready" };

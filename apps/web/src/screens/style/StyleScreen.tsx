@@ -29,11 +29,12 @@ import { LivePreview, MiniPreview } from "./LivePreview.tsx";
 import { applyEdit, contrastWarnings, editable, editCount, editorModel, EMPTY, GROUPS, groupOf, previewVars, type EditAction, type EditorModel, type Group } from "./model.ts";
 import { StatesPanel } from "./StatesPanel.tsx";
 import { TokenCard } from "./TokenControls.tsx";
+import { SAMPLED_TYPES, tokenFocus } from "./uses.ts";
 
 type Tab = Group | "states";
 
-/** The preview screen that shows a token group best: picking a group turns the preview to it. */
-const SCREEN_FOR: Record<Tab, PreviewScreen> = { color: "components", type: "type", space: "scale", radius: "scale", border: "scale", shadow: "scale", motion: "motion", focus: "focus", other: "components", states: "components" };
+/** The preview screen that shows a token group best: picking a group turns the preview to it (an edit on a phone, to the token). */
+const SCREEN_FOR: Record<Tab, Exclude<PreviewScreen, "token">> = { color: "components", type: "type", space: "scale", radius: "scale", border: "scale", shadow: "scale", motion: "motion", focus: "focus", other: "components", states: "components" };
 
 /** The two-column editor starts at Tailwind's lg (64rem); below it the preview is a sticky strip. */
 const WIDE = "(min-width: 64rem)";
@@ -112,10 +113,20 @@ function Editor({ model: hub, initialDraft }: { model: Model; initialDraft: Styl
   const [draft, setDraft] = useState<StyleDraftView | null>(initialDraft);
   const key = storageKey(system.id, draft?.id ?? null);
   const [content, dispatchRaw] = useReducer((current: StyleDraftContent, action: EditAction) => applyEdit(model, current, action), undefined, () => readStored(key) ?? initialDraft?.content ?? EMPTY);
-  const dispatch = useCallback((action: EditAction) => dispatchRaw(action), []);
   const [tab, setTab] = useState<Tab>("color");
   const [screen, setScreen] = useState<PreviewScreen>("components");
   const wide = useWide();
+  // The token last edited: on a phone the preview turns to what it touches.
+  const [edited, setEdited] = useState<string | null>(null);
+  const dispatch = useCallback(
+    (action: EditAction) => {
+      dispatchRaw(action);
+      if (!("path" in action)) return;
+      setEdited(action.path);
+      if (!wide && SAMPLED_TYPES.has(model.byPath.get(action.path)?.type ?? "")) setScreen("token");
+    },
+    [wide, model],
+  );
   const [stickyRef, stickyHeight] = useHeight();
   const [query, setQuery] = useState("");
   const [pinned, setPinned] = useState<PinnedState | null>(null);
@@ -143,6 +154,7 @@ function Editor({ model: hub, initialDraft }: { model: Model; initialDraft: Styl
   const dirty = draft ? !same(content, draft.content) : editCount(content) > 0;
   const vars = useMemo(() => previewVars(model, content), [model, content]);
   const warnings = useMemo(() => contrastWarnings(model, content), [model, content]);
+  const focus = useMemo(() => (edited ? tokenFocus(model, content, edited) : null), [model, content, edited]);
   const tokens: PreviewToken[] = useMemo(() => model.tokens.map((t) => ({ path: t.path, type: t.type, cssVar: t.cssVar })), [model]);
   const usable = model.tokens.filter(editable);
 
@@ -244,7 +256,7 @@ function Editor({ model: hub, initialDraft }: { model: Model; initialDraft: Styl
       <div className="min-h-0 flex-1 max-lg:flex max-lg:flex-col max-lg:overflow-y-auto lg:grid lg:grid-cols-[minmax(22rem,30rem)_minmax(0,1fr)]" style={wide ? undefined : { scrollPaddingTop: stickyHeight + 8 }}>
         {!wide && (
           <section ref={stickyRef} aria-label="Live preview" className="sticky top-0 z-10 shrink-0 border-b border-line bg-canvas px-4 py-2 shadow-raise">
-            <MiniPreview vars={vars} tokens={tokens} pinned={pinned} onPinned={setPinned} screen={screen} onScreen={setScreen} />
+            <MiniPreview vars={vars} tokens={tokens} pinned={pinned} onPinned={setPinned} screen={screen} onScreen={setScreen} focus={focus} />
           </section>
         )}
         <section aria-label="Edit tokens and states" className="min-w-0 space-y-4 p-4 lg:overflow-y-auto lg:border-r lg:border-line">
@@ -303,7 +315,7 @@ function Editor({ model: hub, initialDraft }: { model: Model; initialDraft: Styl
         </section>
         {wide && (
           <section aria-label="Live preview" className="min-w-0 p-4 lg:overflow-y-auto">
-            <LivePreview vars={vars} tokens={tokens} pinned={pinned} onPinned={setPinned} screen={screen} onScreen={setScreen} />
+            <LivePreview vars={vars} tokens={tokens} pinned={pinned} onPinned={setPinned} screen={screen === "token" ? SCREEN_FOR[tab] : screen} onScreen={setScreen} />
           </section>
         )}
       </div>

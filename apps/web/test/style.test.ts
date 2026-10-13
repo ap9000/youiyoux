@@ -6,6 +6,7 @@ import type { Catalog, Manifest } from "../src/data/types.ts";
 import { collectPinned, pinnedRule, resolveNesting } from "../src/preview/pin.ts";
 import { bezierPoints } from "../src/screens/style/fields.tsx";
 import { applyEdit, contrastWarnings, cssOf, editorModel, EMPTY, groupOf, previewVars, sourceOf, type EditAction } from "../src/screens/style/model.ts";
+import { tokenFocus } from "../src/screens/style/uses.ts";
 
 const DATA = join(import.meta.dirname, "../snapshot/public/data");
 const manifest = JSON.parse(readFileSync(join(DATA, "manifest.json"), "utf8")) as Manifest;
@@ -45,6 +46,37 @@ describe("the editor model", () => {
     const state = run({ type: "state", component: "youi:demo/component/button", state: "hover", role: "bg.default", token: "youi:demo/token/color.danger" });
     expect(state.states).toEqual([{ component: "youi:demo/component/button", state: "hover", role: "bg.default", token: "youi:demo/token/color.danger" }]);
     expect(applyEdit(model, state, { type: "state", component: "youi:demo/component/button", state: "hover", role: "bg.default", token: "youi:demo/token/color.accent-hover" }).states).toEqual([]);
+  });
+});
+
+describe("what an edited token touches, for the phone preview", () => {
+  const uses = (path: string, content = EMPTY) => tokenFocus(model, content, path)!.uses.map((u) => [u.kind, u.label, u.cssVar, u.on ?? u.fg ?? ""]);
+
+  test("a colour nothing binds is sampled by its name: muted as text on every surface", () => {
+    expect(tokenFocus(model, EMPTY, "color.muted")!.byName).toBe(true);
+    expect(uses("color.muted")).toEqual([
+      ["text", "on color.background", "--demo-color-muted", "--demo-color-background"],
+      ["text", "on color.card", "--demo-color-muted", "--demo-color-card"],
+    ]);
+  });
+
+  test("a colour's direct uses: component roles as text on their surface, surfaces with their text, borders, and composites that read it", () => {
+    expect(uses("color.on-accent")).toEqual([["text", "Button fg.default", "--demo-color-on-accent", "--demo-color-accent"]]);
+    expect(uses("color.card")).toContainEqual(["surface", "Card bg", "--demo-color-card", ""]);
+    expect(uses("color.line")).toEqual(expect.arrayContaining([["border", "Card border", "--demo-color-line", ""], ["border", "Input border", "--demo-color-line", ""], ["border", "border.control", "--demo-border-control", ""]]));
+    // A plain alias stands for the token: brand shows wherever accent does.
+    expect(uses("color.brand")).toEqual(expect.arrayContaining([["surface", "Button bg.default (via color.accent)", "--demo-color-accent", "--demo-color-on-accent"], ["ring", "focus.ring (via color.accent)", "--demo-focus-ring", ""]]));
+  });
+
+  test("dimensions: radii by the components that bind them, spacing by name; types it cannot draw have no view", () => {
+    expect(uses("radius.control")).toEqual([["radius", "Button radius", "--demo-radius-control", ""], ["radius", "Input radius", "--demo-radius-control", ""]]);
+    expect(uses("space.md")).toEqual([["space", "gap and padding", "--demo-space-md", ""]]);
+    expect(tokenFocus(model, EMPTY, "motion.duration.fast")).toBeNull();
+  });
+
+  test("uses follow the edits: a token that now aliases it counts", () => {
+    const content = run({ type: "token", path: "color.card", scheme: "light", value: "{color.muted}" });
+    expect(tokenFocus(model, content, "color.muted")!.uses.map((u) => u.label)).toContain("Card bg (via color.card)");
   });
 });
 

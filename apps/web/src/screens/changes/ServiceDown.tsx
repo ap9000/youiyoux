@@ -7,10 +7,11 @@ import { EmptyState } from "../../ui/EmptyState.tsx";
 
 export const START_EDITOR = "pnpm youi ui --project <project> [--design <design repo>] [--config <youi.project.json>]";
 
+/** The start command, wrapping inside its box (at spaces, else anywhere) so a phone row never scrolls sideways. */
 export function StartEditor() {
   return (
-    <p className="flex items-center gap-1 rounded-md bg-sunken px-2 py-1">
-      <code className="min-w-0 truncate font-mono text-mono-sm text-ink-2">{START_EDITOR}</code>
+    <p className="flex min-w-0 max-w-full items-start gap-1 rounded-md bg-sunken px-2 py-1">
+      <code className="min-w-0 flex-1 self-center font-mono text-mono-sm text-ink-2 [overflow-wrap:anywhere]">{START_EDITOR}</code>
       <CopyButton value={START_EDITOR} label="Copy command" />
     </p>
   );

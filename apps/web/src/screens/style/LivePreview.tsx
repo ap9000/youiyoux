@@ -4,10 +4,10 @@
  * overrides and a pinned state over postMessage, so the frames never reload while editing.
  */
 import { clsx } from "clsx";
-import { ChevronDown, ChevronUp, Play } from "lucide-react";
-import { useEffect, useId, useRef, useState } from "react";
+import { ChevronDown, ChevronUp, Maximize2, Minimize2, Play } from "lucide-react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { PinnedState } from "../../preview/pin.ts";
-import { PREVIEW_SCREENS, type FromFrame, type PreviewScreen, type PreviewToken, type PreviewVars, type ToFrame } from "../../preview/protocol.ts";
+import { PREVIEW_SCREENS, type FromFrame, type PreviewFocus, type PreviewScreen, type PreviewToken, type PreviewVars, type ToFrame } from "../../preview/protocol.ts";
 import { Button } from "../../ui/Button.tsx";
 import { Segmented } from "../../ui/Segmented.tsx";
 import { INPUT } from "./fields.tsx";
@@ -33,14 +33,16 @@ interface FrameProps {
   pinned: PinnedState | null;
   tokens: readonly PreviewToken[];
   replay: number;
+  /** The edited token, for the `token` screen. */
+  focus?: PreviewFocus | null;
   className?: string;
 }
 
-function LiveFrame({ screen, scheme, vars, pinned, tokens, replay, className }: FrameProps) {
+function LiveFrame({ screen, scheme, vars, pinned, tokens, replay, focus = null, className }: FrameProps) {
   const ref = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(MIN_FRAME);
-  const latest = useRef({ vars, pinned, tokens });
-  latest.current = { vars, pinned, tokens };
+  const latest = useRef({ vars, pinned, tokens, focus });
+  latest.current = { vars, pinned, tokens, focus };
   const post = (message: ToFrame): void => ref.current?.contentWindow?.postMessage(message, location.origin);
 
   useEffect(() => {
@@ -53,6 +55,7 @@ function LiveFrame({ screen, scheme, vars, pinned, tokens, replay, className }: 
         post({ type: "yx-preview-tokens", tokens: latest.current.tokens });
         post({ type: "yx-preview-vars", vars: latest.current.vars });
         post({ type: "yx-preview-state", state: latest.current.pinned });
+        post({ type: "yx-preview-focus", focus: latest.current.focus });
       }
     };
     window.addEventListener("message", onMessage);
@@ -62,6 +65,7 @@ function LiveFrame({ screen, scheme, vars, pinned, tokens, replay, className }: 
   useEffect(() => post({ type: "yx-preview-vars", vars }), [vars]);
   useEffect(() => post({ type: "yx-preview-state", state: pinned }), [pinned]);
   useEffect(() => post({ type: "yx-preview-tokens", tokens }), [tokens]);
+  useEffect(() => post({ type: "yx-preview-focus", focus }), [focus]);
   useEffect(() => {
     if (replay > 0) post({ type: "yx-preview-replay" });
   }, [replay]);
@@ -107,21 +111,57 @@ export function LivePreview({ vars, tokens, pinned, onPinned, screen, onScreen }
   );
 }
 
+interface MiniPreviewProps extends LivePreviewProps {
+  /** The token last edited, with its direct uses: the `token` screen draws them. */
+  focus: PreviewFocus | null;
+}
+
+/** True while the element's content is taller than its box, so it scrolls. */
+function useOverflow<T extends HTMLElement>(): [(node: T | null) => void, boolean] {
+  const [overflows, setOverflows] = useState(false);
+  const observer = useRef<ResizeObserver | null>(null);
+  const ref = useCallback((node: T | null): void => {
+    observer.current?.disconnect();
+    if (!node) return;
+    const check = (): void => setOverflows(node.scrollHeight > node.clientHeight + 1);
+    observer.current = new ResizeObserver(check);
+    observer.current.observe(node);
+    if (node.firstElementChild) observer.current.observe(node.firstElementChild);
+  }, []);
+  return [ref, overflows];
+}
+
 /**
- * The phone preview: light beside dark at a reduced height, pinned under the header while the
- * token cards scroll beneath it, so an edit shows without scrolling away from the field. One
- * row of controls (screen, pinned state, replay) and a toggle that folds it to that row. The
- * frames are a glance view, inert, so Tab goes from these controls straight to the editor.
+ * The phone preview: light beside dark, pinned under the header while the token cards scroll
+ * beneath it, so an edit shows without scrolling away from the field. An edit turns it to the
+ * edited token: each direct use drawn as a sample (text, surfaces, borders, corners, gaps),
+ * then the components that bind it. One row of controls (screen, pinned state, replay, a taller
+ * view, a fold). The frames are inert; when they are taller than the strip, the strip itself
+ * scrolls, by touch or, once focused, by the arrow keys, light and dark together.
  */
-export function MiniPreview({ vars, tokens, pinned, onPinned, screen, onScreen }: LivePreviewProps) {
+export function MiniPreview({ vars, tokens, pinned, onPinned, screen, onScreen, focus }: MiniPreviewProps) {
   const [open, setOpen] = useState(true);
+  const [tall, setTall] = useState(false);
   const [replay, setReplay] = useState(0);
   const framesId = useId();
+  const [scrollRef, overflows] = useOverflow<HTMLDivElement>();
+  const scroller = useRef<HTMLDivElement | null>(null);
+  const setScroller = useCallback(
+    (node: HTMLDivElement | null) => {
+      scroller.current = node;
+      scrollRef(node);
+    },
+    [scrollRef],
+  );
+  const screens = focus ? [...PREVIEW_SCREENS, { value: "token" as const, label: "Edited" }] : PREVIEW_SCREENS;
+  useEffect(() => {
+    if (scroller.current) scroller.current.scrollTop = 0;
+  }, [screen, focus?.path]);
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-1.5">
         <select aria-label="Preview screen" value={screen} onChange={(event) => onScreen(event.target.value as PreviewScreen)} className={clsx(INPUT, "h-8 min-w-0 flex-1 pr-7")}>
-          {PREVIEW_SCREENS.map((option) => (
+          {screens.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>
@@ -139,16 +179,30 @@ export function MiniPreview({ vars, tokens, pinned, onPinned, screen, onScreen }
             <Play />
           </Button>
         )}
+        {open && (overflows || tall) && (
+          <Button size="icon" variant="ghost" className="shrink-0" aria-pressed={tall} aria-controls={framesId} aria-label="Taller preview" title={tall ? "Shorter preview" : "Taller preview"} onClick={() => setTall((v) => !v)}>
+            {tall ? <Minimize2 /> : <Maximize2 />}
+          </Button>
+        )}
         <Button size="icon" variant="ghost" className="shrink-0" aria-expanded={open} aria-controls={framesId} aria-label={open ? "Fold the preview" : "Show the preview"} title={open ? "Fold the preview" : "Show the preview"} onClick={() => setOpen((v) => !v)}>
           {open ? <ChevronUp /> : <ChevronDown />}
         </Button>
       </div>
-      <div id={framesId} hidden={!open} inert className="grid grid-cols-2 gap-2">
-        {(["light", "dark"] as const).map((scheme) => (
-          <div key={`${screen}:${scheme}`} className="max-h-[24vh] min-w-0 overflow-hidden rounded-lg">
-            <LiveFrame screen={screen} scheme={scheme} vars={vars} pinned={pinned} tokens={tokens} replay={replay} />
-          </div>
-        ))}
+      <div
+        id={framesId}
+        hidden={!open}
+        ref={setScroller}
+        // Focusable only when there is something to scroll to, so Tab otherwise goes straight to the editor.
+        tabIndex={overflows ? 0 : undefined}
+        role={overflows ? "region" : undefined}
+        aria-label={overflows ? "Preview, scrolls with the arrow keys" : undefined}
+        className={clsx("overflow-y-auto overscroll-contain rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-focus", tall ? "max-h-[60dvh]" : "max-h-[24vh]")}
+      >
+        <div inert className="grid grid-cols-2 gap-2">
+          {(["light", "dark"] as const).map((scheme) => (
+            <LiveFrame key={`${screen}:${scheme}`} screen={screen} scheme={scheme} vars={vars} pinned={pinned} tokens={tokens} replay={replay} focus={focus} />
+          ))}
+        </div>
       </div>
     </div>
   );

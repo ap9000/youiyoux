@@ -8,7 +8,7 @@
 import { type ComponentType, StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { PINNED_STATES, pinState, type PinnedState } from "./pin.ts";
-import { PREVIEW_SCREENS, type PreviewScreen, type PreviewToken, type PreviewVars, type ToFrame } from "./protocol.ts";
+import { PREVIEW_SCREENS, type PreviewFocus, type PreviewScreen, type PreviewToken, type PreviewVars, type ToFrame } from "./protocol.ts";
 import { Screen } from "./screens.tsx";
 import "./preview.css";
 
@@ -21,7 +21,7 @@ const DEMOS: Readonly<Record<string, () => Promise<DemoModule>>> = Object.fromEn
 
 const params = new URLSearchParams(location.search);
 const name = params.get("c") ?? "";
-const screen = PREVIEW_SCREENS.find((s) => s.value === params.get("screen"))?.value ?? null;
+const screen = params.get("screen") === "token" ? "token" : (PREVIEW_SCREENS.find((s) => s.value === params.get("screen"))?.value ?? null);
 const initialScheme: Scheme = params.get("scheme") === "dark" ? "dark" : "light";
 const SCOPE = ".system-scope";
 
@@ -68,6 +68,7 @@ function Frame() {
   const [pinned, setPinned] = useState<PinnedState | null>(null);
   const [tokens, setTokens] = useState<readonly PreviewToken[]>([]);
   const [replay, setReplay] = useState(0);
+  const [focus, setFocus] = useState<PreviewFocus | null>(null);
   const Demo = useDemo();
   useOverrides(scheme, vars);
 
@@ -80,6 +81,7 @@ function Frame() {
       if (data.type === "yx-preview-state") setPinned(PINNED_STATES.includes(data.state as PinnedState) ? (data.state as PinnedState) : null);
       if (data.type === "yx-preview-tokens" && Array.isArray(data.tokens)) setTokens(data.tokens as PreviewToken[]);
       if (data.type === "yx-preview-replay") setReplay((n) => n + 1);
+      if (data.type === "yx-preview-focus") setFocus(typeof data.focus === "object" && data.focus !== null && Array.isArray((data.focus as PreviewFocus).uses) ? (data.focus as PreviewFocus) : null);
     };
     window.addEventListener("message", onMessage);
     // Ask for the current scheme now that the listener exists; a toggle sent while loading would be lost.
@@ -105,9 +107,9 @@ function Frame() {
   const ready = screen ? true : Demo !== undefined;
   return (
     <div className="system-scope" data-scheme={scheme} data-preview-ready={ready ? "" : undefined}>
-      <div className="p-8 phone:p-5">
+      <div className={screen === "token" ? "p-3" : "p-8 phone:p-5"}>
         {screen ? (
-          <Screen screen={screen as PreviewScreen} tokens={tokens} demos={DEMOS} replay={replay} />
+          <Screen screen={screen as PreviewScreen} tokens={tokens} demos={DEMOS} replay={replay} focus={focus} />
         ) : Demo ? (
           <Demo />
         ) : Demo === null ? (

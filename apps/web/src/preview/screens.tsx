@@ -3,9 +3,9 @@
  * read each token's CSS variable (type and colour, space and shape, motion, focus). They use
  * only `var(--…)`, so an override from the editor shows on the next frame.
  */
-import { type ComponentType, type CSSProperties, type ReactNode, useEffect, useState } from "react";
+import { type ComponentType, type CSSProperties, type ReactNode, useEffect, useMemo, useState } from "react";
 import { ensurePinned } from "./pin.ts";
-import type { PreviewScreen, PreviewToken } from "./protocol.ts";
+import type { PreviewFocus, PreviewScreen, PreviewToken, PreviewTokenUse } from "./protocol.ts";
 
 type DemoModule = { default: ComponentType };
 export type Demos = Readonly<Record<string, () => Promise<DemoModule>>>;
@@ -239,7 +239,72 @@ function Focus({ tokens, demos }: { tokens: readonly PreviewToken[]; demos: Demo
   );
 }
 
-export function Screen({ screen, tokens, demos, replay }: { screen: PreviewScreen; tokens: readonly PreviewToken[]; demos: Demos; replay: number }) {
+const frame: CSSProperties = { borderRadius: 6, boxShadow: "inset 0 0 0 1px rgb(127 127 127 / .25)" };
+
+/** One use drawn as the system draws it: text in the colour, a surface filled with it, a border, corners, a gap. */
+function UseSample({ use }: { use: PreviewTokenUse }) {
+  const value = `var(${use.cssVar})`;
+  const colour = use.type === "color";
+  switch (use.kind) {
+    case "text":
+      return (
+        <div style={{ ...frame, background: use.on ? `var(${use.on})` : undefined, padding: "8px 10px" }}>
+          <p style={{ margin: 0, color: value, fontSize: 13 }}>Sample text</p>
+        </div>
+      );
+    case "surface":
+      return (
+        <div style={{ ...frame, background: value, color: use.fg ? `var(${use.fg})` : undefined, padding: "10px", fontSize: 13 }}>
+          Surface
+        </div>
+      );
+    case "border":
+      return <div style={{ height: 36, borderRadius: 6, border: colour ? `1px solid ${value}` : use.type === "dimension" ? `${value} solid currentColor` : value }} />;
+    case "ring":
+      return <div style={{ ...frame, height: 28, margin: 4, outline: colour ? `2px solid ${value}` : value, outlineOffset: colour ? 2 : `var(${use.cssVar}-offset)` }} />;
+    case "shadow":
+      return <div style={{ height: 40, margin: "4px 4px 8px", borderRadius: 6, boxShadow: value }} />;
+    case "radius":
+      return <div style={{ height: 40, borderRadius: value, background: "rgb(127 127 127 / .14)", boxShadow: "inset 0 0 0 1px currentColor" }} />;
+    case "space":
+      return (
+        <div style={{ display: "flex", gap: value, padding: value, outline: "1px dashed rgb(127 127 127 / .6)", outlineOffset: -1, width: "fit-content", maxWidth: "100%", overflow: "hidden" }}>
+          {[0, 1].map((i) => (
+            <span key={i} style={{ flexShrink: 0, width: 16, height: 16, borderRadius: 4, background: "currentColor", opacity: 0.45 }} />
+          ))}
+        </div>
+      );
+    case "type":
+      return <p style={{ margin: 0, font: value, letterSpacing: `var(${use.cssVar}-letter-spacing)` }}>Sample text</p>;
+  }
+}
+
+/** The edited token on a phone: each direct use as a sample, then the components that bind it. */
+function EditedToken({ focus, demos }: { focus: PreviewFocus | null; demos: Demos }) {
+  const keys = [...new Set((focus?.uses ?? []).flatMap((use) => (use.demo && demos[use.demo] ? [use.demo] : [])))].join(" ");
+  // One object per set of components, so their demos load once rather than on every edit.
+  const used = useMemo<Demos>(() => Object.fromEntries(keys.split(" ").filter(Boolean).map((key) => [key, demos[key]!])), [keys, demos]);
+  if (!focus) return <p style={{ margin: 0, opacity: 0.7 }}>Edit a token to see what it touches.</p>;
+  return (
+    <>
+      <section style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 24 }}>
+        <h2 style={{ margin: 0, fontSize: 11, fontWeight: 600, opacity: 0.6 }} title={focus.byName ? "Nothing binds it directly: sampled by its name." : undefined}>
+          {focus.path}
+          {focus.byName && " · by its name"}
+        </h2>
+        {focus.uses.map((use) => (
+          <div key={`${use.kind}|${use.cssVar}|${use.on ?? ""}|${use.label}`} data-use={use.kind} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <Label>{use.label}</Label>
+            <UseSample use={use} />
+          </div>
+        ))}
+      </section>
+      {keys && <AllComponents demos={used} />}
+    </>
+  );
+}
+
+export function Screen({ screen, tokens, demos, replay, focus = null }: { screen: PreviewScreen; tokens: readonly PreviewToken[]; demos: Demos; replay: number; focus?: PreviewFocus | null }) {
   switch (screen) {
     case "components":
       return <AllComponents demos={demos} />;
@@ -251,5 +316,7 @@ export function Screen({ screen, tokens, demos, replay }: { screen: PreviewScree
       return <Motion tokens={tokens} replay={replay} />;
     case "focus":
       return <Focus tokens={tokens} demos={demos} />;
+    case "token":
+      return <EditedToken focus={focus} demos={demos} />;
   }
 }
