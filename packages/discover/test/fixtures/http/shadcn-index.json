@@ -1,0 +1,222 @@
+[
+ {
+  "name": "button",
+  "type": "registry:ui",
+  "files": [
+   {
+    "path": "ui/button.tsx",
+    "type": "registry:ui"
+   }
+  ],
+  "meta": {
+   "links": {
+    "base": {
+     "docs": "https://ui.shadcn.com/docs/components/base/button",
+     "examples": "https://ui.shadcn.com/code/apps/v4/registry/bases/base/examples/button-example.tsx"
+    },
+    "aria": {
+     "docs": "https://ui.shadcn.com/docs/components/aria/button",
+     "examples": "https://ui.shadcn.com/code/apps/v4/registry/bases/aria/examples/button-example.tsx",
+     "api": "https://react-aria.adobe.com/Button#api"
+    },
+    "radix": {
+     "docs": "https://ui.shadcn.com/docs/components/radix/button",
+     "examples": "https://ui.shadcn.com/code/apps/v4/registry/bases/radix/examples/button-example.tsx"
+    }
+   }
+  }
+ },
+ {
+  "name": "calendar",
+  "type": "registry:ui",
+  "dependencies": [
+   "react-day-picker@latest",
+   "date-fns"
+  ],
+  "registryDependencies": [
+   "button"
+  ],
+  "files": [
+   {
+    "path": "ui/calendar.tsx",
+    "type": "registry:ui"
+   }
+  ],
+  "meta": {
+   "links": {
+    "base": {
+     "docs": "https://ui.shadcn.com/docs/components/base/calendar",
+     "examples": "https://ui.shadcn.com/code/apps/v4/registry/bases/base/examples/calendar-example.tsx",
+     "api": "https://react-day-picker.js.org"
+    },
+    "aria": {
+     "docs": "https://ui.shadcn.com/docs/components/aria/calendar",
+     "examples": "https://ui.shadcn.com/code/apps/v4/registry/bases/aria/examples/calendar-example.tsx",
+     "api": "https://react-aria.adobe.com/Calendar#api"
+    },
+    "radix": {
+     "docs": "https://ui.shadcn.com/docs/components/radix/calendar",
+     "examples": "https://ui.shadcn.com/code/apps/v4/registry/bases/radix/examples/calendar-example.tsx",
+     "api": "https://react-day-picker.js.org"
+    }
+   }
+  }
+ },
+ {
+  "name": "command",
+  "type": "registry:ui",
+  "dependencies": [
+   "cmdk"
+  ],
+  "registryDependencies": [
+   "dialog",
+   "input-group"
+  ],
+  "files": [
+   {
+    "path": "ui/command.tsx",
+    "type": "registry:ui"
+   }
+  ],
+  "meta": {
+   "links": {
+    "base": {
+     "docs": "https://ui.shadcn.com/docs/components/base/command",
+     "examples": "https://ui.shadcn.com/code/apps/v4/registry/bases/base/examples/command-example.tsx",
+     "api": "https://github.com/dip/cmdk"
+    },
+    "aria": {
+     "docs": "https://ui.shadcn.com/docs/components/aria/command",
+     "examples": "https://ui.shadcn.com/code/apps/v4/registry/bases/aria/examples/command-example.tsx",
+     "api": "https://react-aria.adobe.com/Autocomplete#api"
+    },
+    "radix": {
+     "docs": "https://ui.shadcn.com/docs/components/radix/command",
+     "examples": "https://ui.shadcn.com/code/apps/v4/registry/bases/radix/examples/command-example.tsx",
+     "api": "https://github.com/dip/cmdk"
+    }
+   }
+  }
+ },
+ {
+  "name": "dialog",
+  "type": "registry:ui",
+  "registryDependencies": [
+   "button"
+  ],
+  "files": [
+   {
+    "path": "ui/dialog.tsx",
+    "type": "registry:ui"
+   }
+  ],
+  "meta": {
+   "links": {
+    "base": {
+     "docs": "https://ui.shadcn.com/docs/components/base/dialog",
+     "examples": "https://ui.shadcn.com/code/apps/v4/registry/bases/base/examples/dialog-example.tsx",
+     "api": "https://base-ui.com/react/components/dialog.md"
+    },
+    "aria": {
+     "docs": "https://ui.shadcn.com/docs/components/aria/dialog",
+     "examples": "https://ui.shadcn.com/code/apps/v4/registry/bases/aria/examples/dialog-example.tsx",
+     "api": "https://react-aria.adobe.com/Modal#api"
+    },
+    "radix": {
+     "docs": "https://ui.shadcn.com/docs/components/radix/dialog",
+     "examples": "https://ui.shadcn.com/code/apps/v4/registry/bases/radix/examples/dialog-example.tsx",
+     "api": "https://www.radix-ui.com/docs/primitives/components/dialog.md"
+    }
+   }
+  }
+ },
+ {
+  "name": "input",
+  "type": "registry:ui",
+  "files": [
+   {
+    "path": "ui/input.tsx",
+    "type": "registry:ui"
+   }
+  ],
+  "meta": {
+   "links": {
+    "base": {
+     "docs": "https://ui.shadcn.com/docs/components/base/input",
+     "examples": "https://ui.shadcn.com/code/apps/v4/registry/bases/base/examples/input-example.tsx"
+    },
+    "aria": {
+     "docs": "https://ui.shadcn.com/docs/components/aria/input",
+     "examples": "https://ui.shadcn.com/code/apps/v4/registry/bases/aria/examples/input-example.tsx",
+     "api": "https://react-aria.adobe.com/TextField#api"
+    },
+    "radix": {
+     "docs": "https://ui.shadcn.com/docs/components/radix/input",
+     "examples": "https://ui.shadcn.com/code/apps/v4/registry/bases/radix/examples/input-example.tsx"
+    }
+   }
+  }
+ },
+ {
+  "name": "popover",
+  "type": "registry:ui",
+  "files": [
+   {
+    "path": "ui/popover.tsx",
+    "type": "registry:ui"
+   }
+  ],
+  "meta": {
+   "links": {
+    "base": {
+     "docs": "https://ui.shadcn.com/docs/components/base/popover",
+     "examples": "https://ui.shadcn.com/code/apps/v4/registry/bases/base/examples/popover-example.tsx",
+     "api": "https://base-ui.com/react/components/popover.md"
+    },
+    "aria": {
+     "docs": "https://ui.shadcn.com/docs/components/aria/popover",
+     "examples": "https://ui.shadcn.com/code/apps/v4/registry/bases/aria/examples/popover-example.tsx",
+     "api": "https://react-aria.adobe.com/Popover#api"
+    },
+    "radix": {
+     "docs": "https://ui.shadcn.com/docs/components/radix/popover",
+     "examples": "https://ui.shadcn.com/code/apps/v4/registry/bases/radix/examples/popover-example.tsx",
+     "api": "https://www.radix-ui.com/docs/primitives/components/popover.md"
+    }
+   }
+  }
+ },
+ {
+  "name": "sonner",
+  "type": "registry:ui",
+  "dependencies": [
+   "sonner",
+   "next-themes"
+  ],
+  "files": [
+   {
+    "path": "ui/sonner.tsx",
+    "type": "registry:ui"
+   }
+  ],
+  "meta": {
+   "links": {
+    "base": {
+     "docs": "https://ui.shadcn.com/docs/components/base/sonner",
+     "examples": "https://ui.shadcn.com/code/apps/v4/registry/bases/base/examples/sonner-example.tsx",
+     "api": "https://sonner.emilkowal.ski"
+    },
+    "aria": {
+     "docs": "https://ui.shadcn.com/docs/components/aria/sonner",
+     "examples": "https://ui.shadcn.com/code/apps/v4/registry/bases/aria/examples/sonner-example.tsx",
+     "api": "https://sonner.emilkowal.ski"
+    },
+    "radix": {
+     "docs": "https://ui.shadcn.com/docs/components/radix/sonner",
+     "examples": "https://ui.shadcn.com/code/apps/v4/registry/bases/radix/examples/sonner-example.tsx",
+     "api": "https://sonner.emilkowal.ski"
+    }
+   }
+  }
+ }
+]

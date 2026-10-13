@@ -1,0 +1,11 @@
+{
+ "name": "@base-ui/react",
+ "version": "1.9.0",
+ "license": "MIT",
+ "repository": {
+  "url": "git+https://github.com/mui/base-ui.git",
+  "type": "git",
+  "directory": "packages/react"
+ },
+ "homepage": "https://base-ui.com"
+}

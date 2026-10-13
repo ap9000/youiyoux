@@ -55,6 +55,14 @@ describe("Library queries", () => {
     ]);
   });
 
+  test("an inventory family is a swap target with no System stage", () => {
+    const entry = { ...library.entries[0]!, swapsWith: ["button-2", "youi:demo/component/button"] };
+    const request = adoptionRequest(project, { entries: [entry] }, "Pill", "replace the second button look", complete);
+    expect(request.swapsWith[0]).toEqual({ element: "button-2", name: null, stage: null, sites: 0, family: true });
+    expect(request.swapsWith[1]).toMatchObject({ name: "Button", stage: "in-use" });
+    expect(request.next).toContain("button-2");
+  });
+
   test("a partial scan never reports a System element as unused", () => {
     const partial = { ...scan, report: { ...scan.report, status: "partial" as const, usages: [] } };
     const request = adoptionRequest(project, library, "Pill", "partial", partial);

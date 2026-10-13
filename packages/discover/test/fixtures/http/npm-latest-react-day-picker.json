@@ -1,0 +1,11 @@
+{
+ "name": "react-day-picker",
+ "version": "10.0.2",
+ "license": "MIT",
+ "repository": {
+  "url": "git+https://github.com/gpbl/react-day-picker.git",
+  "type": "git",
+  "directory": "packages/react-day-picker"
+ },
+ "homepage": "https://daypicker.dev"
+}

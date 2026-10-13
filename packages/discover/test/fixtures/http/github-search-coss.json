@@ -1,0 +1,36 @@
+{
+ "total_count": 2347,
+ "incomplete_results": false,
+ "items": [
+  {
+   "full_name": "qzz0518/coss",
+   "html_url": "https://github.com/qzz0518/coss",
+   "homepage": null,
+   "stargazers_count": 75
+  },
+  {
+   "full_name": "mozilla/coss",
+   "html_url": "https://github.com/mozilla/coss",
+   "homepage": "https://discourse.mozilla-community.org/t/iam-coss-work-week-jan-2017/13497",
+   "stargazers_count": 19
+  },
+  {
+   "full_name": "cossistantcom/cossistant",
+   "html_url": "https://github.com/cossistantcom/cossistant",
+   "homepage": "https://cossistant.com",
+   "stargazers_count": 732
+  },
+  {
+   "full_name": "COSS-India/VoicEra",
+   "html_url": "https://github.com/COSS-India/VoicEra",
+   "homepage": "https://voicera.mintlify.app/docs/guides",
+   "stargazers_count": 317
+  },
+  {
+   "full_name": "ereb-thanatos/cossacks-revamp-2017",
+   "html_url": "https://github.com/ereb-thanatos/cossacks-revamp-2017",
+   "homepage": null,
+   "stargazers_count": 194
+  }
+ ]
+}

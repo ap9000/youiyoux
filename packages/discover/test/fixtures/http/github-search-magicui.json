@@ -1,0 +1,36 @@
+{
+ "total_count": 118,
+ "incomplete_results": false,
+ "items": [
+  {
+   "full_name": "magicuidesign/magicui",
+   "html_url": "https://github.com/magicuidesign/magicui",
+   "homepage": "https://magicui.design",
+   "stargazers_count": 22637
+  },
+  {
+   "full_name": "sundial-dreams/MagicUI",
+   "html_url": "https://github.com/sundial-dreams/MagicUI",
+   "homepage": null,
+   "stargazers_count": 56
+  },
+  {
+   "full_name": "xuguangyan/MagicUI",
+   "html_url": "https://github.com/xuguangyan/MagicUI",
+   "homepage": null,
+   "stargazers_count": 26
+  },
+  {
+   "full_name": "rebeloper/MagicUI",
+   "html_url": "https://github.com/rebeloper/MagicUI",
+   "homepage": null,
+   "stargazers_count": 4
+  },
+  {
+   "full_name": "sundial-dreams/MagicUIServer",
+   "html_url": "https://github.com/sundial-dreams/MagicUIServer",
+   "homepage": null,
+   "stargazers_count": 4
+  }
+ ]
+}

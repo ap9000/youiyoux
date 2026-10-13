@@ -1,0 +1,81 @@
+{
+ "name": "aceternity",
+ "homepage": "https://ui.aceternity.com",
+ "items": [
+  {
+   "name": "grid",
+   "type": "registry:ui",
+   "files": [
+    {
+     "path": "ui/grid.tsx",
+     "type": "registry:ui"
+    }
+   ]
+  },
+  {
+   "name": "moving-line",
+   "type": "registry:ui",
+   "dependencies": [
+    "motion"
+   ],
+   "files": [
+    {
+     "path": "ui/moving-line.tsx",
+     "type": "registry:ui"
+    }
+   ]
+  },
+  {
+   "name": "sparkles",
+   "type": "registry:ui",
+   "dependencies": [
+    "@tsparticles/react",
+    "@tsparticles/engine",
+    "@tsparticles/slim",
+    "motion"
+   ],
+   "files": [
+    {
+     "path": "ui/sparkles.tsx",
+     "type": "registry:ui"
+    }
+   ]
+  },
+  {
+   "name": "spotlight",
+   "type": "registry:ui",
+   "files": [
+    {
+     "path": "ui/spotlight.tsx",
+     "type": "registry:ui"
+    }
+   ]
+  },
+  {
+   "name": "glowing-stars",
+   "type": "registry:ui",
+   "dependencies": [
+    "motion"
+   ],
+   "files": [
+    {
+     "path": "ui/glowing-stars.tsx",
+     "type": "registry:ui"
+    }
+   ]
+  },
+  {
+   "name": "text-reveal-card",
+   "type": "registry:ui",
+   "dependencies": [
+    "motion"
+   ],
+   "files": [
+    {
+     "path": "ui/text-reveal-card.tsx",
+     "type": "registry:ui"
+    }
+   ]
+  }
+ ]
+}

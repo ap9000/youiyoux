@@ -1,0 +1,16 @@
+{
+ "full_name": "dip/cmdk",
+ "html_url": "https://github.com/dip/cmdk",
+ "description": "Fast, unstyled command menu React component.",
+ "homepage": "",
+ "stargazers_count": 13013,
+ "pushed_at": "2025-10-29T04:13:58Z",
+ "archived": false,
+ "license": {
+  "key": "mit",
+  "name": "MIT License",
+  "spdx_id": "MIT",
+  "url": "https://api.github.com/licenses/mit",
+  "node_id": "MDc6TGljZW5zZTEz"
+ }
+}

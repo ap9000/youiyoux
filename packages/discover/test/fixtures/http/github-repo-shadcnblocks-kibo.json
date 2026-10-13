@@ -1,0 +1,16 @@
+{
+ "full_name": "shadcnblocks/kibo",
+ "html_url": "https://github.com/shadcnblocks/kibo",
+ "description": "A custom registry of composable, accessible and extensible components designed for use with shadcn/ui. Free and open source, forever.",
+ "homepage": "https://www.kibo-ui.com/",
+ "stargazers_count": 3962,
+ "pushed_at": "2026-05-04T06:00:08Z",
+ "archived": false,
+ "license": {
+  "key": "mit",
+  "name": "MIT License",
+  "spdx_id": "MIT",
+  "url": "https://api.github.com/licenses/mit",
+  "node_id": "MDc6TGljZW5zZTEz"
+ }
+}

@@ -34,7 +34,7 @@ export interface UnknownToolMention {
 /** Tool names in the agent text of rules copied into AGENTS.md and SKILL.md (checked or not) that the MCP server does not expose. */
 export function unknownToolMentions(project: Project): UnknownToolMention[] {
   const known = new Set<string>(MCP_TOOLS);
-  return [...enforced(project.system.rules), ...unchecked(project.system.rules)].flatMap((r) => [...new Set(r.agent.match(/\b(?:system|library|youi)_[a-z_]+\b/g) ?? [])].filter((tool) => !known.has(tool)).map((tool) => ({ rule: r.id, tool })));
+  return [...enforced(project.system.rules), ...unchecked(project.system.rules)].flatMap((r) => [...new Set(r.agent.match(/\b(?:system|library|discover|youi)_[a-z_]+\b/g) ?? [])].filter((tool) => !known.has(tool)).map((tool) => ({ rule: r.id, tool })));
 }
 
 function enumSummary(contract: ComponentContract): string {

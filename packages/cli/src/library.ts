@@ -14,7 +14,7 @@ export function renderLibrarySearch(result: LibrarySearch, query: string): strin
 }
 
 export function renderAdoptionRequest(request: AdoptionRequest): string {
-  const swaps = request.swapsWith.map((s) => `  ${s.name ?? s.element}  ${s.stage === "in-use" ? style.live(`in use · ${plural(s.sites, "site")}`) : style.dim(s.stage === null ? "not in this System" : s.stage === "unknown" ? "usage unknown" : s.stage)}`);
+  const swaps = request.swapsWith.map((s) => `  ${s.name ?? s.element}  ${s.stage === "in-use" ? style.live(`in use · ${plural(s.sites, "site")}`) : style.dim(s.family ? "inventory family" : s.stage === null ? "not in this System" : s.stage === "unknown" ? "usage unknown" : s.stage)}`);
   return [
     `${style.bold("Adoption request")} ${style.dim("· draft, nothing filed")}`,
     "",

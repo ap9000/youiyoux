@@ -18,6 +18,7 @@
     "@youiyoux/cli": "workspace:*",
     "@youiyoux/core": "workspace:*",
     "@youiyoux/detect": "workspace:*",
+    "@youiyoux/discover": "workspace:*",
     "@youiyoux/mcp": "workspace:*",
     "@youiyoux/scanner": "workspace:*",
     "@youiyoux/tokens": "workspace:*",

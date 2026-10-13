@@ -3,7 +3,7 @@
  * proposing only: a hit is never something to import, and a request is a draft for a
  * person to approve, not a change.
  */
-import { canMove, isLibraryId, systemStage, type ElementStage, type Library, type LibraryEntry, type ScanReport } from "@youiyoux/core";
+import { canMove, isFamilyId, isLibraryId, systemStage, type ElementStage, type Library, type LibraryEntry, type ScanReport } from "@youiyoux/core";
 import type { Project } from "./project.ts";
 import type { ScanResult } from "./scan.ts";
 
@@ -59,12 +59,16 @@ export interface AdoptionRequest {
   readonly next: string;
 }
 
-/** `stage` is null when the element is not in this System, and "unknown" when the scan cannot say whether it is used. */
+/**
+ * `stage` is null when the element is not in this System, and "unknown" when the scan cannot say whether it is used.
+ * `family` marks an inventory family (`button-2`): a look the project builds, not a System element, so it has no stage.
+ */
 export interface SwapTarget {
   readonly element: string;
   readonly name: string | null;
   readonly stage: ElementStage | "unknown" | null;
   readonly sites: number;
+  readonly family?: true;
 }
 
 /** Usage is only read off a complete scan, and only components are counted in the usage map. */
@@ -74,6 +78,7 @@ function usageStage(report: ScanReport, element: string): Pick<SwapTarget, "stag
 }
 
 function swapTarget(project: Project, scan: Pick<ScanResult, "report" | "tokens">, element: string): SwapTarget {
+  if (isFamilyId(element)) return { element, name: null, stage: null, sites: 0, family: true };
   const contract = project.system.components.find((c) => c.contract.id === element)?.contract;
   if (contract) return { element, name: contract.name, ...usageStage(scan.report, element) };
   const tokenPrefix = `youi:${project.system.config.id}/token/`;

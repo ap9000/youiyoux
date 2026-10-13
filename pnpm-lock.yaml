@@ -20,6 +20,9 @@ importers:
       '@youiyoux/detect':
         specifier: workspace:*
         version: link:packages/detect
+      '@youiyoux/discover':
+        specifier: workspace:*
+        version: link:packages/discover
       '@youiyoux/mcp':
         specifier: workspace:*
         version: link:packages/mcp
@@ -153,6 +156,9 @@ importers:
       '@youiyoux/detect':
         specifier: workspace:*
         version: link:../detect
+      '@youiyoux/discover':
+        specifier: workspace:*
+        version: link:../discover
       '@youiyoux/mcp':
         specifier: workspace:*
         version: link:../mcp
@@ -193,6 +199,15 @@ importers:
         specifier: 2.9.1
         version: 2.9.1
 
+  packages/discover:
+    dependencies:
+      '@youiyoux/core':
+        specifier: workspace:*
+        version: link:../core
+      zod:
+        specifier: 4.6.5
+        version: 4.6.5
+
   packages/mcp:
     dependencies:
       '@modelcontextprotocol/sdk':
@@ -201,6 +216,9 @@ importers:
       '@youiyoux/core':
         specifier: workspace:*
         version: link:../core
+      '@youiyoux/discover':
+        specifier: workspace:*
+        version: link:../discover
       '@youiyoux/scanner':
         specifier: workspace:*
         version: link:../scanner

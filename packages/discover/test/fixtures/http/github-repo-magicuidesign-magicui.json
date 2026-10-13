@@ -1,0 +1,16 @@
+{
+ "full_name": "magicuidesign/magicui",
+ "html_url": "https://github.com/magicuidesign/magicui",
+ "description": "UI Library for Design Engineers. Animated components and effects you can copy and paste into your apps. Free. Open Source.",
+ "homepage": "https://magicui.design",
+ "stargazers_count": 22637,
+ "pushed_at": "2026-10-11T13:02:16Z",
+ "archived": false,
+ "license": {
+  "key": "mit",
+  "name": "MIT License",
+  "spdx_id": "MIT",
+  "url": "https://api.github.com/licenses/mit",
+  "node_id": "MDc6TGljZW5zZTEz"
+ }
+}

@@ -1,0 +1,442 @@
+[
+  {
+    "registry": "@shadcn",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "cmdk"
+        ]
+      },
+      {
+        "name": "date-picker",
+        "type": "registry:ui",
+        "dependencies": [],
+        "description": "date picker"
+      },
+      {
+        "name": "toast",
+        "type": "registry:ui",
+        "dependencies": [],
+        "description": "toast"
+      },
+      {
+        "name": "data-table",
+        "type": "registry:ui",
+        "dependencies": [],
+        "description": "data table"
+      },
+      {
+        "name": "sidebar",
+        "type": "registry:ui",
+        "dependencies": [],
+        "description": "sidebar"
+      }
+    ]
+  },
+  {
+    "registry": "@coss",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "cmdk"
+        ],
+        "title": "Command",
+        "description": "Command menu",
+        "files": [
+          {
+            "path": "command.tsx",
+            "content": "export const Command = \"coss\";"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "registry": "@registrydirectory",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "cmdk"
+        ],
+        "title": "Command",
+        "description": "Command menu",
+        "files": [
+          {
+            "path": "command.tsx",
+            "content": "export const Command = \"coss\";"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "registry": "@glass-ui",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ]
+      }
+    ]
+  },
+  {
+    "registry": "@community0",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ],
+        "description": "Command menu"
+      }
+    ]
+  },
+  {
+    "registry": "@community1",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ],
+        "description": "Command menu"
+      }
+    ]
+  },
+  {
+    "registry": "@community2",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ],
+        "description": "Command menu"
+      }
+    ]
+  },
+  {
+    "registry": "@community3",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ],
+        "description": "Command menu"
+      }
+    ]
+  },
+  {
+    "registry": "@community4",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ],
+        "description": "Command menu"
+      }
+    ]
+  },
+  {
+    "registry": "@community5",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ],
+        "description": "Command menu"
+      }
+    ]
+  },
+  {
+    "registry": "@community6",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ],
+        "description": "Command menu"
+      }
+    ]
+  },
+  {
+    "registry": "@community7",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ],
+        "description": "Command menu"
+      }
+    ]
+  },
+  {
+    "registry": "@community8",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ],
+        "description": "Command menu"
+      }
+    ]
+  },
+  {
+    "registry": "@community9",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ],
+        "description": "Command menu"
+      }
+    ]
+  },
+  {
+    "registry": "@community10",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ],
+        "description": "Command menu"
+      }
+    ]
+  },
+  {
+    "registry": "@community11",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ],
+        "description": "Command menu"
+      }
+    ]
+  },
+  {
+    "registry": "@community12",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ],
+        "description": "Command menu"
+      }
+    ]
+  },
+  {
+    "registry": "@community13",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ],
+        "description": "Command menu"
+      }
+    ]
+  },
+  {
+    "registry": "@community14",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ],
+        "description": "Command menu"
+      }
+    ]
+  },
+  {
+    "registry": "@community15",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ],
+        "description": "Command menu"
+      }
+    ]
+  },
+  {
+    "registry": "@community16",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ],
+        "description": "Command menu"
+      }
+    ]
+  },
+  {
+    "registry": "@community17",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ],
+        "description": "Command menu"
+      }
+    ]
+  },
+  {
+    "registry": "@community18",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ],
+        "description": "Command menu"
+      }
+    ]
+  },
+  {
+    "registry": "@community19",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ],
+        "description": "Command menu"
+      }
+    ]
+  },
+  {
+    "registry": "@community20",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ],
+        "description": "Command menu"
+      }
+    ]
+  },
+  {
+    "registry": "@community21",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ],
+        "description": "Command menu"
+      }
+    ]
+  },
+  {
+    "registry": "@community22",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ],
+        "description": "Command menu"
+      }
+    ]
+  },
+  {
+    "registry": "@community23",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "@radix-ui/react-dialog"
+        ],
+        "description": "Command menu"
+      }
+    ]
+  },
+  {
+    "registry": "@vue",
+    "items": [
+      {
+        "name": "command",
+        "type": "registry:ui",
+        "dependencies": [
+          "vue"
+        ],
+        "title": "Command",
+        "files": [
+          {
+            "path": "command.vue"
+          }
+        ]
+      },
+      {
+        "name": "date-picker",
+        "type": "registry:ui",
+        "dependencies": [
+          "vue"
+        ],
+        "title": "Date Picker"
+      }
+    ]
+  },
+  {
+    "registry": "@icons",
+    "items": [
+      {
+        "name": "command-icon",
+        "type": "registry:ui",
+        "dependencies": [],
+        "title": "Command",
+        "categories": [
+          "icons"
+        ]
+      }
+    ]
+  }
+]

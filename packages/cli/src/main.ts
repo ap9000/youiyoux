@@ -5,6 +5,7 @@ import { join, relative, resolve } from "node:path";
 import { parseArgs, promisify, type ParseArgsConfig } from "node:util";
 import { parse as parseYaml } from "yaml";
 import { DefinitionError, getSystem, loadDesignRepo, loadLibrary, MigrationSpec, OutputConfig, renderJsonSchemas, writeFileAtomic } from "@youiyoux/core";
+import { candidateSource, expandAll, selectSources, discoverCacheDir, loadIndex, searchIndex, showCandidate, syncIndex, type Fetcher } from "@youiyoux/discover";
 import { buildTokens, compareParity } from "@youiyoux/tokens";
 import { adoptionRequest, buildInventory, checkCapabilities, componentCard, describeIdentity, evaluateRule, findContract, loadProject, planChange, PROJECT_FILE, type LoadProjectOptions, ProjectWatcher, ruleCapability, runMigration, scanProject, screenBom, searchLibrary, whereUsed, type CacheStats, type PlanInput, type Project, type WatchUpdate } from "@youiyoux/scanner";
 import { baselinePath, exitCodeOf, runCheck, writeBaseline, type CheckResult } from "./check.ts";
@@ -12,6 +13,7 @@ import { actionable, githubAnnotations, githubSummary, renderCheckText } from ".
 import { runClaudeHook, runPreCommitHook, type HookTarget } from "./hooks.ts";
 import { hookCommand, installClaudeHook, installPreCommit, installWorkflow, repoRootOf } from "./hooks-install.ts";
 import { detectTarget, renderDetect } from "./detect.ts";
+import { renderDiscoverSearch, renderDiscoverShow, renderDiscoverSync } from "./discover.ts";
 import { startRuleEditor, type RuleEditor } from "./editor.ts";
 import { DEFAULT_HUB_PORT, runHub } from "./hub.ts";
 import { initProject } from "./init.ts";
@@ -44,7 +46,8 @@ ${style.bold("In a product repo")}
   init --design <dir>      write youi.project.json pointing at a design repo checkout, then sync
   sync [--dry-run] [--adopt]   tokens, DESIGN.md, skill, AGENTS.md block, owned components (3-way merge), lockfile
   scan [--out file]        build the usage map (default .youi/usage.json)
-  mcp                      stdio MCP server: system_* tools (build with) and library_* tools (browse, request)
+  mcp [--cache dir]        stdio MCP server: system_* tools (build with), library_* tools (browse, request)
+                           and discover_* tools (read the Discover index; never fetch)
   hooks install [--claude] [--git] [--ci] [--strict]
                            live checks, existing config kept (default: --claude --git):
                            Claude Code PostToolUse (advisory context after each edit),
@@ -73,6 +76,17 @@ ${style.bold("System")}  ${style.dim("approved elements: build only with these")
 ${style.bold("Library")}  ${style.dim("ingested references: browse and request adoption, never build with")}
   library search <query>   Library items (lib: ids) and the System elements each could swap in for
   library request <id> --reason <text>   draft an adoption request for a person to approve
+
+${style.bold("Discover")}  ${style.dim("UI components by need, across shadcn registries and npm: candidates, never installed")}
+  discover sync [--cache dir] [--max-registries n] [--icons]
+                           refresh cached candidates, licences and signals; add --icons for icon sets
+                           GITHUB_TOKEN raises GitHub limits when set; never stored or printed
+  discover sources [list|add|remove] <name>  choose community sources
+  discover "<need>" [--all] [--role r] [--license spdx,…] [--limit n] [--json]
+                           candidates ranked by match (names, aliases: command menu = cmdk, toast =
+                           snackbar…) plus signals, with licence (or unknown) and the install command
+  discover show <id|ref> [--source] [--json]   one candidate: provenance, licence evidence, dependencies
+                           (cache: --cache, else YOUI_DISCOVER_CACHE, else ~/.cache/youiyoux/discover)
 
 ${style.bold("Detect")}  ${style.dim("which UI libraries a repo or website uses (youi.detect/v1)")}
   detect <repo-path>       package.json, lockfile, components.json and the code's real imports;
@@ -150,6 +164,12 @@ const OPTIONS = {
   dark: { type: "string" },
   state: { type: "string" },
   inventory: { type: "string" },
+  cache: { type: "string" },
+  role: { type: "string" },
+  license: { type: "string" },
+  icons: { type: "boolean" },
+  source: { type: "boolean" },
+  "max-registries": { type: "string" },
   help: { type: "boolean", short: "h", default: false },
 } satisfies ParseArgsConfig["options"];
 
@@ -525,17 +545,70 @@ async function cmdDetect(values: Values, positionals: string[]): Promise<number>
 
 async function cmdMcp(values: Values): Promise<number> {
   const { startStdioServer } = await import("@youiyoux/mcp");
-  await startStdioServer({ projectRoot: values.project ?? process.cwd(), ...loadOptions(values) });
+  await startStdioServer({ projectRoot: values.project ?? process.cwd(), ...loadOptions(values), ...(values.cache ? { discoverCache: values.cache } : {}) });
   return -1;
 }
 
-type Command = (values: Values, positionals: string[]) => Promise<number>;
+/** What a command may be handed instead of the real thing: tests pass recorded network answers. */
+export interface CliIo {
+  readonly sleep?: (ms: number) => Promise<void>;
+  readonly fetcher?: Fetcher;
+  /** Per-request timeout for `discover sync` (default 15 s). */
+  readonly timeoutMs?: number;
+}
+
+function positiveInt(value: string | undefined, flag: string): number | undefined {
+  if (value === undefined) return undefined;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 0) throw new UsageError(`${flag} takes a whole number`);
+  return n;
+}
+
+async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Promise<number> {
+  const cacheDir = resolve(discoverCacheDir(values.cache));
+  const [action, ...rest] = positionals;
+  if (action === "sources") {
+    const names = await selectSources(cacheDir, rest[0], rest[1]);
+    if (values.json) json(names); else print(names.join("\n"));
+    return 0;
+  }
+  if (action === "sync") {
+    const maxRegistries = positiveInt(values["max-registries"], "--max-registries");
+    // The token goes into request headers and nowhere else: not the index, not the output.
+    const token = process.env.GITHUB_TOKEN || undefined;
+    const summary = await syncIndex({ ...(io.sleep ? { sleep: io.sleep } : {}), cacheDir, icons: values.icons ?? false, ...(io.fetcher ? { fetcher: io.fetcher } : {}), ...(io.timeoutMs ? { timeoutMs: io.timeoutMs } : {}), ...(token ? { token } : {}), ...(maxRegistries !== undefined ? { maxRegistries } : {}) });
+    if (values.json) json(summary);
+    else print(renderDiscoverSync(summary));
+    return 0;
+  }
+  if (action === "show") {
+    if (!rest[0]) throw new UsageError("youi discover show <id|ref>");
+    if (values.source) {
+      json(await candidateSource(cacheDir, rest.join(" "), io));
+      return 0;
+    }
+    const shown = showCandidate(await loadIndex(cacheDir), rest.join(" "));
+    if (values.json) json(shown);
+    else print(renderDiscoverShow(shown));
+    return 0;
+  }
+  const need = positionals.join(" ").trim();
+  if (!need) throw new UsageError("youi discover \"<need>\" [--role r] [--json]   or   youi discover sync   or   youi discover show <id>");
+  const licenses = values.license?.split(",").map((l) => l.trim()).filter(Boolean);
+  if (values.all) await expandAll(cacheDir, { ...io, icons: values.icons ?? false });
+  const result = searchIndex(await loadIndex(cacheDir), need, { ...(values.role ? { role: values.role } : {}), ...(licenses?.length ? { constraints: { licenses } } : {}), limit: positiveInt(values.limit, "--limit") ?? 10 });
+  if (values.json) json(result);
+  else print(renderDiscoverSearch(result));
+  return 0;
+}
+
+type Command = (values: Values, positionals: string[], io: CliIo) => Promise<number>;
 
 const COMMANDS: Record<string, Command> = {
-  show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+  show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
 
-export async function main(argv: string[]): Promise<number> {
+export async function main(argv: string[], io: CliIo = {}): Promise<number> {
   let parsed;
   try {
     if (argv[0] === "inventory") {
@@ -557,7 +630,7 @@ export async function main(argv: string[]): Promise<number> {
     process.stderr.write(`${style.error("✖")} unknown command "${command}"\n\n${HELP}\n`);
     return 2;
   }
-  return guarded(() => handler(parsed.values, rest));
+  return guarded(() => handler(parsed.values, rest, io));
 }
 
 /** Run a command, turning its failure into a message and an exit code. */

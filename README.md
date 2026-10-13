@@ -31,7 +31,7 @@ A design repo is any directory with a `youi.config.json`. A product names it wit
 
 | Path | Contents |
 | --- | --- |
-| `packages/` | `core` (schemas, loader), `tokens` (Terrazzo build, import, parity), `scanner` (usage map, checks, migrations, plans), `detect` (which UI libraries a repo or website uses), `cli`, `mcp`, `workflow` (design-change service: rule and style drafts) |
+| `packages/` | `core` (schemas, loader), `tokens` (Terrazzo build, import, parity), `scanner` (usage map, checks, migrations, plans), `detect` (which UI libraries a repo or website uses), `discover` (find UI components by need across shadcn registries and npm), `cli`, `mcp`, `workflow` (design-change service: rule and style drafts) |
 | `apps/web/` | The hub: find an element, see its contract, tokens and rules, preview it, see where it lives ([README](apps/web/README.md)) |
 | `schema/` | JSON Schemas, emitted from the Zod definitions in `packages/core` (`youi schema --write`) |
 | `examples/demo-design/` | **Demo**, a made-up design system (Button, Input and Card; 29 tokens including motion, springs and a focus ring; states on Button and Input; 6 rules) used by the tests, these docs and the hub's default data |
@@ -70,7 +70,12 @@ In a product repo:
 | `youi check` | Rules plus lockfile drift; exits 1 on errors |
 | `youi plan` / `youi migrate` | Classify a change and its impact; run a gated codemod: a dry run that prints the diff and the residual sites unless `--write` ([migrations](#migrations)) |
 | `youi library search <query>` / `youi library request <id> --reason …` | Browse the Library; draft a request to adopt an item into the System |
-| `youi mcp` | stdio MCP server: `system_*` tools (build with these, plus `system_plan`) and `library_*` tools (browse, draft a request); no publish, approve or merge tools |
+| `youi discover sync [--icons]` | Build the local Discover index (`~/.cache/youiyoux/discover`, or `--cache` / `YOUI_DISCOVER_CACHE`): the official shadcn registry, the registry directory and selected community registries (defaults: coss, Kibo, Magic UI, Origin, Aceternity), headless catalogs for category names, npm search, and npm and GitHub signals. Polite (capped concurrency, timeouts, ETag/If-Modified-Since, npm/GitHub rate budgets, npm 429 backoff) and cached. Icon sets require `--icons`; mirrors collapse to originals. Reports total metadata catalog size. `GITHUB_TOKEN`, when set, is sent to GitHub only and never stored or printed |
+| `youi discover "<need>" [--role r] [--license spdx,…] [--json]` / `youi discover show <id\|ref>` | Candidates for a need, ranked by match (names and aliases: command menu = command palette = cmdk, toast = snackbar…) plus signals, each with its licence (SPDX with evidence, or unknown), downloads (labeled with the dependency package when borrowed), stars and install command; one candidate with provenance and its npm, registry and implicit dependencies. Reads the index only; nothing is installed |
+| `youi discover sources [list\|add\|remove] <name>` | Choose community sources. Add validates against the cached directory; run sync first. Choices persist across syncs |
+| `youi discover "<need>" --all` | Fetch other healthy directory listings on demand, then reuse their cached metadata on repeat searches. Icon sets still require `--icons`; unsafe URLs are refused |
+| `youi discover show <id\|ref> --source` | Fetch and cache just that registry item's files. The ordinary catalog contains metadata, file hashes and detected imports, with no inline source or raw response bodies |
+| `youi mcp` | stdio MCP server: `system_*` tools (build with these, plus `system_plan`), `library_*` tools (browse, draft a request) and read-only `discover_search` / `discover_show`; no publish, approve, merge or install tools |
 | `youi ui --project <dir>` | The hub on that product, with the local rule and style editors: drafts, impact preview against the project, approval, and a review branch in the design repo ([guide](packages/workflow/README.md)) |
 
 `show`, `where`, `bom`, `check`, `plan` and `migrate` work on the System.

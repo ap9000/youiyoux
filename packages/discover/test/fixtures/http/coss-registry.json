@@ -1,0 +1,215 @@
+{
+ "name": "coss ui",
+ "homepage": "https://coss.com",
+ "items": [
+  {
+   "name": "ui",
+   "registryDependencies": [
+    "@coss/accordion",
+    "@coss/alert",
+    "@coss/alert-dialog",
+    "@coss/autocomplete",
+    "@coss/avatar",
+    "@coss/badge",
+    "@coss/breadcrumb",
+    "@coss/button",
+    "@coss/calendar",
+    "@coss/card",
+    "@coss/checkbox",
+    "@coss/checkbox-group",
+    "@coss/collapsible",
+    "@coss/combobox",
+    "@coss/composer",
+    "@coss/command",
+    "@coss/context-menu",
+    "@coss/dialog",
+    "@coss/drawer",
+    "@coss/empty",
+    "@coss/field",
+    "@coss/fieldset",
+    "@coss/form",
+    "@coss/frame",
+    "@coss/group",
+    "@coss/input",
+    "@coss/otp-field",
+    "@coss/input-group",
+    "@coss/kbd",
+    "@coss/label",
+    "@coss/menu",
+    "@coss/meter",
+    "@coss/number-field",
+    "@coss/pagination",
+    "@coss/popover",
+    "@coss/preview-card",
+    "@coss/progress",
+    "@coss/radio-group",
+    "@coss/scroll-area",
+    "@coss/select",
+    "@coss/separator",
+    "@coss/sheet",
+    "@coss/sidebar",
+    "@coss/skeleton",
+    "@coss/slider",
+    "@coss/spinner",
+    "@coss/switch",
+    "@coss/table",
+    "@coss/tabs",
+    "@coss/textarea",
+    "@coss/toast",
+    "@coss/toggle",
+    "@coss/toggle-group",
+    "@coss/toolbar",
+    "@coss/tooltip"
+   ],
+   "type": "registry:ui"
+  },
+  {
+   "dependencies": [
+    "@base-ui/react"
+   ],
+   "files": [
+    {
+     "path": "registry/default/ui/autocomplete.tsx",
+     "type": "registry:ui"
+    }
+   ],
+   "name": "autocomplete",
+   "registryDependencies": [
+    "@coss/input",
+    "@coss/scroll-area"
+   ],
+   "type": "registry:ui"
+  },
+  {
+   "dependencies": [
+    "@base-ui/react"
+   ],
+   "files": [
+    {
+     "path": "registry/default/ui/button.tsx",
+     "type": "registry:ui"
+    }
+   ],
+   "name": "button",
+   "registryDependencies": [
+    "@coss/spinner"
+   ],
+   "type": "registry:ui"
+  },
+  {
+   "dependencies": [
+    "@base-ui/react"
+   ],
+   "files": [
+    {
+     "path": "registry/default/ui/command.tsx",
+     "type": "registry:ui"
+    }
+   ],
+   "name": "command",
+   "registryDependencies": [
+    "@coss/autocomplete"
+   ],
+   "type": "registry:ui"
+  },
+  {
+   "dependencies": [
+    "@base-ui/react"
+   ],
+   "files": [
+    {
+     "path": "registry/default/ui/dialog.tsx",
+     "type": "registry:ui"
+    }
+   ],
+   "name": "dialog",
+   "registryDependencies": [
+    "@coss/button",
+    "@coss/scroll-area"
+   ],
+   "type": "registry:ui"
+  },
+  {
+   "dependencies": [
+    "@base-ui/react"
+   ],
+   "files": [
+    {
+     "path": "registry/default/ui/toast.tsx",
+     "type": "registry:ui"
+    }
+   ],
+   "name": "toast",
+   "registryDependencies": [
+    "@coss/button"
+   ],
+   "type": "registry:ui"
+  },
+  {
+   "categories": [
+    "command",
+    "dialog"
+   ],
+   "dependencies": [
+    "lucide-react"
+   ],
+   "description": "Command palette with dialog",
+   "files": [
+    {
+     "path": "registry/default/particles/p-command-1.tsx",
+     "type": "registry:block"
+    }
+   ],
+   "name": "p-command-1",
+   "registryDependencies": [
+    "@coss/button",
+    "@coss/command",
+    "@coss/kbd"
+   ],
+   "type": "registry:block"
+  },
+  {
+   "categories": [
+    "command",
+    "dialog"
+   ],
+   "dependencies": [
+    "lucide-react"
+   ],
+   "description": "Command palette with AI assistant",
+   "files": [
+    {
+     "path": "registry/default/particles/p-command-2.tsx",
+     "type": "registry:block"
+    }
+   ],
+   "name": "p-command-2",
+   "registryDependencies": [
+    "@coss/autocomplete",
+    "@coss/button",
+    "@coss/command",
+    "@coss/empty",
+    "@coss/input",
+    "@coss/kbd",
+    "@coss/scroll-area",
+    "@coss/skeleton",
+    "@coss/spinner"
+   ],
+   "type": "registry:block"
+  },
+  {
+   "dependencies": [
+    "clsx",
+    "tailwind-merge"
+   ],
+   "files": [
+    {
+     "path": "registry/default/lib/utils.ts",
+     "type": "registry:lib"
+    }
+   ],
+   "name": "utils",
+   "type": "registry:lib"
+  }
+ ]
+}

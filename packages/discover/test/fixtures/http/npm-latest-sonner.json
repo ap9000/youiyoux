@@ -1,0 +1,10 @@
+{
+ "name": "sonner",
+ "version": "2.0.8",
+ "license": "MIT",
+ "repository": {
+  "url": "git+https://github.com/emilkowalski/sonner.git",
+  "type": "git"
+ },
+ "homepage": "https://sonner.emilkowal.ski/"
+}

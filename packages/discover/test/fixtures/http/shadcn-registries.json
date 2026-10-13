@@ -1,0 +1,306 @@
+[
+ {
+  "name": "@coss",
+  "homepage": "https://coss.com/ui",
+  "url": "https://coss.com/ui/r/{name}.json",
+  "description": "A new, modern UI component library built on top of Base UI. Built for developers and AI.",
+  "health": {
+   "schemaVersion": 1,
+   "scoreVersion": 1,
+   "status": "healthy",
+   "statusReason": {
+    "code": "healthy_thresholds",
+    "message": "Recent checks are within healthy thresholds"
+   },
+   "score": 96.469,
+   "breakdown": {
+    "reliability": 44.62,
+    "correctness": 24.958,
+    "installability": 19.391,
+    "hygiene": 7.5
+   },
+   "availability7d": 0.98873,
+   "availability30d": 0.99678,
+   "monitoringLimited": false,
+   "firstObservedAt": "2026-08-24T13:16:42.410Z",
+   "checkedAt": "2026-10-12T23:29:11.772Z",
+   "lastSuccessfulCheck": "2026-10-12T23:29:11.772Z",
+   "hidden": false
+  },
+  "ranking": {
+   "version": 1,
+   "score": 97.175,
+   "itemCount": 596
+  }
+ },
+ {
+  "name": "@kibo-ui",
+  "homepage": "https://www.kibo-ui.com/",
+  "url": "https://www.kibo-ui.com/r/{name}.json",
+  "description": "Kibo UI is a custom registry of composable, accessible and open source components designed for use with shadcn/ui.",
+  "health": {
+   "schemaVersion": 1,
+   "scoreVersion": 1,
+   "status": "healthy",
+   "statusReason": {
+    "code": "healthy_thresholds",
+    "message": "Recent checks are within healthy thresholds"
+   },
+   "score": 96.166,
+   "breakdown": {
+    "reliability": 44.62,
+    "correctness": 24.655,
+    "installability": 19.391,
+    "hygiene": 7.5
+   },
+   "availability7d": 0.98873,
+   "availability30d": 0.99678,
+   "monitoringLimited": false,
+   "firstObservedAt": "2026-08-24T13:16:42.410Z",
+   "checkedAt": "2026-10-12T23:29:11.772Z",
+   "lastSuccessfulCheck": "2026-10-12T23:29:11.772Z",
+   "hidden": false
+  },
+  "ranking": {
+   "version": 1,
+   "score": 88.958,
+   "itemCount": 41
+  }
+ },
+ {
+  "name": "@magicui",
+  "homepage": "https://magicui.design",
+  "url": "https://magicui.design/r/{name}",
+  "description": "UI Library for Design Engineers. 150+ free and open-source animated components and effects built with React, Typescript, Tailwind CSS, and Motion. Perfect companion for shadcn/ui.",
+  "health": {
+   "schemaVersion": 1,
+   "scoreVersion": 1,
+   "status": "healthy",
+   "statusReason": {
+    "code": "healthy_thresholds",
+    "message": "Recent checks are within healthy thresholds"
+   },
+   "score": 98.923,
+   "breakdown": {
+    "reliability": 44.62,
+    "correctness": 24.912,
+    "installability": 19.391,
+    "hygiene": 10
+   },
+   "availability7d": 0.98873,
+   "availability30d": 0.99678,
+   "monitoringLimited": false,
+   "firstObservedAt": "2026-08-24T13:16:42.410Z",
+   "checkedAt": "2026-10-12T23:29:11.772Z",
+   "lastSuccessfulCheck": "2026-10-12T23:29:11.772Z",
+   "hidden": false
+  },
+  "ranking": {
+   "version": 1,
+   "score": 96.915,
+   "itemCount": 250
+  }
+ },
+ {
+  "name": "@aceternity",
+  "homepage": "https://ui.aceternity.com",
+  "url": "https://ui.aceternity.com/registry/{name}.json",
+  "description": "A modern component library built with Tailwind CSS and Motion for React, Aceternity UI contains unique and interactive components that can make your landing pages look 100x better.",
+  "health": {
+   "schemaVersion": 1,
+   "scoreVersion": 1,
+   "status": "degraded",
+   "statusReason": {
+    "code": "item_validation_failures",
+    "message": "Sampled registry items are failing validation"
+   },
+   "score": 84.306,
+   "breakdown": {
+    "reliability": 44.62,
+    "correctness": 15.295,
+    "installability": 16.891,
+    "hygiene": 7.5
+   },
+   "availability7d": 0.98873,
+   "availability30d": 0.99678,
+   "monitoringLimited": false,
+   "firstObservedAt": "2026-08-24T13:16:42.410Z",
+   "checkedAt": "2026-10-12T23:29:11.772Z",
+   "lastSuccessfulCheck": "2026-10-12T23:29:11.772Z",
+   "hidden": false
+  },
+  "ranking": {
+   "version": 1,
+   "score": 85.741,
+   "itemCount": 294
+  }
+ },
+ {
+  "name": "@amicro",
+  "homepage": "https://amicro.vercel.app",
+  "url": "https://amicro.vercel.app/r/{name}.json",
+  "description": "Open-source React micro-interactions and UI component registry powered by Motion.",
+  "health": {
+   "schemaVersion": 1,
+   "scoreVersion": 1,
+   "status": "unavailable",
+   "statusReason": {
+    "code": "index_unavailable",
+    "message": "No successful index check in the last 24 hours"
+   },
+   "score": 82.867,
+   "breakdown": {
+    "reliability": 33.313,
+    "correctness": 20.367,
+    "installability": 19.187,
+    "hygiene": 10
+   },
+   "availability7d": 0.650189,
+   "availability30d": 0.907617,
+   "monitoringLimited": false,
+   "firstObservedAt": "2026-08-24T13:16:42.410Z",
+   "checkedAt": "2026-10-12T23:29:11.772Z",
+   "lastSuccessfulCheck": "2026-10-10T06:43:41.228Z",
+   "hidden": false
+  },
+  "ranking": {
+   "version": 1,
+   "score": 82.946,
+   "itemCount": 176
+  }
+ },
+ {
+  "name": "@abstract",
+  "homepage": "https://build.abs.xyz",
+  "url": "https://build.abs.xyz/r/{name}/json",
+  "description": "A collection of React components for the most common crypto patterns",
+  "health": {
+   "schemaVersion": 1,
+   "scoreVersion": 1,
+   "status": "unavailable",
+   "statusReason": {
+    "code": "index_unavailable",
+    "message": "No successful index check in the last 24 hours"
+   },
+   "score": 50.46,
+   "breakdown": {
+    "reliability": 3.794,
+    "correctness": 22.041,
+    "installability": 18.375,
+    "hygiene": 6.25
+   },
+   "availability7d": 0.11373,
+   "availability30d": 0.029702,
+   "monitoringLimited": false,
+   "firstObservedAt": "2026-08-24T13:16:42.410Z",
+   "checkedAt": "2026-10-12T23:29:11.772Z",
+   "hidden": true
+  }
+ },
+ {
+  "name": "@fixture-500",
+  "homepage": "https://broken.example.test",
+  "url": "https://broken.example.test/r/{name}.json",
+  "description": "Fixture: answers 500.",
+  "health": {
+   "schemaVersion": 1,
+   "scoreVersion": 1,
+   "status": "healthy",
+   "statusReason": {
+    "code": "healthy_thresholds",
+    "message": "Recent checks are within healthy thresholds"
+   },
+   "score": 96.469,
+   "breakdown": {
+    "reliability": 44.62,
+    "correctness": 24.958,
+    "installability": 19.391,
+    "hygiene": 7.5
+   },
+   "availability7d": 0.98873,
+   "availability30d": 0.99678,
+   "monitoringLimited": false,
+   "firstObservedAt": "2026-08-24T13:16:42.410Z",
+   "checkedAt": "2026-10-12T23:29:11.772Z",
+   "lastSuccessfulCheck": "2026-10-12T23:29:11.772Z",
+   "hidden": false
+  },
+  "ranking": {
+   "version": 1,
+   "score": 97.175,
+   "itemCount": 3
+  }
+ },
+ {
+  "name": "@fixture-timeout",
+  "homepage": "https://slow.example.test",
+  "url": "https://slow.example.test/r/{name}.json",
+  "description": "Fixture: never answers.",
+  "health": {
+   "schemaVersion": 1,
+   "scoreVersion": 1,
+   "status": "healthy",
+   "statusReason": {
+    "code": "healthy_thresholds",
+    "message": "Recent checks are within healthy thresholds"
+   },
+   "score": 96.469,
+   "breakdown": {
+    "reliability": 44.62,
+    "correctness": 24.958,
+    "installability": 19.391,
+    "hygiene": 7.5
+   },
+   "availability7d": 0.98873,
+   "availability30d": 0.99678,
+   "monitoringLimited": false,
+   "firstObservedAt": "2026-08-24T13:16:42.410Z",
+   "checkedAt": "2026-10-12T23:29:11.772Z",
+   "lastSuccessfulCheck": "2026-10-12T23:29:11.772Z",
+   "hidden": false
+  },
+  "ranking": {
+   "version": 1,
+   "score": 97.175,
+   "itemCount": 3
+  }
+ },
+ {
+  "name": "@fixture-html",
+  "homepage": "https://html.example.test",
+  "url": "https://html.example.test/r/{name}.json",
+  "description": "Fixture: answers an HTML page.",
+  "health": {
+   "schemaVersion": 1,
+   "scoreVersion": 1,
+   "status": "healthy",
+   "statusReason": {
+    "code": "healthy_thresholds",
+    "message": "Recent checks are within healthy thresholds"
+   },
+   "score": 96.469,
+   "breakdown": {
+    "reliability": 44.62,
+    "correctness": 24.958,
+    "installability": 19.391,
+    "hygiene": 7.5
+   },
+   "availability7d": 0.98873,
+   "availability30d": 0.99678,
+   "monitoringLimited": false,
+   "firstObservedAt": "2026-08-24T13:16:42.410Z",
+   "checkedAt": "2026-10-12T23:29:11.772Z",
+   "lastSuccessfulCheck": "2026-10-12T23:29:11.772Z",
+   "hidden": false
+  },
+  "ranking": {
+   "version": 1,
+   "score": 97.175,
+   "itemCount": 3
+  }
+ },
+ {
+  "name": 42,
+  "url": "not a template"
+ }
+]

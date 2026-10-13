@@ -1,0 +1,275 @@
+{
+ "name": "shadcn/ui",
+ "homepage": "https://ui.shadcn.com",
+ "items": [
+  {
+   "name": "index",
+   "dependencies": [
+    "class-variance-authority",
+    "cn",
+    "lucide-react",
+    "radix-ui"
+   ],
+   "devDependencies": [
+    "tw-animate-css",
+    "shadcn"
+   ],
+   "registryDependencies": [
+    "utils"
+   ],
+   "files": [],
+   "type": "registry:style"
+  },
+  {
+   "name": "button",
+   "dependencies": [
+    "cn",
+    "radix-ui"
+   ],
+   "files": [
+    {
+     "path": "registry/new-york-v4/ui/button.tsx",
+     "type": "registry:ui"
+    }
+   ],
+   "type": "registry:ui"
+  },
+  {
+   "name": "calendar",
+   "dependencies": [
+    "cn",
+    "react-day-picker@latest",
+    "date-fns"
+   ],
+   "registryDependencies": [
+    "button"
+   ],
+   "files": [
+    {
+     "path": "registry/new-york-v4/ui/calendar.tsx",
+     "type": "registry:ui"
+    }
+   ],
+   "type": "registry:ui"
+  },
+  {
+   "name": "command",
+   "dependencies": [
+    "cn",
+    "cmdk"
+   ],
+   "registryDependencies": [
+    "dialog"
+   ],
+   "files": [
+    {
+     "path": "registry/new-york-v4/ui/command.tsx",
+     "type": "registry:ui"
+    }
+   ],
+   "type": "registry:ui"
+  },
+  {
+   "name": "dialog",
+   "dependencies": [
+    "cn",
+    "radix-ui"
+   ],
+   "files": [
+    {
+     "path": "registry/new-york-v4/ui/dialog.tsx",
+     "type": "registry:ui"
+    }
+   ],
+   "type": "registry:ui"
+  },
+  {
+   "name": "input",
+   "files": [
+    {
+     "path": "registry/new-york-v4/ui/input.tsx",
+     "type": "registry:ui"
+    }
+   ],
+   "type": "registry:ui",
+   "dependencies": [
+    "cn"
+   ]
+  },
+  {
+   "name": "input-group",
+   "registryDependencies": [
+    "button",
+    "input",
+    "textarea"
+   ],
+   "files": [
+    {
+     "path": "registry/new-york-v4/ui/input-group.tsx",
+     "type": "registry:ui"
+    }
+   ],
+   "type": "registry:ui",
+   "dependencies": [
+    "cn"
+   ]
+  },
+  {
+   "name": "popover",
+   "dependencies": [
+    "cn",
+    "radix-ui"
+   ],
+   "files": [
+    {
+     "path": "registry/new-york-v4/ui/popover.tsx",
+     "type": "registry:ui"
+    }
+   ],
+   "type": "registry:ui"
+  },
+  {
+   "name": "sonner",
+   "dependencies": [
+    "sonner",
+    "next-themes"
+   ],
+   "files": [
+    {
+     "path": "registry/new-york-v4/ui/sonner.tsx",
+     "type": "registry:ui"
+    }
+   ],
+   "type": "registry:ui"
+  },
+  {
+   "name": "dashboard-01",
+   "description": "A dashboard with sidebar, charts and data table.",
+   "dependencies": [
+    "@dnd-kit/core",
+    "@dnd-kit/modifiers",
+    "@dnd-kit/sortable",
+    "@dnd-kit/utilities",
+    "@tabler/icons-react",
+    "@tanstack/react-table",
+    "zod"
+   ],
+   "registryDependencies": [
+    "sidebar",
+    "breadcrumb",
+    "separator",
+    "label",
+    "chart",
+    "card",
+    "select",
+    "tabs",
+    "table",
+    "toggle-group",
+    "badge",
+    "button",
+    "checkbox",
+    "dropdown-menu",
+    "drawer",
+    "input",
+    "avatar",
+    "sheet",
+    "sonner"
+   ],
+   "files": [
+    {
+     "path": "registry/new-york-v4/blocks/dashboard-01/page.tsx",
+     "type": "registry:page",
+     "target": "app/dashboard/page.tsx"
+    },
+    {
+     "path": "registry/new-york-v4/blocks/dashboard-01/data.json",
+     "type": "registry:file",
+     "target": "app/dashboard/data.json"
+    },
+    {
+     "path": "registry/new-york-v4/blocks/dashboard-01/components/app-sidebar.tsx",
+     "type": "registry:component"
+    },
+    {
+     "path": "registry/new-york-v4/blocks/dashboard-01/components/chart-area-interactive.tsx",
+     "type": "registry:component"
+    },
+    {
+     "path": "registry/new-york-v4/blocks/dashboard-01/components/data-table.tsx",
+     "type": "registry:component"
+    },
+    {
+     "path": "registry/new-york-v4/blocks/dashboard-01/components/nav-documents.tsx",
+     "type": "registry:component"
+    },
+    {
+     "path": "registry/new-york-v4/blocks/dashboard-01/components/nav-main.tsx",
+     "type": "registry:component"
+    },
+    {
+     "path": "registry/new-york-v4/blocks/dashboard-01/components/nav-secondary.tsx",
+     "type": "registry:component"
+    },
+    {
+     "path": "registry/new-york-v4/blocks/dashboard-01/components/nav-user.tsx",
+     "type": "registry:component"
+    },
+    {
+     "path": "registry/new-york-v4/blocks/dashboard-01/components/section-cards.tsx",
+     "type": "registry:component"
+    },
+    {
+     "path": "registry/new-york-v4/blocks/dashboard-01/components/site-header.tsx",
+     "type": "registry:component"
+    }
+   ],
+   "meta": {
+    "iframeHeight": "1000px"
+   },
+   "categories": [
+    "dashboard"
+   ],
+   "type": "registry:block"
+  },
+  {
+   "name": "utils",
+   "dependencies": [
+    "cn"
+   ],
+   "files": [
+    {
+     "path": "registry/new-york-v4/lib/utils.ts",
+     "type": "registry:lib"
+    }
+   ],
+   "type": "registry:lib"
+  },
+  {
+   "name": "command-demo",
+   "registryDependencies": [
+    "command"
+   ],
+   "files": [
+    {
+     "path": "registry/new-york-v4/examples/command-demo.tsx",
+     "type": "registry:example"
+    }
+   ],
+   "type": "registry:example"
+  },
+  {
+   "name": "command-dialog",
+   "registryDependencies": [
+    "command",
+    "dialog"
+   ],
+   "files": [
+    {
+     "path": "registry/new-york-v4/examples/command-dialog.tsx",
+     "type": "registry:example"
+    }
+   ],
+   "type": "registry:example"
+  }
+ ]
+}

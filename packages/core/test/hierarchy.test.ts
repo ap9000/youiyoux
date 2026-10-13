@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { canMove, DefinitionError, ELEMENT_STAGES, isLibraryId, LibraryEntry, loadLibrary, systemStage } from "../src/index.ts";
+import { canMove, DefinitionError, ELEMENT_STAGES, isFamilyId, isLibraryId, LibraryEntry, loadLibrary, systemStage } from "../src/index.ts";
 
 const entry = {
   schema: "youi.library/v1",
@@ -45,6 +45,45 @@ describe("youi.library/v1", () => {
     expect(LibraryEntry.safeParse({ ...entry, stage: "adopted" }).success).toBe(false);
     expect(isLibraryId(entry.id)).toBe(true);
     expect(isLibraryId("youi:demo/component/button")).toBe(false);
+  });
+});
+
+describe("youi.library/v1, additive Discover fields", () => {
+  const discovered = {
+    ...entry,
+    id: "lib:coss/component/command",
+    name: "command",
+    title: "Command",
+    source: { name: "@coss", url: "https://coss.com/ui", ingestedAt: "2026-10-12T00:00:00Z", kind: "shadcn-registry", ref: "@coss/command" },
+    provenance: { fetchedAt: "2026-10-12T00:00:00Z", url: "https://coss.com/ui/r/registry.json", sha256: "a".repeat(64), files: [{ path: "ui/command.tsx", sha256: null }], registryHealth: { status: "healthy", score: 96.5, checkedAt: "2026-10-12T00:00:00Z" } },
+    license: "unknown",
+    install: { command: "npx shadcn add @coss/command", npm: ["@base-ui/react"], registryDeps: ["@coss/autocomplete"], implicitDeps: ["lucide-react"] },
+    signals: { weeklyDownloads: 1200, stars: null, pushedAt: null },
+    swapsWith: ["button-2", "youi:demo/component/input"],
+  };
+
+  test("old entries stay valid and gain nothing they did not have", () => {
+    const parsed = LibraryEntry.parse(entry);
+    expect(parsed).not.toHaveProperty("license");
+    expect(parsed).not.toHaveProperty("provenance");
+    expect(parsed.source).toEqual(entry.source);
+  });
+
+  test("a discovered entry carries source, provenance, licence, install and signals", () => {
+    const parsed = LibraryEntry.parse(discovered);
+    expect(parsed.source).toMatchObject({ kind: "shadcn-registry", ref: "@coss/command" });
+    expect(parsed.license).toBe("unknown");
+    expect(parsed.signals).toEqual({ weeklyDownloads: 1200, stars: null, pushedAt: null, archived: null, package: null, repo: null });
+    expect(LibraryEntry.parse({ ...discovered, license: { spdx: "MIT", evidenceUrl: "https://github.com/dip/cmdk", verifiedAt: "2026-10-12T00:00:00Z" } }).license).toMatchObject({ spdx: "MIT" });
+  });
+
+  test("swapsWith takes System ids and inventory family ids, nothing else", () => {
+    expect(isFamilyId("button-2")).toBe(true);
+    expect(isFamilyId("link-as-button-10")).toBe(true);
+    expect(isFamilyId("button")).toBe(false);
+    expect(LibraryEntry.safeParse({ ...discovered, swapsWith: ["lib:x/component/y"] }).success).toBe(false);
+    expect(LibraryEntry.safeParse({ ...discovered, source: { ...discovered.source, kind: "website" } }).success).toBe(false);
+    expect(LibraryEntry.safeParse({ ...discovered, license: { spdx: "MIT" } }).success).toBe(false);
   });
 });
 

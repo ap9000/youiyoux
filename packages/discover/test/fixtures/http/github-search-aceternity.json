@@ -1,0 +1,66 @@
+{
+ "total_count": 364,
+ "incomplete_results": false,
+ "items": [
+  {
+   "full_name": "andrey-kudinov/aceternity",
+   "html_url": "https://github.com/andrey-kudinov/aceternity",
+   "homepage": "https://aceternity.netlify.app/",
+   "stargazers_count": 20
+  },
+  {
+   "full_name": "aceternity/saasternity",
+   "html_url": "https://github.com/aceternity/saasternity",
+   "homepage": "https://saasternity.com",
+   "stargazers_count": 107
+  },
+  {
+   "full_name": "manuarora700/ui.aceternity",
+   "html_url": "https://github.com/manuarora700/ui.aceternity",
+   "homepage": null,
+   "stargazers_count": 53
+  },
+  {
+   "full_name": "rudra016/aceternityui-mcp",
+   "html_url": "https://github.com/rudra016/aceternityui-mcp",
+   "homepage": "https://www.npmjs.com/package/aceternityui-mcp",
+   "stargazers_count": 25
+  },
+  {
+   "full_name": "aceternity/nextjs-boilerplate",
+   "html_url": "https://github.com/aceternity/nextjs-boilerplate",
+   "homepage": "",
+   "stargazers_count": 32
+  },
+  {
+   "full_name": "Tokigin/astro-aceternity",
+   "html_url": "https://github.com/Tokigin/astro-aceternity",
+   "homepage": "https://astro-aceternity-tk.vercel.app",
+   "stargazers_count": 20
+  },
+  {
+   "full_name": "CodeScrapper1/portfolio-nextjs-aceternity",
+   "html_url": "https://github.com/CodeScrapper1/portfolio-nextjs-aceternity",
+   "homepage": null,
+   "stargazers_count": 4
+  },
+  {
+   "full_name": "calrloco/astro-aceternity",
+   "html_url": "https://github.com/calrloco/astro-aceternity",
+   "homepage": "https://astro-aceternity.vercel.app",
+   "stargazers_count": 8
+  },
+  {
+   "full_name": "JPF3N998/astro-x-aceternityui",
+   "html_url": "https://github.com/JPF3N998/astro-x-aceternityui",
+   "homepage": null,
+   "stargazers_count": 13
+  },
+  {
+   "full_name": "rendy278/modernWebsiteAceternityUi",
+   "html_url": "https://github.com/rendy278/modernWebsiteAceternityUi",
+   "homepage": "https://modern-website-aceternity-ui-r472-bual3qi6t-rendy278s-projects.vercel.app/",
+   "stargazers_count": 15
+  }
+ ]
+}

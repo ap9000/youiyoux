@@ -1,0 +1,11 @@
+{
+ "name": "cmdk",
+ "version": "1.1.1",
+ "license": "MIT",
+ "repository": {
+  "url": "git+https://github.com/pacocoursey/cmdk.git",
+  "type": "git",
+  "directory": "cmdk"
+ },
+ "homepage": "https://github.com/pacocoursey/cmdk#readme"
+}

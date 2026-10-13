@@ -1,0 +1,10 @@
+{
+ "name": "motion",
+ "version": "14.1.0",
+ "license": "MIT",
+ "repository": {
+  "url": "git+https://github.com/motiondivision/motion.git",
+  "type": "git"
+ },
+ "homepage": "https://github.com/motiondivision/motion#readme"
+}

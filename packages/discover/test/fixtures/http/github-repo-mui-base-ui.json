@@ -1,0 +1,16 @@
+{
+ "full_name": "mui/base-ui",
+ "html_url": "https://github.com/mui/base-ui",
+ "description": "Unstyled UI components for building accessible web apps and design systems. From the creators of Radix, Floating UI, and Material UI.",
+ "homepage": "https://base-ui.com",
+ "stargazers_count": 11139,
+ "pushed_at": "2026-10-12T20:27:39Z",
+ "archived": false,
+ "license": {
+  "key": "mit",
+  "name": "MIT License",
+  "spdx_id": "MIT",
+  "url": "https://api.github.com/licenses/mit",
+  "node_id": "MDc6TGljZW5zZTEz"
+ }
+}

@@ -1,0 +1,16 @@
+{
+ "full_name": "shadcn-ui/ui",
+ "html_url": "https://github.com/shadcn-ui/ui",
+ "description": "Composable, accessible components with thoughtful defaults. Build your own component library with code you can customize, extend, and make your own.",
+ "homepage": "https://ui.shadcn.com",
+ "stargazers_count": 125435,
+ "pushed_at": "2026-10-12T17:45:44Z",
+ "archived": false,
+ "license": {
+  "key": "mit",
+  "name": "MIT License",
+  "spdx_id": "MIT",
+  "url": "https://api.github.com/licenses/mit",
+  "node_id": "MDc6TGljZW5zZTEz"
+ }
+}

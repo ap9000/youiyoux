@@ -4,7 +4,9 @@
  *   system_*   approved elements: build with these (contracts, tokens, rules,
  *              where-used, check) and plan a change to them.
  *   library_*  ingested references: browse and draft an adoption request only.
- * There is no publish, approve or merge tool, so an agent can look things up,
+ *   discover_* candidates from the local Discover index (`youi discover sync` builds it):
+ *              search by need and show one; read-only, they never fetch.
+ * There is no publish, approve, merge or install tool, so an agent can look things up,
  * plan a change and draft a request, but never ship one.
  *
  * Responses are compact JSON (no pretty-printing) and bounded: lists paginate
@@ -13,8 +15,9 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { isAbsolute } from "node:path";
-import { loadLibrary, MigrationSpec, normalizeRelPath, type Library, type McpTool } from "@youiyoux/core";
-import { adoptionRequest, componentCard, describeIdentity, failedChecks, findContract, formatProps, loadProject, planChange, ruleRows, ScanCache, scanProject, screenBom, searchElements, searchLibrary, tokenRows, whereUsed, type PlanInput, type Project, type ScanResult } from "@youiyoux/scanner";
+import { isLibraryId, loadLibrary, MigrationSpec, normalizeRelPath, type Library, type McpTool } from "@youiyoux/core";
+import { DiscoverConstraints, discoverCacheDir, loadIndex, MissingIndexError, searchIndex, showCandidate } from "@youiyoux/discover";
+import { adoptionRequest, findLibraryEntry, componentCard, describeIdentity, failedChecks, findContract, formatProps, loadProject, planChange, ruleRows, ScanCache, scanProject, screenBom, searchElements, searchLibrary, tokenRows, whereUsed, type PlanInput, type Project, type ScanResult } from "@youiyoux/scanner";
 import { z } from "zod";
 
 export interface ServerOptions {
@@ -24,6 +27,8 @@ export interface ServerOptions {
   readonly productRoot?: string;
   /** How long a scan stays fresh before a query rescans (ms). */
   readonly scanTtlMs?: number;
+  /** The Discover index directory (default: YOUI_DISCOVER_CACHE, else ~/.cache/youiyoux/discover). */
+  readonly discoverCache?: string;
 }
 
 const VERSION = "0.1.0";
@@ -101,11 +106,26 @@ function guard<A>(handler: (args: A) => Promise<unknown>): (args: A) => Promise<
 
 export function createServer(options: ServerOptions): McpServer {
   const state = new State(options);
+  const discoverDir = discoverCacheDir(options.discoverCache);
+  /** Read the index; a missing one is an error that says how to build it, never a fetch. */
+  const discoverIndex = () => loadIndex(discoverDir);
+
+  /** A Discover candidate can be requested by its lib: id, as if it were in the Library; the Library's own entry wins. */
+  async function withCandidate(library: Library, item: string): Promise<Library> {
+    if (findLibraryEntry(library, item) || !isLibraryId(item)) return library;
+    try {
+      const candidate = (await discoverIndex()).entries.find((e) => e.id === item.trim());
+      return candidate ? { entries: [...library.entries, candidate] } : library;
+    } catch (error: unknown) {
+      if (error instanceof MissingIndexError) return library;
+      throw error;
+    }
+  }
   const server = new McpServer(
     { name: "youiyoux", version: VERSION },
     {
       instructions:
-        "YouIyouX design-language lookups for this project. Build only with System elements: call system_get_component before using a component's props, system_get_tokens instead of writing colours or sizes, and system_check on code before finishing. system_plan shows the impact of a change to the System. The Library (library_* tools, lib: ids) holds ingested references that are not approved: browse them with library_search, never import, copy or build with them, and use library_request to draft an adoption request for a person to approve. There are no tools to publish or approve anything.",
+        "YouIyouX design-language lookups for this project. Build only with System elements: call system_get_component before using a component's props, system_get_tokens instead of writing colours or sizes, and system_check on code before finishing. system_plan shows the impact of a change to the System. The Library (library_* tools, lib: ids) holds ingested references that are not approved: browse them with library_search, never import, copy or build with them, and use library_request to draft an adoption request for a person to approve. discover_search and discover_show find outside candidates by need (shadcn registries, npm) with licence, signals and install command: they are references, never install or copy one; propose one with library_request. There are no tools to publish, approve or install anything.",
     },
   );
 
@@ -224,15 +244,38 @@ export function createServer(options: ServerOptions): McpServer {
 
   server.registerTool(
     "library_request" satisfies McpTool,
-    { title: "Draft a Library adoption request", description: "Draft a request to adopt a Library item into the System (library → candidate), with the live usage of the System elements it would swap in for. Nothing is filed or changed: put the draft in your summary or PR for a person to approve.", inputSchema: { item: z.string().min(1).describe("Library id (lib:<source>/<kind>/<name>) or name"), reason: z.string().min(1).describe("Why the System needs it") }, annotations: READ_ONLY },
+    { title: "Draft a Library adoption request", description: "Draft a request to adopt a Library item, or a Discover candidate by its lib: id, into the System (library → candidate), with the live usage of the System elements it would swap in for. Nothing is filed, installed or changed: put the draft in your summary or PR for a person to approve.", inputSchema: { item: z.string().min(1).describe("Library or Discover id (lib:<source>/<kind>/<name>), or a Library item's name"), reason: z.string().min(1).describe("Why the System needs it") }, annotations: READ_ONLY },
     guard(async ({ item, reason }) => {
       const { project, scan } = await state.scanned();
-      return adoptionRequest(project, await state.loadLibrary(), item, reason, scan);
+      return adoptionRequest(project, await withCandidate(await state.loadLibrary(), item), item, reason, scan);
     }),
+  );
+
+  server.registerTool(
+    "discover_search" satisfies McpTool,
+    {
+      title: "Discover candidates by need",
+      description: "Find outside UI components for a need (e.g. \"command menu\", \"toast\", \"date picker\") across the official shadcn registry, community registries and npm, from the local index. Ranked by match (names and aliases) plus signals; each hit has its licence (an SPDX id or \"unknown\"), weekly downloads, stars, last push and install command. Candidates are references: never install, import or copy one; propose one with library_request.",
+      inputSchema: {
+        need: z.string().min(1),
+        role: z.string().optional().describe("Only candidates that play this role, e.g. button, dialog, toast"),
+        constraints: DiscoverConstraints.optional(),
+        limit: z.number().int().min(1).max(30).optional(),
+      },
+      annotations: READ_ONLY,
+    },
+    guard(async ({ need, role, constraints, limit }) => searchIndex(await discoverIndex(), need, { ...(role ? { role } : {}), ...(constraints ? { constraints } : {}), limit: limit ?? 8 })),
+  );
+
+  server.registerTool(
+    "discover_show" satisfies McpTool,
+    { title: "Show one Discover candidate", description: "One candidate in full: source, provenance (fetch time, sha256 of the item and its files, registry health), licence evidence, signals and install dependencies (npm, registry, and implicit ones its code imports without declaring).", inputSchema: { id: z.string().min(1).describe("A lib: id or ref from discover_search, e.g. @coss/command") }, annotations: READ_ONLY },
+    guard(async ({ id }) => showCandidate(await discoverIndex(), id)),
   );
 
   return server;
 }
+
 
 export async function startStdioServer(options: ServerOptions): Promise<void> {
   const server = createServer(options);
