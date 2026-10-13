@@ -30,6 +30,10 @@ jobs:
       - name: System libraries for youi detect's Chromium
         run: pnpm --filter @youiyoux/detect exec playwright-core install-deps chromium-headless-shell
 
+      # youi render (agent eyes) draws with the scanner's playwright-core and never downloads in tests.
+      - name: Headless shell for youi render's tests
+        run: pnpm --filter @youiyoux/scanner exec playwright-core install chromium-headless-shell
+
       - name: Engine typecheck
         run: pnpm typecheck
       - name: Engine tests
