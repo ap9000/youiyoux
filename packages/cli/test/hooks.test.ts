@@ -35,6 +35,9 @@ beforeEach(async () => {
   await cp(join(EXAMPLES, "demo-app"), app, { recursive: true });
   await cp(join(EXAMPLES, "demo-design"), join(dir, "demo-design"), { recursive: true });
   await git("init", "-q");
+  // No detached auto-maintenance (repack) still writing into .git when afterEach deletes the repo.
+  await git("config", "maintenance.auto", "false");
+  await git("config", "gc.auto", "0");
   await git("add", "-A");
   await git("commit", "-qm", "init");
 });

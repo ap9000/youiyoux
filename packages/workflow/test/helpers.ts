@@ -16,6 +16,11 @@ function initRepo(dir: string): void {
   git(dir, "init", "--quiet", "--initial-branch=main");
   git(dir, "config", "user.name", "Test");
   git(dir, "config", "user.email", "test@example.com");
+  // No background maintenance: git 2.55 estimates loose objects from the objects/17 shard (x256), so
+  // the fixture's two 17... trees make every commit start a detached repack, which then writes into
+  // .git/objects/pack while dispose() is deleting the sandbox (ENOTEMPTY on fast tests).
+  git(dir, "config", "maintenance.auto", "false");
+  git(dir, "config", "gc.auto", "0");
   git(dir, "add", "-A");
   git(dir, "commit", "--quiet", "-m", "seed");
 }
