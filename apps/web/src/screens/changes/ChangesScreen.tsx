@@ -1,8 +1,8 @@
 /**
  * Changes: the review queue for every change to the design system, by status: draft,
- * waiting for approval, approved, sent for review, rolled out. Rule drafts and style drafts
- * (token values and component states) today; adoptions and replacements join it later.
- * A rule draft opens on its rule's page; a style draft opens here, at /changes/<id>.
+ * waiting for approval, approved, sent for review, rolled out. Rule drafts, style drafts
+ * (token values and component states) and library drafts (Discover's Save to Library and
+ * adoption requests). A rule draft opens on its rule's page; the others open here, at /changes/<id>.
  */
 import { GitPullRequestArrow, Paintbrush, ShieldCheck } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
@@ -16,6 +16,7 @@ import { Segmented } from "../../ui/Segmented.tsx";
 import { DraftEditor, DraftStatusBadge, STAGE, stageOf, type Stage } from "./DraftEditor.tsx";
 import { plural } from "./ImpactPreview.tsx";
 import { ServiceDown } from "./ServiceDown.tsx";
+import { describeLibraryDraft } from "./LibraryDraftReview.tsx";
 import { describeStyleDraft } from "./StyleDraftReview.tsx";
 
 type Queued = Exclude<Stage, "discarded">;
@@ -36,6 +37,7 @@ export const draftHref = (draft: DraftView): string => (draft.kind === "rule" ? 
 
 function summary(draft: DraftView): string {
   if (draft.kind === "rule") return `${draft.mode === "edit" ? "Edit" : "New rule"} · revision ${draft.revision}${draft.preview ? ` · flags ${draft.preview.flagged}` : ""}`;
+  if (draft.kind === "library") return `${draft.content.request === "adopt" ? "Adoption request" : "Library reference"} · revision ${draft.revision}${draft.content.swapsWith.length ? ` · swaps with ${draft.content.swapsWith.join(", ")}` : ""}`;
   const p = draft.preview;
   return `${plural(draft.content.tokens.length, "token")}, ${plural(draft.content.states.length, "state binding")} · revision ${draft.revision}${p ? ` · ${plural(p.totals.sites, "site")} on ${plural(p.totals.routes, "screen")}` : ""}`;
 }
@@ -74,9 +76,9 @@ function Queue({ drafts }: { drafts: readonly DraftView[] }) {
               {shown.map(({ draft }) => (
                 <li key={draft.id}>
                   <Link href={draftHref(draft)} className="flex items-center gap-3 px-4 py-3 hover:bg-raised">
-                    <Badge tone="outline">{draft.kind === "rule" ? "Rule" : "Style"}</Badge>
+                    <Badge tone="outline">{draft.kind === "rule" ? "Rule" : draft.kind === "style" ? "Style" : "Library"}</Badge>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-body text-ink">{draft.kind === "rule" ? draft.content.rule.title || "Untitled rule" : describeStyleDraft(draft)}</p>
+                      <p className="truncate text-body text-ink">{draft.kind === "rule" ? draft.content.rule.title || "Untitled rule" : draft.kind === "style" ? describeStyleDraft(draft) : describeLibraryDraft(draft)}</p>
                       <p className="truncate text-small text-muted">
                         {summary(draft)}
                         {draft.handoff ? ` · ${draft.handoff.branch}` : ""}
@@ -95,7 +97,7 @@ function Queue({ drafts }: { drafts: readonly DraftView[] }) {
   );
 }
 
-/** A style draft's review page (rule drafts redirect to their rule). */
+/** A style or library draft's review page (rule drafts redirect to their rule). */
 function DraftPage({ id, onChanged }: { id: string; onChanged: () => void }) {
   const load = useCallback(async () => {
     const [draft, info] = await Promise.all([workflowApi.draft(id), workflowApi.info()]);
@@ -112,7 +114,7 @@ function DraftPage({ id, onChanged }: { id: string; onChanged: () => void }) {
           Changes
         </Link>
         <span>/</span>
-        <span className="truncate text-ink-2">{draft.kind === "style" ? describeStyleDraft(draft) : draft.content.rule.title}</span>
+        <span className="truncate text-ink-2">{draft.kind === "style" ? describeStyleDraft(draft) : draft.kind === "library" ? describeLibraryDraft(draft) : draft.content.rule.title}</span>
         {draft.kind === "rule" && (
           <Link href={`/rules/draft/${draft.id}`} className="ml-auto hover:text-ink">
             Open on its rule

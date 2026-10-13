@@ -1,5 +1,5 @@
 /**
- * The loopback HTTP service: the workflow (rule and style drafts) under /api, and (optionally) the built hub at /.
+ * The loopback HTTP service: the workflow (rule, style and library drafts) under /api, and (optionally) the built hub at /.
  *
  * It listens on 127.0.0.1 only. Requests must name a loopback Host (no DNS rebinding) and
  * may not come cross-site; writes must carry this run's session key (printed only in the
@@ -11,7 +11,7 @@ import { timingSafeEqual } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { z } from "zod";
-import { COMPONENT_STATES, DefinitionError, ElementId, RuleCheck, RuleRollout } from "@youiyoux/core";
+import { COMPONENT_STATES, DefinitionError, ElementId, LibraryEntry, RuleCheck, RuleRollout } from "@youiyoux/core";
 import type { Actor, ApiError } from "./api.ts";
 import { WorkflowError } from "./policy.ts";
 import type { RuleWorkflow } from "./service.ts";
@@ -36,11 +36,14 @@ const DraftContentInput = z.object({ rule: RuleFieldsInput, components: z.array(
 const TokenEditInput = z.object({ path: z.string().min(1).max(200).regex(/^[^${}.][^{}]*$/, "expected a token path like color.accent"), light: z.unknown().optional(), dark: z.unknown().optional() });
 const StateEditInput = z.object({ component: ElementId, state: z.enum(COMPONENT_STATES), role: z.string().min(1).max(100), token: ElementId });
 const StyleContentInput = z.object({ title: z.string().max(200), tokens: z.array(TokenEditInput).max(500), states: z.array(StateEditInput).max(200) });
+/** A Discover listing as a youi.library/v1 item; the workflow checks it again, with the request. */
+const LibraryContentInput = z.object({ entry: LibraryEntry, request: z.enum(["save", "adopt"]), reason: z.string().max(2000), swapsWith: z.array(z.string().min(1).max(200)).max(50) });
 const CreateInput = z.union([
   z.object({ kind: z.literal("style"), content: StyleContentInput.optional() }),
+  z.object({ kind: z.literal("library"), content: LibraryContentInput }),
   z.discriminatedUnion("mode", [z.object({ kind: z.literal("rule").optional(), mode: z.literal("edit"), ruleId: ElementId }), z.object({ kind: z.literal("rule").optional(), mode: z.literal("create") })]),
 ]);
-const SaveInput = z.object({ revision: z.number().int().positive(), content: z.union([DraftContentInput, StyleContentInput]) });
+const SaveInput = z.object({ revision: z.number().int().positive(), content: z.union([DraftContentInput, StyleContentInput, LibraryContentInput]) });
 
 /** JSON has no undefined: an absent light or dark stays absent (unchanged), null stays null (dark follows light). */
 function styleContent<T extends { tokens: Array<{ light?: unknown; dark?: unknown }> }>(content: T): T {
@@ -145,7 +148,8 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string, opti
   if (path === "/api/drafts" && method === "GET") return send(res, 200, await workflow.list(actor));
   if (path === "/api/drafts" && method === "POST") {
     const input = parse(CreateInput, await readJson(req));
-    return send(res, 201, await workflow.create(actor, "kind" in input && input.kind === "style" ? { kind: "style", ...(input.content ? { content: styleContent(input.content) } : {}) } : (input as Exclude<typeof input, { kind: "style" }>)));
+    if ("kind" in input && input.kind === "library") return send(res, 201, await workflow.create(actor, { kind: "library", content: input.content }));
+    return send(res, 201, await workflow.create(actor, "kind" in input && input.kind === "style" ? { kind: "style", ...(input.content ? { content: styleContent(input.content) } : {}) } : (input as Exclude<typeof input, { kind: "style" } | { kind: "library" }>)));
   }
   const match = /^\/api\/drafts\/(d-[0-9a-f]{10})(?:\/(preview|approve|rebase|handoff))?$/.exec(path);
   if (match) {

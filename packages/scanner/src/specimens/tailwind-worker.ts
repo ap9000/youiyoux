@@ -21,6 +21,8 @@ interface Input {
   readonly oxide: string;
   /** Project-relative symlinks that leave the root. */
   readonly exclude: readonly string[];
+  /** Directories outside the root scanned for class names too (a Discover preview's files). */
+  readonly extraSources?: readonly string[];
 }
 type Source = { base: string; pattern: string; negated: boolean };
 interface TailwindNode {
@@ -29,7 +31,7 @@ interface TailwindNode {
 }
 type Resolver = (id: string, base: string) => Promise<string | false | undefined>;
 
-const { root, from, node: nodePath, oxide: oxidePath, exclude } = workerData as Input;
+const { root, from, node: nodePath, oxide: oxidePath, exclude, extraSources = [] } = workerData as Input;
 const require = createRequire(import.meta.url);
 const warnings: string[] = [];
 const dependencies: string[] = [];
@@ -84,6 +86,8 @@ async function run(): Promise<{ css: string } | { error: string }> {
     return false;
   });
   for (const link of exclude) sources.push({ base: root, pattern: link, negated: true }, { base: root, pattern: `${link}/**`, negated: true });
+  // Scanned for class names only, as the caller asked: their files are never imported.
+  for (const base of extraSources) sources.push({ base, pattern: "**/*", negated: false });
   const candidates = new oxide.Scanner({ sources }).scan();
   return { css: tailwind.optimize(compiler.build(candidates), { file: from, minify: false }).code };
 }

@@ -12,9 +12,9 @@
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { LibraryEntry } from "@youiyoux/core";
-import { nodeId, openStore, pageInteger, searchTerms, type DiscoverFilter, type DiscoverItem, type DiscoverScope, type GraphEdge, type GraphNode, type Signal, type SourceClass, type Store, type Style } from "@youiyoux/store";
+import { nodeId, openStore, pageInteger, searchTerms, type DiscoverFilter, type DiscoverItem, type DiscoverScope, type GraphEdge, type GraphNode, type Signal, type SourceClass, type Store } from "@youiyoux/store";
 import { CONCEPTS, conceptForRole, normalize, readNeed } from "./aliases.ts";
-import { conceptScore, DISCOVER_RULE, fieldsOf, hitOf, rankEntries, registryName, type DiscoverFacets, type DiscoverSearch, type DiscoverShow, type SearchOptions } from "./search.ts";
+import { conceptScore, DISCOVER_RULE, fieldsOf, hitOf, rankEntries, registryName, styleOf, type DiscoverFacets, type DiscoverSearch, type DiscoverShow, type SearchOptions } from "./search.ts";
 import { SHADCN } from "./sources.ts";
 import { ALL_INDEX_FILE, INDEX_FILE, MissingIndexError, readAllIndex, readIndex, readSignals } from "./store.ts";
 import { cleanText } from "./text.ts";
@@ -32,14 +32,6 @@ export function sourceClassOf(entry: LibraryEntry): SourceClass {
   if (entry.source.kind === "npm") return "npm";
   if (entry.source.kind === "shadcn-registry") return entry.source.ref?.startsWith(`${SHADCN.name}/`) ? "official" : "community";
   return "other";
-}
-
-const HEADLESS_PACKAGE = /^(?:@radix-ui\/|radix-ui$|@base-ui-components\/|@base-ui\/|@ark-ui\/|react-aria|@react-aria\/|@headlessui\/|@ariakit\/|ariakit$|downshift$|cmdk$|vaul$|@floating-ui\/)/;
-
-/** headless: behaviour without styles (it says so, or it is a headless library's package); styled: everything else, every registry item included. */
-export function styleOf(entry: LibraryEntry): Style {
-  if (/\b(?:headless|unstyled)\b/i.test(`${entry.summary} ${entry.categories.join(" ")}`)) return "headless";
-  return entry.source.kind === "npm" && HEADLESS_PACKAGE.test(entry.name) ? "headless" : "styled";
 }
 
 /** The concepts an entry plays: the same test as `--role` (playsRole). */

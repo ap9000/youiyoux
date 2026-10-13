@@ -69,7 +69,7 @@ describe("loopback service", () => {
     expect((saved.json.content as { tokens: object[] }).tokens[0]).not.toHaveProperty("dark");
     const bad = await call("PUT", `/api/drafts/${created.json.id as string}`, headers, { revision: 2, content: { ...content, states: [{ component: "youi:demo/component/button", state: "pressed", role: "bg", token: "youi:demo/token/color.card" }] } });
     expect(bad.status).toBe(400);
-    expect((await call("GET", "/api/info")).json).toMatchObject({ kinds: ["rule", "style"] });
+    expect((await call("GET", "/api/info")).json).toMatchObject({ kinds: ["rule", "style", "library"] });
   });
 
   test("approving a style draft carries the contrast confirmation: refused (422, naming the pairs) without it, approved with it", async () => {

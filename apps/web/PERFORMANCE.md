@@ -109,3 +109,18 @@ pnpm measure:inventory              # Inventory first paint at 50 vs 5,000 looks
 YOUI_PERF=1 pnpm vitest run packages/store/test/store.perf.test.ts   # (from the repo root) the local index at 100,000 items
 pnpm preview                        # then use the app, and read Home → Speed
 ```
+
+## Discover: first paint is flat, and nothing is fetched until a candidate is opened (`pnpm measure:discover`)
+
+Discover paints its shell (the search field, the facets and the result cards) and searches listings only: `/__youi/query` on the hub's own server reads the local index, paged and faceted; a static host searches the snapshot's listings file instead. Nothing of a candidate is fetched until a person opens it: then only that item's source (and at most three registry parts it imports) is fetched into the Discover cache, bundled by the hub's server and drawn in a sandboxed frame. What exists only once something is opened or a family is pinned (the drawer, specimen tiles, sandboxed frames, the compare cards, the inventory a pinned family is read from) is its own chunk, fetched then.
+
+`scripts/measure-discover.ts` builds the hub, makes a Discover cache from the recorded fixture responses (40 listings) and one padded to 5,000 listings, serves the build with `vite preview` on each cache and opens `/discover?q=command%20menu` cold in headless Chromium five times. It reads the frame after the page's shell is in the DOM, the frame after the first result card is, and FCP; counts what was requested before the shell painted; and, a second later with nothing opened, counts preview requests, frames and specimen tiles mounted, and checks that the cache gained no `preview/` or `source/` directory.
+
+Measured 2026-10-12, Apple silicon laptop, median of 5:
+
+| Listings | Requests before the page paints | Bytes before it paints | Page paint | Results | FCP | Previews, frames, tiles, cache writes with nothing opened |
+| --- | --- | --- | --- | --- | --- | --- |
+| 40 | 24 | 160,950 | 173 ms | 173 ms | 188 ms | 0, 0, 0, 0 |
+| 5,000 | 24 | 160,952 | 173 ms | 173 ms | 188 ms | 0, 0, 0, 0 |
+
+As a first route, Discover downloads 143.7 KB before it paints (index.html, the JS, CSS and fonts it asks for, gzip -9, woff2 as is; the same boundary as `pnpm measure`), within the 150 KB in [`perf/budget.json`](perf/budget.json). Its own chunk is 3.9 KB; the opened chunk (drawer, tiles, compare) is fetched on the first open. It exits 1 when the 5,000-listing run's median page paint or FCP is over 1.5× the 40-listing run's plus one frame (16 ms), when the route is over budget, or when anything was requested, mounted or cached for a candidate with nothing opened. An opened shadcn command (cmdk, its dialog part and the console fixture's own button and `cn`) bundles in about a second, its CSS (the project's Tailwind build with the fetched files as extra sources) in about 0.2 s. Full numbers are in [`perf/discover.json`](perf/discover.json).

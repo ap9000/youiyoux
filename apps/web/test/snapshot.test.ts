@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, test } from "vitest";
-import { buildSpecimens, configuredSpecimenCss, libraries, readInventory, readSource, sheetReport, writeDetect, writeInventory } from "../scripts/snapshot.ts";
+import { buildSpecimens, configuredSpecimenCss, DISCOVER_LISTINGS_MAX, libraries, readInventory, readSource, sheetReport, writeDetect, writeDiscover, writeInventory } from "../scripts/snapshot.ts";
 import type { InventoryChunk, InventoryIndex } from "../src/data/types.ts";
 
 const TOOL = resolve(import.meta.dirname, "../../..");
@@ -148,5 +148,37 @@ describe("snapshot --detect", () => {
   test("the committed demo snapshot carries no detect report", async () => {
     const manifest = JSON.parse(await readFile(join(import.meta.dirname, "../snapshot/public/data/manifest.json"), "utf8")) as Record<string, unknown>;
     expect(manifest.detect).toBeUndefined();
+  });
+});
+
+describe("snapshot Discover listings (a static host's fallback)", () => {
+  test("the synced index's listings, slimmed to what a card shows and searched by, under a content hash; none without an index", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "youi-discover-snap-"));
+    try {
+      const { discoverFixture } = await import("../scripts/discover-fixture.ts");
+      const libs = await libraries();
+      expect(await writeDiscover(join(dir, "data"), join(dir, "empty"), libs.discover)).toBeNull();
+      const { cache } = await discoverFixture(join(dir, "discover"));
+      const file = await writeDiscover(join(dir, "data"), cache, libs.discover);
+      expect(file).toMatch(/^discover\.[0-9a-f]{10}\.json$/);
+      const listings = JSON.parse(await readFile(join(dir, "data", file!), "utf8")) as { schema: string; total: number; capped: boolean; entries: Array<Record<string, unknown>> };
+      const index = (await libs.discover.readIndex(cache))!;
+      expect(listings).toMatchObject({ schema: "youiyoux.discover-listings/v1", total: index.entries.length, capped: false });
+      expect(listings.entries.length).toBe(Math.min(index.entries.length, DISCOVER_LISTINGS_MAX));
+      // Official first; each listing what a card shows (licence, signals, install) and what a search reads, and no provenance or source.
+      expect(listings.entries[0]!.id).toMatch(/^lib:shadcn\//);
+      const command = listings.entries.find((e) => e.id === "lib:shadcn/component/command")!;
+      expect(command).toMatchObject({ license: "MIT", signals: { via: { package: "cmdk", weeklyDownloads: 41566267 } }, install: { command: "npx shadcn add command" }, registry: "@shadcn", style: "styled" });
+      expect(command.roles).toEqual(expect.arrayContaining(["command"]));
+      expect(Object.keys(command).sort()).toEqual(["id", "install", "kind", "license", "name", "registry", "roles", "signals", "source", "style", "summary", "text", "title"].sort());
+      expect(await readFile(join(dir, "data", file!), "utf8")).not.toMatch(/"content"|"provenance"/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("the committed demo snapshot names no Discover listings", async () => {
+    const manifest = JSON.parse(await readFile(join(import.meta.dirname, "../snapshot/public/data/manifest.json"), "utf8")) as Record<string, unknown>;
+    expect(manifest.discover).toBeUndefined();
   });
 });

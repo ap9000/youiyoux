@@ -5,7 +5,8 @@
  * one page of JSON:
  *
  *   kind=discover  q (a need; without one, listings browse official first), role, source,
- *                  licence, style (headless|styled), all=1 (the --all listings too)
+ *                  licence (SPDX ids, `unknown`, or `known` for any known licence), style
+ *                  (headless|styled), all=1 (the --all listings too)
  *   kind=families  role, run (default: the newest inventory run)
  *   kind=looks     family, role, run
  *   kind=history   project
@@ -91,12 +92,20 @@ export function queryMiddleware(options: QueryOptions = {}, base = "/", load: ()
       const licences = list(params.get("licence"));
       const sources = list(params.get("source"));
       const styles = list(params.get("style"))?.filter((s): s is "headless" | "styled" => s === "headless" || s === "styled");
+      // `known` or `unknown` alone is a yes/no on the licence; anything else names SPDX ids.
+      const known = licences?.length === 1 && (licences[0] === "known" || licences[0] === "unknown") ? licences[0] === "known" : undefined;
       if (need) {
-        const result = await d.searchCatalog(store, need, { ...(role ? { role } : {}), constraints: { ...(licences ? { licenses: licences.filter((l) => l !== "unknown"), allowUnknownLicense: licences.includes("unknown") } : {}), ...(sources ? { registries: sources } : {}) }, all, limit, offset, facets: true });
+        const licence = known !== undefined ? { licenseKnown: known } : licences ? { licenses: licences.filter((l) => l !== "unknown"), allowUnknownLicense: licences.includes("unknown") } : {};
+        const result = await d.searchCatalog(store, need, { ...(role ? { role } : {}), constraints: { ...licence, ...(sources ? { registries: sources } : {}), ...(styles?.length ? { styles } : {}) }, all, limit, offset, facets: true });
         return { kind, limit, ...result, offset };
       }
       const concept = role ? d.conceptForRole(role) : undefined;
-      return { kind, limit, ...(await d.browseCatalog(store, { all, ...(role ? { roles: [concept?.id ?? role] } : {}), ...(licences ? { licences } : {}), ...(sources ? { registries: sources } : {}), ...(styles?.length ? { styles } : {}) }, { limit, offset })) };
+      const scope = { all, ...(role ? { roles: [concept?.id ?? role] } : {}), ...(sources ? { registries: sources } : {}), ...(styles?.length ? { styles } : {}) };
+      // Any known licence: every licence the listings in scope hold but `unknown`.
+      const held = known === true ? Object.keys((await store.discoverFacets({ ...scope, scopes: all ? ["chosen", "all"] : ["chosen"] })).licence).filter((l) => l !== "unknown") : [];
+      if (known === true && held.length === 0) return { kind, limit, offset, total: 0, hits: [], facets: { role: {}, source: {}, licence: {}, style: {} }, indexBuiltAt: "", note: "" };
+      const named = known === true ? held : known === false ? ["unknown"] : licences;
+      return { kind, limit, ...(await d.browseCatalog(store, { ...scope, ...(named ? { licences: named } : {}) }, { limit, offset })) };
     }
     if (!env.DATABASE_URL && !existsSync(path)) throw new NotFound("no local index yet: run youi inventory, youi scan or youi index rebuild");
     const store = await d.sharedStore(path, env, { readOnly: true });

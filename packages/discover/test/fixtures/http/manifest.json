@@ -1,5 +1,5 @@
 {
- "note": "Recorded 2026-10-12 from the live endpoints and trimmed to a few items each. ETags the endpoint did not send are synthetic (fixture-\u2026), so revalidation can be tested. @fixture-* registries are made up to cover failures. Anything not listed answers 404.",
+ "note": "Recorded 2026-10-12 from the live endpoints and trimmed to a few items each. ETags the endpoint did not send are synthetic (fixture-\u2026), so revalidation can be tested. @fixture-* registries are made up to cover failures. Anything not listed answers 404. Single registry items (shadcn-item-*, coss-item-*) were recorded 2026-10-12 for Discover previews.",
  "responses": [
   {
    "url": "https://ui.shadcn.com/r/index.json",
@@ -66,6 +66,51 @@
     "etag": "\"fixture-09bf3cdcb0a8c805\""
    },
    "body": "aceternity-registry.json"
+  },
+  {
+   "url": "https://ui.shadcn.com/r/styles/new-york-v4/command.json",
+   "status": 200,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "etag": "\"fixture-item-command\""
+   },
+   "body": "shadcn-item-command.json"
+  },
+  {
+   "url": "https://ui.shadcn.com/r/styles/new-york-v4/dialog.json",
+   "status": 200,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "etag": "\"fixture-item-dialog\""
+   },
+   "body": "shadcn-item-dialog.json"
+  },
+  {
+   "url": "https://ui.shadcn.com/r/styles/new-york-v4/button.json",
+   "status": 200,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "etag": "\"fixture-item-button\""
+   },
+   "body": "shadcn-item-button.json"
+  },
+  {
+   "url": "https://ui.shadcn.com/r/styles/new-york-v4/input.json",
+   "status": 200,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "etag": "\"fixture-item-input\""
+   },
+   "body": "shadcn-item-input.json"
+  },
+  {
+   "url": "https://coss.com/ui/r/button.json",
+   "status": 200,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "etag": "\"fixture-item-coss-button\""
+   },
+   "body": "coss-item-button.json"
   },
   {
    "url": "https://broken.example.test/r/registry.json",

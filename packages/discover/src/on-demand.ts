@@ -58,7 +58,7 @@ export async function expandAll(cacheDir: string, options: PoliteOptions & { ico
 }
 
 /** A listing by id or ref, from the index or, failing that, the --all listings. */
-async function findListing(cacheDir: string, id: string) {
+export async function findListing(cacheDir: string, id: string) {
   try {
     return showCandidate(await loadIndex(cacheDir), id);
   } catch (error) {
@@ -68,8 +68,18 @@ async function findListing(cacheDir: string, id: string) {
   }
 }
 
+/** One registry item's source as `show --source` keeps it under source/ (older copies have files only). */
+export interface CandidateSource {
+  readonly url: string;
+  readonly fetchedAt: string;
+  readonly files: ReadonlyArray<{ readonly path: string; readonly content?: string; readonly type?: string; readonly target?: string }>;
+  readonly dependencies?: readonly string[];
+  readonly registryDependencies?: readonly string[];
+  readonly cssVars?: Readonly<Record<string, Readonly<Record<string, string>>>>;
+}
+
 /** Fetch exactly one registry item. Source lives separately from the metadata catalog. */
-export async function candidateSource(cacheDir: string, id: string, options: PoliteOptions = {}): Promise<unknown> {
+export async function candidateSource(cacheDir: string, id: string, options: PoliteOptions = {}): Promise<CandidateSource> {
   const { entry } = await findListing(cacheDir, id);
   if (entry.source.kind !== "shadcn-registry") throw new Error("Source is available for registry items only");
   const ref = entry.source.ref!;
@@ -80,13 +90,14 @@ export async function candidateSource(cacheDir: string, id: string, options: Pol
   if (!template) throw new Error("Registry URL is unavailable; run youi discover sync");
   const url = registryUrl(template, name);
   const file = join(cacheDir, "source", `${sha256(url)}.json`);
-  try { return JSON.parse(await readFile(file, "utf8")); } catch { /* fetch on first use */ }
+  try { return JSON.parse(await readFile(file, "utf8")) as CandidateSource; } catch { /* fetch on first use */ }
   const client = new PoliteClient(options);
   const response = await client.json(url, false);
   if (!response.ok) throw new Error(response.message);
   const item = parseRegistryItems([response.value]).items[0];
   if (!item || item.name !== name) throw new Error("Registry returned a different or invalid item");
-  const source = cleanData({ url, fetchedAt: response.result.fetchedAt, files: item.files ?? [] });
+  // What a preview needs besides the files: the declared packages, the parts it builds on and the theme variables it brings.
+  const source = cleanData({ url, fetchedAt: response.result.fetchedAt, files: item.files ?? [], dependencies: item.dependencies ?? [], registryDependencies: item.registryDependencies ?? [], ...(item.cssVars && typeof item.cssVars === "object" ? { cssVars: item.cssVars as CandidateSource["cssVars"] } : {}) });
   await writeJson(file, source);
   return source;
 }

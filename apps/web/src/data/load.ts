@@ -77,6 +77,11 @@ export async function loadInventory(file: string): Promise<InventoryIndex | Inve
   return expectSchema<InventoryIndex>(value, "youiyoux.inventory-index/v1", file);
 }
 
+/** Discover's listings for a static host (youiyoux.discover-listings/v1). */
+export async function loadDiscoverListings<T extends { schema: string }>(file: string): Promise<T> {
+  return expectSchema<T>(await loadHashed(file), "youiyoux.discover-listings/v1", file);
+}
+
 export async function loadDetect(file: string): Promise<DetectReport> {
   return expectSchema<DetectReport>(await loadHashed(file), "youi.detect/v1", file);
 }
@@ -93,7 +98,7 @@ export const absoluteDataUrl = (file: string): string => new URL(`${DATA_BASE}${
 export async function pruneCache(manifest: Manifest): Promise<void> {
   const cache = await openCache();
   if (!cache) return;
-  const files = [...manifest.systems.flatMap((s) => [s.catalog, ...s.usage.map((u) => u.file)]), ...(manifest.inventory ? [manifest.inventory, ...(manifest.inventoryFiles ?? [])] : []), ...(manifest.detect ? [manifest.detect.file] : [])];
+  const files = [...manifest.systems.flatMap((s) => [s.catalog, ...s.usage.map((u) => u.file)]), ...(manifest.inventory ? [manifest.inventory, ...(manifest.inventoryFiles ?? [])] : []), ...(manifest.detect ? [manifest.detect.file] : []), ...(manifest.discover ? [manifest.discover] : [])];
   const keep = new Set([MANIFEST_URL, ...files.map((f) => `${DATA_BASE}${f}`)]);
   const keys = await cache.keys();
   await Promise.all(keys.filter((request) => !keep.has(new URL(request.url).pathname)).map((request) => cache.delete(request)));

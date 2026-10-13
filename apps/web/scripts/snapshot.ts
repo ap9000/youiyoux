@@ -28,6 +28,10 @@
  * - <out>/public/data/detect.<hash>.json and detect.shot.<hash>.png: a `youi detect` report
  *   (`--detect`, validated as youi.detect/v1) and its element screenshots, for Library > Stack.
  *   Like screens, it belongs to whoever ran it and never lives in this repo.
+ * - <out>/public/data/discover.<hash>.json: Discover's listings for a static host, which has no
+ *   /__youi/query: the default sources' index.json from the Discover cache (`--discover <dir>`,
+ *   else the CLI's cache when it has been synced; never for the committed default), slimmed to
+ *   what a result card shows and capped at DISCOVER_LISTINGS_MAX. Listings only: no source code.
  * - <out>/preview/: the system's owned component files and their demos (`*.demo.tsx`
  *   next to a contract in the design repo), plus system.css: the system's variables
  *   scoped to the preview frame and its Tailwind theme.
@@ -36,6 +40,7 @@
  * With no options it writes the committed default: the made-up demo system
  * (examples/demo-design) and a scan of examples/demo-app, into apps/web/snapshot.
  * `--watch` (with `--out`) keeps that snapshot live: see watchSnapshot.
+ * `--discover <dir>` names the Discover cache whose listings a static host searches.
  * `--project` scans a product repo (read-only) for the usage map; its youi.project.json
  * (or `--config`) names the design repo and the CSS prefix and Tailwind names the
  * components use. `--design` overrides the design repo. `youi ui` runs this with
@@ -79,6 +84,7 @@ const HUB_TAILWIND_MAP: Record<string, string> = {
 };
 
 type CoreModule = typeof import("@youiyoux/core");
+type DiscoverModule = typeof import("../../../packages/discover/src/index.ts");
 type TokensModule = typeof import("@youiyoux/tokens");
 /** The scanner calls used here, typed locally so the hub's typecheck never pulls in the scanner's sources. */
 interface ScannerModule {
@@ -349,6 +355,7 @@ interface Libraries {
   readonly core: CoreModule;
   readonly lib: TokensModule;
   readonly scanner: ScannerModule;
+  readonly discover: DiscoverModule;
 }
 
 type UsageRef = { project: string; file: string; screens?: ProjectShots };
@@ -554,14 +561,47 @@ export function writeDetect(file: string, dataDir: string, core: CoreModule): De
   return { file: name, name: report.target.name, kind: report.target.kind, shots };
 }
 
+/** The most listings the static fallback carries (official first, then by weekly downloads). */
+export const DISCOVER_LISTINGS_MAX = 2000;
+
+/** A listing as a static host searches and shows it: a result card's fields, its roles, headless or styled, and the words it is found by. */
+export type DiscoverListing = Omit<ReturnType<DiscoverModule["hitOf"]>, "score" | "why"> & { readonly registry: string; readonly roles: readonly string[]; readonly style: "headless" | "styled"; readonly text: string };
+
+/**
+ * Discover's listings for a static host: the cache's index.json (the default sources; never the
+ * --all listings), slimmed and capped, under its content hash. Null when the cache has no index.
+ */
+export async function writeDiscover(dataDir: string, cacheDir: string, discover: DiscoverModule): Promise<string | null> {
+  const index = await discover.readIndex(cacheDir);
+  if (!index) return null;
+  const ordered = [...index.entries].sort((a, b) => Number(discover.sourceClassOf(b) === "official") - Number(discover.sourceClassOf(a) === "official") || (b.signals?.weeklyDownloads ?? b.signals?.via?.weeklyDownloads ?? -1) - (a.signals?.weeklyDownloads ?? a.signals?.via?.weeklyDownloads ?? -1) || a.id.localeCompare(b.id));
+  const card = (entry: (typeof ordered)[number]) => {
+    const { score: _score, why: _why, ...hit } = discover.hitOf(entry, 0, []);
+    return hit;
+  };
+  const entries: DiscoverListing[] = ordered.slice(0, DISCOVER_LISTINGS_MAX).map((entry) => ({ ...card(entry), registry: discover.registryName(entry), roles: discover.rolesOf(entry), style: discover.styleOf(entry), text: discover.searchTextOf(entry) }));
+  const text = json({ schema: "youiyoux.discover-listings/v1", builtAt: index.builtAt, total: index.entries.length, capped: index.entries.length > entries.length, note: discover.DISCOVER_RULE, entries });
+  const file = `discover.${hash(text)}.json`;
+  write(join(dataDir, file), text);
+  return file;
+}
+
+/** The Discover cache a snapshot reads listings from: `--discover`, else the CLI's (not for the committed default). */
+function discoverCache(values: { discover?: string }, out: string, discover: DiscoverModule): string | null {
+  if (values.discover) return resolve(values.discover);
+  if (out === DEFAULT_OUT) return null;
+  const dir = discover.discoverCacheDir();
+  return existsSync(join(dir, discover.INDEX_FILE)) ? dir : null;
+}
+
 /** Every data file a usage ref names: its usage map and its screenshots. */
 function usageFiles(usage: readonly UsageRef[]): string[] {
   return usage.flatMap((u) => [u.file, ...(u.screens?.screens ?? []).flatMap((shot) => [shot.light, shot.dark].flatMap((f) => (f ? [f.full, f.thumb] : [])))]);
 }
 
 /** The manifest last: written to a temporary name and renamed, so a reader never sees half of it. */
-function writeManifest(dataDir: string, system: WrittenSystem, usage: readonly UsageRef[], live?: Live, inventory?: WrittenInventory | null, detect?: DetectRef | null): void {
-  const manifest = { schema: "youiyoux.manifest/v1", source: { commit: system.commit }, systems: [{ id: system.id, catalog: system.catalogFile, usage }], ...(inventory ? { inventory: inventory.file, inventoryFiles: inventory.files } : {}), ...(detect ? { detect: { file: detect.file, name: detect.name, kind: detect.kind } } : {}), ...(live ? { live } : {}) };
+function writeManifest(dataDir: string, system: WrittenSystem, usage: readonly UsageRef[], live?: Live, inventory?: WrittenInventory | null, detect?: DetectRef | null, discover?: string | null): void {
+  const manifest = { schema: "youiyoux.manifest/v1", source: { commit: system.commit }, systems: [{ id: system.id, catalog: system.catalogFile, usage }], ...(inventory ? { inventory: inventory.file, inventoryFiles: inventory.files } : {}), ...(detect ? { detect: { file: detect.file, name: detect.name, kind: detect.kind } } : {}), ...(discover ? { discover } : {}), ...(live ? { live } : {}) };
   const file = join(dataDir, "manifest.json");
   write(`${file}.tmp`, `${JSON.stringify(manifest, null, 2)}\n`);
   renameSync(`${file}.tmp`, file);
@@ -579,13 +619,15 @@ function pruneData(dataDir: string, keep: ReadonlySet<string>): void {
  * with an atomic manifest write, which the dev server announces to the open hub. A failed
  * run keeps the last good data and marks the manifest failed.
  */
-async function watchSnapshot(values: { design?: string; project?: string; config?: string; root?: string; commit?: string; screens?: string; inventory?: string; detect?: string }, out: string, libs: Libraries): Promise<void> {
+async function watchSnapshot(values: { design?: string; project?: string; config?: string; root?: string; commit?: string; screens?: string; inventory?: string; detect?: string; discover?: string }, out: string, libs: Libraries): Promise<void> {
   const dataDir = join(out, "public/data");
   mkdirSync(dataDir, { recursive: true });
   // The inventory and the detect report are files someone produced, not views of the watched sources: written once.
   const read = await readInventory(values.inventory, false, libs);
   const inventory = read ? await writeInventoryWithSpecimens(out, read, values.inventory, libs, values) : null;
   const detect = values.detect ? writeDetect(values.detect, dataDir, libs.core) : null;
+  const discoverDir = discoverCache(values, out, libs.discover);
+  const discover = discoverDir ? await writeDiscover(dataDir, discoverDir, libs.discover) : null;
   const root = projectArg(values) ?? (values.config ? dirname(resolve(values.config)) : DEMO_PROJECT);
   let previousId = previousSystemId(dataDir);
   let system: WrittenSystem | null = null;
@@ -624,8 +666,8 @@ async function watchSnapshot(values: { design?: string; project?: string; config
         update.status === "ok"
           ? { generation: update.generation, status: update.result.report.status, updatedAt: stamp(), rules: update.result.rules }
           : { generation: update.generation, status: "failed", updatedAt: stamp(), message: update.error };
-      writeManifest(dataDir, system, usage, live, inventory, detect);
-      const current = new Set([system.catalogFile, ...usageFiles(usage), ...(inventory ? [inventory.file, ...inventory.files] : []), ...(detect ? [detect.file, ...detect.shots] : [])]);
+      writeManifest(dataDir, system, usage, live, inventory, detect, discover);
+      const current = new Set([system.catalogFile, ...usageFiles(usage), ...(inventory ? [inventory.file, ...inventory.files] : []), ...(detect ? [detect.file, ...detect.shots] : []), ...(discover ? [discover] : [])]);
       pruneData(dataDir, new Set([...current, ...previous]));
       previous = current;
       process.stdout.write(`youi ui: generation ${update.generation} ${live.status}${live.message ? `: ${live.message}` : ""}\n`);
@@ -641,11 +683,11 @@ async function watchSnapshot(values: { design?: string; project?: string; config
 
 /** The workspace packages this script uses, loaded from their sources. */
 export async function libraries(): Promise<Libraries> {
-  return { core: await load<CoreModule>("core"), lib: await load<TokensModule>("tokens"), scanner: await load<ScannerModule>("scanner") };
+  return { core: await load<CoreModule>("core"), lib: await load<TokensModule>("tokens"), scanner: await load<ScannerModule>("scanner"), discover: await load<DiscoverModule>("discover") };
 }
 
 async function main(): Promise<void> {
-  const { values } = parseArgs({ options: { design: { type: "string" }, project: { type: "string" }, config: { type: "string" }, root: { type: "string" }, out: { type: "string" }, commit: { type: "string" }, screens: { type: "string" }, inventory: { type: "string" }, detect: { type: "string" }, watch: { type: "boolean", default: false } } });
+  const { values } = parseArgs({ options: { design: { type: "string" }, project: { type: "string" }, config: { type: "string" }, root: { type: "string" }, out: { type: "string" }, commit: { type: "string" }, screens: { type: "string" }, inventory: { type: "string" }, detect: { type: "string" }, discover: { type: "string" }, watch: { type: "boolean", default: false } } });
   const libs = await libraries();
   const out = resolve(values.out ?? DEFAULT_OUT);
   if (values.watch) {
@@ -667,9 +709,11 @@ async function main(): Promise<void> {
   const inventory = read ? await writeInventoryWithSpecimens(out, read, values.inventory, libs, values) : null;
   if (!read) rmSync(join(out, "try.json"), { force: true });
   const detect = values.detect ? writeDetect(values.detect, dataDir, libs.core) : null;
-  writeManifest(dataDir, system, usage, undefined, inventory, detect);
+  const discoverDir = discoverCache(values, out, libs.discover);
+  const discover = discoverDir ? await writeDiscover(dataDir, discoverDir, libs.discover) : null;
+  writeManifest(dataDir, system, usage, undefined, inventory, detect, discover);
   if (out === DEFAULT_OUT) await buildHubTokens(libs.core, libs.lib);
-  process.stdout.write(`snapshot of ${system.summary}; ${usage.length ? `usage map of ${usage[0]!.project}${shots ? ` with ${shots.screens.length} screens` : ""}` : "no usage map"}${inventory ? `; ${inventory.file} (+${inventory.files.length} chunks and stylesheets)` : ""}${detect ? `; detect report of ${detect.name} (${detect.shots.length} screenshots)` : ""} → ${relative(process.cwd(), out) || "."}\n`);
+  process.stdout.write(`snapshot of ${system.summary}; ${usage.length ? `usage map of ${usage[0]!.project}${shots ? ` with ${shots.screens.length} screens` : ""}` : "no usage map"}${inventory ? `; ${inventory.file} (+${inventory.files.length} chunks and stylesheets)` : ""}${detect ? `; detect report of ${detect.name} (${detect.shots.length} screenshots)` : ""}${discover ? `; Discover listings ${discover}` : ""} → ${relative(process.cwd(), out) || "."}\n`);
 }
 
 // Run as a script, not when a test imports readSource.

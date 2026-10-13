@@ -246,13 +246,36 @@ export interface Tile {
   readonly place: string;
   /** Its specimen's id in its project, which Try it asks the hub's server to bundle. */
   readonly specimenId?: string | null;
+  /** A bundle already built for it (a Discover preview): Try it runs this script instead of asking for one. */
+  readonly script?: string | null;
 }
 
-/** The `<html>` opening and `<head>` every specimen document shares: the hub's scheme, one stylesheet link. */
+/** Where the hub serves a frame's files from, as a CSP source: its origin (`http://localhost:5173`), or its scheme for a file. */
+function hubSource(css: string): string {
+  try {
+    const url = new URL(css, typeof document === "undefined" ? undefined : document.baseURI);
+    return url.protocol === "http:" || url.protocol === "https:" ? url.origin : url.protocol;
+  } catch {
+    return "'self'";
+  }
+}
+
+/**
+ * The policy every specimen frame (static, state strip, Try it, Discover preview) runs under:
+ * scripts, sheets and fonts from the hub only, images inline only, and no requests of its own,
+ * so outside code drawn in a frame (a Discover candidate) cannot send anything anywhere, and a
+ * `url()` in a sheet or style attribute fetches nothing.
+ */
+export function framePolicy(css: string): string {
+  const hub = hubSource(css);
+  return `default-src 'none'; script-src ${hub}; style-src ${hub} 'unsafe-inline'; font-src ${hub} data:; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'`;
+}
+
+/** The `<html>` opening and `<head>` every specimen document shares: its policy, the hub's scheme, one stylesheet link. */
 export function documentHead(css: string, scheme: Scheme): string {
   const escaped = css.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
   const dark = scheme === "dark";
-  return `<!doctype html><html lang="en"${dark ? ' class="dark"' : ""} data-theme="${scheme}" style="color-scheme:${scheme}"><head><meta charset="utf-8"><link rel="stylesheet" href="${escaped}">`;
+  return `<!doctype html><html lang="en"${dark ? ' class="dark"' : ""} data-theme="${scheme}" style="color-scheme:${scheme}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${framePolicy(css).replace(/"/g, "&quot;")}"><link rel="stylesheet" href="${escaped}">`;
 }
 
 /** The document a frame shows: static HTML and one stylesheet link, no script. */
@@ -505,6 +528,8 @@ interface SpecimenTileProps {
   onBlank?: () => void;
   /** Offer Try it on a component look: its own code, live, in a sandboxed frame. */
   tryIt?: boolean;
+  /** The box's own background, for a tile drawn in a scheme the hub is not in (a Discover preview's light and dark). */
+  backdrop?: string;
 }
 
 /**
@@ -513,14 +538,14 @@ interface SpecimenTileProps {
  * look can offer Try it: on click (and only then) its code is bundled by the hub's server and
  * the tile swaps to a live frame (try-live.tsx) until Done, Escape or scrolling away.
  */
-export function SpecimenTile({ tile, scheme, size = "small", as: Tag = "li", caption = true, className, onBlank, tryIt = false }: SpecimenTileProps) {
+export function SpecimenTile({ tile, scheme, size = "small", as: Tag = "li", caption = true, className, onBlank, tryIt = false, backdrop }: SpecimenTileProps) {
   const ref = useRef<HTMLElement>(null);
   const near = useNearViewport(ref);
   const visible = useInView(ref);
   const drawn = tile.specimen !== null && tile.css !== null;
   const mounted = useFrameBudget(drawn && near, visible);
   const height = size === "large" ? LARGE_TILE_HEIGHT : TILE_HEIGHT;
-  const tryable = tryIt && drawn && tile.specimen!.kind === "component" && !!tile.specimenId;
+  const tryable = tryIt && drawn && tile.specimen!.kind === "component" && (!!tile.specimenId || !!tile.script);
   const { state, start, ready, end, button } = useLive(near, ref);
   const [background, setBackground] = useState<string | undefined>(undefined);
   const staticFrame: ReactNode = !drawn ? <ShapeBox shape={tile.shape} tileHeight={height} /> : mounted ? <SpecimenFrame srcDoc={frameDocument(tile.specimen!.html, tile.css!, scheme)} scheme={scheme} near={near} height={height} onBlank={onBlank} onBackground={tryable ? setBackground : undefined} /> : near ? <ShapeBox shape={tile.shape} caption="waiting" tileHeight={height} /> : null;
@@ -529,10 +554,10 @@ export function SpecimenTile({ tile, scheme, size = "small", as: Tag = "li", cap
     <Tag ref={ref as RefObject<never>} className={clsx("min-w-0 space-y-1", className)} data-tile={tile.key} data-kind={drawn ? tile.specimen!.kind : "shape"} data-frame={drawn && near ? (mounted ? "mounted" : "waiting") : undefined} data-live={state.status !== "static" ? state.status : undefined}>
       {/* Try it and Done sit over the box's corner on a desk; on a phone, where a 44px button would cover the look, below it. */}
       <div className="relative">
-        <div className="relative overflow-hidden rounded-md border border-line bg-sunken" style={{ height }}>
+        <div className="relative overflow-hidden rounded-md border border-line bg-sunken" style={{ height, background: backdrop }}>
           {tryable && state.status !== "static" ? (
             <Suspense fallback={staticFrame}>
-              <LiveFrame project={tile.project} specimen={tile.specimenId!} html={tile.specimen!.html} css={tile.css!} scheme={scheme} height={height} background={background} fallback={staticFrame} onReady={ready} onEnd={() => (end(), button.current?.focus())} onFail={(sentence) => end(sentence)} />
+              <LiveFrame project={tile.project} specimen={tile.specimenId ?? ""} script={tile.script ?? null} html={tile.specimen!.html} css={tile.css!} scheme={scheme} height={height} background={background} fallback={staticFrame} onReady={ready} onEnd={() => (end(), button.current?.focus())} onFail={(sentence) => end(sentence)} />
             </Suspense>
           ) : (
             staticFrame

@@ -7,7 +7,7 @@ describe("navigation hierarchy", () => {
     const groups = navGroups().map((g) => ({ section: g.section, labels: g.items.map((i) => i.label) }));
     expect(groups).toEqual([
       { section: "system", labels: ["Overview", "Components", "Tokens", "Rules", "Screens"] },
-      { section: "library", labels: ["Browse", "Inventory", "Stack", "Sources"] },
+      { section: "library", labels: ["Browse", "Inventory", "Discover", "Stack", "Sources"] },
       { section: "work", labels: ["Style", "Changes"] },
     ]);
     expect(NAV_SECTIONS.system.hint).toMatch(/build with/);
@@ -24,6 +24,7 @@ describe("navigation hierarchy", () => {
     expect(active("/library")).toEqual(["Browse"]);
     expect(active("/library/sources")).toEqual(["Sources"]);
     expect(active("/library/stack")).toEqual(["Stack"]);
+    expect(active("/discover")).toEqual(["Discover"]);
     expect(active("/elements/demo/component/button")).toEqual(["Components"]);
     expect(active("/")).toEqual(["Overview"]);
     expect(active("/style/draft/d-0123456789")).toEqual(["Style"]);

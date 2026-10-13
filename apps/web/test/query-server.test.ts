@@ -79,6 +79,28 @@ describe("/__youi/query", () => {
     expect(await ok("/__youi/query?kind=discover&q=command&limit=500")).toMatchObject({ limit: 100 });
   });
 
+  test("discover facets: licence known or unknown, headless or styled, on a need and when browsing", async () => {
+    const licences = (body: Record<string, unknown>) => (body.hits as Array<{ license: string }>).map((h) => h.license);
+    for (const q of ["&q=command", ""]) {
+      const known = await ok(`/__youi/query?kind=discover${q}&licence=known&limit=100`);
+      const unknown = await ok(`/__youi/query?kind=discover${q}&licence=unknown&limit=100`);
+      expect(licences(known).length, q).toBeGreaterThan(0);
+      expect(licences(known).every((l) => l !== "unknown"), q).toBe(true);
+      expect(licences(unknown).length, q).toBeGreaterThan(0);
+      expect(licences(unknown).every((l) => l === "unknown"), q).toBe(true);
+    }
+    const names = (body: Record<string, unknown>) => (body.hits as Array<{ name: string }>).map((h) => h.name);
+    const all = await ok("/__youi/query?kind=discover&q=toast&limit=100");
+    const headless = await ok("/__youi/query?kind=discover&q=toast&style=headless&limit=100");
+    const styled = await ok("/__youi/query?kind=discover&q=toast&style=styled&limit=100");
+    expect(names(headless)).toContain("@radix-ui/react-toast");
+    expect(names(styled)).not.toContain("@radix-ui/react-toast");
+    expect(headless.matched as number + (styled.matched as number)).toBe(all.matched);
+    // Every result card has what it needs: licence, signals and the install command.
+    const command = (await ok("/__youi/query?kind=discover&q=command%20menu&limit=5")).hits as Array<{ id: string; license: string; signals: { via?: { package: string; weeklyDownloads: number } }; install: { command: string } | null }>;
+    expect(command.find((h) => h.id === "lib:shadcn/component/command")).toMatchObject({ license: "MIT", signals: { via: { package: "cmdk", weeklyDownloads: 41566267 } }, install: { command: "npx shadcn add command" } });
+  });
+
   test("history, families and looks page through the inventory runs", async () => {
     const history = await ok("/__youi/query?kind=history&limit=2");
     expect((history.rows as Array<{ project: string; scannedAt: string }>).map((r) => [r.project, r.scannedAt.slice(0, 10)])).toEqual([["console", "2026-10-12"], ["site", "2026-10-12"]]);

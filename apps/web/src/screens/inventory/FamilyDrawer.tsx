@@ -4,18 +4,26 @@
  * file:line, routes); Variants draws each distinct specimen, or (States) each one default, hover,
  * focus, pressed and disabled side by side; Code shows their HTML. It loads
  * the family's chunk in each of its projects, so every use is listed even under a project filter.
+ * Find alternatives opens Discover with this family pinned, to compare outside candidates beside it.
  */
+import { Compass } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
+import { Link } from "wouter";
 import type { Scheme } from "../../app/theme.tsx";
 import { useParts, type InventorySource } from "../../data/inventory-source.ts";
+import { discoverRole, queryToSearch, EMPTY_QUERY } from "../../data/discover.ts";
 import { usageRows, type FamilyView } from "../../data/inventory-view.ts";
 import type { InventoryChunk } from "../../data/types.ts";
+import { Button } from "../../ui/Button.tsx";
 import { CodeBlock } from "../../ui/CodeBlock.tsx";
 import { Segmented } from "../../ui/Segmented.tsx";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../ui/Tabs.tsx";
 import { familyTiles } from "./family-tiles.ts";
 import { Sheet, useWide } from "./Sheet.tsx";
 import { ScrollRoot, StateStrip, TileGrid, type Tile } from "./Specimens.tsx";
+
+/** Discover with this family pinned and its role chosen: outside candidates to compare beside it. */
+export const alternativesHref = (family: { id: string; role: string }): string => `/discover${queryToSearch({ ...EMPTY_QUERY, family: family.id, role: discoverRole(family.role) })}`;
 
 /** Code shows this many specimens' HTML; the rest are counted. */
 const CODE_LIMIT = 12;
@@ -55,6 +63,14 @@ function FamilyDetail({ view, source, scheme }: { view: FamilyView; source: Inve
   if (failed?.status === "error") return <p className="px-5 py-4 text-small text-danger">{failed.message}</p>;
   return (
     <Tabs defaultValue="usage" className="flex min-h-0 flex-col">
+      <div className="flex items-center gap-2 px-5 pb-2">
+        <Button size="sm" asChild className="max-md:h-11">
+          <Link href={alternativesHref(view.family)} data-find-alternatives={view.family.id}>
+            <Compass /> Find alternatives
+          </Link>
+        </Button>
+        <span className="text-caption text-muted">Outside candidates, compared beside this one.</span>
+      </div>
       <TabsList className="px-5 max-md:h-12">
         <TabsTrigger value="usage" count={ready ? rows.length : undefined}>
           Usage

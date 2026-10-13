@@ -1,0 +1,305 @@
+/**
+ * Discover: UI components from outside (shadcn registries and npm), found by need, previewed in
+ * the user's own theme, compared with what the project already builds, and saved or put up for
+ * adoption as drafts for a person to approve. Never downloaded wholesale, never installed:
+ *
+ *   1. Search reads listings only: /__youi/query on the hub's own server (the local index,
+ *      paged and faceted), or on a static host the snapshot's listings, searched in memory.
+ *   2. Opening a result is the one step that fetches anything: only that item's source, bundled
+ *      by the hub's server and drawn in a sandboxed frame with the project's CSS (candidate.tsx).
+ *   3. From an Inventory family (Find alternatives) the family is pinned, and every opened
+ *      candidate gets a compare card beside it (PinnedCompare).
+ *
+ * The query, the facets, the pinned family and the open candidate live in the URL. The page
+ * paints from nothing but its own shell (search, facets, result cards); listings arrive after.
+ * What exists only once something is opened or pinned (the drawer, the specimen tiles, the
+ * sandboxed frames, the compare cards) is its own chunk (Opened.tsx), and its frames mount only
+ * near the screen.
+ */
+import { clsx } from "clsx";
+import { ArrowLeft, ArrowRight, Compass } from "lucide-react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useSearch } from "wouter";
+import { useTheme } from "../../app/theme.tsx";
+import { PAGE_SIZE, parseQuery, queryToSearch, searchDiscover, signalLines, sourceOf, type DiscoverHit, type DiscoverPage, type DiscoverQuery } from "../../data/discover.ts";
+import type { InventorySource } from "../../data/inventory-source.ts";
+import type { Resource } from "../../data/store.ts";
+import { Badge } from "../../ui/Badge.tsx";
+import { Button } from "../../ui/Button.tsx";
+import { CopyButton } from "../../ui/CopyButton.tsx";
+import { EmptyState } from "../../ui/EmptyState.tsx";
+import { PaneHeader } from "../../ui/Pane.tsx";
+import { SearchField } from "../../ui/SearchField.tsx";
+import { LicenceBadge } from "./LicenceBadge.tsx";
+
+/** The parts that exist once something is opened or pinned: one chunk, fetched then and not before. */
+const loadOpened = () => import("./Opened.tsx");
+const PinnedSection = lazy(() => loadOpened().then((m) => ({ default: m.PinnedSection })));
+const CandidateLayer = lazy(() => loadOpened().then((m) => ({ default: m.CandidateLayer })));
+
+/** Needs to start from, when the field is empty. */
+const SUGGESTIONS = ["command menu", "date picker", "toast", "dialog", "tabs"];
+const TYPING_MS = 250;
+const ROLE_FACETS = 12;
+
+type Loaded = { status: "loading" } | { status: "ready"; page: DiscoverPage } | { status: "error"; message: string };
+
+/** One page of listings for the query (its search part only; the open candidate and the pin do not search again). */
+function useListings(query: DiscoverQuery): Loaded {
+  const [state, setState] = useState<Loaded>({ status: "loading" });
+  const key = queryToSearch({ ...query, open: null, family: null });
+  useEffect(() => {
+    const controller = new AbortController();
+    setState((s) => (s.status === "ready" ? s : { status: "loading" }));
+    searchDiscover(query, { signal: controller.signal }).then(
+      (page) => setState({ status: "ready", page }),
+      (error: unknown) => !controller.signal.aborted && setState({ status: "error", message: error instanceof Error ? error.message : String(error) }),
+    );
+    return () => controller.abort();
+    // The key is the query's search part.
+  }, [key]);
+  return state;
+}
+
+export function DiscoverScreen() {
+  return <DiscoverView />;
+}
+
+/** The page; a pinned family is read from `inventory` (a test's), else from the snapshot's, loaded only when a family is pinned. */
+export function DiscoverView({ inventory }: { inventory?: Resource<InventorySource | null> }) {
+  const search = useSearch();
+  const [path, navigate] = useLocation();
+  const query = useMemo(() => parseQuery(search), [search]);
+  const setQuery = useCallback((next: DiscoverQuery) => navigate(`${path}${queryToSearch(next)}`, { replace: true }), [path, navigate]);
+  const { scheme } = useTheme();
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+
+  // The field types freely; the URL (and the search) follows once typing pauses.
+  const [typed, setTyped] = useState(query.q);
+  const latest = useRef(query);
+  latest.current = query;
+  useEffect(() => setTyped(query.q), [query.q]);
+  useEffect(() => {
+    if (typed === latest.current.q) return;
+    const timer = setTimeout(() => setQuery({ ...latest.current, q: typed, offset: 0 }), TYPING_MS);
+    return () => clearTimeout(timer);
+  }, [typed, setQuery]);
+
+  const listings = useListings(query);
+  const page = listings.status === "ready" ? listings.page : null;
+
+  // Every listing seen this visit, so an open candidate stays open across pages and searches.
+  const seen = useRef(new Map<string, DiscoverHit>());
+  for (const hit of page?.hits ?? []) seen.current.set(hit.id, hit);
+  const [opened, setOpened] = useState<string[]>(() => (query.open ? [query.open] : []));
+  // The project candidates are drawn in: the pinned family's, else the hub's first (the server's choice).
+  const [project, setProject] = useState<string | null>(null);
+  const open = (hit: DiscoverHit): void => {
+    seen.current.set(hit.id, hit);
+    setOpened((list) => (list.includes(hit.id) ? list : [...list, hit.id]));
+    setQuery({ ...query, open: hit.id });
+  };
+  const openHit = query.open ? (seen.current.get(query.open) ?? null) : null;
+  const closeHit = useCallback(() => setQuery({ ...latest.current, open: null }), [setQuery]);
+
+  const set = (patch: Partial<DiscoverQuery>): void => setQuery({ ...query, ...patch, offset: 0, open: null });
+
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-screen="discover">
+      <PaneHeader title="Discover" count={page?.matched}>
+        <Badge tone="outline">Outside references · not built with</Badge>
+      </PaneHeader>
+      <div ref={setScroller} className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto max-w-6xl space-y-6 px-6 py-6 max-sm:space-y-4 max-sm:px-4">
+            <div className="space-y-2">
+              <SearchField value={typed} onChange={setTyped} placeholder="Search by need: command menu, date picker, toast…" label="Search by need" touch className="max-w-2xl" />
+              {!query.q && (
+                <div className="flex flex-wrap items-center gap-1.5 text-small text-muted">
+                  <span>Try</span>
+                  {SUGGESTIONS.map((need) => (
+                    <button key={need} type="button" onClick={() => setTyped(need)} className="rounded-sm border border-line px-2 py-0.5 text-ink-2 hover:bg-raised max-md:py-2.5">
+                      {need}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {query.family && (
+              <Suspense fallback={<p className="text-small text-faint">Loading the pinned family…</p>}>
+                <PinnedSection id={query.family} opened={opened} scheme={scheme} role={query.role} inventory={inventory} scroller={scroller} onClear={() => set({ family: null })} onProject={setProject} />
+              </Suspense>
+            )}
+
+            <div className="grid gap-6 md:grid-cols-[13rem_minmax(0,1fr)]">
+              <Facets query={query} page={page} onChange={set} />
+              <section aria-labelledby="discover-results" className="min-w-0 space-y-3">
+                <h2 id="discover-results" className="sr-only">
+                  Results
+                </h2>
+                <Results listings={listings} query={query} onOpen={open} onPage={(offset) => setQuery({ ...query, offset, open: null })} />
+              </section>
+            </div>
+
+          </div>
+      </div>
+      {(opened.length > 0 || openHit) && (
+        <Suspense fallback={null}>
+          <CandidateLayer openHit={openHit} opened={opened} project={query.family ? project : null} scheme={scheme} family={query.family} onClose={closeHit} />
+        </Suspense>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------------ facets */
+
+function FacetGroup({ label, value, options, onChange, disabled }: { label: string; value: string | null; options: ReadonlyArray<{ value: string; label: string; count: number | null }>; onChange: (value: string | null) => void; disabled?: string }) {
+  return (
+    <fieldset className="min-w-0 space-y-1" disabled={disabled !== undefined}>
+      <legend className="mb-1 text-caption font-medium tracking-wide text-muted uppercase">{label}</legend>
+      {disabled !== undefined ? (
+        <p className="text-small text-faint">{disabled}</p>
+      ) : (
+        <ul className="flex flex-col gap-0.5 max-md:flex-row max-md:flex-wrap">
+          {[{ value: "", label: "Any", count: null }, ...options].map((option) => {
+            const active = (value ?? "") === option.value;
+            return (
+              <li key={option.value || "any"}>
+                <button
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => onChange(option.value || null)}
+                  className={clsx("flex w-full min-w-0 items-center gap-2 rounded-sm px-2 py-1 text-left text-small max-md:h-11 max-md:w-auto max-md:border max-md:border-line", active ? "bg-accent-soft text-accent" : "text-ink-2 hover:bg-raised")}
+                >
+                  <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                  {option.count !== null && <span className="tabular text-caption text-faint">{option.count}</span>}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </fieldset>
+  );
+}
+
+function Facets({ query, page, onChange }: { query: DiscoverQuery; page: DiscoverPage | null; onChange: (patch: Partial<DiscoverQuery>) => void }) {
+  const facets = page?.facets ?? { role: {}, source: {}, licence: {}, style: {} };
+  const entries = (record: Readonly<Record<string, number>>) => Object.entries(record);
+  const keep = (list: Array<{ value: string; label: string; count: number | null }>, selected: string | null) => (selected && !list.some((o) => o.value === selected) ? [...list, { value: selected, label: selected.replace(/-/g, " "), count: null }] : list);
+  const unknown = facets.licence.unknown ?? 0;
+  const known = entries(facets.licence).reduce((n, [k, c]) => n + (k === "unknown" ? 0 : c), 0);
+  return (
+    <aside aria-label="Facets" className="space-y-4 max-md:space-y-3" data-facets>
+      <FacetGroup label="Role" value={query.role} onChange={(role) => onChange({ role })} options={keep(entries(facets.role).slice(0, ROLE_FACETS).map(([value, count]) => ({ value, label: value.replace(/-/g, " "), count })), query.role)} />
+      <FacetGroup label="Source" value={query.source} onChange={(source) => onChange({ source })} options={keep(entries(facets.source).map(([value, count]) => ({ value, label: value, count })), query.source)} />
+      <FacetGroup
+        label="Licence"
+        value={query.licence}
+        onChange={(licence) => onChange({ licence: licence as DiscoverQuery["licence"] })}
+        options={[
+          { value: "known", label: "Known", count: page ? known : null },
+          { value: "unknown", label: "Unknown", count: page ? unknown : null },
+        ]}
+      />
+      <FacetGroup
+        label="Style"
+        value={query.style}
+        onChange={(style) => onChange({ style: style as DiscoverQuery["style"] })}
+        options={[
+          { value: "headless", label: "Headless", count: page ? (facets.style.headless ?? 0) : null },
+          { value: "styled", label: "Styled", count: page ? (facets.style.styled ?? 0) : null },
+        ]}
+      />
+      <FacetGroup label="Seen on" value={null} onChange={() => undefined} options={[]} disabled="Later: which sites you know use it." />
+    </aside>
+  );
+}
+
+/* ----------------------------------------------------------------------- results */
+
+function Results({ listings, query, onOpen, onPage }: { listings: ReturnType<typeof useListings>; query: DiscoverQuery; onOpen: (hit: DiscoverHit) => void; onPage: (offset: number) => void }) {
+  if (listings.status === "loading")
+    return (
+      <p aria-busy="true" className="text-small text-faint">
+        Searching the listings…
+      </p>
+    );
+  if (listings.status === "error")
+    return (
+      <EmptyState icon={Compass} title="No listings to search">
+        {listings.message}
+      </EmptyState>
+    );
+  const { page } = listings;
+  if (page.hits.length === 0)
+    return (
+      <EmptyState icon={Compass} title={query.q ? `Nothing for “${query.q}”` : "No listings match"}>
+        Try another need, or loosen a facet.
+      </EmptyState>
+    );
+  const last = Math.min(page.offset + page.hits.length, page.matched);
+  return (
+    <>
+      <p className="text-small text-muted" data-results-summary>
+        {query.q ? `For “${query.q}”: ` : "Browsing, official first: "}
+        {page.offset + 1}–{last} of {page.matched}
+        {page.from === "snapshot" ? ` · from this snapshot's listings${page.capped ? " (the first of more)" : ""}` : ""}
+      </p>
+      <ul className="grid gap-3 lg:grid-cols-2" aria-label="Candidates">
+        {page.hits.map((hit) => (
+          <ResultCard key={hit.id} hit={hit} onOpen={onOpen} />
+        ))}
+      </ul>
+      {(page.offset > 0 || last < page.matched) && (
+        <nav aria-label="Pages" className="flex items-center gap-2">
+          <Button disabled={page.offset === 0} onClick={() => onPage(Math.max(0, page.offset - PAGE_SIZE))} className="max-md:h-11">
+            <ArrowLeft /> Previous
+          </Button>
+          <Button disabled={last >= page.matched} onClick={() => onPage(page.offset + PAGE_SIZE)} className="max-md:h-11">
+            Next <ArrowRight />
+          </Button>
+        </nav>
+      )}
+    </>
+  );
+}
+
+function ResultCard({ hit, onOpen }: { hit: DiscoverHit; onOpen: (hit: DiscoverHit) => void }) {
+  const signals = signalLines(hit);
+  return (
+    <li className="flex min-w-0 flex-col gap-2 rounded-lg border border-line bg-surface p-3" data-hit={hit.id}>
+      <div className="flex min-w-0 items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-body font-medium text-ink">{hit.title ?? hit.name}</h3>
+          <p className="truncate font-mono text-mono-sm text-muted">{hit.source.ref ?? hit.name}</p>
+        </div>
+        <LicenceBadge licence={hit.license} />
+      </div>
+      <p className="line-clamp-2 text-small text-ink-2">{hit.summary}</p>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-muted">
+        <span>{sourceOf(hit)}</span>
+        {signals.map((s) => (
+          <span key={s} className="tabular" data-signal>
+            {s}
+          </span>
+        ))}
+      </div>
+      {hit.install && (
+        <div className="flex min-w-0 items-center gap-1 rounded-md bg-sunken px-2 py-0.5">
+          <code className="min-w-0 flex-1 truncate font-mono text-mono-sm text-ink-2" data-install>
+            {hit.install.command}
+          </code>
+          <CopyButton value={hit.install.command} label={`Copy install command for ${hit.name}`} className="max-md:size-11" />
+        </div>
+      )}
+      <div className="flex items-center gap-2">
+        <Button size="sm" onClick={() => onOpen(hit)} className="max-md:h-11" aria-label={`Preview ${hit.title ?? hit.name} in your theme`} data-open={hit.id}>
+          Preview in your theme
+        </Button>
+      </div>
+    </li>
+  );
+}
+

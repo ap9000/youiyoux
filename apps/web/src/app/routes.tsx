@@ -1,5 +1,5 @@
 /** Route table: every screen is its own chunk, preloaded on hover/focus and on idle after first paint. */
-import { Boxes, LayoutGrid, Layers, Library, type LucideIcon, Monitor, Paintbrush, Palette, PlugZap, Scale, ScanSearch, GitPullRequestArrow } from "lucide-react";
+import { Boxes, Compass, LayoutGrid, Layers, Library, type LucideIcon, Monitor, Paintbrush, Palette, PlugZap, Scale, ScanSearch, GitPullRequestArrow } from "lucide-react";
 import { type ComponentType, createElement } from "react";
 
 /**
@@ -44,6 +44,7 @@ const library = preloadable(() => import("../screens/library/LibraryScreen.tsx")
 const stack = preloadable(() => import("../screens/stack/StackScreen.tsx"), (m) => m.StackScreen);
 const changes = preloadable(() => import("../screens/changes/ChangesScreen.tsx"), (m) => m.ChangesScreen);
 const inventory = preloadable(() => import("../screens/inventory/InventoryScreen.tsx"), (m) => m.InventoryScreen);
+const discover = preloadable(() => import("../screens/discover/DiscoverScreen.tsx"), (m) => m.DiscoverScreen);
 const style = preloadable(() => import("../screens/style/StyleScreen.tsx"), (m) => m.StyleScreen);
 const loadStubs = () => import("../screens/stubs/StubScreens.tsx");
 const sources = preloadable(loadStubs, (m) => m.SourcesScreen);
@@ -60,6 +61,7 @@ export const RulesScreen = rules.Component;
 export const SourcesScreen = sources.Component;
 export const ChangesScreen = changes.Component;
 export const InventoryScreen = inventory.Component;
+export const DiscoverScreen = discover.Component;
 export const StyleScreen = style.Component;
 export const AccessScreen = access.Component;
 export const NotFoundScreen = notFound.Component;
@@ -74,6 +76,7 @@ const loaders = {
   stack: stack.preload,
   changes: changes.preload,
   inventory: inventory.preload,
+  discover: discover.preload,
   style: style.preload,
   stubs: () => Promise.all([sources, access, notFound].map((s) => s.preload())).then(() => undefined),
 } as const;
@@ -109,6 +112,7 @@ export const NAV: readonly NavItem[] = [
   { href: "/screens", label: "Screens", icon: Monitor, key: "s", loader: "screens", section: "system" },
   { href: "/library", label: "Browse", icon: Library, key: "l", loader: "library", section: "library" },
   { href: "/inventory", label: "Inventory", icon: ScanSearch, key: "v", loader: "inventory", section: "library" },
+  { href: "/discover", label: "Discover", icon: Compass, key: "f", loader: "discover", section: "library" },
   { href: "/library/stack", label: "Stack", icon: Layers, key: "d", loader: "stack", section: "library" },
   { href: "/library/sources", label: "Sources", icon: PlugZap, key: "i", loader: "stubs", section: "library" },
   { href: "/style", label: "Style", icon: Paintbrush, key: "e", loader: "style", section: "work" },

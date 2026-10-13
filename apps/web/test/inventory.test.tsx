@@ -738,7 +738,7 @@ describe("state strips: default, hover, focus, pressed and disabled side by side
 
   test("the strip document: one stylesheet, no script, five cells forcing each state by class, the disabled cell by attribute", () => {
     const doc = stateStripDocument('<button class="b">Save</button><a class="l" href="#">Docs</a>', "/s.css", "dark");
-    expect(doc).toMatch(/^<!doctype html><html lang="en" class="dark" data-theme="dark" style="color-scheme:dark"><head><meta charset="utf-8"><link rel="stylesheet" href="\/s\.css"><\/head>/);
+    expect(doc).toMatch(/^<!doctype html><html lang="en" class="dark" data-theme="dark" style="color-scheme:dark"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none';[^"]*connect-src 'none'[^"]*"><link rel="stylesheet" href="\/s\.css"><\/head>/);
     expect(doc).not.toMatch(/<script/i);
     const cells = [...new DOMParser().parseFromString(doc, "text/html").querySelectorAll<HTMLElement>("[data-youi-state]")];
     expect(cells.map((c) => [c.dataset.youiState, c.className])).toEqual(STATES.map((s) => [s.id, `youi-state-cell${s.className ? ` ${s.className}` : ""}`]));

@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import type { Plugin } from "vite";
 import { defineConfig } from "vitest/config";
+import { discoverPreviewMiddleware } from "./scripts/discover-preview-server.ts";
 import { queryMiddleware } from "./scripts/query-server.ts";
 import { tryIndexDeny, tryMiddleware } from "./scripts/try-server.ts";
 
@@ -80,8 +81,25 @@ function query(): Plugin {
   };
 }
 
+/**
+ * Discover previews (scripts/discover-preview-server.ts): one opened candidate fetched, bundled and
+ * drawn in the project's theme, on request; localhost only. A static host has none: Discover then
+ * lists candidates from the snapshot's JSON without drawing them.
+ */
+function discoverPreview(): Plugin {
+  return {
+    name: "youiyoux-discover-preview",
+    configureServer(server) {
+      server.middlewares.use(discoverPreviewMiddleware(snapshot, server.config.base));
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(discoverPreviewMiddleware(snapshot, server.config.base));
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss(), snapshotFiles(), tryIt(), query()],
+  plugins: [react(), tailwindcss(), snapshotFiles(), tryIt(), query(), discoverPreview()],
   resolve: { alias: { "@snapshot": snapshot } },
   // A system's demos may use any of the hub's UI packages. Pre-bundled up front, so the preview
   // frame's first visit to such a demo never makes the dev server re-optimize and reload mid-render.

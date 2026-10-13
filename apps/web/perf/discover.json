@@ -1,0 +1,520 @@
+{
+  "measuredAt": "2026-10-13T04:01:56.921Z",
+  "runs": 5,
+  "url": "/discover?q=command%20menu",
+  "bounds": {
+    "time": "≤ 1.5× smallest + 16 ms (median)",
+    "routeKb": "≤ 150 KB (perf/budget.json initialKb)",
+    "lazy": "0 preview requests, frames, tiles and cache writes with nothing opened"
+  },
+  "route": {
+    "totalKb": 143.7,
+    "files": [
+      {
+        "path": "/discover",
+        "kb": 0.7
+      },
+      {
+        "path": "/assets/react-DB-4Zxce.js",
+        "kb": 3.2
+      },
+      {
+        "path": "/assets/main-CBBYgyo4.js",
+        "kb": 15.8
+      },
+      {
+        "path": "/assets/createLucideIcon-CGDJWtKO.js",
+        "kb": 1.4
+      },
+      {
+        "path": "/assets/jsx-runtime-D6zNwnaE.js",
+        "kb": 64
+      },
+      {
+        "path": "/assets/boxes-D2sPU4Jf.js",
+        "kb": 0.4
+      },
+      {
+        "path": "/assets/compass-BkKOZPYe.js",
+        "kb": 0.2
+      },
+      {
+        "path": "/assets/git-pull-request-arrow-RqUUIRCU.js",
+        "kb": 0.3
+      },
+      {
+        "path": "/assets/main-CxurAm8Q.css",
+        "kb": 11
+      },
+      {
+        "path": "/assets/layers-DfzdK_wG.js",
+        "kb": 0.3
+      },
+      {
+        "path": "/assets/clsx-DB0hHKMi.js",
+        "kb": 0.2
+      },
+      {
+        "path": "/assets/dist-BogNzeK9.js",
+        "kb": 0.4
+      },
+      {
+        "path": "/data/manifest.json",
+        "kb": 0.5
+      },
+      {
+        "path": "/assets/DiscoverScreen-_78bJSXZ.js",
+        "kb": 3.9
+      },
+      {
+        "path": "/assets/arrow-right-DcbNDzqs.js",
+        "kb": 0.2
+      },
+      {
+        "path": "/assets/CopyButton-DE8drl4P.js",
+        "kb": 0.7
+      },
+      {
+        "path": "/assets/Badge-CJ0N4XCz.js",
+        "kb": 0.5
+      },
+      {
+        "path": "/assets/SearchField-DwvhBli2.js",
+        "kb": 0.7
+      },
+      {
+        "path": "/assets/x-MLbFVa4v.js",
+        "kb": 0.2
+      },
+      {
+        "path": "/assets/discover-DSviAt_i.js",
+        "kb": 1.7
+      },
+      {
+        "path": "/data/demo.catalog.313ae68c4d.json",
+        "kb": 8.2
+      },
+      {
+        "path": "/assets/geist-latin-core-vkBVTr4s.woff2",
+        "kb": 16.5
+      },
+      {
+        "path": "/assets/geist-mono-latin-core-DccGGzmg.woff2",
+        "kb": 12.7
+      }
+    ]
+  },
+  "summary": [
+    {
+      "listings": 40,
+      "requestsBeforeShell": 24,
+      "bytesBeforeShell": 160950,
+      "shellPaintMs": 173.2,
+      "resultsPaintMs": 173.2,
+      "fcpMs": 188,
+      "hits": 7,
+      "previewRequests": 0,
+      "frames": 0,
+      "tiles": 0,
+      "cacheWrites": []
+    },
+    {
+      "listings": 5000,
+      "requestsBeforeShell": 24,
+      "bytesBeforeShell": 160952,
+      "shellPaintMs": 172.9,
+      "resultsPaintMs": 173,
+      "fcpMs": 188,
+      "hits": 7,
+      "previewRequests": 0,
+      "frames": 0,
+      "tiles": 0,
+      "cacheWrites": []
+    }
+  ],
+  "raw": [
+    {
+      "listings": 40,
+      "runs": [
+        {
+          "shellPaintMs": 178.8,
+          "resultsPaintMs": 178.8,
+          "fcpMs": 192,
+          "requests": 24,
+          "bytes": 160950,
+          "paths": [
+            "/discover",
+            "/assets/react-DB-4Zxce.js",
+            "/assets/main-CBBYgyo4.js",
+            "/assets/createLucideIcon-CGDJWtKO.js",
+            "/assets/jsx-runtime-D6zNwnaE.js",
+            "/assets/boxes-D2sPU4Jf.js",
+            "/assets/compass-BkKOZPYe.js",
+            "/assets/git-pull-request-arrow-RqUUIRCU.js",
+            "/assets/main-CxurAm8Q.css",
+            "/assets/layers-DfzdK_wG.js",
+            "/assets/clsx-DB0hHKMi.js",
+            "/assets/dist-BogNzeK9.js",
+            "/data/manifest.json",
+            "/assets/DiscoverScreen-_78bJSXZ.js",
+            "/assets/arrow-right-DcbNDzqs.js",
+            "/assets/CopyButton-DE8drl4P.js",
+            "/assets/Badge-CJ0N4XCz.js",
+            "/assets/SearchField-DwvhBli2.js",
+            "/assets/x-MLbFVa4v.js",
+            "/assets/discover-DSviAt_i.js",
+            "/data/demo.catalog.313ae68c4d.json",
+            "/__youi/query",
+            "/assets/geist-latin-core-vkBVTr4s.woff2",
+            "/assets/geist-mono-latin-core-DccGGzmg.woff2"
+          ],
+          "previewRequests": 0,
+          "frames": 0,
+          "tiles": 0,
+          "hits": 7
+        },
+        {
+          "shellPaintMs": 179.1,
+          "resultsPaintMs": 179.1,
+          "fcpMs": 196,
+          "requests": 24,
+          "bytes": 160950,
+          "paths": [
+            "/discover",
+            "/assets/main-CBBYgyo4.js",
+            "/assets/react-DB-4Zxce.js",
+            "/assets/boxes-D2sPU4Jf.js",
+            "/assets/createLucideIcon-CGDJWtKO.js",
+            "/assets/compass-BkKOZPYe.js",
+            "/assets/jsx-runtime-D6zNwnaE.js",
+            "/assets/git-pull-request-arrow-RqUUIRCU.js",
+            "/assets/layers-DfzdK_wG.js",
+            "/assets/clsx-DB0hHKMi.js",
+            "/assets/dist-BogNzeK9.js",
+            "/assets/main-CxurAm8Q.css",
+            "/data/manifest.json",
+            "/assets/arrow-right-DcbNDzqs.js",
+            "/assets/DiscoverScreen-_78bJSXZ.js",
+            "/assets/Badge-CJ0N4XCz.js",
+            "/assets/CopyButton-DE8drl4P.js",
+            "/assets/SearchField-DwvhBli2.js",
+            "/assets/x-MLbFVa4v.js",
+            "/assets/discover-DSviAt_i.js",
+            "/data/demo.catalog.313ae68c4d.json",
+            "/__youi/query",
+            "/assets/geist-latin-core-vkBVTr4s.woff2",
+            "/assets/geist-mono-latin-core-DccGGzmg.woff2"
+          ],
+          "previewRequests": 0,
+          "frames": 0,
+          "tiles": 0,
+          "hits": 7
+        },
+        {
+          "shellPaintMs": 173.2,
+          "resultsPaintMs": 173.2,
+          "fcpMs": 188,
+          "requests": 24,
+          "bytes": 160950,
+          "paths": [
+            "/discover",
+            "/assets/main-CBBYgyo4.js",
+            "/assets/react-DB-4Zxce.js",
+            "/assets/jsx-runtime-D6zNwnaE.js",
+            "/assets/createLucideIcon-CGDJWtKO.js",
+            "/assets/boxes-D2sPU4Jf.js",
+            "/assets/compass-BkKOZPYe.js",
+            "/assets/git-pull-request-arrow-RqUUIRCU.js",
+            "/assets/clsx-DB0hHKMi.js",
+            "/assets/layers-DfzdK_wG.js",
+            "/assets/dist-BogNzeK9.js",
+            "/assets/main-CxurAm8Q.css",
+            "/data/manifest.json",
+            "/assets/DiscoverScreen-_78bJSXZ.js",
+            "/assets/arrow-right-DcbNDzqs.js",
+            "/assets/Badge-CJ0N4XCz.js",
+            "/assets/CopyButton-DE8drl4P.js",
+            "/assets/SearchField-DwvhBli2.js",
+            "/assets/x-MLbFVa4v.js",
+            "/assets/discover-DSviAt_i.js",
+            "/data/demo.catalog.313ae68c4d.json",
+            "/__youi/query",
+            "/assets/geist-latin-core-vkBVTr4s.woff2",
+            "/assets/geist-mono-latin-core-DccGGzmg.woff2"
+          ],
+          "previewRequests": 0,
+          "frames": 0,
+          "tiles": 0,
+          "hits": 7
+        },
+        {
+          "shellPaintMs": 170.4,
+          "resultsPaintMs": 170.4,
+          "fcpMs": 184,
+          "requests": 24,
+          "bytes": 160950,
+          "paths": [
+            "/discover",
+            "/assets/main-CBBYgyo4.js",
+            "/assets/react-DB-4Zxce.js",
+            "/assets/jsx-runtime-D6zNwnaE.js",
+            "/assets/boxes-D2sPU4Jf.js",
+            "/assets/createLucideIcon-CGDJWtKO.js",
+            "/assets/compass-BkKOZPYe.js",
+            "/assets/git-pull-request-arrow-RqUUIRCU.js",
+            "/assets/layers-DfzdK_wG.js",
+            "/assets/clsx-DB0hHKMi.js",
+            "/assets/dist-BogNzeK9.js",
+            "/assets/main-CxurAm8Q.css",
+            "/data/manifest.json",
+            "/assets/DiscoverScreen-_78bJSXZ.js",
+            "/assets/arrow-right-DcbNDzqs.js",
+            "/assets/CopyButton-DE8drl4P.js",
+            "/assets/Badge-CJ0N4XCz.js",
+            "/assets/SearchField-DwvhBli2.js",
+            "/assets/x-MLbFVa4v.js",
+            "/assets/discover-DSviAt_i.js",
+            "/data/demo.catalog.313ae68c4d.json",
+            "/__youi/query",
+            "/assets/geist-latin-core-vkBVTr4s.woff2",
+            "/assets/geist-mono-latin-core-DccGGzmg.woff2"
+          ],
+          "previewRequests": 0,
+          "frames": 0,
+          "tiles": 0,
+          "hits": 7
+        },
+        {
+          "shellPaintMs": 171.5,
+          "resultsPaintMs": 171.5,
+          "fcpMs": 184,
+          "requests": 24,
+          "bytes": 160950,
+          "paths": [
+            "/discover",
+            "/assets/main-CBBYgyo4.js",
+            "/assets/react-DB-4Zxce.js",
+            "/assets/jsx-runtime-D6zNwnaE.js",
+            "/assets/createLucideIcon-CGDJWtKO.js",
+            "/assets/boxes-D2sPU4Jf.js",
+            "/assets/compass-BkKOZPYe.js",
+            "/assets/git-pull-request-arrow-RqUUIRCU.js",
+            "/assets/layers-DfzdK_wG.js",
+            "/assets/main-CxurAm8Q.css",
+            "/assets/clsx-DB0hHKMi.js",
+            "/assets/dist-BogNzeK9.js",
+            "/data/manifest.json",
+            "/assets/arrow-right-DcbNDzqs.js",
+            "/assets/DiscoverScreen-_78bJSXZ.js",
+            "/assets/Badge-CJ0N4XCz.js",
+            "/assets/CopyButton-DE8drl4P.js",
+            "/assets/SearchField-DwvhBli2.js",
+            "/assets/x-MLbFVa4v.js",
+            "/assets/discover-DSviAt_i.js",
+            "/data/demo.catalog.313ae68c4d.json",
+            "/__youi/query",
+            "/assets/geist-latin-core-vkBVTr4s.woff2",
+            "/assets/geist-mono-latin-core-DccGGzmg.woff2"
+          ],
+          "previewRequests": 0,
+          "frames": 0,
+          "tiles": 0,
+          "hits": 7
+        }
+      ],
+      "cacheWrites": []
+    },
+    {
+      "listings": 5000,
+      "runs": [
+        {
+          "shellPaintMs": 177,
+          "resultsPaintMs": 177.1,
+          "fcpMs": 192,
+          "requests": 24,
+          "bytes": 160952,
+          "paths": [
+            "/discover",
+            "/assets/main-CBBYgyo4.js",
+            "/assets/react-DB-4Zxce.js",
+            "/assets/boxes-D2sPU4Jf.js",
+            "/assets/createLucideIcon-CGDJWtKO.js",
+            "/assets/compass-BkKOZPYe.js",
+            "/assets/jsx-runtime-D6zNwnaE.js",
+            "/assets/git-pull-request-arrow-RqUUIRCU.js",
+            "/assets/layers-DfzdK_wG.js",
+            "/assets/clsx-DB0hHKMi.js",
+            "/assets/main-CxurAm8Q.css",
+            "/assets/dist-BogNzeK9.js",
+            "/data/manifest.json",
+            "/assets/arrow-right-DcbNDzqs.js",
+            "/assets/DiscoverScreen-_78bJSXZ.js",
+            "/assets/Badge-CJ0N4XCz.js",
+            "/assets/CopyButton-DE8drl4P.js",
+            "/assets/x-MLbFVa4v.js",
+            "/assets/SearchField-DwvhBli2.js",
+            "/assets/discover-DSviAt_i.js",
+            "/data/demo.catalog.313ae68c4d.json",
+            "/__youi/query",
+            "/assets/geist-latin-core-vkBVTr4s.woff2",
+            "/assets/geist-mono-latin-core-DccGGzmg.woff2"
+          ],
+          "previewRequests": 0,
+          "frames": 0,
+          "tiles": 0,
+          "hits": 7
+        },
+        {
+          "shellPaintMs": 173.2,
+          "resultsPaintMs": 173.2,
+          "fcpMs": 188,
+          "requests": 24,
+          "bytes": 160952,
+          "paths": [
+            "/discover",
+            "/assets/main-CBBYgyo4.js",
+            "/assets/react-DB-4Zxce.js",
+            "/assets/createLucideIcon-CGDJWtKO.js",
+            "/assets/jsx-runtime-D6zNwnaE.js",
+            "/assets/boxes-D2sPU4Jf.js",
+            "/assets/compass-BkKOZPYe.js",
+            "/assets/git-pull-request-arrow-RqUUIRCU.js",
+            "/assets/layers-DfzdK_wG.js",
+            "/assets/main-CxurAm8Q.css",
+            "/assets/clsx-DB0hHKMi.js",
+            "/assets/dist-BogNzeK9.js",
+            "/data/manifest.json",
+            "/assets/DiscoverScreen-_78bJSXZ.js",
+            "/assets/arrow-right-DcbNDzqs.js",
+            "/assets/CopyButton-DE8drl4P.js",
+            "/assets/Badge-CJ0N4XCz.js",
+            "/assets/x-MLbFVa4v.js",
+            "/assets/SearchField-DwvhBli2.js",
+            "/assets/discover-DSviAt_i.js",
+            "/data/demo.catalog.313ae68c4d.json",
+            "/__youi/query",
+            "/assets/geist-latin-core-vkBVTr4s.woff2",
+            "/assets/geist-mono-latin-core-DccGGzmg.woff2"
+          ],
+          "previewRequests": 0,
+          "frames": 0,
+          "tiles": 0,
+          "hits": 7
+        },
+        {
+          "shellPaintMs": 172.9,
+          "resultsPaintMs": 173,
+          "fcpMs": 188,
+          "requests": 24,
+          "bytes": 160952,
+          "paths": [
+            "/discover",
+            "/assets/main-CBBYgyo4.js",
+            "/assets/react-DB-4Zxce.js",
+            "/assets/createLucideIcon-CGDJWtKO.js",
+            "/assets/jsx-runtime-D6zNwnaE.js",
+            "/assets/boxes-D2sPU4Jf.js",
+            "/assets/compass-BkKOZPYe.js",
+            "/assets/git-pull-request-arrow-RqUUIRCU.js",
+            "/assets/layers-DfzdK_wG.js",
+            "/assets/clsx-DB0hHKMi.js",
+            "/assets/dist-BogNzeK9.js",
+            "/assets/main-CxurAm8Q.css",
+            "/data/manifest.json",
+            "/assets/DiscoverScreen-_78bJSXZ.js",
+            "/assets/arrow-right-DcbNDzqs.js",
+            "/assets/CopyButton-DE8drl4P.js",
+            "/assets/Badge-CJ0N4XCz.js",
+            "/assets/SearchField-DwvhBli2.js",
+            "/assets/x-MLbFVa4v.js",
+            "/assets/discover-DSviAt_i.js",
+            "/data/demo.catalog.313ae68c4d.json",
+            "/__youi/query",
+            "/assets/geist-latin-core-vkBVTr4s.woff2",
+            "/assets/geist-mono-latin-core-DccGGzmg.woff2"
+          ],
+          "previewRequests": 0,
+          "frames": 0,
+          "tiles": 0,
+          "hits": 7
+        },
+        {
+          "shellPaintMs": 170.4,
+          "resultsPaintMs": 170.4,
+          "fcpMs": 184,
+          "requests": 24,
+          "bytes": 160952,
+          "paths": [
+            "/discover",
+            "/assets/main-CBBYgyo4.js",
+            "/assets/react-DB-4Zxce.js",
+            "/assets/boxes-D2sPU4Jf.js",
+            "/assets/createLucideIcon-CGDJWtKO.js",
+            "/assets/compass-BkKOZPYe.js",
+            "/assets/jsx-runtime-D6zNwnaE.js",
+            "/assets/git-pull-request-arrow-RqUUIRCU.js",
+            "/assets/layers-DfzdK_wG.js",
+            "/assets/clsx-DB0hHKMi.js",
+            "/assets/dist-BogNzeK9.js",
+            "/assets/main-CxurAm8Q.css",
+            "/data/manifest.json",
+            "/assets/DiscoverScreen-_78bJSXZ.js",
+            "/assets/arrow-right-DcbNDzqs.js",
+            "/assets/Badge-CJ0N4XCz.js",
+            "/assets/CopyButton-DE8drl4P.js",
+            "/assets/SearchField-DwvhBli2.js",
+            "/assets/x-MLbFVa4v.js",
+            "/assets/discover-DSviAt_i.js",
+            "/data/demo.catalog.313ae68c4d.json",
+            "/__youi/query",
+            "/assets/geist-latin-core-vkBVTr4s.woff2",
+            "/assets/geist-mono-latin-core-DccGGzmg.woff2"
+          ],
+          "previewRequests": 0,
+          "frames": 0,
+          "tiles": 0,
+          "hits": 7
+        },
+        {
+          "shellPaintMs": 172.8,
+          "resultsPaintMs": 172.8,
+          "fcpMs": 188,
+          "requests": 24,
+          "bytes": 160952,
+          "paths": [
+            "/discover",
+            "/assets/react-DB-4Zxce.js",
+            "/assets/main-CBBYgyo4.js",
+            "/assets/boxes-D2sPU4Jf.js",
+            "/assets/createLucideIcon-CGDJWtKO.js",
+            "/assets/compass-BkKOZPYe.js",
+            "/assets/git-pull-request-arrow-RqUUIRCU.js",
+            "/assets/jsx-runtime-D6zNwnaE.js",
+            "/assets/layers-DfzdK_wG.js",
+            "/assets/main-CxurAm8Q.css",
+            "/assets/dist-BogNzeK9.js",
+            "/assets/clsx-DB0hHKMi.js",
+            "/data/manifest.json",
+            "/assets/DiscoverScreen-_78bJSXZ.js",
+            "/assets/arrow-right-DcbNDzqs.js",
+            "/assets/Badge-CJ0N4XCz.js",
+            "/assets/CopyButton-DE8drl4P.js",
+            "/assets/SearchField-DwvhBli2.js",
+            "/assets/x-MLbFVa4v.js",
+            "/assets/discover-DSviAt_i.js",
+            "/data/demo.catalog.313ae68c4d.json",
+            "/__youi/query",
+            "/assets/geist-latin-core-vkBVTr4s.woff2",
+            "/assets/geist-mono-latin-core-DccGGzmg.woff2"
+          ],
+          "previewRequests": 0,
+          "frames": 0,
+          "tiles": 0,
+          "hits": 7
+        }
+      ],
+      "cacheWrites": []
+    }
+  ],
+  "problems": []
+}

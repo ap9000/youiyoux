@@ -65,6 +65,8 @@ async function ask(project: string, specimen: string, base: string): Promise<{ s
 interface LiveFrameProps {
   project: string;
   specimen: string;
+  /** A bundle built already (a Discover preview's): used as it is, nothing is asked for. */
+  script?: string | null;
   html: string;
   css: string;
   scheme: Scheme;
@@ -82,16 +84,17 @@ type TryData = { youi?: unknown; type?: unknown; x?: unknown; y?: unknown; width
 
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 
-export function LiveFrame({ project, specimen, html, css, scheme, height, background, fallback, onReady, onEnd, onFail }: LiveFrameProps) {
+export function LiveFrame({ project, specimen, script: built = null, html, css, scheme, height, background, fallback, onReady, onEnd, onFail }: LiveFrameProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
-  const [script, setScript] = useState<string | null>(null);
+  const [script, setScript] = useState<string | null>(built);
   const [transform, setTransform] = useState<string | null>(null);
   // The latest callbacks, so the listeners below are set up once.
   const handlers = useRef({ onReady, onEnd, onFail });
   handlers.current = { onReady, onEnd, onFail };
 
   useEffect(() => {
+    if (built !== null) return;
     let cancelled = false;
     void requestBundle(project, specimen).then((result) => {
       if (cancelled) return;
@@ -101,7 +104,7 @@ export function LiveFrame({ project, specimen, html, css, scheme, height, backgr
     return () => {
       cancelled = true;
     };
-  }, [project, specimen]);
+  }, [project, specimen, built]);
 
   const [started, setStarted] = useState(false);
   useEffect(() => {

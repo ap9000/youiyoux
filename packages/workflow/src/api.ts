@@ -1,10 +1,11 @@
 /**
  * The design-change workflow's wire shapes: what the loopback service returns and the
- * hub reads. Two kinds of draft share one lifecycle (draft, impact preview, approval, review
- * branch): rule drafts and style drafts (token values and component-state bindings).
+ * hub reads. Three kinds of draft share one lifecycle (draft, impact preview, approval, review
+ * branch): rule drafts, style drafts (token values and component-state bindings) and library
+ * drafts (a Discover candidate saved to the Library, or an adoption request for one).
  * Types only (the hub imports this file type-only), so no runtime code here.
  */
-import type { ComponentState, ElementId, RuleExecution, RuleRollout, RuleSpec } from "@youiyoux/core";
+import type { ComponentState, ElementId, LibraryEntry, RuleExecution, RuleRollout, RuleSpec } from "@youiyoux/core";
 
 /** Who asked. Locally every browser request is the person at the keyboard; agents never approve. */
 export interface Actor {
@@ -242,6 +243,56 @@ export interface StylePreview {
   readonly limits: readonly string[];
 }
 
+/* ---------------------------------------------------------- library drafts */
+
+/**
+ * A Library item from outside (a Discover listing), drafted for a person to approve. `save` keeps
+ * it in the Library as a reference (stage `library`); `adopt` requests adoption (stage
+ * `candidate`), which a person then decides. Neither installs anything.
+ */
+export interface LibraryDraftContent {
+  /** The youi.library/v1 item as it will be written. */
+  readonly entry: LibraryEntry;
+  readonly request: "save" | "adopt";
+  /** Why: required for an adoption request. */
+  readonly reason: string;
+  /** Inventory families (`button-1`) or System elements it could be swapped in for. */
+  readonly swapsWith: readonly string[];
+}
+
+/** What swapping the item in for one family or element would touch, from the local index. */
+export interface LibrarySwap {
+  readonly target: string;
+  readonly kind: "family" | "element";
+  /** The element's name, for an element. */
+  readonly name: string | null;
+  /** null when the index could not say (no inventory recorded, or another project's family). */
+  readonly looks: number | null;
+  readonly files: number | null;
+  readonly routes: number | null;
+  /** A could-replace link joins them: the item plays the family's role. */
+  readonly listed: boolean | null;
+}
+
+export interface LibraryPreview {
+  readonly id: string;
+  readonly at: string;
+  readonly draftRevision: number;
+  readonly draftDigest: string;
+  readonly snapshot: SnapshotIdentity;
+  readonly durationMs: number;
+  /** Design-root-relative path the item is written to. */
+  readonly file: string;
+  /** The file is already in the design repository (the review edits it). */
+  readonly exists: boolean;
+  readonly stage: "library" | "candidate";
+  /** An SPDX id, or "unknown". */
+  readonly license: string;
+  readonly install: string | null;
+  readonly swaps: readonly LibrarySwap[];
+  readonly limits: readonly string[];
+}
+
 /* ----------------------------------------------------------------- drafts */
 
 /** What every draft shares: restart-safe, bound to its base commit and content digest. */
@@ -275,7 +326,15 @@ export interface StyleDraft extends DraftCommon {
   readonly preview: StylePreview | null;
 }
 
-export type Draft = RuleDraft | StyleDraft;
+/** A library draft: one Library item to save, or to request adoption of. */
+export interface LibraryDraft extends DraftCommon {
+  readonly kind: "library";
+  readonly mode: "create";
+  readonly content: LibraryDraftContent;
+  readonly preview: LibraryPreview | null;
+}
+
+export type Draft = RuleDraft | StyleDraft | LibraryDraft;
 export type DraftKind = Draft["kind"];
 
 export type DraftStatus = "draft" | "previewed" | "approved" | "handed-off" | "rolled-out" | "discarded";
@@ -297,8 +356,9 @@ export interface DraftViewFields {
 
 export type RuleDraftView = RuleDraft & DraftViewFields;
 export type StyleDraftView = StyleDraft & DraftViewFields;
+export type LibraryDraftView = LibraryDraft & DraftViewFields;
 /** A draft plus what is true about it right now. */
-export type DraftView = RuleDraftView | StyleDraftView;
+export type DraftView = RuleDraftView | StyleDraftView | LibraryDraftView;
 
 export interface RulePlace {
   readonly file: string;

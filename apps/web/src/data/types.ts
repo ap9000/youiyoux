@@ -139,6 +139,8 @@ export interface Manifest {
   detect?: { file: string; name: string; kind: "repo" | "site" };
   /** Every file the index names (its chunks and specimen stylesheets), so caches keep them. */
   inventoryFiles?: string[];
+  /** Discover's listings (youiyoux.discover-listings/v1) for a static host, which has no /__youi/query; absent when no Discover cache was synced. */
+  discover?: string;
   live?: LiveInfo;
 }
 

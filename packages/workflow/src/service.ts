@@ -1,6 +1,7 @@
 /**
  * The design-change workflow: draft → save → preview → approve → hand off to review, for
- * rule drafts and style drafts (token values and component-state bindings) alike.
+ * rule drafts, style drafts (token values and component-state bindings) and library drafts (a
+ * Discover candidate saved to the Library, or an adoption request for one) alike.
  *
  * Saving never publishes and never approves. A draft is bound to the design commit it
  * started from and to the digest of its content; a preview is bound to the exact design
@@ -12,11 +13,12 @@
 import { randomBytes } from "node:crypto";
 import { loadProject, ruleCapability, scanProject, SCANNER_VERSION, type LoadProjectOptions, type Project, type ScanResult } from "@youiyoux/scanner";
 import { buildTokens, type ResolvedToken } from "@youiyoux/tokens";
-import { parseId, shortHash, stableStringify } from "@youiyoux/core";
-import type { Actor, Draft, DraftContent, DraftEvent, DraftView, Preview, PublishedRules, RuleDraft, RuleDraftView, SnapshotIdentity, StyleDraft, StyleDraftContent, StyleContrast, StyleDraftView, StylePreview, WorkflowInfo } from "./api.ts";
+import { parseId, shortHash, stableStringify, type LibraryEntry as LibraryEntryValue } from "@youiyoux/core";
+import type { Actor, Draft, DraftContent, DraftEvent, DraftView, LibraryDraft, LibraryDraftContent, LibraryDraftView, LibraryPreview, LibrarySwap, Preview, PublishedRules, RuleDraft, RuleDraftView, SnapshotIdentity, StyleDraft, StyleDraftContent, StyleContrast, StyleDraftView, StylePreview, WorkflowInfo } from "./api.ts";
 import { DesignFiles } from "./design-files.ts";
 import { contentDigest, draftStatus, fieldsFromRule, newRuleFields, toRuleSpec, validateContent } from "./drafts.ts";
 import { describeStyle, normalizeStyleContent, styleDigest, styleSlug, validateStyleContent, type StyleContext } from "./style-drafts.ts";
+import { adoptionRefusal, describeLibrary, libraryDigest, libraryPath, librarySlug, normalizeLibraryContent, renderLibraryEntry, validateLibraryContent } from "./library-drafts.ts";
 import { previewStyle } from "./style-preview.ts";
 import { scannerExecution, type RuleExecution } from "./execution.ts";
 import { branchTip, changesDigest, createReviewBranch, defaultBranch, hasChanges, headCommit, isAncestor, locate, type RepoLocation } from "./git.ts";
@@ -33,6 +35,18 @@ export interface WorkflowOptions extends LoadProjectOptions {
   readonly execution?: RuleExecution;
   readonly now?: () => Date;
   readonly newId?: (prefix: "d" | "p") => string;
+  /**
+   * What swapping a Library item in for an inventory family would touch, from the local index
+   * (`youi inventory` records it); null when the index cannot say. Without it, a library
+   * preview names the families but cannot count their looks.
+   */
+  readonly swapImpact?: (candidate: string, family: string) => Promise<{ looks: number; files: number; routes: number; listed: boolean } | null>;
+  /**
+   * The licence the local Discover index lists for a Library id (`unknown` included), or null
+   * when the index does not list it. A library draft's licence is always this one, never the
+   * client's; without it (no index), an adoption request is refused, since nothing can check it.
+   */
+  readonly libraryLicence?: (id: string) => Promise<LibraryEntryValue["license"] | null>;
 }
 
 /** The design repository and project as they are right now. */
@@ -48,11 +62,17 @@ interface Current {
   readonly tokens: () => Promise<readonly ResolvedToken[]>;
 }
 
-export type CreateInput = { kind?: "rule"; mode: "edit"; ruleId: string } | { kind?: "rule"; mode: "create" } | { kind: "style"; content?: StyleDraftContent };
+export type CreateInput = { kind?: "rule"; mode: "edit"; ruleId: string } | { kind?: "rule"; mode: "create" } | { kind: "style"; content?: StyleDraftContent } | { kind: "library"; content: LibraryDraftContent };
 
 /** A preview's headline, for history notes and commit messages. */
 export function previewSummary(draft: Draft): string {
   if (draft.kind === "rule") return draft.preview ? `flags ${draft.preview.flagged} place(s)` : "no preview";
+  if (draft.kind === "library") {
+    const q = draft.preview;
+    if (!q) return "no preview";
+    const counted = q.swaps.filter((s) => s.looks !== null);
+    return `writes ${q.file} (${q.exists ? "an edit" : "new"}, stage ${q.stage}, licence ${q.license})${counted.length ? `; swapping it in touches ${counted.reduce((n, s) => n + s.looks!, 0)} look(s) in ${counted.reduce((n, s) => n + s.files!, 0)} file(s)` : ""}`;
+  }
   const p = draft.preview;
   return p ? `changes ${p.totals.tokens} token(s) and ${p.totals.contracts} component(s): ${p.totals.sites} site(s) and ${p.totals.direct} direct use(s) in ${p.totals.files} file(s) on ${p.totals.routes} screen(s)` : "no preview";
 }
@@ -134,6 +154,7 @@ export class RuleWorkflow {
 
   private async problems(draft: Draft, current: Current): Promise<string[]> {
     if (draft.kind === "style") return validateStyleContent(draft.content, await this.styleContext(current));
+    if (draft.kind === "library") return validateLibraryContent(draft.content, { componentIds: new Set(current.project.system.components.map((c) => c.contract.id)) });
     return validateContent(draft.content, {
       mode: draft.mode,
       ruleId: draft.ruleId,
@@ -227,7 +248,7 @@ export class RuleWorkflow {
       checks: this.execution.supportedChecks(),
       executor: this.execution.name,
       components: current.project.system.components.map((c) => ({ id: c.contract.id, name: c.contract.name })),
-      kinds: ["rule", "style"],
+      kinds: ["rule", "style", "library"],
       limits: [
         `One design repository and one project (${current.project.config.id}).`,
         `Approved changes become a local review branch in the design repository; nothing is pushed or merged for you.`,
@@ -283,11 +304,13 @@ export class RuleWorkflow {
 
   async create(actor: Actor, input: { kind?: "rule"; mode: "edit"; ruleId: string } | { kind?: "rule"; mode: "create" }): Promise<RuleDraftView>;
   async create(actor: Actor, input: { kind: "style"; content?: StyleDraftContent }): Promise<StyleDraftView>;
+  async create(actor: Actor, input: { kind: "library"; content: LibraryDraftContent }): Promise<LibraryDraftView>;
   async create(actor: Actor, input: CreateInput): Promise<DraftView>;
   async create(actor: Actor, input: CreateInput): Promise<DraftView> {
     authorize(actor, "draft");
     const current = await this.current();
     if (input.kind === "style") return this.createStyle(actor, current, input.content);
+    if (input.kind === "library") return this.createLibrary(actor, current, input.content);
     let content: DraftContent;
     let ruleId: string;
     const files: Record<string, string | null> = {};
@@ -350,14 +373,65 @@ export class RuleWorkflow {
     return (await this.view(draft, current)) as StyleDraftView;
   }
 
+  /**
+   * A library draft starts from the default branch tip, bound to the one file it writes. An
+   * adoption request for an item whose licence is unknown is refused here, before any draft exists.
+   */
+  private async createLibrary(actor: Actor, current: Current, initial: LibraryDraftContent): Promise<LibraryDraftView> {
+    const content = await this.indexedLicence(normalizeLibraryContent(initial));
+    const refusal = adoptionRefusal(content);
+    if (refusal) throw new WorkflowError("invalid", refusal, [`licence: unknown for ${content.entry.id}`]);
+    let path: string;
+    try {
+      path = libraryPath(content.entry.id);
+    } catch (error: unknown) {
+      throw new WorkflowError("invalid", error instanceof Error ? error.message : String(error));
+    }
+    const at = this.now();
+    const draft: LibraryDraft = {
+      id: this.id("d"),
+      kind: "library",
+      mode: "create",
+      createdAt: at,
+      updatedAt: at,
+      revision: 1,
+      digest: libraryDigest(content),
+      content,
+      base: { branch: current.branch, commit: current.tip, files: { [path]: await current.files.digest(current.tip, path) } },
+      preview: null,
+      approval: null,
+      handoff: null,
+      discarded: false,
+      events: [this.event(actor, "created", `${describeLibrary(content)[0]!.toUpperCase()}${describeLibrary(content).slice(1)}, from ${current.branch}@${current.tip.slice(0, 7)}.`)],
+    };
+    await this.options.store.put(draft);
+    return (await this.view(draft, current)) as LibraryDraftView;
+  }
+
+  /**
+   * The draft with the licence the local Discover index lists for its id, whatever the client
+   * sent: `unknown` when the index does not list it. With no index, a save keeps what was sent
+   * (a reference only) and an adoption request is refused, since nothing can check its licence.
+   */
+  private async indexedLicence(content: LibraryDraftContent): Promise<LibraryDraftContent> {
+    if (!this.options.libraryLicence) {
+      if (content.request === "adopt") throw new WorkflowError("invalid", `${content.entry.name}'s licence cannot be checked: the hub has no Discover index to check it against (run youi discover sync), so it cannot be adopted yet.`, [`licence: unchecked for ${content.entry.id}`]);
+      return content;
+    }
+    const listed = await this.options.libraryLicence(content.entry.id).catch(() => null);
+    return { ...content, entry: { ...content.entry, license: listed ?? "unknown" } };
+  }
+
   /** Save content. Saving is only saving: it withdraws any approval and never publishes. */
-  async save(actor: Actor, id: string, input: { revision: number; content: DraftContent | StyleDraftContent }): Promise<DraftView> {
+  async save(actor: Actor, id: string, input: { revision: number; content: DraftContent | StyleDraftContent | LibraryDraftContent }): Promise<DraftView> {
     return this.locked(id, async () => {
       const draft = await this.load(id);
       this.guard(actor, "draft", draft);
       if (input.revision !== draft.revision) throw new WorkflowError("conflict", `draft ${id} is at revision ${draft.revision}, not ${input.revision}: it was saved elsewhere. Reload it before saving.`);
       const isStyle = "tokens" in input.content;
-      if (isStyle !== (draft.kind === "style")) throw new WorkflowError("bad-request", `draft ${id} is a ${draft.kind} draft; send ${draft.kind} content`);
+      const isLibrary = "entry" in input.content;
+      if (isStyle !== (draft.kind === "style") || isLibrary !== (draft.kind === "library")) throw new WorkflowError("bad-request", `draft ${id} is a ${draft.kind} draft; send ${draft.kind} content`);
+      if (draft.kind === "library") return this.saveLibrary(actor, draft, input.revision, input.content as LibraryDraftContent);
       const current = await this.current();
       const content = isStyle ? normalizeStyleContent(input.content as StyleDraftContent) : (input.content as DraftContent);
       const digest = isStyle ? styleDigest(content as StyleDraftContent) : contentDigest(content as DraftContent);
@@ -374,12 +448,28 @@ export class RuleWorkflow {
     });
   }
 
+  private async saveLibrary(actor: Actor, draft: LibraryDraft, revision: number, input: LibraryDraftContent): Promise<DraftView> {
+    const current = await this.current();
+    const content = await this.indexedLicence(normalizeLibraryContent(input));
+    if (content.entry.id !== draft.content.entry.id) throw new WorkflowError("bad-request", `draft ${draft.id} is for ${draft.content.entry.id}; start a new draft for ${content.entry.id}`);
+    const refusal = adoptionRefusal(content);
+    if (refusal) throw new WorkflowError("invalid", refusal, [`licence: unknown for ${content.entry.id}`]);
+    const digest = libraryDigest(content);
+    if (digest === draft.digest) return this.refreshed(draft, current);
+    const events = [...draft.events, this.event(actor, "saved", `Revision ${revision + 1}: ${describeLibrary(content)}.`)];
+    if (draft.approval) events.push(this.event(actor, "approval-invalidated", "Approval withdrawn: the draft changed."));
+    const next: LibraryDraft = { ...draft, revision: draft.revision + 1, digest, content, approval: null, updatedAt: this.now(), events };
+    await this.options.store.put(next);
+    return this.view(next, current);
+  }
+
   /** Evaluate the draft over one fresh scan of the project: a rule against the published rule, a style change against the published tokens. */
   async preview(actor: Actor, id: string): Promise<DraftView> {
     return this.locked(id, async () => {
       const draft = await this.load(id);
       this.guard(actor, "preview", draft);
       if (draft.kind === "style") return this.previewStyle(actor, draft);
+      if (draft.kind === "library") return this.previewLibrary(actor, draft);
       const before = await this.current();
       const problems = await this.problems(draft, before);
       const { rule } = toRuleSpec(draft.content.rule);
@@ -411,6 +501,54 @@ export class RuleWorkflow {
       await this.options.store.put(next);
       return this.refreshed(next, after);
     });
+  }
+
+  /** A library draft's preview: the item is valid youi.library/v1, where it is written, and what swapping it in would touch. */
+  private async previewLibrary(actor: Actor, draft: LibraryDraft): Promise<DraftView> {
+    const before = await this.current();
+    const problems = await this.problems(draft, before);
+    if (problems.length > 0) throw new WorkflowError("invalid", "fix the draft before previewing it", problems);
+    const started = performance.now();
+    const file = libraryPath(draft.content.entry.id);
+    const exists = (await before.files.read(before.tip, file)) !== null;
+    const components = new Map(before.project.system.components.map((c) => [c.contract.id as string, c.contract.name]));
+    const swaps: LibrarySwap[] = [];
+    let indexed = Boolean(this.options.swapImpact);
+    for (const target of draft.content.swapsWith) {
+      if (components.has(target)) {
+        swaps.push({ target, kind: "element", name: components.get(target)!, looks: null, files: null, routes: null, listed: null });
+        continue;
+      }
+      const impact = this.options.swapImpact ? await this.options.swapImpact(draft.content.entry.id, target).catch(() => null) : null;
+      if (!impact) indexed = false;
+      swaps.push({ target, kind: "family", name: null, looks: impact?.looks ?? null, files: impact?.files ?? null, routes: impact?.routes ?? null, listed: impact?.listed ?? null });
+    }
+    const after = await this.current();
+    if (after.snapshot.digest !== before.snapshot.digest) throw new WorkflowError("stale", "the project or design repository changed while the preview ran; run it again");
+    const entry = draft.content.entry;
+    const preview: LibraryPreview = {
+      id: this.id("p"),
+      at: this.now(),
+      draftRevision: draft.revision,
+      draftDigest: draft.digest,
+      snapshot: before.snapshot,
+      durationMs: Math.round(performance.now() - started),
+      file,
+      exists,
+      stage: draft.content.request === "adopt" ? "candidate" : "library",
+      license: entry.license && entry.license !== "unknown" ? entry.license.spdx : "unknown",
+      install: entry.install?.command ?? null,
+      swaps,
+      limits: [
+        "Nothing is installed: approving writes the Library item for review; adding it to a project stays a person's step, after adoption.",
+        ...(draft.content.request === "save" ? ["Saved to the Library, it is a reference: not in the System, and not to be built with."] : []),
+        ...(swaps.some((s) => s.kind === "family") && !indexed ? ["Some families could not be counted: the local index has no inventory for them (run youi inventory)."] : []),
+        ...(swaps.some((s) => s.kind === "element") ? ["System elements are named, not counted: youi where-used counts their sites."] : []),
+      ],
+    };
+    const next: LibraryDraft = { ...draft, preview, updatedAt: this.now(), events: [...draft.events, this.event(actor, "previewed", `${previewSummary({ ...draft, preview })[0]!.toUpperCase()}${previewSummary({ ...draft, preview }).slice(1)}.`)] };
+    await this.options.store.put(next);
+    return this.refreshed(next, after);
   }
 
   /** Build the tokens as published and as drafted, and trace every changed value through one fresh scan. */
@@ -509,7 +647,7 @@ export class RuleWorkflow {
       const current = await this.current();
       const view = await this.refreshed(draft, current);
       if (!view.canHandoff) throw new WorkflowError("stale", "only a current approval can be handed off", [...view.problems, ...view.baseStale, ...(view.approval ? [] : ["Approve the draft first (an approval is withdrawn when the draft, the design repository or the project changes)."])]);
-      const { files, branch, message } = draft.kind === "style" ? await this.styleChange(draft, view as StyleDraftView, current) : await this.ruleChange(draft, view as RuleDraftView, current);
+      const { files, branch, message } = draft.kind === "style" ? await this.styleChange(draft, view as StyleDraftView, current) : draft.kind === "library" ? await this.libraryChange(draft, view as LibraryDraftView, current) : await this.ruleChange(draft, view as RuleDraftView, current);
       if (Object.keys(files).length === 0) throw new WorkflowError("invalid", "this draft changes nothing in the design repository");
       const created = await createReviewBranch(current.repo.top, {
         base: draft.base.commit,
@@ -581,6 +719,30 @@ export class RuleWorkflow {
       ...(confirmed.length ? ["", `${approval.by.name} confirmed these new WCAG AA failures:`, ...confirmed.map((c) => `- ${describeContrast(c)}`)] : []),
     ].join("\n");
     return { files, branch: `youi/style/${styleSlug(draft.content)}-${draft.id.slice(2, 8)}`, message };
+  }
+
+  /** What a library draft's review branch carries: the one Library item file. */
+  private async libraryChange(draft: LibraryDraft, view: LibraryDraftView, current: Current): Promise<{ files: Record<string, string>; branch: string; message: string }> {
+    // Checked again at hand-off: the index may say otherwise now.
+    const checked = await this.indexedLicence(draft.content);
+    if (stableStringify(checked.entry.license) !== stableStringify(draft.content.entry.license)) throw new WorkflowError("stale", `the Discover index now lists ${draft.content.entry.name}'s licence differently; save the draft again to take it up`);
+    const refusal = adoptionRefusal(checked);
+    if (refusal) throw new WorkflowError("invalid", refusal);
+    const path = libraryPath(draft.content.entry.id);
+    const existing = await current.files.read(draft.base.commit, path);
+    const text = renderLibraryEntry(draft.content, existing);
+    const approval = view.approval!;
+    const entry = draft.content.entry;
+    const message = [
+      `library: ${describeLibrary(draft.content)}`,
+      "",
+      ...(draft.content.reason ? [draft.content.reason, ""] : []),
+      `${entry.id} (${entry.source.ref ?? entry.source.name}), stage ${draft.content.request === "adopt" ? "candidate" : "library"}, licence ${view.preview!.license}.`,
+      ...(entry.install ? [`Install, after adoption: ${entry.install.command}`] : []),
+      `Library draft ${draft.id} revision ${draft.revision}.`,
+      `Approved by ${approval.by.name} at ${approval.at}.`,
+    ].join("\n");
+    return { files: text === existing ? {} : { [path]: text }, branch: `youi/library/${librarySlug(draft.content)}-${draft.id.slice(2, 8)}`, message };
   }
 
   async discard(actor: Actor, id: string): Promise<DraftView> {

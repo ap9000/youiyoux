@@ -25,6 +25,10 @@ export const DiscoverConstraints = z.object({
   minWeeklyDownloads: z.number().int().nonnegative().optional(),
   minStars: z.number().int().nonnegative().optional(),
   excludeArchived: z.boolean().optional(),
+  /** Only candidates whose licence is known (true) or unknown (false). */
+  licenseKnown: z.boolean().optional(),
+  /** Only headless (behaviour, no styles) or styled candidates. */
+  styles: z.array(z.enum(["headless", "styled"])).optional(),
 });
 export type DiscoverConstraints = z.infer<typeof DiscoverConstraints>;
 
@@ -150,6 +154,14 @@ export function signalBoost(entry: LibraryEntry): number {
   return Math.max(-2, Math.min(3, boost));
 }
 
+const HEADLESS_PACKAGE = /^(?:@radix-ui\/|radix-ui$|@base-ui-components\/|@base-ui\/|@ark-ui\/|react-aria|@react-aria\/|@headlessui\/|@ariakit\/|ariakit$|downshift$|cmdk$|vaul$|@floating-ui\/)/;
+
+/** headless: behaviour without styles (it says so, or it is a headless library's package); styled: everything else, every registry item included. */
+export function styleOf(entry: LibraryEntry): "headless" | "styled" {
+  if (/\b(?:headless|unstyled)\b/i.test(`${entry.summary} ${entry.categories.join(" ")}`)) return "headless";
+  return entry.source.kind === "npm" && HEADLESS_PACKAGE.test(entry.name) ? "headless" : "styled";
+}
+
 export function registryName(entry: LibraryEntry): string {
   if (entry.source.kind === "npm") return "npm";
   const ref = entry.source.ref ?? "";
@@ -168,6 +180,8 @@ export function passes(entry: LibraryEntry, c: DiscoverConstraints | undefined):
   if (c.minWeeklyDownloads !== undefined && (entry.signals?.weeklyDownloads ?? -1) < c.minWeeklyDownloads) return false;
   if (c.minStars !== undefined && (entry.signals?.stars ?? -1) < c.minStars) return false;
   if (c.excludeArchived && entry.signals?.archived) return false;
+  if (c.licenseKnown !== undefined && (Boolean(entry.license) && entry.license !== "unknown") !== c.licenseKnown) return false;
+  if (c.styles?.length && !c.styles.includes(styleOf(entry))) return false;
   return true;
 }
 

@@ -7,7 +7,7 @@ import { useGlobalKeys } from "../shell/keyboard.ts";
 import { NavRail } from "../shell/NavRail.tsx";
 import { Overlays, preloadOverlays } from "../shell/Overlays.tsx";
 import { PaneSkeleton, ScreenBoundary } from "../ui/Pane.tsx";
-import { AccessScreen, CatalogScreen, ChangesScreen, HomeScreen, InventoryScreen, LibraryScreen, NotFoundScreen, preload, preloadAll, RulesScreen, ScreensScreen, SourcesScreen, StackScreen, StyleScreen, TokensScreen } from "./routes.tsx";
+import { AccessScreen, CatalogScreen, ChangesScreen, DiscoverScreen, HomeScreen, InventoryScreen, LibraryScreen, NotFoundScreen, preload, preloadAll, RulesScreen, ScreensScreen, SourcesScreen, StackScreen, StyleScreen, TokensScreen } from "./routes.tsx";
 
 const IDLE_TIMEOUT_MS = 1500;
 
@@ -89,6 +89,7 @@ export function App() {
                 <Route path="/library/stack" component={StackScreen} />
                 <Route path="/library/sources" component={SourcesScreen} />
                 <Route path="/inventory" component={InventoryScreen} />
+                <Route path="/discover" component={DiscoverScreen} />
                 <Route path="/style/*?" component={StyleScreen} />
                 <Route path="/changes/*?" component={ChangesScreen} />
                 <Route path="/access" component={AccessScreen} />

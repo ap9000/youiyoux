@@ -17,6 +17,7 @@
     "data": "node scripts/snapshot.ts",
     "measure": "node scripts/measure.ts",
     "measure:inventory": "node scripts/measure-inventory.ts",
+    "measure:discover": "node scripts/measure-discover.ts",
     "build:preview": "node scripts/build-preview.ts",
     "serve:preview": "node scripts/serve-preview.ts"
   },

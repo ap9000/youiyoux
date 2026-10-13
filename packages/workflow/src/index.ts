@@ -4,6 +4,7 @@ export * from "./execution.ts";
 export * from "./git.ts";
 export * from "./http.ts";
 export * from "./json-edit.ts";
+export * from "./library-drafts.ts";
 export * from "./policy.ts";
 export * from "./preview.ts";
 export * from "./service.ts";

@@ -203,12 +203,14 @@ export function checkedTsconfig(root: string, tsconfig: string): { path: string 
 }
 
 /** An esbuild run that is cancelled after `timeoutMs`: its output, and (with `metafile`) the files it read. */
-export async function bundleWithin(options: BuildOptions & { metafile: true }, timeoutMs: number): Promise<{ text: string; inputs: string[] }>;
-export async function bundleWithin(options: BuildOptions, timeoutMs: number): Promise<string>;
-export async function bundleWithin(options: BuildOptions, timeoutMs: number): Promise<string | { text: string; inputs: string[] }> {
+export async function bundleWithin(options: BuildOptions & { metafile: true }, timeoutMs: number, signal?: AbortSignal): Promise<{ text: string; inputs: string[] }>;
+export async function bundleWithin(options: BuildOptions, timeoutMs: number, signal?: AbortSignal): Promise<string>;
+export async function bundleWithin(options: BuildOptions, timeoutMs: number, signal?: AbortSignal): Promise<string | { text: string; inputs: string[] }> {
+  signal?.throwIfAborted();
   const esbuild = await import("esbuild");
   const context = await esbuild.context({ ...options, write: false });
   let timer: NodeJS.Timeout | undefined;
+  let stop: (() => void) | undefined;
   try {
     const result = await Promise.race([
       context.rebuild(),
@@ -217,12 +219,20 @@ export async function bundleWithin(options: BuildOptions, timeoutMs: number): Pr
           void context.cancel();
           reject(new Error(`esbuild timed out after ${limitOf(timeoutMs)}`));
         }, timeoutMs);
+        // Stopped from outside (a Discover preview past its limit): cancelled the same way.
+        stop = () => {
+          void context.cancel();
+          reject(new Error("esbuild was stopped"));
+        };
+        if (signal?.aborted) stop();
+        else signal?.addEventListener("abort", stop, { once: true });
       }),
     ]);
     const text = result.outputFiles![0]!.text;
     return options.metafile ? { text, inputs: Object.keys(result.metafile!.inputs) } : text;
   } finally {
     clearTimeout(timer);
+    if (stop) signal?.removeEventListener("abort", stop);
     await context.dispose();
   }
 }

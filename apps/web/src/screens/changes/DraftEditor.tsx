@@ -15,6 +15,7 @@ import { Keys } from "../../ui/Kbd.tsx";
 import { ContrastConfirm } from "./ContrastConfirm.tsx";
 import { ImpactPreview } from "./ImpactPreview.tsx";
 import { RuleForm } from "./RuleForm.tsx";
+import { LibraryDraftReview } from "./LibraryDraftReview.tsx";
 import { StyleDraftReview } from "./StyleDraftReview.tsx";
 
 export type Busy = null | "save" | "preview" | "approve" | "handoff" | "rebase" | "discard";
@@ -75,6 +76,7 @@ export function useRun(onUpdate: (draft: DraftView) => void): { busy: Busy; fail
 }
 
 export function DraftEditor({ draft, info, onUpdate }: { draft: DraftView; info: WorkflowInfo; onUpdate: (draft: DraftView) => void }) {
+  if (draft.kind === "library") return <LibraryDraftReview draft={draft} info={info} onUpdate={onUpdate} />;
   return draft.kind === "style" ? <StyleDraftReview draft={draft} info={info} onUpdate={onUpdate} /> : <RuleDraftEditor draft={draft} info={info} onUpdate={onUpdate} />;
 }
 
@@ -369,6 +371,8 @@ function Handoff({ draft }: { draft: DraftView }) {
           </p>
           <blockquote className="rounded-md border-l-2 border-line-strong bg-sunken px-3 py-2 text-body text-ink-2">{draft.content.rule.agent}</blockquote>
         </>
+      ) : draft.kind === "library" ? (
+        <p className="text-small text-muted">Once merged, the item is in the Library{draft.content.request === "adopt" ? " as a candidate, for a person to adopt into the System" : " as a reference: not in the System, and not built with"}. Nothing was installed in any project.</p>
       ) : (
         <p className="text-small text-muted">
           Once merged, <code className="font-mono text-mono-sm">youi sync</code> in each project writes the new values into its tokens (CSS variables, Tailwind theme, TS and React Native), and the hub shows them after the next snapshot.

@@ -130,6 +130,11 @@ const inventoryLoader = createLoader(async (): Promise<InventorySource | null> =
 const detectFor = async (manifest: Manifest): Promise<DetectReport | null> => (manifest.detect ? loadDetect(manifest.detect.file) : null);
 const detectLoader = createLoader(async (): Promise<DetectReport | null> => detectFor(await pinnedManifest()));
 
+/** The Discover listings file the snapshot carries for a static host, or null (read only when the query endpoint is absent). */
+export async function discoverListingsFile(): Promise<string | null> {
+  return (await pinnedManifest()).discover ?? null;
+}
+
 let refreshing: Promise<void> | null = null;
 let again = false;
 
