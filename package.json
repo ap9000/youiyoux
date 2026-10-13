@@ -1,6 +1,7 @@
 {
   "name": "youiyoux",
   "version": "0.1.0",
+  "license": "MIT",
   "private": true,
   "description": "YouIyouX: design-language tooling. The youi CLI, scanner, MCP server and hub; design systems live in their own repos.",
   "type": "module",

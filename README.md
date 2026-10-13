@@ -206,4 +206,4 @@ Quoted import names, namespace re-exports (`export * as ui`), and static import 
 
 ## License
 
-None chosen yet; see [LICENSE](LICENSE). The repository is private.
+[MIT](LICENSE).
