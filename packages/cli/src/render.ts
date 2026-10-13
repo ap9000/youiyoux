@@ -1,6 +1,6 @@
 /** Human output for each command. Every command also has --json for scripts and agents. */
 import { executionLabel, type RuleExecution, type RuleSpec, type ScanReport, type Violation } from "@youiyoux/core";
-import { failedChecks, type ChangePlan, type MigrationResult, type RuleEvaluation, type ScreenBom, type WhereResult } from "@youiyoux/scanner";
+import { failedChecks, shotsText, type ChangePlan, type MigrationResult, type RuleEvaluation, type ScreenBom, type ShotsReport, type WhereResult } from "@youiyoux/scanner";
 import type { LockIssue, SyncAction, SyncResult } from "./sync.ts";
 import { bar, ms, padEnd, padStart, plural, rule, style, truncate } from "./ui.ts";
 
@@ -219,4 +219,12 @@ export function renderShow(card: Record<string, unknown>): string {
   list("a11y", card.a11y);
   for (const example of (card.examples as Array<{ title: string; code: string }> | undefined) ?? []) lines.push("", style.dim(example.title), `  ${example.code}`);
   return lines.join("\n");
+}
+
+/** `youi render`: the plain text an agent reads (shots.ts, shared with ui_render), with a component's first line in bold and its issues in amber. */
+export function renderShots(report: ShotsReport): string {
+  return shotsText(report)
+    .split("\n")
+    .map((line) => (line.startsWith("next: ") ? style.bold(line) : /^ {4}- /.test(line) || /^ {2}accessibility: \d/.test(line) ? style.warn(line) : /^\S/.test(line) && !line.startsWith("note: ") ? style.bold(line) : /^ {2}(?:note|before\/after):/.test(line) ? style.dim(line) : line))
+    .join("\n");
 }

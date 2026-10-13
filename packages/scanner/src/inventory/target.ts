@@ -38,6 +38,11 @@ const TEMPLATES = ["**/*.{html,htm,ejs,hbs,handlebars}"];
 
 const ROUTE_FILE = /\.(tsx|ts|jsx|js)$/;
 
+/** A configured id is used only when it is a plain name: it reaches cache paths, so `..` or a separator falls back to the derived id. */
+function safeId(id: unknown): string | null {
+  return typeof id === "string" && /^[a-z0-9][a-z0-9._-]*$/i.test(id) && !id.includes("..") ? id : null;
+}
+
 function idOf(name: string): string {
   return name.toLowerCase().replace(/^@[^/]+\//, "").replace(/[^a-z0-9-]+/g, "-").replace(/^[^a-z]+|-+$/g, "") || "project";
 }
@@ -102,7 +107,7 @@ export async function loadInventoryTarget(dir: string, globs: TargetGlobs = {}):
   const files = (await findFiles(root, include, exclude)).filter((f) => /\.(tsx|jsx|ts|js|mjs|cjs|astro|css)$/.test(f));
   const configured = config?.routes ? RouteConfig.safeParse(config.routes) : null;
   const routes = configured?.success && configured.data.strategy !== "none" ? { config: configured.data, source: `${PROJECT_FILE} (${configured.data.strategy})` } : detectRoutes(files);
-  const id = typeof config?.id === "string" ? config.id : idOf(typeof pkg?.name === "string" ? pkg.name : basename(root));
+  const id = safeId(config?.id) ?? idOf(typeof pkg?.name === "string" ? pkg.name : basename(root));
   const templates = await findFiles(root, TEMPLATES, exclude);
   const specimens = config?.specimens as { css?: unknown } | undefined;
   const specimenCss = Array.isArray(specimens?.css) ? specimens.css.filter((p): p is string => typeof p === "string") : null;

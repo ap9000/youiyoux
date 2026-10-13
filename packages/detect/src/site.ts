@@ -39,12 +39,24 @@ export interface SiteOptions {
   readonly now?: Date;
 }
 
+/** What the browser is for, in launchBrowser's messages: `no Chromium for <what>`, `<command>: downloading…`. */
+export interface BrowserPurpose {
+  readonly what: string;
+  readonly command: string;
+}
+
+export const WEBSITE_DETECTION: BrowserPurpose = { what: "website detection", command: "youi detect" };
+
 /** What launchBrowser does to the outside world, replaceable in tests. */
 export interface LaunchDeps {
   readonly launch?: (options: LaunchOptions) => Promise<Browser>;
   /** Run a command to completion; resolves with its exit code. */
   readonly spawn?: (command: string, args: readonly string[]) => Promise<number>;
   readonly log?: (line: string) => void;
+  /** Default: website detection, whose messages stay as they were. */
+  readonly purpose?: BrowserPurpose;
+  /** false: a missing headless shell is an error that says how to install it, never a download (tests). */
+  readonly download?: boolean;
 }
 
 /** playwright-core's own CLI, beside the package.json of the copy this package resolves. */
@@ -70,19 +82,21 @@ const isMissing = (error: unknown): boolean => /Executable doesn't exist|ENOENT|
 export async function launchBrowser(executablePath?: string, deps: LaunchDeps = {}): Promise<Browser> {
   const launch = deps.launch ?? ((options: LaunchOptions) => chromium.launch(options));
   const options: LaunchOptions = { headless: true, ...(executablePath ? { executablePath } : {}) };
+  const { what, command } = deps.purpose ?? WEBSITE_DETECTION;
   try {
     return await launch(options);
   } catch (error: unknown) {
     if (!isMissing(error)) throw error;
-    if (executablePath) throw new BrowserMissingError(`no Chromium for website detection at ${executablePath} (YOUI_CHROMIUM): point it at a Chromium, or unset it to use the headless shell youi detect downloads`);
+    if (executablePath) throw new BrowserMissingError(`no Chromium for ${what} at ${executablePath} (YOUI_CHROMIUM): point it at a Chromium, or unset it to use the headless shell ${command} downloads`);
+    if (deps.download === false) throw new BrowserMissingError(`no Chromium for ${what}: the headless shell is not installed; run node ${playwrightCli()} install chromium-headless-shell, or set YOUI_CHROMIUM to a Chromium`);
   }
-  (deps.log ?? ((line: string) => process.stderr.write(`${line}\n`)))(DOWNLOAD_NOTICE);
+  (deps.log ?? ((line: string) => process.stderr.write(`${line}\n`)))(`${command}: downloading Chromium headless shell (~100 MB, once)`);
   const code = await (deps.spawn ?? spawnToStderr)(process.execPath, [playwrightCli(), "install", "chromium-headless-shell"]).catch(() => 1);
   try {
     return await launch(options);
   } catch (error: unknown) {
     if (!isMissing(error)) throw error;
-    throw new BrowserMissingError(`no Chromium for website detection: downloading the headless shell failed${code ? ` (installer exit code ${code})` : ""}; check the network and run youi detect again, or set YOUI_CHROMIUM to a Chromium`);
+    throw new BrowserMissingError(`no Chromium for ${what}: downloading the headless shell failed${code ? ` (installer exit code ${code})` : ""}; check the network and run ${command} again, or set YOUI_CHROMIUM to a Chromium`);
   }
 }
 

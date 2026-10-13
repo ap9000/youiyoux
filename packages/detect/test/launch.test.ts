@@ -63,6 +63,30 @@ describe("launchBrowser downloads the headless shell lazily", () => {
     expect(f.logs).toEqual([]);
   });
 
+  test("website detection's messages stay word for word", async () => {
+    const f = fakes([MISSING, MISSING], 1);
+    await expect(launchBrowser(undefined, f.deps)).rejects.toThrowError("no Chromium for website detection: downloading the headless shell failed (installer exit code 1); check the network and run youi detect again, or set YOUI_CHROMIUM to a Chromium");
+    await expect(launchBrowser("/opt/no-chromium", fakes([MISSING]).deps)).rejects.toThrowError("no Chromium for website detection at /opt/no-chromium (YOUI_CHROMIUM): point it at a Chromium, or unset it to use the headless shell youi detect downloads");
+  });
+
+  test("another purpose names itself in the notice and the errors", async () => {
+    const f = fakes([MISSING, BROWSER]);
+    const purpose = { what: "youi render", command: "youi render" };
+    expect(await launchBrowser(undefined, { ...f.deps, purpose })).toBe(BROWSER);
+    expect(f.logs).toEqual(["youi render: downloading Chromium headless shell (~100 MB, once)"]);
+    await expect(launchBrowser("/opt/no-chromium", { ...fakes([MISSING]).deps, purpose })).rejects.toThrowError(/^no Chromium for youi render at \/opt\/no-chromium \(YOUI_CHROMIUM\).*the headless shell youi render downloads$/);
+  });
+
+  test("download: false never downloads: a missing shell is an error with the install command", async () => {
+    const f = fakes([MISSING, BROWSER]);
+    const failed = launchBrowser(undefined, { ...f.deps, download: false, purpose: { what: "youi render", command: "youi render" } });
+    await expect(failed).rejects.toThrowError(BrowserMissingError);
+    await expect(failed).rejects.toThrowError(/^no Chromium for youi render: the headless shell is not installed; run node .*cli\.js install chromium-headless-shell, or set YOUI_CHROMIUM to a Chromium$/);
+    expect(f.spawns).toEqual([]);
+    expect(f.logs).toEqual([]);
+    expect(f.launches).toHaveLength(1);
+  });
+
   test("other launch failures pass through untouched", async () => {
     const crash = new Error("Target page, context or browser has been closed");
     const f = fakes([crash]);

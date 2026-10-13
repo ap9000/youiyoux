@@ -3,8 +3,10 @@
  * --format github`) is the authoritative gate. What each one guarantees:
  *
  * - Claude Code PostToolUse: after Claude's Edit/Write/MultiEdit on a checked file,
- *   that file's new violations go back to Claude as context. Never blocks; sees only
- *   edits made through those tools.
+ *   that file's new violations go back to Claude as context, and for a component file
+ *   (.tsx, .jsx) one line saying how to see it (`youi render`, `ui_render`); the hook
+ *   itself never renders, so it stays fast. Never blocks; sees only edits made through
+ *   those tools.
  * - git pre-commit (Codex, humans and any agent that commits): checks the staged
  *   content of staged files at commit time. Not every edit, and `--no-verify` skips
  *   it; blocks the commit only when installed with --strict.
@@ -24,6 +26,9 @@ import { actionable } from "./check-render.ts";
 const run = promisify(execFile);
 const MAX_LISTED = 20;
 const ALWAYS_SKIPPED = ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/.youi/**"];
+/** Files `youi render` draws: React components. */
+const COMPONENT_FILE = /\.(?:tsx|jsx)$/;
+const quoted = (path: string): string => (/^[\w./-]+$/.test(path) ? path : `'${path.replace(/'/g, "'\\''")}'`);
 
 export interface HookTarget {
   readonly project?: string;
@@ -115,9 +120,10 @@ export async function runClaudeHook(input: string, target: HookTarget = {}): Pro
     if (!isChecked(project, relative)) return SILENT;
     const result = await runCheck(project, { files: [file], lock: false, baseline: await baselineFor(project, target) });
     const lines = findingLines(result);
-    if (lines.length === 0) return SILENT;
+    const see = COMPONENT_FILE.test(relative) ? `See it: youi render ${quoted(relative)} (or the MCP tool ui_render), then open the images: light and dark, desktop and phone, accessibility issues and the diff against the base.` : null;
+    if (lines.length === 0) return see ? claudeContext(`youi: ${relative} passes the design-system check. ${see}`) : SILENT;
     const known = result.baseline && result.baseline.comparison.known.length > 0 ? ` (${result.baseline.comparison.known.length} older ones in this file are baselined)` : "";
-    return claudeContext(`youi design-system check (advisory) on ${relative}${known}:\n${lines.join("\n")}\nFix these before finishing; \`youi show <component>\` and the youi MCP tools give the legal values. CI runs the authoritative check.`);
+    return claudeContext(`youi design-system check (advisory) on ${relative}${known}:\n${lines.join("\n")}\nFix these before finishing; \`youi show <component>\` and the youi MCP tools give the legal values. CI runs the authoritative check.${see ? `\n${see}` : ""}`);
   } catch (error: unknown) {
     return claudeContext(`youi could not check ${raw}: ${error instanceof Error ? error.message : String(error)}. The result is incomplete, not a pass.`);
   }

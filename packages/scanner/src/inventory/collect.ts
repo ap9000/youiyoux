@@ -126,6 +126,12 @@ function recipeProps(props: Readonly<Record<string, PropValue>>): Record<string,
   return Object.fromEntries(Object.entries(props).flatMap(([name, value]) => ("literal" in value && !UNPASSED.test(name) ? [[name, value.literal]] : [])));
 }
 
+/** Retain names only: expressions are never evaluated by a specimen. */
+function recipeDynamic(props: Readonly<Record<string, PropValue>>): { dynamic?: string[] } {
+  const dynamic = Object.entries(props).filter(([name, value]) => "dynamic" in value && !UNPASSED.test(name)).map(([name]) => name).sort();
+  return dynamic.length ? { dynamic } : {};
+}
+
 /**
  * The text a JSX element wraps (`<Button><Plus /> New run</Button>` → `New run`), and its only
  * child element's (`<Button asChild><a>Settings</a></Button>`); a container's children are not a label.
@@ -484,7 +490,7 @@ export class ProjectPass {
     const tag = rootTag ?? ROLE_TAG[role];
     const text = /^(?:input|img|hr|br)$/.test(tag) ? null : label;
     if (definition?.entry.kind !== "react") return { kind: "class", tag, classes: [...new Set(classes)], label: text };
-    return { kind: "component", file: definition.entry.file, export: exportOf(definition), props: recipeProps(props), label: text, wrappers, tag, classes: [...new Set(classes)] };
+    return { kind: "component", file: definition.entry.file, export: exportOf(definition), props: recipeProps(props), ...recipeDynamic(props), label: text, wrappers, tag, classes: [...new Set(classes)] };
   }
 
   /**
@@ -507,9 +513,32 @@ export class ProjectPass {
       const props = recipeProps(propsOf(open).props);
       const name = exportOf(wrapper);
       if (role === "dialog" && own.startsWith(name) && own !== name) props.open = true;
-      wrappers.unshift({ file: wrapper.entry.file, export: name, props });
+      wrappers.unshift({ file: wrapper.entry.file, export: name, props, ...recipeDynamic(propsOf(open).props) });
     }
     return wrappers;
+  }
+
+  private async parentOf(module: ModuleInfo, opening: SgNode, helper = true): Promise<InventoryRecipeWrapper | undefined> {
+    for (let node = opening.kind() === "jsx_self_closing_element" ? opening.parent() : opening.parent()?.parent() ?? null; node; node = node.parent()) {
+      if (node.kind() !== "jsx_element") continue;
+      const open = node.children().find((c) => c.kind() === "jsx_opening_element");
+      const tag = open?.field("name")?.text();
+      if (!open || !tag || /^[a-z]/.test(tag)) continue;
+      const { symbol } = await resolveTag(this.graph, module, tag);
+      const parent = symbol.kind === "symbol" ? this.definitions.get(`${symbol.file}#${symbol.name}`) : undefined;
+      if (parent?.entry.kind === "react") return { file: parent.entry.file, export: exportOf(parent), props: recipeProps(propsOf(open).props), ...recipeDynamic(propsOf(open).props) };
+    }
+    // A helper whose root is this site inherits the parent shared by all its uses.
+    const owner = this.enclosing(module.file, opening.range().start.index);
+    if (!helper || !owner || owner.rootId !== opening.id()) return undefined;
+    const parents: Array<InventoryRecipeWrapper | undefined> = [];
+    for (const source of this.sortedModules()) for (const site of source.jsx) {
+      if (/^[a-z]/.test(site.tag)) continue;
+      const { symbol } = await resolveTag(this.graph, source, site.tag);
+      if (symbol.kind === "symbol" && symbol.file === owner.entry.file && symbol.name === exportOf(owner)) parents.push(await this.parentOf(source, site.node, false));
+    }
+    const first = parents[0];
+    return first && parents.every((p) => p?.file === first.file && p?.export === first.export) ? first : undefined;
   }
 
   /** Classes for a rendered definition: CVA base, the variants chosen, its own classes, then the call site's. */
@@ -617,6 +646,9 @@ export class ProjectPass {
       if (symbol?.kind === "external") this.primitiveSite(module.file, at, symbol);
       if (isRoot) continue;
       const label = jsxLabel(element.node);
+      if (label === null && element.node.kind() === "jsx_opening_element" && element.node.parent()?.children().some((c) => c.kind() === "jsx_expression" && c.children().some((n) => n.isNamed() && n.kind() !== "comment"))) {
+        props.children = { dynamic: "expression children" };
+      }
       if (!symbol) {
         this.intrinsicLook(module.file, at, element.tag, props, site, inside, label);
         continue;
@@ -634,7 +666,8 @@ export class ProjectPass {
       if (!definition && symbol.kind !== "symbol") unresolved.unshift(`${element.tag}: ${symbol.kind === "unknown" ? symbol.detail : "a namespace object"}`);
       const rootTag = definition?.recipe?.tag ?? null;
       const recipe = this.recipeFor(role, definition, rootTag, classes, props, label, await this.wrappersOf(module, element.node, definition, role));
-      this.addLook({ file: module.file, ...at, role, source: "component", tag: element.tag, definition, classes, rootTag, unresolved, recipe });
+      const parent = await this.parentOf(module, element.node);
+      this.addLook({ file: module.file, ...at, role, source: "component", tag: element.tag, definition, classes, rootTag, unresolved, recipe: recipe.kind === "component" && parent ? { ...recipe, parent } : recipe });
     }
   }
 

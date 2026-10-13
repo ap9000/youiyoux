@@ -18,7 +18,7 @@
  * when it loads, fails only the looks that need it.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, posix } from "node:path";
+import { isAbsolute, join, posix, resolve } from "node:path";
 import { Worker } from "node:worker_threads";
 import type { BuildOptions, Plugin } from "esbuild";
 import type { InventoryRecipe } from "@youiyoux/core";
@@ -35,6 +35,25 @@ export interface RenderJob {
   readonly label: string | null;
   /** An icon (ICON_HTML) as its children instead: an icon-size button, which a word would spill out of. */
   readonly icon?: boolean;
+  /** Retry this look with its original props if representative names throw. */
+  readonly fallback?: RenderJob;
+  readonly suppliedNames?: readonly string[];
+}
+
+/** Representative accessible names, stable on both sides of a visual comparison. */
+export function withNamePlaceholders(job: RenderJob): RenderJob {
+  const names = new Set(["id", "title", "aria-label", "alt", "children"]);
+  const fill = (props: ComponentRecipe["props"], dynamic: readonly string[], suffix: string) => {
+    const result = { ...props };
+    for (const name of dynamic) if (names.has(name) && name !== "children" && !(name in result)) result[name] = name === "id" ? `youi-${job.key}-${suffix}` : `Example ${name === "aria-label" ? "label" : name}`;
+    return result;
+  };
+  const dynamic = job.recipe.dynamic ?? [];
+  if (!dynamic.some((p) => names.has(p)) && !job.recipe.wrappers.some((w) => w.dynamic?.some((p) => names.has(p)))) return job;
+  return { ...job, fallback: dynamic.includes("children") && !job.recipe.label ? { ...job, label: null, icon: false } : job, suppliedNames: dynamic.filter((p) => names.has(p)),
+    recipe: { ...job.recipe, props: fill(job.recipe.props, dynamic, "0"), wrappers: job.recipe.wrappers.map((w, n) => ({ ...w, props: fill(w.props, w.dynamic ?? [], String(n + 1)) })) },
+    ...(dynamic.includes("children") && !job.recipe.label ? { label: "Example", icon: false } : {}),
+  };
 }
 
 /** What an icon-size button shows: a plus drawn like a 16px Lucide icon. */
@@ -43,8 +62,11 @@ export const ICON_HTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" hei
 
 export interface RenderResult {
   readonly html: Map<string, string>;
+  readonly suppliedNames: Map<string, readonly string[]>;
   readonly failures: Map<string, string>;
   readonly warnings: string[];
+  /** Project-relative files the bundle read (its esbuild metafile inputs inside the root, packages left out). */
+  readonly inputs: string[];
 }
 
 export interface RenderOptions {
@@ -54,6 +76,12 @@ export interface RenderOptions {
   readonly renderTimeoutMs?: number;
   /** Every look of the project together. */
   readonly totalTimeoutMs?: number;
+  /**
+   * Contents to bundle instead of what is on disk, by absolute path: a file as it was at a base
+   * commit (`youi render`'s before side). null: the file did not exist then, so a module that
+   * imports it fails to bundle. Only files the fence already lets in are read this way.
+   */
+  readonly overlay?: ReadonlyMap<string, string | null>;
 }
 
 export const BUNDLE_TIMEOUT_MS = 30_000;
@@ -110,12 +138,16 @@ const exported = (file, name) => {
 for (const job of workerData.jobs) {
   parentPort.postMessage({ start: job.key });
   let result;
-  try {
+  const draw = (job) => {
     const icon = () => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" }, React.createElement("path", { d: ${JSON.stringify(ICON_PATH)} }));
     let element = React.createElement(exported(job.file, job.export), job.props, ...(job.icon ? [icon()] : job.label === null ? [] : [job.label]));
     for (const wrapper of [...job.wrappers].reverse()) element = React.createElement(exported(wrapper.file, wrapper.export), wrapper.props, element);
     const html = renderToStaticMarkup(element).trim();
-    result = html ? { html } : { error: "rendered nothing" };
+    if (!html) throw new Error("rendered nothing");
+    return { html, suppliedNames: job.suppliedNames ?? [] };
+  };
+  try {
+    try { result = draw(job); } catch (error) { if (!job.fallback) throw error; result = draw(job.fallback); }
   } catch (error) {
     result = { error: String((error && error.message) || error).split("\\n")[0] };
   }
@@ -131,6 +163,25 @@ export function stubs(root: string, { portal }: { portal: boolean }): Plugin {
     setup(build) {
       build.onResolve({ filter: portal ? /^(?:next(?:\/.*)?|@radix-ui\/react-portal|server-only|client-only)$/ : /^(?:next(?:\/.*)?|server-only|client-only)$/ }, (args) => ({ path: args.path, namespace: NAMESPACE }));
       build.onLoad({ filter: /.*/, namespace: NAMESPACE }, (args) => ({ contents: stubFor(args.path) ?? "module.exports = {};", loader: "js", resolveDir: root }));
+    },
+  };
+}
+
+const SOURCE_LOADERS: Readonly<Record<string, "tsx" | "ts" | "jsx" | "js">> = { ".tsx": "tsx", ".ts": "ts", ".mts": "ts", ".cts": "ts", ".jsx": "jsx", ".js": "js", ".mjs": "js", ".cjs": "js" };
+
+/** Serves `overlay` contents for the source files it names; anything else loads from disk. */
+export function overlaid(root: string, overlay: ReadonlyMap<string, string | null>): Plugin {
+  return {
+    name: "youi-specimen-overlay",
+    setup(build) {
+      build.onLoad({ filter: /.*/, namespace: "file" }, (args) => {
+        if (!overlay.has(args.path)) return undefined;
+        const loader = SOURCE_LOADERS[posix.extname(args.path.replace(/\\/g, "/"))];
+        if (!loader) return undefined;
+        const contents = overlay.get(args.path);
+        if (contents === null || contents === undefined) return { errors: [{ text: `${displayPath(root, args.path)} did not exist at the base commit` }] };
+        return { contents, loader, resolveDir: posix.dirname(args.path.replace(/\\/g, "/")) };
+      });
     },
   };
 }
@@ -240,7 +291,7 @@ export async function bundleWithin(options: BuildOptions, timeoutMs: number, sig
 export const bundleError = (error: unknown): string =>
   (error as { errors?: Array<{ text: string; location?: { file: string; line: number } | null }> }).errors?.slice(0, 3).map((e) => (e.location ? `${e.location.file}:${e.location.line}: ${e.text}` : e.text)).join("; ") || (error instanceof Error ? error.message : String(error));
 
-type Outcome = { html?: string; error?: string };
+type Outcome = { html?: string; error?: string; suppliedNames?: readonly string[] };
 
 /**
  * Renders jobs in a worker, one result message per job. A job that overruns its time limit is
@@ -256,7 +307,8 @@ async function renderInWorkers(bundle: string, jobs: readonly RenderJob[], rende
       for (const job of pending) results.set(job.key, { error: `timed out: the project's looks took over ${limitOf(totalMs)}` });
       break;
     }
-    const payload = pending.map((j) => ({ key: j.key, file: j.recipe.file, export: j.recipe.export, props: j.recipe.props, label: j.label, icon: j.icon === true, wrappers: j.recipe.wrappers }));
+    const payloadOf = (j: RenderJob): object => ({ fallback: j.fallback ? payloadOf(j.fallback) : undefined, suppliedNames: j.suppliedNames, key: j.key, file: j.recipe.file, export: j.recipe.export, props: j.recipe.props, label: j.label, icon: j.icon === true, wrappers: j.recipe.wrappers });
+    const payload = pending.map(payloadOf);
     const stopped = await new Promise<{ current: string | null; reason: string } | null>((done) => {
       const worker = new Worker(WORKER, { eval: true, workerData: { bundle, jobs: payload }, stdout: true, stderr: true, resourceLimits: { maxOldGenerationSizeMb: 1024 } });
       let current: string | null = null;
@@ -281,7 +333,7 @@ async function renderInWorkers(bundle: string, jobs: readonly RenderJob[], rende
           current = message.start;
           arm();
         } else if (message.key !== undefined) {
-          results.set(message.key, { html: message.html, error: message.error });
+          results.set(message.key, { html: message.html, error: message.error, suppliedNames: message.suppliedNames });
           current = null;
         } else if (message.done) finish(null);
       });
@@ -304,12 +356,14 @@ async function renderInWorkers(bundle: string, jobs: readonly RenderJob[], rende
 /** Bundle every module the jobs name, with the project's React, then render each job. */
 export async function renderComponents(root: string, tsconfig: string, jobs: readonly RenderJob[], scratch: string, stats: SpecimenStats, options: RenderOptions = {}): Promise<RenderResult> {
   const html = new Map<string, string>();
+  const suppliedNames = new Map<string, readonly string[]>();
   const failures = new Map<string, string>();
   const warnings: string[] = [];
-  if (jobs.length === 0) return { html, failures, warnings };
+  const inputs = new Set<string>();
+  if (jobs.length === 0) return { html, suppliedNames, failures, warnings, inputs: [] };
   if (!packageUnderRoot(root, "react") || !packageUnderRoot(root, "react-dom")) {
     for (const job of jobs) failures.set(job.key, "react is not installed in the project");
-    return { html, failures, warnings: ["react and react-dom are not installed in the project's node_modules: component looks are drawn from their classes"] };
+    return { html, suppliedNames, failures, warnings: ["react and react-dom are not installed in the project's node_modules: component looks are drawn from their classes"], inputs: [] };
   }
   // A recipe file outside the root is never bundled (build.ts refuses it first, with a note).
   const runnable: RenderJob[] = [];
@@ -322,7 +376,7 @@ export async function renderComponents(root: string, tsconfig: string, jobs: rea
   if ("refused" in config) warnings.push(`refused ${config.refused}: bundled without it`);
   const refusals = new Set<string>();
   const bundleMs = options.bundleTimeoutMs ?? BUNDLE_TIMEOUT_MS;
-  const bundleOf = (files: readonly string[]): Promise<string> => {
+  const bundleOf = async (files: readonly string[]): Promise<string> => {
     stats.bundles++;
     const entry = [
       `const React = require("react");`,
@@ -331,7 +385,7 @@ export async function renderComponents(root: string, tsconfig: string, jobs: rea
       `const modules = { ${files.map((file) => `${JSON.stringify(file)}: () => require(${JSON.stringify(`./${file}`)})`).join(", ")} };`,
       `module.exports = { React, renderToStaticMarkup, modules };`,
     ].join("\n");
-    return bundleWithin(
+    const { text, inputs: read } = await bundleWithin(
       {
         stdin: { contents: entry, resolveDir: root, loader: "tsx", sourcefile: "youi-specimens.tsx" },
         absWorkingDir: scratch,
@@ -344,10 +398,18 @@ export async function renderComponents(root: string, tsconfig: string, jobs: rea
         define: { "process.env.NODE_ENV": '"production"' },
         loader: ASSET_LOADERS,
         logLevel: "silent",
-        plugins: [stubs(root, { portal: true }), containment(root, refusals)],
+        plugins: [stubs(root, { portal: true }), containment(root, refusals), ...(options.overlay ? [overlaid(root, options.overlay)] : [])],
+        metafile: true,
       },
       bundleMs,
     );
+    // Metafile paths are relative to the working directory; a package's own files are keyed by its version instead.
+    for (const input of read) {
+      if (/^[a-z-]+:/.test(input)) continue;
+      const inside = relativeInside(root, resolve(scratch, input));
+      if ("ok" in inside && !inside.ok.split("/").includes("node_modules")) inputs.add(inside.ok);
+    }
+    return text;
   };
   let files = [...new Set(runnable.flatMap((j) => [j.recipe.file, ...j.recipe.wrappers.map((w) => w.file)]))].sort();
   const unbundled = new Map<string, string>();
@@ -369,14 +431,14 @@ export async function renderComponents(root: string, tsconfig: string, jobs: rea
     if (unbundled.size === 0) {
       for (const job of runnable) failures.set(job.key, `bundle failed: ${whole}`);
       warnings.push(`the component bundle failed (${whole}): component looks are drawn from their classes`);
-      return { html, failures, warnings: [...warnings, ...refusals] };
+      return { html, suppliedNames, failures, warnings: [...warnings, ...refusals], inputs: [...inputs].sort() };
     }
     try {
       code = files.length > 0 ? await bundleOf(files) : null;
     } catch (error: unknown) {
       const message = bundleError(error);
       for (const job of runnable) failures.set(job.key, `bundle failed: ${message}`);
-      return { html, failures, warnings: [...warnings, ...refusals, `the component bundle failed (${message}): component looks are drawn from their classes`] };
+      return { html, suppliedNames, failures, warnings: [...warnings, ...refusals, `the component bundle failed (${message}): component looks are drawn from their classes`], inputs: [...inputs].sort() };
     }
   }
   const renderable: RenderJob[] = [];
@@ -391,9 +453,9 @@ export async function renderComponents(root: string, tsconfig: string, jobs: rea
     const results = await renderInWorkers(bundle, renderable, options.renderTimeoutMs ?? RENDER_TIMEOUT_MS, options.totalTimeoutMs ?? TOTAL_TIMEOUT_MS);
     for (const job of renderable) {
       const result = results.get(job.key);
-      if (result?.html) html.set(job.key, result.html);
+      if (result?.html) { html.set(job.key, result.html); suppliedNames.set(job.key, result.suppliedNames ?? []); }
       else failures.set(job.key, result?.error ?? "not rendered");
     }
   }
-  return { html, failures, warnings: [...warnings, ...refusals] };
+  return { html, suppliedNames, failures, warnings: [...warnings, ...refusals], inputs: [...inputs].sort() };
 }

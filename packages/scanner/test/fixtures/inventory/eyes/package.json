@@ -1,0 +1,6 @@
+{
+  "name": "eyes",
+  "private": true,
+  "description": "youi render fixture: a Vite-style app whose Tailwind v4 sheet is imported by its entry. The tests copy it into a git repository, commit it as the base, then edit a component and render it.",
+  "dependencies": { "react": "*", "react-dom": "*", "tailwindcss": "^4" }
+}

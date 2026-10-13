@@ -12,6 +12,10 @@
  *   ui_find_component  call before writing UI: the project's own components that fit a need
  *              (import, props, a real usage, where used, library), read live from the code with
  *              or without a youi.project.json, or "nothing fits" and where to start. Plain lines.
+ *   ui_render  see a component after changing it: screenshots (light and dark, desktop and
+ *              phone), accessibility issues and a diff against the base commit, as image
+ *              paths and plain lines. It writes images to the specimen cache only, never
+ *              into the project.
  * There is no publish, approve, merge or install tool, so an agent can look things up,
  * plan a change and draft a request, but never ship one.
  *
@@ -25,10 +29,10 @@ import { isAbsolute, join, resolve, sep } from "node:path";
 import { isLibraryId, loadLibrary, MigrationSpec, normalizeRelPath, type Library, type McpTool } from "@youiyoux/core";
 import { DISCOVER_RULE, DiscoverConstraints, discoverCacheDir, discoverIndexPath, MissingIndexError, readCatalog, searchCatalog, sharedStore, showFromCatalog, type DiscoverHit } from "@youiyoux/discover";
 import { storeLocation, type Store } from "@youiyoux/store";
-import { adoptionRequest, collectComponents, findLibraryEntry, componentCard, describeIdentity, failedChecks, findContract, formatProps, loadProject, planChange, PROJECT_FILE, ruleRows, ScanCache, scanProject, screenBom, searchElements, searchLibrary, tokenRows, whereUsed, type PlanInput, type Project, type ProjectComponents, type ScanResult } from "@youiyoux/scanner";
+import { adoptionRequest, collectComponents, findLibraryEntry, renderShots, type ShotsOptions, componentCard, describeIdentity, failedChecks, findContract, formatProps, loadProject, planChange, PROJECT_FILE, ruleRows, ScanCache, scanProject, screenBom, searchElements, searchLibrary, tokenRows, whereUsed, type PlanInput, type Project, type ProjectComponents, type ScanResult } from "@youiyoux/scanner";
 import { z } from "zod";
 import { findComponents, matchesText, noneFitsText } from "./find-component.ts";
-import { ruleCoversText, swapImpactText, whereUsedText } from "./index-tools.ts";
+import { renderText, ruleCoversText, swapImpactText, whereUsedText } from "./index-tools.ts";
 
 export interface ServerOptions {
   readonly projectRoot: string;
@@ -41,6 +45,8 @@ export interface ServerOptions {
   readonly discoverCache?: string;
   /** The store (index.db); default beside an explicit discoverCache, else YOUI_INDEX, else ~/.cache/youiyoux/index.db. DATABASE_URL wins. */
   readonly index?: string;
+  /** ui_render: tests count renders, choose the cache and never download Chromium. */
+  readonly render?: Pick<ShotsOptions, "stats" | "download" | "cache">;
 }
 
 const VERSION = "0.1.0";
@@ -163,7 +169,7 @@ export function createServer(options: ServerOptions): McpServer {
     { name: "youiyoux", version: VERSION },
     {
       instructions:
-        "YouIyouX: the UI context and verification layer for this project. Before creating any UI component, call ui_find_component with the need in words: reuse the existing component it names, or start where it says when nothing fits. Build only with System elements: call system_get_component before using a component's props, system_get_tokens instead of writing colours or sizes, and system_check on code before finishing. system_plan shows the impact of a change to the System. The Library (library_* tools, lib: ids) holds ingested references that are not approved: browse them with library_search, never import, copy or build with them, and use library_request to draft an adoption request for a person to approve. discover_search and discover_show find outside candidates by need (shadcn registries, npm) with licence, signals and install command: they are references, never install or copy one; propose one with library_request. index_where_used, index_swap_impact and index_rule_covers answer from the local index in a few lines: where an inventory family (button-2) is used, what swapping a candidate in for it would touch, and what a rule covers. There are no tools to publish, approve or install anything.",
+        "YouIyouX: the UI context and verification layer for this project. Before creating any UI component, call ui_find_component with the need in words: reuse the existing component it names, or start where it says when nothing fits. Build only with System elements: call system_get_component before using a component's props, system_get_tokens instead of writing colours or sizes, and system_check on code before finishing. system_plan shows the impact of a change to the System. The Library (library_* tools, lib: ids) holds ingested references that are not approved: browse them with library_search, never import, copy or build with them, and use library_request to draft an adoption request for a person to approve. discover_search and discover_show find outside candidates by need (shadcn registries, npm) with licence, signals and install command: they are references, never install or copy one; propose one with library_request. index_where_used, index_swap_impact and index_rule_covers answer from the local index in a few lines: where an inventory family (button-2) is used, what swapping a candidate in for it would touch, and what a rule covers. After changing a component, call ui_render with its file and look at the images it names: light and dark at desktop and phone width, accessibility issues, and a diff against the base commit. There are no tools to publish, approve or install anything.",
     },
   );
 
@@ -392,6 +398,24 @@ export function createServer(options: ServerOptions): McpServer {
         if (!(error instanceof MissingIndexError)) throw error;
       }
       return noneFitsText({ result, discover, componentsDir: system?.project.config.componentsDir ?? components.componentsDir, inSystem: system !== null });
+    }),
+  );
+
+  server.registerTool(
+    "ui_render" satisfies McpTool,
+    {
+      title: "See a component you changed",
+      description: "Draw a component with the project's own code and CSS in headless Chromium: screenshots in light and dark at 1280 and 390 px, accessibility issues found by axe (WCAG 2.2 A and AA), and a pixel diff against the base commit (default: the merge base with origin/main, else main). Returns absolute image paths (open them) and a short summary ending in what to do next. With no target, only components whose files changed since the base are drawn; an unchanged component comes from the cache. Images go to the specimen cache, never into the project.",
+      inputSchema: { target: z.string().min(1).optional().describe("The file you changed (project-relative or absolute), or an exported component name, e.g. src/components/ui/button.tsx or Button"), base: z.string().min(1).optional().describe("A git ref to compare with, e.g. main or HEAD~1") },
+      annotations: READ_ONLY,
+    },
+    lines(async ({ target, base }) => {
+      const root = resolve(options.productRoot ?? options.projectRoot);
+      try {
+        return renderText(await renderShots(root, target ? [target.trim()] : [], { ...(base ? { base } : {}), ...(process.env.YOUI_CHROMIUM ? { executablePath: process.env.YOUI_CHROMIUM } : {}), ...options.render }));
+      } catch (error: unknown) {
+        throw new Error(`ui_render could not run: ${error instanceof Error ? error.message : String(error)}. Nothing was checked; this is not a pass.`);
+      }
     }),
   );
 

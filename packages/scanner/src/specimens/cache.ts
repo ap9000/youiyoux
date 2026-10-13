@@ -29,7 +29,7 @@ export function defaultCacheDir(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 /** Versions of the packages that decide the output, as the root's node_modules has them. */
-function versions(root: string): Record<string, string | null> {
+export function versions(root: string): Record<string, string | null> {
   return Object.fromEntries(
     ["tailwindcss", "react", "react-dom"].map((name) => {
       const dir = packageUnderRoot(root, name);

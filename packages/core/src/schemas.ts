@@ -518,7 +518,7 @@ export type InventoryPrimitive = z.infer<typeof InventoryPrimitive>;
 const RecipeProps = z.record(z.string(), z.union([z.string(), z.number(), z.boolean()]));
 
 /** A component of the same module the site renders the look inside (Tabs > TabsList for a TabsTrigger). */
-export const InventoryRecipeWrapper = z.object({ file: z.string(), export: z.string(), props: RecipeProps });
+export const InventoryRecipeWrapper = z.object({ file: z.string(), export: z.string(), props: RecipeProps, dynamic: z.array(z.string()).optional() });
 export type InventoryRecipeWrapper = z.infer<typeof InventoryRecipeWrapper>;
 
 /**
@@ -533,10 +533,14 @@ export const InventoryRecipe = z.discriminatedUnion("kind", [
     file: z.string(),
     export: z.string(),
     props: RecipeProps,
+    /** Expression props omitted from the specimen. */
+    dynamic: z.array(z.string()).optional(),
     /** The site's text children (`Save`), null when it has none. */
     label: z.string().nullable(),
     /** Outermost first. */
     wrappers: z.array(InventoryRecipeWrapper),
+    /** Nearest enclosing project component, including across modules. */
+    parent: InventoryRecipeWrapper.optional(),
     tag: z.string(),
     classes: z.array(z.string()),
   }),

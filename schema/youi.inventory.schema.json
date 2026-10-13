@@ -605,6 +605,12 @@
                       ]
                     }
                   },
+                  "dynamic": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
                   "label": {
                     "type": [
                       "string",
@@ -634,6 +640,12 @@
                               "boolean"
                             ]
                           }
+                        },
+                        "dynamic": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         }
                       },
                       "required": [
@@ -642,6 +654,41 @@
                         "props"
                       ]
                     }
+                  },
+                  "parent": {
+                    "type": "object",
+                    "properties": {
+                      "file": {
+                        "type": "string"
+                      },
+                      "export": {
+                        "type": "string"
+                      },
+                      "props": {
+                        "type": "object",
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "additionalProperties": {
+                          "type": [
+                            "string",
+                            "number",
+                            "boolean"
+                          ]
+                        }
+                      },
+                      "dynamic": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": [
+                      "file",
+                      "export",
+                      "props"
+                    ]
                   },
                   "tag": {
                     "type": "string"

@@ -1,7 +1,9 @@
 /**
  * The index_* tools' answers: a few plain lines each (about ten), read from the store's graph.
- * Lists show their first few items and say how many more there are.
+ * Lists show their first few items and say how many more there are. ui_render's answer is the
+ * same text `youi render` prints, with the next step said as a tool call.
  */
+import { shotsText, type ShotsReport } from "@youiyoux/scanner";
 import type { RuleCovers, SwapImpact, WhereUsed } from "@youiyoux/store";
 
 const SHOWN = 6;
@@ -45,4 +47,9 @@ export function ruleCoversText(covers: RuleCovers, detail: { title?: string; sev
     list("files", covers.files),
     list("routes", covers.routes),
   ].join("\n");
+}
+
+/** ui_render: per component its image paths (absolute), the diff and the accessibility issues, then `next:`. */
+export function renderText(report: ShotsReport): string {
+  return shotsText(report, (target) => `call ui_render ${target ? JSON.stringify({ target }) : "with no target"} again`);
 }

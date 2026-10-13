@@ -57,9 +57,20 @@ describe("Claude Code PostToolUse hook", () => {
     expect(context).not.toContain("invite-form");
   });
 
-  test("is silent for clean files, generated output, unchecked files and bad input", async () => {
-    await writeFile(join(app, "components/extra.tsx"), CLEAN);
-    expect((await runClaudeHook(payload(join(app, "components/extra.tsx")))).stdout).toBe("");
+  test("for a clean component file, says only how to see it; it never renders inside the hook", async () => {
+    await writeFile(join(app, "components/extra file.tsx"), CLEAN);
+    const context = contextOf((await runClaudeHook(payload(join(app, "components/extra file.tsx")))).stdout);
+    expect(context).toBe("youi: components/extra file.tsx passes the design-system check. See it: youi render 'components/extra file.tsx' (or the MCP tool ui_render), then open the images: light and dark, desktop and phone, accessibility issues and the diff against the base.");
+  });
+
+  test("a component file's findings end with the line that says how to see it", async () => {
+    await writeFile(join(app, "components/extra file.tsx"), RAW_COLOR);
+    expect(contextOf((await runClaudeHook(payload("components/extra file.tsx"))).stdout).split("\n").at(-1)).toMatch(/^See it: youi render 'components\/extra file\.tsx' \(or the MCP tool ui_render\)/);
+  });
+
+  test("is silent for clean non-component files, generated output, unchecked files and bad input", async () => {
+    await writeFile(join(app, "components/extra.ts"), `export const gap = 4;\n`);
+    expect((await runClaudeHook(payload(join(app, "components/extra.ts")))).stdout).toBe("");
     await mkdir(join(app, "src/design"), { recursive: true });
     await writeFile(join(app, "src/design/tokens.ts"), `export const c = "#ff0000";\n`);
     expect((await runClaudeHook(payload("src/design/tokens.ts"))).stdout).toBe("");
@@ -71,7 +82,7 @@ describe("Claude Code PostToolUse hook", () => {
   test("with a baseline, reports only what the edit added", async () => {
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     expect(await main(["baseline", "--project", app])).toBe(0);
-    expect((await runClaudeHook(payload("app/settings/index.tsx"))).stdout).toBe("");
+    expect(contextOf((await runClaudeHook(payload("app/settings/index.tsx"))).stdout)).toMatch(/^youi: app\/settings\/index\.tsx passes the design-system check\. See it: /);
     const settings = join(app, "app/settings/index.tsx");
     await writeFile(settings, `${await readFile(settings, "utf8")}\nexport const Bad = () => <p style={{ color: "#00ff00" }} />;\n`);
     const context = contextOf((await runClaudeHook(payload(settings))).stdout);

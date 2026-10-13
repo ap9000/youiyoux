@@ -9,7 +9,7 @@ import { DefinitionError, getSystem, loadDesignRepo, loadLibrary, MigrationSpec,
 import { candidateSource, expandAll, selectSources, discoverCacheDir, discoverIndexPath, ingestCatalog, readCatalog, searchCatalog, sharedStore, showFromCatalog, syncIndex, type Fetcher } from "@youiyoux/discover";
 import { indexHome, storeLocation } from "@youiyoux/store";
 import { buildTokens, compareParity } from "@youiyoux/tokens";
-import { adoptionRequest, buildInventory, checkCapabilities, componentCard, describeIdentity, evaluateRule, findContract, loadProject, planChange, PROJECT_FILE, type LoadProjectOptions, ProjectWatcher, ruleCapability, runMigration, scanProject, screenBom, searchLibrary, whereUsed, type CacheStats, type PlanInput, type Project, type WatchUpdate } from "@youiyoux/scanner";
+import { adoptionRequest, buildInventory, RenderUnavailableError, renderShots, shotsNext, type ShotsOptions, checkCapabilities, componentCard, describeIdentity, evaluateRule, findContract, loadProject, planChange, PROJECT_FILE, type LoadProjectOptions, ProjectWatcher, ruleCapability, runMigration, scanProject, screenBom, searchLibrary, whereUsed, type CacheStats, type PlanInput, type Project, type WatchUpdate } from "@youiyoux/scanner";
 import { baselinePath, exitCodeOf, runCheck, writeBaseline, type CheckResult } from "./check.ts";
 import { actionable, githubAnnotations, githubSummary, renderCheckText } from "./check-render.ts";
 import { runClaudeHook, runPreCommitHook, type HookTarget } from "./hooks.ts";
@@ -23,7 +23,7 @@ import { initProject } from "./init.ts";
 import { noteSource, rebuildIndex, recordInventory, recordProject, renderHistory, renderRebuild, SCANS_LOG, SOURCES_FILE } from "./index-store.ts";
 import { renderInventory } from "./inventory.ts";
 import { renderAdoptionRequest, renderLibrarySearch } from "./library.ts";
-import { renderBom, renderMigration, renderPlan, renderRulePreview, renderRules, renderScan, renderShow, renderSync, renderWhere } from "./render.ts";
+import { renderBom, renderMigration, renderPlan, renderRulePreview, renderRules, renderScan, renderShots as renderShotsText, renderShow, renderSync, renderWhere } from "./render.ts";
 import { mcpArgs, syncProject } from "./sync.ts";
 import { ms, plural, style } from "./ui.ts";
 
@@ -47,6 +47,13 @@ ${style.bold("Anywhere")}  ${style.dim("no design system needed")}
                            <first project>/.youi/inventory.json unless --out, and records the scan
                            (project, commit, time, counts, families) in the local index for trends
   inventory --history      every recorded scan per project, newest first, with what changed
+  render [file|component…] [--base ref] [--json]
+                           see a component you changed: its looks drawn with the project's own code
+                           and CSS in headless Chromium, light and dark at 1280 and 390 px, axe's
+                           accessibility issues, and a pixel diff against the base commit (default:
+                           the merge base with origin/main, else main); prints image paths and what to
+                           do next. With no target, only components whose files changed are drawn;
+                           an unchanged component comes from the cache (YOUI_SPECIMEN_CACHE)
 
 ${style.bold("In a product repo")}
   init --design <dir>      write youi.project.json pointing at a design repo checkout, then sync
@@ -55,7 +62,8 @@ ${style.bold("In a product repo")}
   mcp [--cache dir]        stdio MCP server: system_* tools (build with), library_* tools (browse, request),
                            discover_* tools (read the Discover index; never fetch), index_* tools
                            (where a family is used, swap impact, what a rule covers; read the local index)
-                           and ui_find_component (the project's existing component for a need, or where to start)
+                           ui_find_component (the project's existing component for a need, or where to start),
+                           and ui_render (see a changed component, as youi render)
   agents install|remove [--claude] [--codex]
                            tell coding agents to call ui_find_component before creating a component:
                            a marked rule in AGENTS.md and CLAUDE.md, and the youiyoux MCP server for
@@ -196,6 +204,7 @@ const OPTIONS = {
   "max-registries": { type: "string" },
   offset: { type: "string" },
   history: { type: "boolean", default: false },
+  base: { type: "string" },
   help: { type: "boolean", short: "h", default: false },
 } satisfies ParseArgsConfig["options"];
 
@@ -664,6 +673,22 @@ async function cmdDetect(values: Values, positionals: string[]): Promise<number>
   return 0;
 }
 
+/** `youi render`: files are named from the current directory, components by name. Exit 1 only when nothing could be drawn. */
+async function cmdRender(values: Values, positionals: string[], io: CliIo): Promise<number> {
+  const root = resolve(values.root ?? values.project ?? process.cwd());
+  const targets = positionals.map((t) => (existsSync(resolve(t)) ? resolve(t) : t));
+  try {
+    const report = await renderShots(root, targets, { ...(values.base ? { base: values.base } : {}), ...(process.env.YOUI_CHROMIUM ? { executablePath: process.env.YOUI_CHROMIUM } : {}), ...io.render });
+    if (values.json) json({ ...report, next: shotsNext(report, (t) => `run youi render${t ? ` ${t}` : ""} again`) });
+    else print(renderShotsText(report));
+    return targets.length > 0 && report.components.every((c) => c.shots.length === 0) ? 1 : 0;
+  } catch (error: unknown) {
+    if (!(error instanceof RenderUnavailableError)) throw error;
+    process.stderr.write(`${style.error("✖")} youi render could not run: ${error.message}. Nothing was checked; this is not a pass.\n`);
+    return 1;
+  }
+}
+
 async function cmdMcp(values: Values): Promise<number> {
   const { startStdioServer } = await import("@youiyoux/mcp");
   await startStdioServer({ projectRoot: values.project ?? process.cwd(), ...loadOptions(values), ...(values.cache ? { discoverCache: values.cache } : {}) });
@@ -676,6 +701,8 @@ export interface CliIo {
   readonly fetcher?: Fetcher;
   /** Per-request timeout for `discover sync` (default 15 s). */
   readonly timeoutMs?: number;
+  /** `youi render`: tests count renders and never download Chromium. */
+  readonly render?: Pick<ShotsOptions, "stats" | "download" | "cache">;
 }
 
 function positiveInt(value: string | undefined, flag: string): number | undefined {
@@ -734,7 +761,7 @@ async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Pr
 type Command = (values: Values, positionals: string[], io: CliIo) => Promise<number>;
 
 const COMMANDS: Record<string, Command> = {
-  show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+  show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, render: cmdRender, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
 
 export async function main(argv: string[], io: CliIo = {}): Promise<number> {
