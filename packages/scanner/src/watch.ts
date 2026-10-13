@@ -11,14 +11,20 @@
  * - A run that throws (an invalid rule mid-edit, an unreadable file) is a failed
  *   update, and the project stays failed until a reload succeeds: results are never
  *   reported against definitions that no longer load.
+ * - A run starts only once the file watchers are live, so an edit is either in that run
+ *   or reported by the watchers afterwards; none falls in between (see `whenLive`).
  */
-import { existsSync, watch, type FSWatcher } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, watch, writeFileSync, type FSWatcher } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { matchesAny, toPosix } from "@youiyoux/core";
 import { ScanCache } from "./cache.ts";
 import { loadProject, PROJECT_FILE, type LoadProjectOptions, type Project } from "./project.ts";
 
 export const DEFAULT_DEBOUNCE_MS = 120;
+/** How long a run waits for its watchers to come live before it goes ahead anyway. */
+const LIVE_TIMEOUT_MS = 10_000;
+const PROBE_INTERVAL_MS = 50;
 const IGNORED = ["**/node_modules/**", "**/.git/**", "**/.youi/**", "**/dist/**"];
 
 export interface WatchOptions<R> {
@@ -28,6 +34,8 @@ export interface WatchOptions<R> {
   /** The work to redo on every change; it receives the shared cache so unchanged files are not re-analysed. */
   readonly job: (project: Project, cache: ScanCache, changed: readonly string[]) => Promise<R>;
   readonly onUpdate: (update: WatchUpdate<R>) => void;
+  /** Tests only: stands in for `fs.watch`. */
+  readonly watch?: typeof watch;
 }
 
 interface UpdateBase {
@@ -55,11 +63,15 @@ function covering(dirs: readonly string[]): string[] {
   return sorted.filter((dir, i) => !sorted.slice(0, i).some((parent) => dir.startsWith(`${parent}${sep}`)));
 }
 
+const defaultWatch: typeof watch = watch;
+
 export class ProjectWatcher<R> {
   private readonly options: WatchOptions<R>;
   private readonly cache = new ScanCache();
   private readonly configFile: string;
   private watchers: FSWatcher[] = [];
+  private probeDir: string | null = null;
+  private stopProbing: (() => void) | null = null;
   private project: Project | null = null;
   private pending = new Set<string>();
   private reloadPending = true;
@@ -84,8 +96,11 @@ export class ProjectWatcher<R> {
     this.closed = true;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+    this.stopProbing?.();
     for (const w of this.watchers) w.close();
     this.watchers = [];
+    if (this.probeDir) rmSync(this.probeDir, { recursive: true, force: true });
+    this.probeDir = null;
   }
 
   /** Resolves once no run is in flight or scheduled. */
@@ -126,7 +141,7 @@ export class ProjectWatcher<R> {
     try {
       if (reloaded || !this.project) {
         this.project = await loadProject(this.options.root, this.options.load ?? {});
-        this.rewatch(this.project);
+        await this.rewatch(this.project);
       }
       const project = this.project;
       this.cache.forget(changed.filter((file) => !existsSync(join(project.root, file))));
@@ -142,7 +157,8 @@ export class ProjectWatcher<R> {
     }
   }
 
-  private rewatch(project: Project): void {
+  private async rewatch(project: Project): Promise<void> {
+    const watch = this.options.watch ?? defaultWatch;
     for (const w of this.watchers) w.close();
     const { root, config, repo, system } = project;
     const sourceDirs = covering(config.include.map((g) => resolve(root, staticBase(g))).filter((d) => existsSync(d)));
@@ -154,12 +170,55 @@ export class ProjectWatcher<R> {
       ...topLevel.map((dir) => watch(dir, (_event, name) => name && this.topLevelChanged(project, join(dir, name.toString())))),
     ];
     for (const w of this.watchers) w.on("error", (error) => this.watcherFailed(error));
+    await this.whenLive();
   }
 
   private watchConfigOnly(): void {
+    const watch = this.options.watch ?? defaultWatch;
     for (const w of this.watchers) w.close();
     this.watchers = [watch(dirname(this.configFile), { recursive: true }, () => this.definitionsChanged())];
     for (const w of this.watchers) w.on("error", (error) => this.watcherFailed(error));
+    void this.whenLive();
+  }
+
+  /**
+   * Resolves once the watchers just opened report changes. On macOS, fs.watch returns before
+   * the FSEvents stream behind it runs: libuv starts it on another thread, and restarts the one
+   * stream every watcher shares whenever a watcher opens or closes. An edit in that gap is never
+   * reported, and under load the gap outlasts a whole scan. So the last watcher opened watches a
+   * private probe directory (never the person's project), and a file there is rewritten until
+   * its change arrives: the stream that reports it covers every watcher opened before it. Runs
+   * start after this, so they read every edit made before the watchers came live. The probe
+   * watcher stays open, because closing it would restart the stream and open a new gap.
+   */
+  private whenLive(): Promise<void> {
+    const watch = this.options.watch ?? defaultWatch;
+    this.stopProbing?.();
+    if (this.closed) return Promise.resolve();
+    this.probeDir ??= mkdtempSync(join(tmpdir(), "youi-watch-probe-"));
+    const probe = join(this.probeDir, "probe");
+    return new Promise<void>((done) => {
+      let writes = 0;
+      const stop = (): void => {
+        clearInterval(timer);
+        if (this.stopProbing === stop) this.stopProbing = null;
+        done();
+      };
+      const write = (): void => {
+        if (++writes * PROBE_INTERVAL_MS > LIVE_TIMEOUT_MS) return stop();
+        try {
+          writeFileSync(probe, String(writes));
+        } catch {
+          stop();
+        }
+      };
+      this.stopProbing = stop;
+      const watcher = watch(this.probeDir!, () => stop());
+      watcher.on("error", () => stop());
+      this.watchers.push(watcher);
+      const timer = setInterval(write, PROBE_INTERVAL_MS);
+      write();
+    });
   }
 
   private watcherFailed(error: Error): void {

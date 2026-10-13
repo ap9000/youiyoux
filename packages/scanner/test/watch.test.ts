@@ -1,4 +1,4 @@
-import { writeFileSync } from "node:fs";
+import { watch, writeFileSync, type PathLike, type WatchListener, type WatchOptions } from "node:fs";
 import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -84,6 +84,25 @@ describe("watch mode", () => {
     await writeFile(rule, good);
     await updateWhere((u) => u.generation > failedSoFar && u.status === "ok");
     expect(updates.at(-1)).toMatchObject({ status: "ok", reloaded: true });
+  });
+
+  test("an edit made as soon as watching starts is seen, however late the watchers come live", async () => {
+    // Like macOS FSEvents on a busy machine: a watcher reports nothing for a while after it opens.
+    const DEAD_MS = 1_500;
+    const late = ((path: PathLike, ...rest: unknown[]) => {
+      const opensAt = Date.now() + DEAD_MS;
+      const listener = rest.find((a) => typeof a === "function") as WatchListener<string>;
+      const options = (rest.find((a) => typeof a === "object") ?? {}) as WatchOptions;
+      return watch(path, options, (event, name) => {
+        if (Date.now() >= opensAt) listener(event, name as string);
+      });
+    }) as typeof watch;
+    watcher?.close();
+    updates.length = 0;
+    watcher = await ProjectWatcher.start({ root: app, debounceMs: 60, watch: late, job: (project, cache) => scanProject(project, { cache }), onUpdate: (u) => updates.push(u) });
+    writeFileSync(join(app, "components/extra.tsx"), RAW_COLOR);
+    await updateWhere((u) => u.changed.includes("components/extra.tsx"));
+    expect(violationsOf(updates.at(-1)!).filter((v) => v.file === "components/extra.tsx")).toHaveLength(1);
   });
 
   test("static bases of include globs", () => {
