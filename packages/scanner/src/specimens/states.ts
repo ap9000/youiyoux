@@ -10,8 +10,11 @@
  * The rewrite walks the sheet's blocks (strings, comments, escapes and parentheses respected,
  * nested rules included) and only touches style-rule selectors; at-rule preludes stay as they
  * are. `:not(…)` arguments are left alone, so `:not(:disabled)` still reads the element itself.
- * A `@media (hover: hover)` block, which a touch screen never matches, is followed by a twin-only
- * copy for `(hover: none)`, so a forced hover shows on a phone too. The sheet is marked once
+ * A `@media` block gated on a fine pointer or real hover (`(hover: hover)`, `(pointer: fine)`, their
+ * `any-` forms), which a touch phone never matches, is followed by a copy gated on the opposite of
+ * those features alone (`(not ((hover: hover) and (pointer: fine)))`, with the block's other
+ * features kept): at the top level only the twins, so forced states show on any viewer whatever its
+ * hover or pointer, and a phone's real tap does not stick. The sheet is marked once
  * rewritten, and a marked sheet is returned unchanged, so twins are never added twice.
  */
 
@@ -24,7 +27,9 @@ export const STATE_CLASSES: Readonly<Record<ForcedState, string>> = { hover: "yo
 export const STATES_MARKER = "/* youi-states: forced-state twins */";
 
 const PSEUDO: Readonly<Record<string, ForcedState>> = { hover: "hover", "focus-visible": "focus", focus: "focus", "focus-within": "focus", active: "active", disabled: "disabled" };
-const HOVER_MEDIA = /\(\s*hover\s*:\s*hover\s*\)/i;
+/** A media feature a touch phone fails: real hover, or a fine pointer. */
+const INPUT_FEATURE = /^\(\s*(?:any-)?(?:hover(?:\s*:\s*hover)?|pointer\s*:\s*fine)\s*\)$/i;
+const STATES = Object.keys(STATE_CLASSES) as ForcedState[];
 
 type Node = { readonly text: string } | { readonly prelude: string; readonly children: Node[] };
 
@@ -90,7 +95,7 @@ function attributeState(inside: string): ForcedState | null {
 
 /**
  * One selector (or selector list) with each state pseudo-class and attribute twinned. `only`:
- * the twin without the real state (for the `(hover: none)` copy). Returns the rewritten text and
+ * the twin without the real state (for the copy a touch phone reads). Returns the rewritten text and
  * whether that state was found.
  */
 function rewrite(selector: string, only: ForcedState | null = null): { text: string; found: boolean } {
@@ -216,10 +221,11 @@ function serialize(nodes: readonly Node[], inRule: boolean): string {
     if (isAtRule(node.prelude)) {
       const body = isKeyframes(node.prelude) ? plain(node.children) : serialize(node.children, inRule);
       out += `${node.prelude}{${body}}`;
-      if (/^\s*@media\b/i.test(node.prelude.replace(/\/\*[\s\S]*?\*\//g, "")) && HOVER_MEDIA.test(node.prelude)) {
-        // Inside a rule its selector already carries the twin; at the top, only the forced hover.
-        const copy = inRule ? body : hoverOnly(node.children);
-        if (copy.trim()) out += `\n${node.prelude.replace(new RegExp(HOVER_MEDIA.source, "gi"), "(hover: none)")}{${copy}}`;
+      const media = inputFree(node.prelude);
+      if (media) {
+        // Inside a rule its selector already carries the twin; at the top, only the forced states.
+        const copy = inRule ? body : twinsOnly(node.children);
+        if (copy.trim()) out += `\n${media}{${copy}}`;
       }
       continue;
     }
@@ -230,20 +236,59 @@ function serialize(nodes: readonly Node[], inRule: boolean): string {
 
 const plain = (nodes: readonly Node[]): string => nodes.map((n) => ("text" in n ? n.text : `${n.prelude}{${plain(n.children)}}`)).join("");
 
-/** The rules of a `@media (hover: hover)` block that use `:hover`, with only the forced twin. */
-function hoverOnly(nodes: readonly Node[]): string {
+/** The rules of a block that use a state, with only the forced twin of each state they use. */
+function twinsOnly(nodes: readonly Node[]): string {
   let out = "";
   for (const node of nodes) {
     if ("text" in node) continue;
     if (isAtRule(node.prelude)) {
-      const inner = hoverOnly(node.children);
+      const inner = twinsOnly(node.children);
       if (inner.trim()) out += `${node.prelude}{${inner}}`;
       continue;
     }
-    const kept = selectors(node.prelude).map((s) => rewrite(s, "hover")).filter((s) => s.found);
+    const kept = selectors(node.prelude).flatMap((s) => STATES.map((state) => rewrite(s, state)).filter((r) => r.found));
     if (kept.length > 0) out += `${kept.map((s) => s.text).join(",")}{${plain(node.children)}}`;
   }
   return out;
+}
+
+/** A media query's top-level `and` terms (parentheses respected). */
+function terms(query: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let from = 0;
+  for (let i = 0; i < query.length; i++) {
+    const c = query[i];
+    if (c === "(") depth++;
+    else if (c === ")") depth--;
+    else if (depth === 0 && /\s/.test(c!) && /^\s+and\s/i.test(query.slice(i))) {
+      parts.push(query.slice(from, i).trim());
+      i += /^\s+and\s+/i.exec(query.slice(i))![0].length - 1;
+      from = i + 1;
+    }
+  }
+  parts.push(query.slice(from).trim());
+  return parts.filter(Boolean);
+}
+
+/**
+ * The prelude for the copy of an `@media` block that needs real hover or a fine pointer: each
+ * query with those features replaced by their negation, so the copy matches exactly the viewers
+ * the block misses. Null when the block needs neither (or its query is too unusual to invert:
+ * `or`, a leading `not`), so no copy is made.
+ */
+function inputFree(prelude: string): string | null {
+  const text = prelude.replace(/\/\*[\s\S]*?\*\//g, "").trim();
+  const head = /^@media\b/i.exec(text);
+  if (!head) return null;
+  const copies: string[] = [];
+  for (const query of selectors(text.slice(head[0].length))) {
+    const parts = terms(query.trim());
+    const input = parts.filter((p) => INPUT_FEATURE.test(p));
+    if (input.length === 0 || parts.some((p) => /^not\b/i.test(p) || /\)\s*or\s*\(/i.test(p))) continue;
+    copies.push([...parts.filter((p) => !INPUT_FEATURE.test(p)), `(not ${input.length === 1 ? input[0] : `(${input.join(" and ")})`})`].join(" and "));
+  }
+  return copies.length > 0 ? `@media ${copies.join(", ")} ` : null;
 }
 
 /** The sheet with forced-state twins added (see the top of this file); a sheet already rewritten is returned as is. */

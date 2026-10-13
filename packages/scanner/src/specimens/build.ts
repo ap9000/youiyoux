@@ -23,7 +23,7 @@ import { ICON_HTML, renderComponents, type ComponentRecipe, type RenderJob, type
 export { SpecimenCache, defaultCacheDir, newStats, type SpecimenStats } from "./cache.ts";
 export { buildProjectCss, describeSkipped, describeSources, findStylesheets, forScheme, pageStylesheets, projectTailwind, SCHEMES, stylesheetLinks, tailwindCliBuilds, type Scheme, type SheetSource } from "./css.ts";
 export { escapingLinks, isBarePackageUnderRoot, relativeInside, within } from "./contain.ts";
-export { BrowserBundleCache, bundleForBrowser, MAX_SIBLINGS, type BrowserBundle, type BrowserLook, type BrowserResult, type TryMessage } from "./client.ts";
+export { BrowserBundleCache, BUNDLE_BUSY, BUNDLE_CACHE_LIMITS, bundleForBrowser, MAX_SIBLINGS, type BrowserBundle, type BrowserLook, type BrowserResult, type BundleCacheLimits, type TryMessage } from "./client.ts";
 export { forcedStates, STATE_CLASSES, STATES_MARKER, type ForcedState } from "./states.ts";
 
 /** component: server-rendered from the project's code; markup: a tag with its classes. */

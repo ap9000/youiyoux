@@ -33,15 +33,25 @@ describe("forced-state twins: each pseudo-class and attribute (c1)", () => {
 
   test("Tailwind v4's nested output: `&:hover` blocks inside a rule, and `@media (hover: hover)` inside those", () => {
     const out = flat(twins(".hover\\:bg-accent { &:hover { @media (hover: hover) { background-color: var(--color-accent); } } }"));
-    expect(out).toBe(`.hover\\:bg-accent { &${is(":hover", "hover")} { @media (hover: hover) { background-color: var(--color-accent); } @media (hover: none) { background-color: var(--color-accent); } } }`);
+    expect(out).toBe(`.hover\\:bg-accent { &${is(":hover", "hover")} { @media (hover: hover) { background-color: var(--color-accent); } @media (not (hover: hover)) { background-color: var(--color-accent); } } }`);
   });
 
   test("a top-level `@media (hover: hover)` keeps its rules and gets a twin-only copy for touch screens", () => {
     const out = flat(twins("@layer utilities { @media (hover: hover) { .hover\\:x:hover { color: red; } .y { color: blue; } } }"));
     expect(out).toContain(`@media (hover: hover) { .hover\\:x${is(":hover", "hover")} { color: red; } .y { color: blue; } }`);
     // Only the hover rules, only the forced class: a phone's real tap does not stick.
-    expect(out).toContain("@media (hover: none) { .hover\\:x:is(.youi-state-hover, .youi-state-hover *) { color: red; }}");
+    expect(out).toContain("@media (not (hover: hover)) { .hover\\:x:is(.youi-state-hover, .youi-state-hover *) { color: red; }}");
     expect(out.match(/\.y \{/g)).toHaveLength(1);
+  });
+
+  test("a block that also needs a fine pointer: the copy negates both, so a touch phone (hover: none, pointer: coarse) gets it", () => {
+    const out = flat(twins("@media (hover: hover) and (pointer: fine) { .a:hover { color: red; } .b:focus-visible { outline: 1px; } .c { color: blue; } }"));
+    expect(out).toContain("@media (not ((hover: hover) and (pointer: fine))) { .a:is(.youi-state-hover, .youi-state-hover *) { color: red; } .b:is(.youi-state-focus, .youi-state-focus *) { outline: 1px; }}");
+    expect(out.match(/\.c \{/g)).toHaveLength(1);
+    // Other features stay; each query of a list is inverted on its own; any- forms count too.
+    expect(flat(twins("@media (min-width: 40rem) and (any-pointer: fine), print and (hover) { .a:active { scale: .9; } }"))).toContain("@media (min-width: 40rem) and (not (any-pointer: fine)), print and (not (hover)) { .a:is(.youi-state-active, .youi-state-active *) { scale: .9; }}");
+    // A block a phone already matches, or one with no input features, gets no copy.
+    for (const css of ["@media (hover: none) { .a:hover { color: red; } }", "@media (pointer: coarse) { .a:hover { color: red; } }", "@media (min-width: 40rem) { .a:hover { color: red; } }"]) expect(twins(css).match(/@media/g)).toHaveLength(1);
   });
 
   test("a pseudo-element after the state stays after the twin", () => {

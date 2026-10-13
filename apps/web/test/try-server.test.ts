@@ -7,7 +7,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, describe, expect, test, vi } from "vitest";
-import { tryMiddleware, type TryIndex } from "../scripts/try-server.ts";
+import { tryIndexDeny, tryMiddleware, type TryIndex } from "../scripts/try-server.ts";
 
 const SNAPSHOT = resolve(import.meta.dirname, "../snapshot");
 const index = JSON.parse(readFileSync(join(SNAPSHOT, "try.json"), "utf8")) as TryIndex;
@@ -47,6 +47,42 @@ describe("try.json (c2)", () => {
     // A button with no wrappers stands alone.
     const button = Object.values(index.projects.console!.specimens).find((s) => s.look.recipe.export === "Button")!;
     expect(button.siblings).toEqual([]);
+  });
+});
+
+describe("try.json is not served to the browser (c2)", () => {
+  test("the hub's dev server refuses it on every route, to its own page and to another localhost port; the endpoint still reads it", async () => {
+    const { createServer } = await import("vite");
+    const server = await createServer({ configFile: resolve(import.meta.dirname, "../vite.config.ts"), logLevel: "silent", server: { port: 0, host: "127.0.0.1" }, optimizeDeps: { noDiscovery: true, include: [] } });
+    try {
+      await server.listen();
+      const origin = server.resolvedUrls!.local[0]!.replace(/\/$/, "");
+      const absolute = join(SNAPSHOT, "try.json");
+      const routes = ["/snapshot/try.json", "/snapshot/try.json?import", "/snapshot/try.json?raw", "/snapshot/TRY.JSON", "/snapshot/%74ry.json", "/snapshot/./try.json", "/public/../snapshot/try.json", `/@fs${absolute}`, `/@fs${absolute}?import`, "/@snapshot/try.json"];
+      for (const route of routes) {
+        for (const from of [null, "http://localhost:5199"]) {
+          const response = await fetch(`${origin}${route}`, { headers: from ? { Origin: from } : {} });
+          const body = await response.text();
+          // A 200 is only ever the SPA fallback: the hub's page, not the file.
+          if (response.status === 200) expect(response.headers.get("content-type"), route).toContain("text/html");
+          expect(body, route).not.toContain("youiyoux.try/v1");
+        }
+      }
+      // Its siblings still load (the snapshot's data, Vite's own files), and Try it answers from it.
+      expect((await fetch(`${origin}/data/manifest.json`)).status).toBe(200);
+      expect((await fetch(`${origin}/@vite/client`)).status).toBe(200);
+      const answer = await fetch(`${origin}/__youi/try?project=console&specimen=nope`);
+      expect(answer.status).toBe(404);
+      expect(await answer.json()).toEqual({ error: "This look cannot be tried here: the hub has no record of it." });
+    } finally {
+      await server.close();
+    }
+  }, 60_000);
+
+  test("the deny list keeps Vite's defaults and escapes glob characters in the snapshot path", () => {
+    const deny = tryIndexDeny("/work/my (design)/[hub]");
+    expect(deny).toEqual(expect.arrayContaining([".env", ".env.*", "**/.git/**"]));
+    expect(deny.at(-1)).toBe("/work/my \\(design\\)/\\[hub\\]/try.json");
   });
 });
 
@@ -103,5 +139,33 @@ describe("the Try it endpoint (c2)", () => {
       expect(JSON.parse(answer.body)).toEqual({ error: "refused: ../site/src/pages/index.astro is outside the project root" });
     }
     expect(bundle).toHaveBeenCalledTimes(1);
+  });
+
+  test("builds are capped: past the build slots and queue a look is answered 503 busy and never built (c3)", async () => {
+    const scanner = await import("../../../packages/scanner/src/specimens/client.ts");
+    let release: () => void = () => {};
+    const gate = new Promise<void>((done) => (release = done));
+    const bundle = vi.fn(async () => {
+      await gate;
+      return { hash: "0123456789abcdef", code: "/* youi */", inputs: [] };
+    });
+    class OneAtATime extends scanner.BrowserBundleCache {
+      constructor() {
+        super({ builds: 1, queued: 1 });
+      }
+    }
+    const middleware = tryMiddleware(SNAPSHOT, "/", async () => ({ ...scanner, BrowserBundleCache: OneAtATime, bundleForBrowser: bundle }) as never);
+    const ids = Object.keys(index.projects.console!.specimens).slice(0, 3);
+    expect(ids).toHaveLength(3);
+    const first = call(middleware, `/__youi/try?project=console&specimen=${ids[0]}`);
+    const second = call(middleware, `/__youi/try?project=console&specimen=${ids[1]}`);
+    await vi.waitFor(() => expect(bundle).toHaveBeenCalledTimes(1));
+    const third = await call(middleware, `/__youi/try?project=console&specimen=${ids[2]}`);
+    if (third === "next") throw new Error("not handled");
+    expect(third.status).toBe(503);
+    expect(JSON.parse(third.body)).toEqual({ error: scanner.BUNDLE_BUSY });
+    release();
+    for (const answer of await Promise.all([first, second])) expect(answer !== "next" && answer.status).toBe(200);
+    expect(bundle).toHaveBeenCalledTimes(2);
   });
 });

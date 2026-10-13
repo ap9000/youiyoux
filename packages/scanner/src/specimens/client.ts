@@ -46,7 +46,8 @@ export interface BrowserBundle {
   readonly inputs: readonly BundleInput[];
 }
 
-export type BrowserResult = BrowserBundle | { readonly error: string };
+/** A bundle, or why there is none: a sentence, and `busy` when it was turned away untried. */
+export type BrowserResult = BrowserBundle | { readonly error: string; readonly busy?: true };
 
 /** What the frame posts to the hub; every message carries `youi: "try"`. */
 export type TryMessage = { youi: "try"; type: "box"; x: number; y: number; width: number; height: number } | { youi: "try"; type: "escape" } | { youi: "try"; type: "ready" } | { youi: "try"; type: "error"; message: string };
@@ -208,27 +209,62 @@ export async function bundleForBrowser(root: string, tsconfig: string, job: Brow
   }
 }
 
+/** How much Try it may hold and build at once (see BrowserBundleCache). */
+export interface BundleCacheLimits {
+  /** Bundles kept, least recently used dropped first. */
+  readonly entries: number;
+  /** Their code, in UTF-16 code units, summed. */
+  readonly bytes: number;
+  /** How long a bundle is kept after it was built. */
+  readonly ageMs: number;
+  /** Builds running at once. */
+  readonly builds: number;
+  /** Builds waiting for one of those; past this a request is turned away as busy. */
+  readonly queued: number;
+}
+
+export const BUNDLE_CACHE_LIMITS: BundleCacheLimits = { entries: 32, bytes: 32 * 1024 * 1024, ageMs: 30 * 60_000, builds: 2, queued: 8 };
+
+/** The answer when every build slot and queue place is taken. */
+export const BUNDLE_BUSY = "Try it is busy building other looks; try again in a moment.";
+
 /**
  * Bundles kept in memory by a key (project and specimen): one is reused while every file it read
- * is unchanged; its code is served by its hash. One build per key is in flight at a time.
+ * is unchanged; its code is served by its hash. One build per key is in flight at a time, at most
+ * `builds` run at once and `queued` wait (any more are answered busy, never built), and what is
+ * kept is bounded by count, total size and age, so a page cannot make the server build or hold
+ * without limit.
  */
 export class BrowserBundleCache {
-  private readonly byKey = new Map<string, BrowserBundle>();
-  private readonly byHash = new Map<string, BrowserBundle>();
+  private readonly byKey = new Map<string, { readonly bundle: BrowserBundle; readonly at: number }>();
   private readonly building = new Map<string, Promise<BrowserResult>>();
+  private readonly waiting: Array<() => void> = [];
+  private running = 0;
+  private bytes = 0;
+  private readonly limits: BundleCacheLimits;
+  private readonly now: () => number;
+
+  constructor(limits: Partial<BundleCacheLimits> = {}, now: () => number = Date.now) {
+    this.limits = { ...BUNDLE_CACHE_LIMITS, ...limits };
+    this.now = now;
+  }
 
   /** The cached bundle for `key` if its inputs are unchanged, else a fresh one from `build`. */
   async get(key: string, build: () => Promise<BrowserResult>): Promise<BrowserResult> {
+    this.expire();
     const cached = this.byKey.get(key);
-    if (cached && cached.inputs.every((input) => digestOf(input.path) === input.digest)) return cached;
+    if (cached && cached.bundle.inputs.every((input) => digestOf(input.path) === input.digest)) {
+      // Most recently used goes last.
+      this.byKey.delete(key);
+      this.byKey.set(key, cached);
+      return cached.bundle;
+    }
     const running = this.building.get(key);
     if (running) return running;
-    const next = build().then((result) => {
+    if (this.building.size >= this.limits.builds + this.limits.queued) return { error: BUNDLE_BUSY, busy: true };
+    const next = this.slot(build).then((result) => {
       this.building.delete(key);
-      if ("hash" in result) {
-        this.byKey.set(key, result);
-        this.byHash.set(result.hash, result);
-      }
+      if ("hash" in result) this.keep(key, result);
       return result;
     });
     this.building.set(key, next);
@@ -237,6 +273,52 @@ export class BrowserBundleCache {
 
   /** A bundle's code by its hash, for serving. */
   code(hash: string): string | null {
-    return this.byHash.get(hash)?.code ?? null;
+    this.expire();
+    for (const { bundle } of this.byKey.values()) if (bundle.hash === hash) return bundle.code;
+    return null;
+  }
+
+  /** How many bundles are kept, their total size, and the builds running and waiting. */
+  stats(): { entries: number; bytes: number; running: number; waiting: number } {
+    return { entries: this.byKey.size, bytes: this.bytes, running: this.running, waiting: this.waiting.length };
+  }
+
+  /** `build` once a build slot is free; the slot is handed on when it settles. */
+  private async slot(build: () => Promise<BrowserResult>): Promise<BrowserResult> {
+    if (this.running >= this.limits.builds) await new Promise<void>((go) => this.waiting.push(go));
+    else this.running++;
+    try {
+      return await build();
+    } catch (error: unknown) {
+      return { error: `it did not bundle: ${error instanceof Error ? error.message.split("\n")[0] : String(error)}` };
+    } finally {
+      // The slot passes straight to the next waiter, so `running` never drops between them.
+      const go = this.waiting.shift();
+      if (go) go();
+      else this.running--;
+    }
+  }
+
+  private keep(key: string, bundle: BrowserBundle): void {
+    this.drop(key);
+    this.byKey.set(key, { bundle, at: this.now() });
+    this.bytes += bundle.code.length;
+    // Oldest use first; the bundle just built stays, so its script can be served.
+    for (const old of this.byKey.keys()) {
+      if (this.byKey.size <= this.limits.entries && this.bytes <= this.limits.bytes) break;
+      if (old !== key) this.drop(old);
+    }
+  }
+
+  private expire(): void {
+    const now = this.now();
+    for (const [key, { at }] of this.byKey) if (now - at > this.limits.ageMs) this.drop(key);
+  }
+
+  private drop(key: string): void {
+    const entry = this.byKey.get(key);
+    if (!entry) return;
+    this.byKey.delete(key);
+    this.bytes -= entry.bundle.code.length;
   }
 }

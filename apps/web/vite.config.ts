@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import type { Plugin } from "vite";
 import { defineConfig } from "vitest/config";
-import { tryMiddleware } from "./scripts/try-server.ts";
+import { tryIndexDeny, tryMiddleware } from "./scripts/try-server.ts";
 
 const root = import.meta.dirname;
 /**
@@ -69,7 +69,8 @@ export default defineConfig({
   // frame's first visit to such a demo never makes the dev server re-optimize and reload mid-render.
   optimizeDeps: { entries: ["index.html", "preview.html"], include: ["@radix-ui/react-label", "@radix-ui/react-separator", "@radix-ui/react-slot", "@radix-ui/react-switch", "@radix-ui/react-tabs", "class-variance-authority", "clsx", "tailwind-merge", "lucide-react"] },
   // The rule editor's live API: `youi ui --project` starts the service and sets YOUI_API to it.
-  server: { proxy: { "/api": { target: process.env.YOUI_API ?? "http://127.0.0.1:4417", changeOrigin: true } } },
+  // try.json is for the Try it handler only, never served (scripts/try-server.ts).
+  server: { proxy: { "/api": { target: process.env.YOUI_API ?? "http://127.0.0.1:4417", changeOrigin: true } }, fs: { deny: tryIndexDeny(snapshot) } },
   build: {
     target: "es2022",
     modulePreload: { polyfill: false },

@@ -1,8 +1,9 @@
 /**
  * "Try it" on the hub's own server: what may be bundled, and the endpoint that bundles it.
  *
- * snapshot.ts writes `<snapshot>/try.json` (beside public/, never in it, so it is never served or
- * copied into a build): per project its root, relative to the snapshot directory, and its
+ * snapshot.ts writes `<snapshot>/try.json` (beside public/, never in it, so it is never copied into
+ * a build; and denied to the dev server's file serving by tryIndexDeny, so only this handler reads
+ * it, from disk): per project its root, relative to the snapshot directory, and its
  * tsconfig; per component specimen the look to bundle and its siblings (same file, role and
  * wrapper chain, in line order, at most six: a tab trigger and the triggers beside it).
  *
@@ -10,7 +11,9 @@
  * with `{ script }` (the bundle's URL, `/__youi/try/<hash>.js`, served immutable) or `{ error }`
  * (a plain sentence). The request names ids only, never a path: an id that try.json does not
  * list is a 404. The scanner (bundleForBrowser: the specimen root fence, esbuild's time limit) is
- * loaded on the first request, and a bundle is reused while every file it read is unchanged.
+ * loaded on the first request, and a bundle is reused while every file it read is unchanged. Its
+ * cache (BrowserBundleCache) runs two builds at once, queues a few more and answers the rest 503
+ * (busy), and keeps a bounded number of bundles, by count, size and age.
  */
 import { existsSync, readFileSync, statSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -18,6 +21,21 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 export const TRY_PATH = "/__youi/try";
+export const TRY_INDEX = "try.json";
+
+/** Vite 8's default `server.fs.deny`, which a config that sets the option replaces, so it is kept here. */
+const VITE_DENY = [".env", ".env.*", "*.{crt,pem,key,p12,pfx,cer,der}", ".npmrc", ".yarnrc.yml", "**/.git/**"];
+
+/**
+ * `server.fs.deny` for a hub whose snapshot is `snapshot`: Vite's defaults and the snapshot's
+ * try.json. The dev server serves any file under its root (apps/web, where the committed snapshot
+ * and `youi ui`'s .hub live) and, through /@fs/, the workspace; a denied file is refused on every
+ * route (root, /@fs/, an alias, `?import` or `?raw`), case-insensitively. Glob characters in the
+ * path are escaped.
+ */
+export function tryIndexDeny(snapshot: string): string[] {
+  return [...VITE_DENY, join(snapshot, TRY_INDEX).replace(/\\/g, "/").replace(/[*?[\]{}()!+@]/g, "\\$&")];
+}
 
 /** A recipe as the inventory holds it: a component and the wrappers around it. */
 interface Recipe {
@@ -84,16 +102,17 @@ export function tryProject(rootFromSnapshot: string, tsconfig: string, looks: re
 }
 
 /** What bundleForBrowser and its cache look like to the server (typed here, so the hub never compiles the scanner). */
+type Built = { hash: string; code: string } | { error: string; busy?: true };
 interface Scanner {
-  bundleForBrowser(root: string, tsconfig: string, job: TryLook, siblings: readonly TryLook[]): Promise<{ hash: string; code: string } | { error: string }>;
-  BrowserBundleCache: new () => { get(key: string, build: () => Promise<{ hash: string; code: string } | { error: string }>): Promise<{ hash: string; code: string } | { error: string }>; code(hash: string): string | null };
+  bundleForBrowser(root: string, tsconfig: string, job: TryLook, siblings: readonly TryLook[]): Promise<Built>;
+  BrowserBundleCache: new () => { get(key: string, build: () => Promise<Built>): Promise<Built>; code(hash: string): string | null };
 }
 
 const SCANNER = resolve(import.meta.dirname, "../../../packages/scanner/src/index.ts");
 
 /** The try.json of a snapshot, re-read when it changes; null when there is none. */
 function reader(snapshot: string): () => TryIndex | null {
-  const file = join(snapshot, "try.json");
+  const file = join(snapshot, TRY_INDEX);
   let cached: { mtime: number; index: TryIndex | null } | null = null;
   return () => {
     if (!existsSync(file)) return null;
@@ -146,7 +165,7 @@ export function tryMiddleware(snapshot: string, base = "/", load: () => Promise<
       const root = resolve(snapshot, entry.root);
       const { module, cache } = await loaded();
       const result = await cache.get(`${project}\0${specimen}\0${root}`, () => module.bundleForBrowser(root, entry.tsconfig, look.look, look.siblings));
-      if ("error" in result) return send(res, 422, { error: result.error });
+      if ("error" in result) return send(res, "busy" in result ? 503 : 422, { error: result.error });
       send(res, 200, { script: `${base}${TRY_PATH.slice(1)}/${result.hash}.js` });
     } catch (error: unknown) {
       send(res, 500, { error: error instanceof Error ? error.message.split("\n")[0] : String(error) });

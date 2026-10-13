@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { InventoryReport } from "@youiyoux/core";
-import { BrowserBundleCache, bundleForBrowser, buildInventory, buildProjectCss, defaultCacheDir, escapingLinks, findStylesheets, forScheme, loadInventoryTarget, markupOf, newStats, pageStylesheets, projectSpecimens, projectTailwind, relativeInside, SpecimenCache, stylesheetLinks, tailwindCliBuilds, within, type ProjectSpecimens } from "../src/index.ts";
+import { BrowserBundleCache, BUNDLE_BUSY, BUNDLE_CACHE_LIMITS, bundleForBrowser, buildInventory, buildProjectCss, defaultCacheDir, escapingLinks, findStylesheets, forScheme, loadInventoryTarget, markupOf, newStats, pageStylesheets, projectSpecimens, projectTailwind, relativeInside, SpecimenCache, stylesheetLinks, tailwindCliBuilds, within, type ProjectSpecimens } from "../src/index.ts";
 import { renderComponents, type ComponentRecipe } from "../src/specimens/render.ts";
 
 const FIXTURES = join(import.meta.dirname, "fixtures/inventory");
@@ -542,6 +542,98 @@ describe("Try it's browser bundle: the same fence, and a sentence instead of a t
       box.dispose();
     }
   }, 30_000);
+});
+
+describe("Try it bundle builds are capped and the cache is bounded (c3)", () => {
+  /** A build the test settles: its code is `size` characters, named `name`. */
+  const pending = () => {
+    const builds: Array<{ name: string; finish: () => void }> = [];
+    const build = (name: string, size = 10) => () =>
+      new Promise<{ hash: string; code: string; inputs: [] }>((done) => builds.push({ name, finish: () => done({ hash: name.padEnd(16, "0"), code: name.padEnd(size, "."), inputs: [] }) }));
+    return { builds, build };
+  };
+  const tick = () => new Promise((done) => setTimeout(done, 0));
+
+  test("the defaults: two builds at once, a short queue, and a cache bounded by count, size and age", () => {
+    expect(BUNDLE_CACHE_LIMITS).toMatchObject({ builds: 2, queued: expect.any(Number), entries: expect.any(Number), bytes: expect.any(Number), ageMs: expect.any(Number) });
+    for (const limit of ["queued", "entries", "bytes", "ageMs"] as const) expect(Number.isFinite(BUNDLE_CACHE_LIMITS[limit]) && BUNDLE_CACHE_LIMITS[limit] > 0, limit).toBe(true);
+  });
+
+  test("two builds run at once; the rest wait their turn, and past the queue a request is busy and never built", async () => {
+    const cache = new BrowserBundleCache({ builds: 2, queued: 2 });
+    const { builds, build } = pending();
+    const answers = ["a", "b", "c", "d"].map((key) => cache.get(key, build(key)));
+    await tick();
+    expect(builds.map((b) => b.name)).toEqual(["a", "b"]);
+    expect(cache.stats()).toMatchObject({ running: 2, waiting: 2 });
+    // The same look again joins its build; a fifth look is turned away.
+    const again = cache.get("a", build("a"));
+    expect(await cache.get("e", build("e"))).toEqual({ error: BUNDLE_BUSY, busy: true });
+    builds[0]!.finish();
+    await tick();
+    expect(builds.map((b) => b.name)).toEqual(["a", "b", "c"]);
+    expect(cache.stats()).toMatchObject({ running: 2, waiting: 1 });
+    builds[1]!.finish();
+    await tick();
+    builds[2]!.finish();
+    await tick();
+    builds[3]!.finish();
+    const results = await Promise.all([...answers, again]);
+    expect(results.map((r) => ("hash" in r ? r.hash.slice(0, 1) : r.error))).toEqual(["a", "b", "c", "d", "a"]);
+    expect(builds).toHaveLength(4);
+    expect(cache.stats()).toMatchObject({ running: 0, waiting: 0 });
+  });
+
+  test("a build that throws frees its slot and is a sentence", async () => {
+    const cache = new BrowserBundleCache({ builds: 1, queued: 1 });
+    const { builds, build } = pending();
+    const failing = cache.get("x", () => Promise.reject(new Error("boom\nstack")));
+    const next = cache.get("y", build("y"));
+    expect(await failing).toEqual({ error: "it did not bundle: boom" });
+    await tick();
+    builds[0]!.finish();
+    expect(await next).toMatchObject({ hash: "y".padEnd(16, "0") });
+  });
+
+  test("the cache keeps at most `entries` bundles and `bytes` of code, least recently used dropped first", async () => {
+    const cache = new BrowserBundleCache({ entries: 2, bytes: 100 });
+    const get = async (key: string, size = 10) => {
+      const { builds, build } = pending();
+      const answer = cache.get(key, build(key, size));
+      await tick();
+      builds[0]?.finish();
+      return answer;
+    };
+    await get("a");
+    await get("b");
+    await get("a"); // a hit: a is now the most recently used
+    await get("c");
+    expect(cache.code("a".padEnd(16, "0"))).not.toBeNull();
+    expect(cache.code("b".padEnd(16, "0"))).toBeNull();
+    expect(cache.stats()).toMatchObject({ entries: 2, bytes: 20 });
+    // A large bundle pushes out the others to fit; it is kept itself so its script can be served.
+    await get("d", 95);
+    expect(cache.stats()).toMatchObject({ entries: 1, bytes: 95 });
+    await get("e", 500);
+    expect(cache.stats()).toMatchObject({ entries: 1, bytes: 500 });
+    expect(cache.code("e".padEnd(16, "0"))).toHaveLength(500);
+  });
+
+  test("a bundle older than `ageMs` is dropped and rebuilt on the next request", async () => {
+    let now = 1_000;
+    const cache = new BrowserBundleCache({ ageMs: 60_000 }, () => now);
+    let built = 0;
+    const build = async () => ({ hash: `h${++built}`.padEnd(16, "0"), code: "x", inputs: [] });
+    await cache.get("a", build);
+    now += 59_000;
+    await cache.get("a", build);
+    expect(built).toBe(1);
+    now += 2_000;
+    expect(cache.code("h1".padEnd(16, "0"))).toBeNull();
+    expect(cache.stats().entries).toBe(0);
+    await cache.get("a", build);
+    expect(built).toBe(2);
+  });
 });
 
 describe("specimen builds read and run nothing outside the project root (c4)", () => {

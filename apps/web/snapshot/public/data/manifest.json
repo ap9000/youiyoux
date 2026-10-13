@@ -10,15 +10,15 @@
       "usage": [
         {
           "project": "demo-app",
-          "file": "demo-app.usage.708c673635.json"
+          "file": "demo-app.usage.a6af557c21.json"
         }
       ]
     }
   ],
-  "inventory": "inventory.f3dce09115.json",
+  "inventory": "inventory.9aa0fe67ec.json",
   "inventoryFiles": [
-    "specimens.console.light.efa666eec4.css",
-    "specimens.console.dark.d2ea88c7e0.css",
+    "specimens.console.light.aaffa2d213.css",
+    "specimens.console.dark.046471907d.css",
     "specimens.site.light.3ddbc8d28d.css",
     "specimens.site.dark.94a6706908.css",
     "inventory.console.button.d544e4e8de.json",

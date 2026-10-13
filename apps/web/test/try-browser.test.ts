@@ -26,6 +26,7 @@ async function withDom<T>(run: () => T): Promise<T> {
   }
 }
 import { bundleForBrowser } from "../../../packages/scanner/src/specimens/client.ts";
+import { forcedStates } from "../../../packages/scanner/src/specimens/states.ts";
 import { stateStripDocument } from "../src/screens/inventory/Specimens.tsx";
 import { LIVE_SANDBOX, liveDocument } from "../src/screens/inventory/try-live.tsx";
 import type { Manifest, InventoryIndex } from "../src/data/types.ts";
@@ -76,13 +77,14 @@ describe("a state strip from the project's own CSS (c1)", () => {
     const strip = await withDom(() => stateStripDocument(html, `${origin}/light.css`, "light"));
     files.set("/strip.html", { type: "text/html", body: strip });
     for (const touch of [false, true]) {
-      const page = await browser.newPage({ viewport: { width: 1280, height: 300 }, ...(touch ? { hasTouch: true, isMobile: true } : {}) });
+      const page = await browser.newPage(touch ? { viewport: { width: 390, height: 300 }, hasTouch: true, isMobile: true } : { viewport: { width: 1280, height: 300 } });
       try {
         await page.goto(`${origin}/strip.html`);
         const styles = await page.locator("[data-youi-state] > button").evaluateAll((buttons) => buttons.map((b) => ({ background: getComputedStyle(b).backgroundColor, shadow: getComputedStyle(b).boxShadow, opacity: getComputedStyle(b).opacity, disabled: (b as HTMLButtonElement).disabled })));
         const [plain, hover, focus, pressed, disabled] = styles;
         expect(styles).toHaveLength(5);
-        // A phone (hover: none) shows the forced hover too, from the sheet's (hover: none) copy.
+        // A phone (hover: none) shows the forced hover too, from the sheet's copy gated on not hovering.
+        if (touch) expect(await page.evaluate(() => [matchMedia("(hover: none)").matches, matchMedia("(pointer: coarse)").matches])).toEqual([true, true]);
         expect(hover!.background).not.toBe(plain!.background);
         expect(focus!.shadow).not.toBe(plain!.shadow);
         expect(pressed!.background).toBe(plain!.background);
@@ -91,6 +93,49 @@ describe("a state strip from the project's own CSS (c1)", () => {
         if (SHOTS && !touch) {
           mkdirSync(SHOTS, { recursive: true });
           await page.screenshot({ path: join(SHOTS, "state-strip.png") });
+        }
+      } finally {
+        await page.close();
+      }
+    }
+  });
+});
+
+describe("forced hover shows on a touch phone (c1)", () => {
+  test("hover rules a sheet gates on (hover: hover) and (pointer: fine) paint on a 390px touch phone, and on a desktop", async () => {
+    // How many product sheets gate hover: real hover and a fine pointer, which a phone has neither of.
+    const sheet = forcedStates(
+      [
+        "button { background: rgb(255, 255, 255); color: rgb(0, 0, 0); outline: none; border: 1px solid rgb(200, 200, 200); padding: 8px 12px; font: 14px system-ui; border-radius: 6px; }",
+        "@media (hover: hover) and (pointer: fine) { .x:hover { background: rgb(37, 99, 235); color: rgb(255, 255, 255); } .x:focus-visible { outline: 2px solid rgb(234, 88, 12); } }",
+        "@media (min-width: 0px) and (any-hover: hover) { .y:hover { background: rgb(22, 163, 74); } }",
+      ].join("\n"),
+    );
+    files.set("/fine.css", { type: "text/css", body: sheet });
+    const cell = (state: string | null, cls: string, text: string): string => `<div ${state ? `class="youi-state-${state}"` : ""} style="display:inline-block;margin:8px"><div style="font:11px system-ui;color:#555">${state ?? "default"}</div><button class="${cls}">${text}</button></div>`;
+    files.set("/fine.html", {
+      type: "text/html",
+      body: `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fine.css"></head><body style="margin:12px;font:13px system-ui"><p>(hover: hover) and (pointer: fine) sheet</p>${cell(null, "x", "Export")}${cell("hover", "x", "Export")}${cell("focus", "x", "Export")}<p>(any-hover: hover)</p>${cell(null, "y", "Save")}${cell("hover", "y", "Save")}</body></html>`,
+    });
+    for (const phone of [true, false]) {
+      const page = await browser.newPage(phone ? { viewport: { width: 390, height: 260 }, hasTouch: true, isMobile: true, deviceScaleFactor: 2 } : { viewport: { width: 1280, height: 260 } });
+      try {
+        await page.goto(`${origin}/fine.html`);
+        expect(await page.evaluate(() => [matchMedia("(hover: hover)").matches, matchMedia("(pointer: fine)").matches])).toEqual(phone ? [false, false] : [true, true]);
+        const look = (selector: string) => page.locator(selector).evaluateAll((els) => els.map((e) => ({ background: getComputedStyle(e).backgroundColor, outline: getComputedStyle(e).outlineColor + " " + getComputedStyle(e).outlineStyle })));
+        const [plain, hover, focus] = await look("button.x");
+        expect(plain!.background).toBe("rgb(255, 255, 255)");
+        expect(hover!.background).toBe("rgb(37, 99, 235)");
+        expect(focus!.outline).toBe("rgb(234, 88, 12) solid");
+        expect((await look("button.y")).map((l) => l.background)).toEqual(["rgb(255, 255, 255)", "rgb(22, 163, 74)"]);
+        // A real tap on the phone does not leave a hover stuck: the copy carries only the forced twin.
+        if (phone) {
+          await page.locator("button.x").first().tap();
+          expect((await look("button.x"))[0]!.background).toBe("rgb(255, 255, 255)");
+        }
+        if (SHOTS && phone) {
+          mkdirSync(SHOTS, { recursive: true });
+          await page.screenshot({ path: join(SHOTS, "forced-hover-phone-390.png") });
         }
       } finally {
         await page.close();

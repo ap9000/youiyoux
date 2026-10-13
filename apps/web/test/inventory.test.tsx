@@ -845,6 +845,37 @@ describe("Try it: one tile live in a sandboxed frame, loaded only on click (c2)"
     expect(within(tile).getByRole("button", { name: /^Done / }).textContent).toBe("Done");
   });
 
+  test("Try it and Done are never inside the specimen's box: over its corner on a desk, below it on a phone", async () => {
+    const { container } = render(<InventoryView inventory={snapshotSource()} />);
+    const tile = wallTile(container, "tabs-1");
+    FakeObserver.report([tile], true, "near");
+    const outsideBox = (): void => {
+      const button = tile.querySelector<HTMLElement>("[data-try]")!;
+      const box = tile.querySelector("iframe")!.closest(".overflow-hidden")!;
+      expect(box.contains(button)).toBe(false);
+      // In flow under the box below md (44px tall); placed over its top corner from md up.
+      expect(button.closest("[data-try-bar]")!.parentElement!.contains(box)).toBe(true);
+      expect(button.className.split(" ")).toEqual(expect.arrayContaining(["max-md:h-11", "md:absolute", "md:top-1", "md:right-1"]));
+      expect(button.className.split(" ")).not.toContain("absolute");
+    };
+    await waitFor(() => expect(tile.querySelector("iframe")).not.toBeNull());
+    outsideBox();
+    const frame = await start(tile);
+    post(frame.contentWindow, { youi: "try", type: "box", x: 32, y: 32, width: 120, height: 36 });
+    expect(tile.querySelector("[data-try]")!.getAttribute("data-try")).toBe("done");
+    outsideBox();
+  });
+
+  test("a busy server (503) is shown as its own sentence", async () => {
+    const { container } = render(<InventoryView inventory={snapshotSource()} />);
+    const tile = wallTile(container, "tabs-1");
+    FakeObserver.report([tile], true, "near");
+    fetchMock.mockImplementation(() => answer(503, { error: "Try it is busy building other looks; try again in a moment." }));
+    fireEvent.click(within(tile).getByRole("button", { name: /^Try / }));
+    await waitFor(() => expect(tile.querySelector("[data-try-failure]")).not.toBeNull());
+    expect(text(tile.querySelector("[data-try-failure]")!)).toBe("Try it is busy building other looks; try again in a moment.");
+  });
+
   test("messages from any other window are ignored, and so are boxes that are not finite numbers", async () => {
     const { container } = render(<InventoryView inventory={snapshotSource()} />);
     const tile = wallTile(container, "tabs-1");

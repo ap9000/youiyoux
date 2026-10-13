@@ -59,7 +59,7 @@ async function ask(project: string, specimen: string, base: string): Promise<{ s
   const body = (await response.json().catch(() => null)) as { script?: unknown; error?: unknown } | null;
   if (response.ok && typeof body?.script === "string") return { script: body.script };
   if (typeof body?.error !== "string") return { error: "Try it needs the hub's own server (pnpm dev, youi ui or vite preview); this host only serves files, so the static specimen stays." };
-  return { error: response.status === 404 ? body.error : `Try it could not bundle this look (${body.error.replace(/\.$/, "")}); the static specimen stays.` };
+  return { error: response.status === 404 || response.status === 503 ? body.error : `Try it could not bundle this look (${body.error.replace(/\.$/, "")}); the static specimen stays.` };
 }
 
 interface LiveFrameProps {
@@ -69,6 +69,8 @@ interface LiveFrameProps {
   css: string;
   scheme: Scheme;
   height: number;
+  /** The look's page background, read from its static frame: fills the whole tile, not just the moved frame. */
+  background?: string;
   /** What the tile shows until the live frame has drawn: its static frame. */
   fallback: ReactNode;
   onReady: () => void;
@@ -80,7 +82,7 @@ type TryData = { youi?: unknown; type?: unknown; x?: unknown; y?: unknown; width
 
 const finite = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
 
-export function LiveFrame({ project, specimen, html, css, scheme, height, fallback, onReady, onEnd, onFail }: LiveFrameProps) {
+export function LiveFrame({ project, specimen, html, css, scheme, height, background, fallback, onReady, onEnd, onFail }: LiveFrameProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const [script, setScript] = useState<string | null>(null);
@@ -134,7 +136,7 @@ export function LiveFrame({ project, specimen, html, css, scheme, height, fallba
   }, [height]);
 
   return (
-    <div ref={boxRef} className="absolute inset-0" data-live={transform !== null ? "drawn" : "loading"}>
+    <div ref={boxRef} className="absolute inset-0" style={{ background: transform !== null ? background : undefined }} data-live={transform !== null ? "drawn" : "loading"}>
       {transform === null && fallback}
       {script !== null && (
         <iframe

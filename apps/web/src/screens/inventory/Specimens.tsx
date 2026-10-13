@@ -19,6 +19,7 @@ import { clsx } from "clsx";
 import { createContext, lazy, Suspense, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import type { Scheme } from "../../app/theme.tsx";
 import type { InventoryShape, Specimen } from "../../data/types.ts";
+import { useWide } from "./Sheet.tsx";
 
 export const DESK_WIDTH = 1280;
 export const FRAME_HEIGHT = 480;
@@ -34,6 +35,8 @@ export const MAX_MOUNTED = 48;
 export const VIRTUALISE_AT = 100;
 const TILE_MIN_WIDTH = 136;
 const ROW_HEIGHT = TILE_HEIGHT + 40;
+/** Below md, Try it and Done sit under the specimen (44px and a 4px gap), not over it. */
+const TRY_BAR_HEIGHT = 48;
 const VIRTUAL_ROWS_VISIBLE = 3.5;
 
 /* ---------------------------------------------------------------- near the viewport */
@@ -348,9 +351,11 @@ interface FrameProps {
   onBlank?: () => void;
   /** A strip: fit the root's own box, and say where it was placed in the tile (x and width, tile pixels). */
   strip?: (placed: { x: number; width: number }) => void;
+  /** The page's own background, once read (a live frame, whose page the hub cannot read, fills its tile with it). */
+  onBackground?: (paint: string | undefined) => void;
 }
 
-function SpecimenFrame({ srcDoc, scheme, near, height, onBlank, strip }: FrameProps) {
+function SpecimenFrame({ srcDoc, scheme, near, height, onBlank, strip, onBackground }: FrameProps) {
   const boxRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const slot = useFrameSlot(near);
@@ -373,6 +378,7 @@ function SpecimenFrame({ srcDoc, scheme, near, height, onBlank, strip }: FramePr
     const view = doc!.defaultView;
     const paint = [doc!.body, doc!.documentElement].map((e) => view?.getComputedStyle(e).backgroundColor).find((c) => c && c !== "transparent" && c !== "rgba(0, 0, 0, 0)");
     setBackground(paint);
+    onBackground?.(paint);
     const width = tile.clientWidth || TILE_MIN_WIDTH;
     setTransform(fitTransform(box, width, height));
     const scale = fitScale(box, width, height);
@@ -516,30 +522,36 @@ export function SpecimenTile({ tile, scheme, size = "small", as: Tag = "li", cap
   const height = size === "large" ? LARGE_TILE_HEIGHT : TILE_HEIGHT;
   const tryable = tryIt && drawn && tile.specimen!.kind === "component" && !!tile.specimenId;
   const { state, start, ready, end, button } = useLive(near, ref);
-  const staticFrame: ReactNode = !drawn ? <ShapeBox shape={tile.shape} tileHeight={height} /> : mounted ? <SpecimenFrame srcDoc={frameDocument(tile.specimen!.html, tile.css!, scheme)} scheme={scheme} near={near} height={height} onBlank={onBlank} /> : near ? <ShapeBox shape={tile.shape} caption="waiting" tileHeight={height} /> : null;
+  const [background, setBackground] = useState<string | undefined>(undefined);
+  const staticFrame: ReactNode = !drawn ? <ShapeBox shape={tile.shape} tileHeight={height} /> : mounted ? <SpecimenFrame srcDoc={frameDocument(tile.specimen!.html, tile.css!, scheme)} scheme={scheme} near={near} height={height} onBlank={onBlank} onBackground={tryable ? setBackground : undefined} /> : near ? <ShapeBox shape={tile.shape} caption="waiting" tileHeight={height} /> : null;
   const label = `${tile.project} ${tile.place}`;
   return (
     <Tag ref={ref as RefObject<never>} className={clsx("min-w-0 space-y-1", className)} data-tile={tile.key} data-kind={drawn ? tile.specimen!.kind : "shape"} data-frame={drawn && near ? (mounted ? "mounted" : "waiting") : undefined} data-live={state.status !== "static" ? state.status : undefined}>
-      <div className="relative overflow-hidden rounded-md border border-line bg-sunken" style={{ height }}>
-        {tryable && state.status !== "static" ? (
-          <Suspense fallback={staticFrame}>
-            <LiveFrame project={tile.project} specimen={tile.specimenId!} html={tile.specimen!.html} css={tile.css!} scheme={scheme} height={height} fallback={staticFrame} onReady={ready} onEnd={() => (end(), button.current?.focus())} onFail={(sentence) => end(sentence)} />
-          </Suspense>
-        ) : (
-          staticFrame
-        )}
+      {/* Try it and Done sit over the box's corner on a desk; on a phone, where a 44px button would cover the look, below it. */}
+      <div className="relative">
+        <div className="relative overflow-hidden rounded-md border border-line bg-sunken" style={{ height }}>
+          {tryable && state.status !== "static" ? (
+            <Suspense fallback={staticFrame}>
+              <LiveFrame project={tile.project} specimen={tile.specimenId!} html={tile.specimen!.html} css={tile.css!} scheme={scheme} height={height} background={background} fallback={staticFrame} onReady={ready} onEnd={() => (end(), button.current?.focus())} onFail={(sentence) => end(sentence)} />
+            </Suspense>
+          ) : (
+            staticFrame
+          )}
+        </div>
         {tryable && (
-          <button
-            ref={button}
-            type="button"
-            onClick={() => (state.status === "static" ? start() : (end(), button.current?.focus()))}
-            aria-label={state.status === "static" ? `Try ${label} live` : `Done trying ${label}`}
-            aria-busy={state.status === "loading" || undefined}
-            className="absolute top-1 right-1 z-10 inline-flex h-6 items-center rounded-sm border border-line bg-surface/90 px-2 text-caption font-medium text-ink-2 shadow-raise outline-none hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus focus-visible:outline-solid max-md:h-11 max-md:px-3"
-            data-try={state.status === "static" ? "start" : "done"}
-          >
-            {state.status === "static" ? "Try it" : "Done"}
-          </button>
+          <div className="flex justify-end max-md:pt-1" data-try-bar="">
+            <button
+              ref={button}
+              type="button"
+              onClick={() => (state.status === "static" ? start() : (end(), button.current?.focus()))}
+              aria-label={state.status === "static" ? `Try ${label} live` : `Done trying ${label}`}
+              aria-busy={state.status === "loading" || undefined}
+              className="z-10 inline-flex h-6 items-center rounded-sm border border-line bg-surface/90 px-2 text-caption font-medium text-ink-2 shadow-raise outline-none hover:text-ink focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus focus-visible:outline-solid max-md:h-11 max-md:px-3 md:absolute md:top-1 md:right-1"
+              data-try={state.status === "static" ? "start" : "done"}
+            >
+              {state.status === "static" ? "Try it" : "Done"}
+            </button>
+          </div>
         )}
       </div>
       {state.status === "static" && state.failure && (
@@ -637,13 +649,16 @@ function VirtualTileGrid({ tiles, scheme, tryIt }: { tiles: readonly Tile[]; sch
   }, []);
   const columns = Math.max(1, Math.floor((width || 4 * TILE_MIN_WIDTH) / TILE_MIN_WIDTH));
   const rows = Math.ceil(tiles.length / columns);
-  const virtualizer = useVirtualizer({ count: rows, getScrollElement: () => scrollRef.current, estimateSize: () => ROW_HEIGHT, overscan: 2, initialRect: { width: columns * TILE_MIN_WIDTH, height: ROW_HEIGHT * VIRTUAL_ROWS_VISIBLE } });
+  const wide = useWide();
+  const rowHeight = ROW_HEIGHT + (tryIt && !wide ? TRY_BAR_HEIGHT : 0);
+  const virtualizer = useVirtualizer({ count: rows, getScrollElement: () => scrollRef.current, estimateSize: () => rowHeight, overscan: 2, initialRect: { width: columns * TILE_MIN_WIDTH, height: rowHeight * VIRTUAL_ROWS_VISIBLE } });
+  useLayoutEffect(() => virtualizer.measure(), [virtualizer, rowHeight]);
   return (
     <ScrollRoot.Provider value={scrollRef.current}>
-      <div ref={scrollRef} className="overflow-y-auto rounded-md border border-line p-2" style={{ height: ROW_HEIGHT * VIRTUAL_ROWS_VISIBLE }} data-testid="virtual-tiles">
+      <div ref={scrollRef} className="overflow-y-auto rounded-md border border-line p-2" style={{ height: rowHeight * VIRTUAL_ROWS_VISIBLE }} data-testid="virtual-tiles">
         <div className="relative" style={{ height: virtualizer.getTotalSize() }}>
           {virtualizer.getVirtualItems().map((row) => (
-            <ul key={row.key} className="absolute inset-x-0 grid gap-2" style={{ top: row.start, height: ROW_HEIGHT, gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }} aria-label={`Specimens, row ${row.index + 1} of ${rows}`}>
+            <ul key={row.key} className="absolute inset-x-0 grid gap-2" style={{ top: row.start, height: rowHeight, gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }} aria-label={`Specimens, row ${row.index + 1} of ${rows}`}>
               {tiles.slice(row.index * columns, (row.index + 1) * columns).map((tile) => (
                 <SpecimenTile key={tile.key} tile={tile} scheme={scheme} tryIt={tryIt} />
               ))}

@@ -562,9 +562,7 @@
       background-color: var(--color-red-700);
     }
   }
-
-
-  @media (hover: none) {
+@media (not (hover: hover)) {
     .hover\:bg-accent:is(.youi-state-hover, .youi-state-hover *) {
       background-color: var(--color-accent);
     }
@@ -646,7 +644,7 @@
   font-weight: 400 600;
 }
 
-@media (not (min-width: 0px)) {
+@media (min-width: 0px) {
   :root {
     --color-primary: #fafafa;
     --color-primary-foreground: #18181b;
@@ -783,6 +781,6 @@
   font: 14px/20px system-ui, sans-serif;
 }
 
-:root { color-scheme: light; }
+:root { color-scheme: dark; }
 
 /* youi-states: forced-state twins */
