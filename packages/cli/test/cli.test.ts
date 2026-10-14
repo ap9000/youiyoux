@@ -24,11 +24,11 @@ afterEach(() => {
 describe("youi", () => {
   test("help and unknown commands", async () => {
     expect(await main(["--help"])).toBe(0);
-    expect(out).toContain("youi <command>");
+    expect(out).toContain("youiyoux <command>");
     expect(await main(["frobnicate"])).toBe(2);
     expect(err).toContain("unknown command");
     expect(await main(["where"])).toBe(2);
-    expect(err).toContain("usage: youi where <component>");
+    expect(err).toContain("usage: youiyoux where <component>");
   });
 
   test("help separates System commands from Library commands", async () => {
@@ -41,7 +41,7 @@ describe("youi", () => {
     expect(err).toContain("is a Library item, not a System element");
   });
 
-  test("youi library browses an empty Library and needs a reason to draft a request", async () => {
+  test("youiyoux library browses an empty Library and needs a reason to draft a request", async () => {
     expect(await main(["library", "search", "date", "picker", "--project", FIXTURE, "--json"])).toBe(0);
     expect(JSON.parse(out)).toMatchObject({ hits: [], total: 0 });
     expect(await main(["library", "request", "lib:example/component/pill", "--project", FIXTURE])).toBe(2);
@@ -126,7 +126,7 @@ describe("youi", () => {
       await cp(join(FIXTURE, "tsconfig.json"), join(dir, "tsconfig.json"));
       await (await import("node:fs/promises")).writeFile(join(dir, "package.json"), JSON.stringify({ name: "@acme/mobile", dependencies: { "expo-router": "6.0.0" } }));
       expect(await main(["init", "--project", dir])).toBe(2);
-      expect(err).toContain("youi init --design <dir>");
+      expect(err).toContain("youiyoux init --design <dir>");
       expect(await main(["init", "--project", dir, "--design", DEMO])).toBe(0);
       const config = JSON.parse(await readFile(join(dir, "youi.project.json"), "utf8")) as Record<string, unknown>;
       expect(config).toMatchObject({ id: "mobile", system: "demo", source: { path: relative(dir, DEMO) }, componentsDir: "components/ui", importFrom: "@/components/ui", routes: { strategy: "expo-router", appDir: "app" } });
@@ -209,7 +209,7 @@ describe("youi", () => {
     expect(hubPlan(tool, { project: "/src/acme-app", watch: true }).watch).toEqual(["/opt/youi/apps/web/scripts/snapshot.ts", "--out", "/opt/youi/apps/web/.hub", "--project", "/src/acme-app", "--watch"]);
     // Watching with nothing named watches the demo project into .hub, never the committed snapshot.
     expect(hubPlan(tool, { watch: true }).watch).toEqual(["/opt/youi/apps/web/scripts/snapshot.ts", "--out", "/opt/youi/apps/web/.hub", "--project", "/opt/youi/examples/demo-app", "--watch"]);
-    // The rule editor `youi ui --project` starts is what the dev server proxies at /api.
+    // The rule editor `youiyoux ui --project` starts is what the dev server proxies at /api.
     expect(hubPlan(tool, { project: "/src/acme-app", api: "http://127.0.0.1:50123" }).env).toEqual({ YOUI_HUB_SNAPSHOT: "/opt/youi/apps/web/.hub", YOUI_API: "http://127.0.0.1:50123" });
     // A detect report alone snapshots the demo system plus the report, into .hub.
     expect(hubPlan(tool, { detect: "/tmp/acme/detect.json" }).snapshot).toEqual(["/opt/youi/apps/web/scripts/snapshot.ts", "--out", "/opt/youi/apps/web/.hub", "--detect", "/tmp/acme/detect.json"]);
@@ -230,7 +230,7 @@ describe("youi", () => {
       expect(out).toMatch(/shadcn\/ui\s+high/);
       expect(out).toMatch(/Declared, never imported · not counted\n {2}@mui\/material@\^6\.1\.0 in package\.json\n {2}styled-components@\^6\.1\.13 in package\.json/);
       expect(out).toContain("declared but never imported packages are listed apart");
-      expect(out).toContain("youi ui --detect");
+      expect(out).toContain("youiyoux ui --detect");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -239,7 +239,7 @@ describe("youi", () => {
   test("detect refuses a repo mixed with URLs, and says when YOUI_CHROMIUM names no Chromium", async () => {
     expect(await main(["detect"])).toBe(2);
     expect(await main(["detect", ".", "https://example.com"])).toBe(2);
-    expect(err).toContain("usage: youi detect <repo-path>");
+    expect(err).toContain("usage: youiyoux detect <repo-path>");
     const dir = await mkdtemp(join(tmpdir(), "youi-detect-"));
     vi.stubEnv("YOUI_CHROMIUM", join(dir, "no-such-chromium"));
     try {
@@ -294,7 +294,7 @@ describe("youi", () => {
   });
 });
 
-describe("youi migrate: renamed and removed exports", () => {
+describe("youiyoux migrate: renamed and removed exports", () => {
   const MIGRATION = ["schema: youi.migration/v1", "id: youi:demo/migration/card-2.0.0", "element: youi:demo/component/card", "from: 1.x", "to: 2.0.0", "changes:", "  - renameExport: { from: Card, to: Panel }", "  - removeExport: { name: CardTitle, replacement: CardHeading }", ""].join("\n");
   const CLASH = 'import { Card } from "@/components/ui";\n\nconst Panel = "panel";\nexport const Clash = () => <Card className={Panel} />;\n';
   let dir = "";
@@ -384,12 +384,12 @@ describe("youi migrate: renamed and removed exports", () => {
     expect(await readFile(join(app, "components/qualified-mixed.ts"), "utf8")).toBe(local.replaceAll("Card", "Panel") + source);
   });
 
-  test("before youi sync the exports gate rejects it and nothing is written", async () => {
+  test("before youiyoux sync the exports gate rejects it and nothing is written", async () => {
     await setup(false);
     const before = await files();
     expect(await main(["migrate", migration, "--project", app, "--write"])).toBe(1);
     expect(out).toContain("rejected: nothing written");
-    expect(out).toContain("✖ exports       components/ui/card.tsx does not export Panel, CardHeading yet: run youi sync, then migrate");
+    expect(out).toContain("✖ exports       components/ui/card.tsx does not export Panel, CardHeading yet: run youiyoux sync, then migrate");
     expect(await files()).toEqual(before);
   });
 

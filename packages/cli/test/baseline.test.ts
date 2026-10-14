@@ -30,7 +30,7 @@ const check = async (...args: string[]): Promise<number> => {
   return main(["check", "--project", app, ...args]);
 };
 
-describe("youi baseline and check --baseline", () => {
+describe("youiyoux baseline and check --baseline", () => {
   test("without a baseline every error fails; with one, only new errors do", async () => {
     expect(await check()).toBe(1);
     expect(await check("--baseline")).toBe(1);
@@ -69,7 +69,7 @@ describe("youi baseline and check --baseline", () => {
     expect(annotations).toHaveLength(1);
     expect(annotations[0]).toMatch(/^::error file=components\/extra\.tsx,line=2,col=\d+,title=youi color\.no-raw-color::/);
     const markdown = await readFile(summary, "utf8");
-    expect(markdown).toContain("youi check: ❌ 1 error");
+    expect(markdown).toContain("youiyoux check: ❌ 1 error");
     expect(markdown).toMatch(/\| Rules \| `demo@\d+\.\d+\.\d+`, definitions `[0-9a-f]{12}` \|/);
     expect(markdown).toContain("3 accepted · 1 new");
   });

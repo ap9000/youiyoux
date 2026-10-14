@@ -239,7 +239,7 @@ export function tokenRows(project: Project, tokens: TokenIndex, group?: string, 
 }
 
 /**
- * Rules for agents: what each asks and whether `youi check` actually enforces it. `off` rules are
+ * Rules for agents: what each asks and whether `youiyoux check` actually enforces it. `off` rules are
  * left out entirely; a check this youi cannot run says so instead of claiming enforcement.
  */
 export function ruleRows(project: Project): Array<Record<string, unknown>> {

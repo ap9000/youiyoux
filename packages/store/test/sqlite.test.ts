@@ -46,7 +46,7 @@ test("read-only old schemas ask for rebuild; writable opens migrate", async () =
       await db.run("INSERT INTO migrations VALUES (?, ?, ?)", [migration.id, migration.name, new Date().toISOString()]);
     }
     await db.close();
-    await expect(openSqlite(path, { readOnly: true })).rejects.toThrow("run youi index rebuild");
+    await expect(openSqlite(path, { readOnly: true })).rejects.toThrow("run youiyoux index rebuild");
     const writer = await openSqlite(path);
     expect((await writer.stats()).schema).toBe(SCHEMA_VERSION);
     await writer.close();

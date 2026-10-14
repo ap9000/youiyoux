@@ -29,12 +29,12 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
-describe("youi discover", () => {
+describe("youiyoux discover", () => {
   test("search before any sync says how to build the index, and fetches nothing", async () => {
     const fetch = vi.spyOn(globalThis, "fetch");
     const empty = await mkdtemp(join(tmpdir(), "youi-cli-discover-empty-"));
     expect(await main(["discover", "command menu", "--cache", empty])).toBe(1);
-    expect(err).toContain("youi discover sync");
+    expect(err).toContain("youiyoux discover sync");
     expect(await readdir(empty)).toEqual([]);
     expect(fetch).not.toHaveBeenCalled();
     await rm(empty, { recursive: true, force: true });

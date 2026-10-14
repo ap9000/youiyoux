@@ -23,7 +23,7 @@ import { RulesTab } from "./RulesTab.tsx";
 import { UsageTab } from "./UsageTab.tsx";
 
 const STATUS_MS = 1600;
-/** Where `youi init` points imports when a project has an `@/` alias; projects can set their own `importFrom`. */
+/** Where `youiyoux init` points imports when a project has an `@/` alias; projects can set their own `importFrom`. */
 const DEFAULT_IMPORT_FROM = "@/components/ui";
 
 /** npm packages a component's files import (everything but relative paths and React itself). */

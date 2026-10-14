@@ -2,7 +2,7 @@
  * A synthetic inventory of any size, for measuring that the Inventory page's first paint does
  * not grow with the library: the fixtures' looks repeated across generated files, each copy a
  * little taller (so families multiply, as in a real library) and with its own label (so every
- * copy is its own specimen), then grouped into families the way `youi inventory` groups them.
+ * copy is its own specimen), then grouped into families the way `youiyoux inventory` groups them.
  */
 import type { InventoryLook, InventoryReport } from "@youiyoux/core";
 

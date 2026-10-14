@@ -113,7 +113,7 @@ describe("index MCP tools", () => {
     const family = await call(client, "index_where_used", { family: "button-99" });
     expect(family.isError).toBe(true);
     expect(family.text).toMatch(/no family "button-99".*known: button-1, button-2, dialog-1/);
-    expect((await call(client, "index_rule_covers", { rule: "nope" })).text).toMatch(/youi scan/);
+    expect((await call(client, "index_rule_covers", { rule: "nope" })).text).toMatch(/youiyoux scan/);
     for (const name of INDEX_TOOLS) await call(client, name, { family: "button-1", candidate: "lib:coss/component/button", rule: "color.no-raw-color" });
     expect(await tables(store)).toEqual(before);
     await store.close();
@@ -183,7 +183,7 @@ describe("index MCP tools", () => {
     const missing = join(dir, "nowhere", "index.db");
     const { isError, text } = await call(await connect(missing), "index_where_used", { family: "button-1" });
     expect(isError).toBe(true);
-    expect(text).toMatch(/no local index .*youi inventory/);
+    expect(text).toMatch(/no local index .*youiyoux inventory/);
     expect(existsSync(join(dir, "nowhere"))).toBe(false);
   });
 });

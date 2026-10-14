@@ -1,12 +1,12 @@
 /**
- * Agent-time checks. Both are advisory; the CI check (`youi check --baseline
+ * Agent-time checks. Both are advisory; the CI check (`youiyoux check --baseline
  * --format github`) is the authoritative gate. What each one guarantees:
  *
  * - Claude Code PostToolUse: after Claude's Edit/Write/MultiEdit on a checked file,
  *   that file's new violations go back to Claude as context, with the drift its edit
- *   adds against HEAD (`youi check --diff`: near-duplicate components, hardcoded values
+ *   adds against HEAD (`youiyoux check --diff`: near-duplicate components, hardcoded values
  *   a token holds, off-library imports), each with its fix, and for a component file
- *   (.tsx, .jsx) one line saying how to see it (`youi render`, `ui_render`); the hook
+ *   (.tsx, .jsx) one line saying how to see it (`youiyoux render`, `ui_render`); the hook
  *   itself never renders, so it stays fast. Never blocks; sees only edits made through
  *   those tools.
  * - git pre-commit (Codex, humans and any agent that commits): checks the staged
@@ -23,7 +23,7 @@ import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { relPath } from "@youiyoux/core";
 import type { Project } from "@youiyoux/scanner";
-import { portableYoui } from "./agents.ts";
+import { portableYoui, viaNpx } from "./agents.ts";
 import { baselinePath, runCheck, type CheckResult, type DiffCheckResult } from "./check.ts";
 import { isChecked, stagedChange, workingTreeChange, isAdded, type ChangeProject, type ChangeSet } from "./check-diff.ts";
 import { diffFindingLine, diffGaps } from "./check-render.ts";
@@ -31,7 +31,7 @@ import { configured, loadCheckProject, runRepoCheck } from "./check-repo.ts";
 
 const run = promisify(execFile);
 const MAX_LISTED = 20;
-/** Files `youi render` draws: React components. */
+/** Files `youiyoux render` draws: React components. */
 const COMPONENT_FILE = /\.(?:tsx|jsx)$/;
 const quoted = (path: string): string => (/^[\w./-]+$/.test(path) ? path : `'${path.replace(/'/g, "'\\''")}'`);
 
@@ -82,7 +82,7 @@ async function changeFor(read: () => Promise<ChangeSet>): Promise<{ change?: Cha
   try {
     return { change: await read() };
   } catch (error: unknown) {
-    return { problem: `- drift (youi check --diff) not checked: ${error instanceof Error ? error.message : String(error)}` };
+    return { problem: `- drift (youiyoux check --diff) not checked: ${error instanceof Error ? error.message : String(error)}` };
   }
 }
 
@@ -93,8 +93,9 @@ interface PostToolUseInput {
   readonly tool_input?: { readonly file_path?: unknown };
 }
 
-function claudeContext(text: string): HookOutcome {
-  return { stdout: `${JSON.stringify({ hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: text } })}\n`, exitCode: 0 };
+/** What the agent reads: every command in it runs through npx (`root` decides `-y` or `--no-install`). */
+function claudeContext(text: string, root?: string): HookOutcome {
+  return { stdout: `${JSON.stringify({ hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: viaNpx(text, root) } })}\n`, exitCode: 0 };
 }
 
 /** Claude Code PostToolUse: check the edited file and return its findings as additional context. Always exits 0. */
@@ -115,16 +116,16 @@ export async function runClaudeHook(input: string, target: HookTarget = {}): Pro
     const relative = relPath(await real(project.root), await real(file));
     if (!isChecked(project, relative)) return SILENT;
     const { change, problem } = await changeFor(() => workingTreeChange(project, undefined, [relative]));
-    if (problem) return claudeContext(problem);
+    if (problem) return claudeContext(problem, project.root);
     const result = configured(project) ? await runCheck(project, { files: [file], lock: false, baseline: await baselineFor(project, target), ...(change ? { diff: change } : {}) }) : await runRepoCheck(project, change!);
     const lines = findingLines(result, project.root);
-    const see = COMPONENT_FILE.test(relative) ? `See it: youi render ${quoted(relative)} (or the MCP tool ui_render), then open the images: light and dark, desktop and phone, accessibility issues and the diff against the base.` : null;
-    if (lines.length === 0) return see ? claudeContext(`youi: ${relative} passes the design-system check. ${see}`) : SILENT;
+    const see = COMPONENT_FILE.test(relative) ? `See it: youiyoux render ${quoted(relative)} (or the MCP tool ui_render), then open the images: light and dark, desktop and phone, accessibility issues and the diff against the base.` : null;
+    if (lines.length === 0) return see ? claudeContext(`youiyoux: ${relative} passes the design-system check. ${see}`, project.root) : SILENT;
     const older = change && "violations" in result ? (result as CheckResult).violations.filter((v) => !isAdded(change.added, v.file, v.line)).length : 0;
     const known = older > 0 ? ` (${older} older findings on unchanged lines omitted)` : "";
-    return claudeContext(`youi design-system check (advisory) on ${relative}${known}:\n${lines.join("\n")}${!configured(project) ? `\n${result.diff?.notes.join("\n")}` : ""}\nFix these before finishing (each "Fix:" says what to write); \`youi show <component>\` and the youi MCP tools give the legal values. CI runs the authoritative check.${see ? `\n${see}` : ""}`);
+    return claudeContext(`youiyoux design-system check (advisory) on ${relative}${known}:\n${lines.join("\n")}${!configured(project) ? `\n${result.diff?.notes.join("\n")}` : ""}\nFix these before finishing (each "Fix:" says what to write); \`youiyoux show <component>\` and the youiyoux MCP tools give the legal values. CI runs the authoritative check.${see ? `\n${see}` : ""}`, project.root);
   } catch (error: unknown) {
-    return claudeContext(`youi could not check ${raw}: ${error instanceof Error ? error.message : String(error)}. The result is incomplete, not a pass.`);
+    return claudeContext(`youiyoux could not check ${raw}: ${error instanceof Error ? error.message : String(error)}. The result is incomplete, not a pass.`);
   }
 }
 
@@ -148,20 +149,20 @@ async function stagedSources(project: ChangeProject): Promise<Record<string, str
 
 /** git pre-commit: check the staged content of staged files. Exits 1 only when `strict` and something fails. */
 export async function runPreCommitHook(target: HookTarget = {}, options: { strict?: boolean } = {}): Promise<HookOutcome> {
-  const label = options.strict ? "youi pre-commit (blocks new errors and drift; CI is authoritative)" : "youi pre-commit (advisory; CI is authoritative)";
+  const label = options.strict ? "youiyoux pre-commit (blocks new errors and drift; CI is authoritative)" : "youiyoux pre-commit (advisory; CI is authoritative)";
   try {
     const project = await load(target, process.cwd());
     const staged = await stagedSources(project);
     const files = Object.keys(staged);
     if (files.length === 0) return SILENT;
     const { change, problem } = await changeFor(() => stagedChange(project));
-    if (problem) return { stdout: `${problem}\n`, exitCode: options.strict ? 1 : 0 };
+    if (problem) return { stdout: `${viaNpx(problem, project.root)}\n`, exitCode: options.strict ? 1 : 0 };
     const result = configured(project) ? await runCheck(project, { files: files.map((f) => join(project.root, f)), overrides: staged, lock: false, baseline: await baselineFor(project, target), ...(change ? { diff: change } : {}) }) : await runRepoCheck(project, change!);
     const lines = findingLines(result, project.root);
     const failing = result.incomplete || (result.diff?.findings.length ?? 0) > 0;
     if (lines.length === 0) return { stdout: `${label}: ${files.length} staged file(s) clean, no drift\n`, exitCode: 0 };
     const verdict = !failing ? "warnings only" : options.strict ? "commit blocked; fix these, or commit with --no-verify and let CI decide" : "not blocking; fix these before you push (CI fails on errors)";
-    return { stdout: `${label}: ${verdict}\n${lines.join("\n")}\n`, exitCode: options.strict && failing ? 1 : 0 };
+    return { stdout: `${label}: ${verdict}\n${viaNpx(lines.join("\n"), project.root)}\n`, exitCode: options.strict && failing ? 1 : 0 };
   } catch (error: unknown) {
     return { stdout: `${label}: could not check the staged files (${error instanceof Error ? error.message : String(error)}); the result is incomplete, not a pass\n`, exitCode: options.strict ? 1 : 0 };
   }

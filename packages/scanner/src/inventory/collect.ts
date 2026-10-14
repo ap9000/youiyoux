@@ -844,7 +844,7 @@ function firstChildTag(opening: SgNode): string | null {
 }
 
 export interface CollectOptions {
-  /** Record each role-bearing definition's root as a look too (`youi check --diff` compares new components before anything renders them). */
+  /** Record each role-bearing definition's root as a look too (`youiyoux check --diff` compares new components before anything renders them). */
   readonly definitionRoots?: boolean;
 }
 

@@ -26,12 +26,12 @@ jobs:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # System libraries only: the site tests download the headless shell itself, as youi detect does.
-      - name: System libraries for youi detect's Chromium
+      # System libraries only: the site tests download the headless shell itself, as youiyoux detect does.
+      - name: System libraries for youiyoux detect's Chromium
         run: pnpm --filter @youiyoux/detect exec playwright-core install-deps chromium-headless-shell
 
-      # youi render (agent eyes) draws with the scanner's playwright-core and never downloads in tests.
-      - name: Headless shell for youi render's tests
+      # youiyoux render (agent eyes) draws with the scanner's playwright-core and never downloads in tests.
+      - name: Headless shell for youiyoux render's tests
         run: pnpm --filter @youiyoux/scanner exec playwright-core install chromium-headless-shell
 
       - name: Engine typecheck
@@ -42,7 +42,7 @@ jobs:
           YOUI_DETECT_SITE: "1"
 
       # The hub's specimen and Try it tests draw in the headless shell of the hub's own playwright-core,
-      # which may be a different build from the one youi detect downloads.
+      # which may be a different build from the one youiyoux detect downloads.
       - name: Headless shell for the hub's browser tests
         run: pnpm --filter @youiyoux/web exec playwright-core install chromium-headless-shell
       - name: Web tests

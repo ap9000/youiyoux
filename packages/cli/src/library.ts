@@ -1,9 +1,9 @@
-/** Terminal output for `youi library`: browse ingested items and draft adoption requests. */
+/** Terminal output for `youiyoux library`: browse ingested items and draft adoption requests. */
 import { LIBRARY_RULE, type AdoptionRequest, type LibrarySearch } from "@youiyoux/scanner";
 import { padEnd, plural, style } from "./ui.ts";
 
 export function renderLibrarySearch(result: LibrarySearch, query: string): string {
-  if (result.total === 0) return [`${style.bold("Library")} ${style.dim("· empty: no sources are connected yet")}`, "", style.dim(`Build with System elements (youi show <component>). ${LIBRARY_RULE}`)].join("\n");
+  if (result.total === 0) return [`${style.bold("Library")} ${style.dim("· empty: no sources are connected yet")}`, "", style.dim(`Build with System elements (youiyoux show <component>). ${LIBRARY_RULE}`)].join("\n");
   const header = `${style.bold("Library")} ${style.dim(`· ${plural(result.hits.length, "match", "matches")} for "${query}" in ${plural(result.total, "item")}`)}`;
   const width = Math.max(0, ...result.hits.map((h) => h.id.length));
   const rows = result.hits.map((h) => {

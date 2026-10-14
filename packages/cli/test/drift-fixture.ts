@@ -1,5 +1,5 @@
 /**
- * A fixture for `youi check --diff`: examples/demo-app, synced (so its Tailwind theme
+ * A fixture for `youiyoux check --diff`: examples/demo-app, synced (so its Tailwind theme
  * resolves shapes), with a package.json and one existing Radix dialog, committed to a
  * temporary git repo. `addDrift` then makes the change the tests check: a ghost-button
  * lookalike, a hex colour, rounded-[8px] and p-[12px] (both token values), and imports
@@ -60,7 +60,7 @@ export async function driftFixture(): Promise<Fixture> {
   await cp(join(EXAMPLES, "demo-design"), join(dir, "demo-design"), { recursive: true });
   const quiet = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
   try {
-    if ((await main(["sync", "--project", app])) !== 0) throw new Error("youi sync failed on the fixture");
+    if ((await main(["sync", "--project", app])) !== 0) throw new Error("youiyoux sync failed on the fixture");
   } finally {
     quiet.mockRestore();
   }

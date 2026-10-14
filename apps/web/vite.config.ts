@@ -11,7 +11,7 @@ import { tryIndexDeny, tryMiddleware } from "./scripts/try-server.ts";
 const root = import.meta.dirname;
 /**
  * The design system the hub shows: a snapshot directory written by scripts/snapshot.ts.
- * The committed default is the demo system; `youi ui` points this at apps/web/.hub instead.
+ * The committed default is the demo system; `youiyoux ui` points this at apps/web/.hub instead.
  */
 const snapshot = resolve(root, process.env.YOUI_HUB_SNAPSHOT ?? "snapshot");
 const snapshotPublic = join(snapshot, "public");
@@ -26,7 +26,7 @@ function snapshotFiles(): Plugin {
       outDir = resolve(config.root, config.build.outDir);
     },
     configureServer(server) {
-      // `youi ui --watch` rewrites the manifest (atomically) after every re-scan: tell the open hub to load it.
+      // `youiyoux ui --watch` rewrites the manifest (atomically) after every re-scan: tell the open hub to load it.
       const manifest = join(snapshotPublic, "data/manifest.json");
       server.watcher.add(manifest);
       const announce = (file: string): void => {
@@ -104,7 +104,7 @@ export default defineConfig({
   // A system's demos may use any of the hub's UI packages. Pre-bundled up front, so the preview
   // frame's first visit to such a demo never makes the dev server re-optimize and reload mid-render.
   optimizeDeps: { entries: ["index.html", "preview.html"], include: ["@radix-ui/react-label", "@radix-ui/react-separator", "@radix-ui/react-slot", "@radix-ui/react-switch", "@radix-ui/react-tabs", "class-variance-authority", "clsx", "tailwind-merge", "lucide-react"] },
-  // The rule editor's live API: `youi ui --project` starts the service and sets YOUI_API to it.
+  // The rule editor's live API: `youiyoux ui --project` starts the service and sets YOUI_API to it.
   // try.json is for the Try it handler only, never served (scripts/try-server.ts).
   server: { proxy: { "/api": { target: process.env.YOUI_API ?? "http://127.0.0.1:4417", changeOrigin: true } }, fs: { deny: tryIndexDeny(snapshot) } },
   build: {

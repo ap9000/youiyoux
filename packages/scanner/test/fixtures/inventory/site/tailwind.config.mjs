@@ -1,4 +1,4 @@
-/** Read statically by youi inventory, never executed. */
+/** Read statically by youiyoux inventory, never executed. */
 export default {
   content: ["./src/**/*.{astro,ts,tsx}"],
   theme: {

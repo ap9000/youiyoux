@@ -32,7 +32,7 @@ export function renderScan(report: ScanReport, outFile: string | null): string {
     ...[...byElement].sort((a, b) => b[1].length - a[1].length).map(([id, sites]) => `  ${padEnd(id.split("/").at(-1)!, width)}  ${padStart(String(sites.length), 4)}  ${bar(sites.length, max)}`),
     "",
     `  ${plural(report.usages.length, "site")} · ${style.dim(`${plural(report.unknowns.length, "unknown")} (never counted as zero)`)} · ${report.lookalikes.length > 0 ? style.warn(plural(report.lookalikes.length, "lookalike")) : "0 lookalikes"}`,
-    `  ${errors > 0 ? style.error(plural(errors, "error")) : style.ok("0 errors")} · ${plural(report.violations.length - errors, "warning")}${report.suppressed ? style.dim(` · ${report.suppressed} suppressed`) : ""}  ${style.dim("→ youi check")}`,
+    `  ${errors > 0 ? style.error(plural(errors, "error")) : style.ok("0 errors")} · ${plural(report.violations.length - errors, "warning")}${report.suppressed ? style.dim(` · ${report.suppressed} suppressed`) : ""}  ${style.dim("→ youiyoux check")}`,
     "",
     coverageLine(report),
     ...report.coverage.failed.map((f) => style.warn(`  ! ${f.file}: ${f.reason}`)),
@@ -65,7 +65,7 @@ export function renderWhere(where: WhereResult, report: ScanReport, all: readonl
     for (const site of sites) lines.push(`  ${padEnd(style.dim(site.at), 46)} ${padEnd(site.use, 14)} ${site.props}`);
   }
   if (where.nextOffset !== null) lines.push(style.dim(`  … ${where.total - all.length} more (--all, or --route <route>)`));
-  for (const l of where.lookalikes) lines.push("", style.warn(`lookalike: ${plural(l.sites, "site")} render ${l.resolved}, a different ${where.name}`), style.dim("  not counted above · youi check --rule components.canonical-import lists them"));
+  for (const l of where.lookalikes) lines.push("", style.warn(`lookalike: ${plural(l.sites, "site")} render ${l.resolved}, a different ${where.name}`), style.dim("  not counted above · youiyoux check --rule components.canonical-import lists them"));
   for (const u of where.unknown) lines.push(style.warn(`unknown: ${u.at} <${u.name}> (${u.reason})`));
   lines.push("", coverageLine(report));
   return lines.join("\n");
@@ -97,7 +97,7 @@ export function renderCheck(violations: readonly Violation[], lockIssues: readon
     errors > 0 ? style.error(`✖ ${plural(errors, "error")} · ${plural(warnings, "warning")} in ${plural(files, "file")}`) : warnings > 0 ? style.warn(`✓ 0 errors · ${plural(warnings, "warning")} in ${plural(files, "file")}`) : style.ok("✓ 0 errors · 0 warnings"),
     ...[...byRule].sort((a, b) => b[1].length - a[1].length).map(([slug, list]) => style.dim(`  ${padStart(String(list.length), 4)}  ${slug}`)),
     ...(suppressed > 0 ? [style.dim(`  ${padStart(String(suppressed), 4)}  suppressed by youi-ignore`)] : []),
-    ...(lockIssues === null ? [style.dim("  no youi.lock.json yet: generated-file and drift checks start after `youi sync`")] : []),
+    ...(lockIssues === null ? [style.dim("  no youi.lock.json yet: generated-file and drift checks start after `youiyoux sync`")] : []),
     coverageLine(report),
     ...ruleProblemLines(report),
   );
@@ -221,7 +221,7 @@ export function renderShow(card: Record<string, unknown>): string {
   return lines.join("\n");
 }
 
-/** `youi render`: the plain text an agent reads (shots.ts, shared with ui_render), with a component's first line in bold and its issues in amber. */
+/** `youiyoux render`: the plain text an agent reads (shots.ts, shared with ui_render), with a component's first line in bold and its issues in amber. */
 export function renderShots(report: ShotsReport): string {
   return shotsText(report)
     .split("\n")

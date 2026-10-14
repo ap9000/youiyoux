@@ -9,7 +9,7 @@ import { Badge, SeverityBadge } from "../../ui/Badge.tsx";
 import { Section } from "../../ui/Section.tsx";
 
 /**
- * How youi check runs this rule: compiled by the snapshot when it says so. The browser cannot compile
+ * How youiyoux check runs this rule: compiled by the snapshot when it says so. The browser cannot compile
  * an ast-grep body, so without that answer an ast-grep rule is shown as unverified, never as enforced.
  */
 export function executionOf(rule: RuleSpec & { execution?: RuleExecution }): RuleExecution {

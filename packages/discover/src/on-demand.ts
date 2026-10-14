@@ -20,7 +20,7 @@ export async function selectSources(cacheDir: string, action = "list", name?: st
   name = `@${name.replace(/^@/, "").toLowerCase()}`;
   if (action === "add") {
     const row = (await directory(cacheDir)).find((r) => r.name === name);
-    if (!row) throw new Error("Unknown source; run youi discover sync to refresh the directory");
+    if (!row) throw new Error("Unknown source; run youiyoux discover sync to refresh the directory");
     const reason = skipReason(row);
     if (reason) throw new Error(`Cannot add ${name}: ${reason}`);
   }
@@ -87,7 +87,7 @@ export async function candidateSource(cacheDir: string, id: string, options: Pol
   const name = ref.slice(slash + 1);
   const registry = ref.slice(0, slash);
   const template = registry === SHADCN.name ? "https://ui.shadcn.com/r/styles/new-york-v4/{name}.json" : (await directory(cacheDir)).find((r) => r.name === registry)?.template;
-  if (!template) throw new Error("Registry URL is unavailable; run youi discover sync");
+  if (!template) throw new Error("Registry URL is unavailable; run youiyoux discover sync");
   const url = registryUrl(template, name);
   const file = join(cacheDir, "source", `${sha256(url)}.json`);
   try { return JSON.parse(await readFile(file, "utf8")) as CandidateSource; } catch { /* fetch on first use */ }

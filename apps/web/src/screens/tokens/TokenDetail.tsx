@@ -159,7 +159,7 @@ export function TokenDetail({ model, token }: { model: Model; token: TokenEntry 
         )}
         <Section title="Declared consumers" count={consumers.length + aliasedBy.length}>
           <p className="mb-2 text-small text-muted">
-            Contract bindings and aliases only. Code that uses the CSS variable or its Tailwind utilities directly is not counted here: <code className="font-mono text-mono-sm">youi plan --token {token.path}</code> finds those uses in a project.
+            Contract bindings and aliases only. Code that uses the CSS variable or its Tailwind utilities directly is not counted here: <code className="font-mono text-mono-sm">youiyoux plan --token {token.path}</code> finds those uses in a project.
           </p>
           {consumers.length + aliasedBy.length === 0 ? (
             <p className="text-body text-muted">No component contract binds this token, and no token aliases it.</p>

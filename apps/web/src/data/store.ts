@@ -4,7 +4,7 @@
  * useSyncExternalStore, so any screen can read it without a provider.
  *
  * Both are read from one pinned manifest, so the catalog and the usage map always
- * come from the same snapshot generation. Under `youi ui --watch` a new generation
+ * come from the same snapshot generation. Under `youiyoux ui --watch` a new generation
  * is loaded in full and then swapped in for both at once.
  */
 import { useSyncExternalStore } from "react";
@@ -126,7 +126,7 @@ async function inventoryFor(manifest: Manifest): Promise<InventorySource | null>
 
 const inventoryLoader = createLoader(async (): Promise<InventorySource | null> => inventoryFor(await pinnedManifest()));
 
-/** The detect report the snapshot carries (`youi ui --detect`), or null when it has none. */
+/** The detect report the snapshot carries (`youiyoux ui --detect`), or null when it has none. */
 const detectFor = async (manifest: Manifest): Promise<DetectReport | null> => (manifest.detect ? loadDetect(manifest.detect.file) : null);
 const detectLoader = createLoader(async (): Promise<DetectReport | null> => detectFor(await pinnedManifest()));
 
@@ -183,7 +183,7 @@ export function useLiveState(): LiveState {
   );
 }
 
-// `youi ui --watch`: the dev server announces each new snapshot generation.
+// `youiyoux ui --watch`: the dev server announces each new snapshot generation.
 if (import.meta.hot) import.meta.hot.on("youi:snapshot", () => void refreshSnapshot());
 
 export const startModel = (): void => modelLoader.start();

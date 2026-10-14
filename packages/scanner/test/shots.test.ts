@@ -1,5 +1,5 @@
 /**
- * `youi render` / ui_render underneath: a changed component drawn in headless Chromium (the
+ * `youiyoux render` / ui_render underneath: a changed component drawn in headless Chromium (the
  * installed headless shell; never downloaded here), light and dark at desktop and phone width,
  * with axe's findings and a diff against the base commit (c1); and nothing drawn again that did
  * not change (c2). The fixture is the `eyes` app, copied into a fresh git repository.
@@ -83,7 +83,7 @@ describe("a changed component, seen (c1)", () => {
     for (const shot of first.components[0]!.shots) expect(text).toContain(shot.path);
     expect(text).toMatch(/before\/after against main \([0-9a-f]{7}\): pixels changed [\d.]+% in light 1280/);
     expect(text).toMatch(/Form elements must have labels \(label, critical, 1 element in light and dark\): <input type="search"/);
-    expect(text.split("\n").at(-1)).toBe(`next: fix the 1 accessibility issue (label), then run youi render ${SEARCH} again`);
+    expect(text.split("\n").at(-1)).toBe(`next: fix the 1 accessibility issue (label), then run youiyoux render ${SEARCH} again`);
   });
 
   test("by component name, outside git: its file is found, and the diff says there is no base", async () => {

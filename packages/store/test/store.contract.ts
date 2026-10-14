@@ -36,7 +36,7 @@ async function answers(store: Store) {
   };
 }
 
-/** Fill a store from the fixtures, as `youi index rebuild` does from files. */
+/** Fill a store from the fixtures, as `youiyoux index rebuild` does from files. */
 async function fill(store: Store): Promise<void> {
   await store.replaceDiscoverItems("chosen", ITEMS);
   await store.replaceDiscoverItems("all", EXTRA_ALL);

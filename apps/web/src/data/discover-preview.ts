@@ -75,12 +75,12 @@ async function ask(id: string, project: string | null, base: string): Promise<Pr
   try {
     response = await fetch(`${base}${PREVIEW_ENDPOINT}?${params}`, { cache: "no-store" });
   } catch {
-    return { status: "error", message: "Previews need the hub's own server (youi ui or pnpm dev), which did not answer; the listing stands.", offline: true };
+    return { status: "error", message: "Previews need the hub's own server (youiyoux ui or pnpm dev), which did not answer; the listing stands.", offline: true };
   }
   const body = (await response.json().catch(() => null)) as (PreviewAnswer & { error: string | null }) | { error?: unknown } | null;
   if (response.ok && body && "id" in body) return { status: "ready", answer: body };
   if (body && typeof body.error === "string") return { status: "error", message: body.error, offline: false };
-  return { status: "error", message: "Previews need the hub's own server (youi ui or pnpm dev); this host only serves files, so the listing stands.", offline: true };
+  return { status: "error", message: "Previews need the hub's own server (youiyoux ui or pnpm dev); this host only serves files, so the listing stands.", offline: true };
 }
 
 /* --------------------------------------------------------- the markup it drew */

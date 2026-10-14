@@ -1,4 +1,4 @@
-/** `youi inventory` text output: roles × projects, families, near-duplicates, flags and Storybook stories. */
+/** `youiyoux inventory` text output: roles × projects, families, near-duplicates, flags and Storybook stories. */
 import { INVENTORY_ROLES, type InventoryFamily, type InventoryReport, type InventoryShape } from "@youiyoux/core";
 import { padEnd, padStart, plural, rule, style } from "./ui.ts";
 
@@ -48,9 +48,9 @@ export function storyLines(report: InventoryReport): string[] {
 export function storyNext(report: InventoryReport, outFile: string | null): string | null {
   const stories = report.projects.flatMap((p) => (p.stories ? [p.stories] : []));
   if (stories.length === 0) return null;
-  const open = `youi ui --inventory ${outFile ?? ".youi/inventory.json"}`;
+  const open = `youiyoux ui --inventory ${outFile ?? ".youi/inventory.json"}`;
   const skipped = stories.reduce((n, s) => n + s.skipped.length, 0);
-  if (skipped > 0) return `Next: rewrite the skipped stories as CSF 3 args stories of a component in this project (or fix the file), run youi inventory again, then see them beside their real uses with ${open}`;
+  if (skipped > 0) return `Next: rewrite the skipped stories as CSF 3 args stories of a component in this project (or fix the file), run youiyoux inventory again, then see them beside their real uses with ${open}`;
   return `Next: see the stories beside their real uses with ${open}`;
 }
 

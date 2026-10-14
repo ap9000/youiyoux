@@ -280,6 +280,6 @@ export interface DiscoverShow {
 export function showCandidate(index: DiscoverIndex, query: string): DiscoverShow {
   const q = cleanText(query).trim();
   const entry = index.entries.find((e) => e.id === q) ?? index.entries.find((e) => e.source.ref === q) ?? index.entries.find((e) => e.source.kind === "shadcn-registry" && e.source.ref === `@shadcn/${q}`);
-  if (!entry) throw new Error(`no Discover candidate "${q}": pass a lib: id or a ref (@coss/command) from youi discover / discover_search`);
+  if (!entry) throw new Error(`no Discover candidate "${q}": pass a lib: id or a ref (@coss/command) from youiyoux discover / discover_search`);
   return { entry, indexBuiltAt: index.builtAt, note: DISCOVER_RULE };
 }

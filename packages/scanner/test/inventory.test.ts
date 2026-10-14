@@ -34,7 +34,7 @@ beforeAll(async () => {
   report = await inventory([CONSOLE, SITE]);
 });
 
-describe("youi inventory on two projects (c1)", () => {
+describe("youiyoux inventory on two projects (c1)", () => {
   test("needs no design repo and reads both projects, with routes detected from the files", () => {
     expect(report.projects.map((p) => [p.id, p.status, p.routes])).toEqual([
       ["console", "complete", "next-app (src/app/**/page)"],

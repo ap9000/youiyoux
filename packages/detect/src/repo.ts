@@ -234,7 +234,7 @@ export async function detectRepo(rootInput: string): Promise<RepoScan> {
   const root = resolve(rootInput);
   if (!(await stat(root).catch(() => null))?.isDirectory()) throw new Error(`${rootInput} is not a directory`);
   const manifests = await findFiles(root, ["package.json", "**/package.json"], SKIP);
-  if (manifests.length === 0) throw new Error(`${root} has no package.json: youi detect reads a JavaScript repo's package.json, lockfile, components.json and imports`);
+  if (manifests.length === 0) throw new Error(`${root} has no package.json: youiyoux detect reads a JavaScript repo's package.json, lockfile, components.json and imports`);
   const rootManifest = await readJson(join(root, manifests.includes("package.json") ? "package.json" : manifests[0]!));
   const name = typeof rootManifest?.name === "string" && rootManifest.name ? rootManifest.name : basename(root);
   const declared = await declaredPackages(root, manifests);

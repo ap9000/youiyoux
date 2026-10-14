@@ -2,8 +2,8 @@
  * The seam between the editor and rule execution: which checks the form offers, whether a
  * draft's check can run, and running a set of rules over one scan snapshot.
  *
- * `scannerExecution` is the scanner's one rule execution model, the same one `youi check`,
- * `youi rules`, the MCP server and the hub use: built-in checks with their options checked,
+ * `scannerExecution` is the scanner's one rule execution model, the same one `youiyoux check`,
+ * `youiyoux rules`, the MCP server and the hub use: built-in checks with their options checked,
  * ast-grep bodies compiled, advisory rules never run. A draft can never claim enforcement
  * the scanner does not perform, and a check that did not run never reads as zero findings.
  */
@@ -44,7 +44,7 @@ const OFFERED: readonly CheckCapability[] = [
 ];
 
 export const scannerExecution: RuleExecution = {
-  name: "youi check",
+  name: "youiyoux check",
   supportedChecks: () => OFFERED,
   problem(check) {
     const execution = ruleCapability({ severity: "warn", check });

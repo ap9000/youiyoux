@@ -1,5 +1,5 @@
 /**
- * The design-change workflow service (rule, style and library drafts), reached at /api: `youi ui --project` starts it beside
+ * The design-change workflow service (rule, style and library drafts), reached at /api: `youiyoux ui --project` starts it beside
  * the dev server, which proxies /api to it (same origin when the service serves a built hub). Unlike the snapshot, this is live
  * state, so nothing here is cached.
  */
@@ -42,7 +42,7 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   const data = (await response.json()) as T | ApiError;
   if (!response.ok) {
     const error = data as ApiError;
-    if (response.status === 401) throw new WorkflowRequestError("This tab cannot make changes: open the hub from the link `youi ui` printed in its terminal (it carries this run's key).", 401);
+    if (response.status === 401) throw new WorkflowRequestError("This tab cannot make changes: open the hub from the link `youiyoux ui` printed in its terminal (it carries this run's key).", 401);
     throw new WorkflowRequestError(error.error ?? `HTTP ${response.status}`, response.status, error.problems ?? []);
   }
   return data as T;

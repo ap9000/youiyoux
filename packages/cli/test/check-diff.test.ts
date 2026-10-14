@@ -63,7 +63,7 @@ describe("the change git reports", () => {
     await git("commit", "-qm", "init");
   });
   afterEach(async () => {
-    await rm(dir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
 
   test("against HEAD: edited lines, untracked files whole, nothing for unchanged or unchecked files", async () => {
@@ -118,7 +118,7 @@ describe("the change git reports", () => {
   });
 
   test("outside git it stops and says why", async () => {
-    await rm(join(app, ".git"), { recursive: true, force: true });
+    await rm(join(app, ".git"), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     await expect(workingTreeChange(await loadProject(app))).rejects.toThrow(/needs a git checkout/);
   });
 });
@@ -132,13 +132,13 @@ interface DiffJson {
   next: string;
 }
 
-describe("youi check --diff on a change", () => {
+describe("youiyoux check --diff on a change", () => {
   let fixture: Fixture;
   beforeEach(async () => {
     fixture = await driftFixture();
   }, 60_000);
   afterEach(async () => {
-    await rm(fixture.dir, { recursive: true, force: true });
+    await rm(fixture.dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
   });
   const check = async (...args: string[]) => cli(["check", "--diff", ...args, "--project", fixture.app]);
 
@@ -307,13 +307,13 @@ describe("youi check --diff on a change", () => {
       const result = await cli(["check", "--diff", "--strict", "--json", "--project", empty]);
       expect(result.code).toBe(1);
       expect(JSON.parse(result.out)).toMatchObject({incomplete: true, findings: []});
-      expect(result.out).toContain("youi init --design <dir>");
-    } finally { await rm(empty, {recursive: true, force: true}); }
+      expect(result.out).toContain("youiyoux init --design <dir>");
+    } finally { await rm(empty, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
   });
 
   test("repo mode outside git gives the exact setup step and fails strict", async () => {
     await rm(join(fixture.app, "youi.project.json"));
-    await rm(join(fixture.app, ".git"), {recursive: true});
+    await rm(join(fixture.app, ".git"), { recursive: true, maxRetries: 5, retryDelay: 100 });
     const errors: string[] = [];
     const spy = vi.spyOn(process.stderr, "write").mockImplementation((chunk) => { errors.push(String(chunk)); return true; });
     const result = await check("--strict");
@@ -336,7 +336,7 @@ describe("youi check --diff on a change", () => {
   });
 
   test("without git it stops and says why, never a pass", async () => {
-    await rm(join(fixture.app, ".git"), { recursive: true, force: true });
+    await rm(join(fixture.app, ".git"), { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     const errors: string[] = [];
     const spy = vi.spyOn(process.stderr, "write").mockImplementation((chunk: string | Uint8Array) => {
       errors.push(String(chunk));

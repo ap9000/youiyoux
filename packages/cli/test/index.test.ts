@@ -1,6 +1,6 @@
 /**
- * `youi index` end to end: Discover search, facets and paging, and inventory history all come
- * from the store; deleting the store and running `youi index rebuild` gives the same answers.
+ * `youiyoux index` end to end: Discover search, facets and paging, and inventory history all come
+ * from the store; deleting the store and running `youiyoux index rebuild` gives the same answers.
  */
 import { mkdtemp, readdir, rm, writeFile, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";

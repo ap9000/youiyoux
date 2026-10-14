@@ -38,7 +38,7 @@ export async function openStore(options: OpenOptions = {}): Promise<Store> {
   return openSqlite(options.path ?? defaultIndexPath(env), options);
 }
 
-/** Delete a SQLite store and its WAL files (the start of `youi index rebuild`). */
+/** Delete a SQLite store and its WAL files (the start of `youiyoux index rebuild`). */
 export async function removeSqlite(path: string): Promise<void> {
   if (path === ":memory:") return;
   for (const suffix of ["", "-wal", "-shm"]) await rm(`${path}${suffix}`, { force: true });

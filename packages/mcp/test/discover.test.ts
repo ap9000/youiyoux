@@ -97,11 +97,11 @@ describe("discover MCP tools", () => {
     expect(missing.isError).toBe(true);
   });
 
-  test("without an index the tools say to run youi discover sync, and write nothing", async () => {
+  test("without an index the tools say to run youiyoux discover sync, and write nothing", async () => {
     const client = await connect(empty);
     const { data, isError } = await call(client, "discover_search", { need: "toast" });
     expect(isError).toBe(true);
-    expect(String(data.error)).toContain("youi discover sync");
+    expect(String(data.error)).toContain("youiyoux discover sync");
     expect(await readdir(empty)).toEqual([]);
   });
 

@@ -5,7 +5,7 @@
  *
  * Reads `<dir>/screens.json` (route → the address that shows it) and writes beside it
  * `<slug>.<scheme>.webp` (2x, the screen page) and `<slug>.<scheme>.thumb.webp` (half
- * size, thumbnails), light and dark. The snapshot (`pnpm data --project`, `youi ui
+ * size, thumbnails), light and dark. The snapshot (`pnpm data --project`, `youiyoux ui
  * --project`) picks them up from `<product>/.youi/screens`, or from `--screens <dir>`.
  * The pictures are the project's data: keep them with the project, not in this repo.
  *

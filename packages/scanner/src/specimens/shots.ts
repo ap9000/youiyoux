@@ -1,5 +1,5 @@
 /**
- * What an agent sees after changing a component (`youi render`, the MCP tool `ui_render`): its
+ * What an agent sees after changing a component (`youiyoux render`, the MCP tool `ui_render`): its
  * looks drawn the way specimens are (server-rendered with the project's own React, on the
  * project's own CSS: render.ts, css.ts), laid out on one page per colour scheme and screenshotted
  * in headless Chromium at desktop and phone width; accessibility issues from axe-core on those
@@ -343,7 +343,7 @@ class Eyes {
     if (this.browser) return this.browser;
     const { launchBrowser } = await import("@youiyoux/detect");
     try {
-      this.browser = await launchBrowser(this.options.executablePath, { purpose: { what: "youi render", command: "youi render" }, ...(this.options.download === false ? { download: false } : {}), ...(this.options.log ? { log: this.options.log } : {}) });
+      this.browser = await launchBrowser(this.options.executablePath, { purpose: { what: "youiyoux render", command: "youiyoux render" }, ...(this.options.download === false ? { download: false } : {}), ...(this.options.log ? { log: this.options.log } : {}) });
     } catch (error: unknown) {
       throw new RenderUnavailableError(error instanceof Error ? error.message : String(error));
     }
@@ -679,7 +679,7 @@ export type Again = (target: string | null) => string;
 export function shotsNext(report: ShotsReport, again: Again): string {
   const missing = report.components.filter((c) => c.shots.length === 0);
   const issues = report.components.map((c) => ({ ...c, a11y: c.a11y.filter((i) => i.status === "new" && !i.specimenOnly) })).filter((c) => c.a11y.length > 0);
-  if (report.components.length === 0) return report.baseNote ? "pass the file you changed (youi render <file>) or a component name" : "nothing changed since the base; nothing to do";
+  if (report.components.length === 0) return report.baseNote ? "pass the file you changed (youiyoux render <file>) or a component name" : "nothing changed since the base; nothing to do";
   if (missing.length === report.components.length) return "pass a file that defines or uses a component, or an exported component name";
   if (issues.length > 0) {
     const total = issues.reduce((n, c) => n + c.a11y.length, 0);
@@ -696,7 +696,7 @@ export function shotsNext(report: ShotsReport, again: Again): string {
 }
 
 /** The plain-text answer the CLI and the MCP tool both give: per component its images, issues and diff, then `next:`. */
-export function shotsText(report: ShotsReport, again: Again = (t) => `run youi render${t ? ` ${t}` : ""} again`): string {
+export function shotsText(report: ShotsReport, again: Again = (t) => `run youiyoux render${t ? ` ${t}` : ""} again`): string {
   const lines: string[] = [];
   const base = report.base ? `${report.base.ref} (${report.base.commit.slice(0, 7)})` : null;
   for (const c of report.components) {

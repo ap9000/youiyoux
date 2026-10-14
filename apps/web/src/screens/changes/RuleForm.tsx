@@ -51,7 +51,7 @@ export function RuleForm({ value, onChange, info, mode, readOnly, problems }: Ru
   const prefix = `youi:${info.project.system}/rule/`;
   const name = rule.id.startsWith(prefix) ? rule.id.slice(prefix.length) : rule.id;
   const capability = info.checks.find((c) => (c.id ?? c.engine) === checkKey(rule.check));
-  // An existing ast-grep rule keeps its body as written; youi check runs it, and the service says if it cannot.
+  // An existing ast-grep rule keeps its body as written; youiyoux check runs it, and the service says if it cannot.
   const [custom] = useState<AstGrepCheck | null>(rule.check.engine === "ast-grep" ? rule.check : null);
   const error = (field: string): string | undefined => problemFor(problems, field);
 
@@ -91,7 +91,7 @@ export function RuleForm({ value, onChange, info, mode, readOnly, problems }: Ru
       <Section title="How hard it bites">
         <div className="space-y-3">
           <Segmented label="Severity" value={rule.severity} options={SEVERITIES} onChange={(severity) => set({ severity, ...(severity === "warn" ? {} : { rollout: null }) })} />
-          <p className="text-small text-muted">{rule.severity === "error" ? "Fails youi check." : rule.severity === "warn" ? "Reported by youi check; never fails it." : "Published, but never checked."}</p>
+          <p className="text-small text-muted">{rule.severity === "error" ? "Fails youiyoux check." : rule.severity === "warn" ? "Reported by youiyoux check; never fails it." : "Published, but never checked."}</p>
           {rule.severity === "warn" && (
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border border-line bg-sunken px-3 py-2.5">
               <Checkbox label="Plan to tighten it to an error" checked={rule.rollout !== null} onChange={(e) => set({ rollout: e.target.checked ? { to: "error" } : null })} />
@@ -110,7 +110,7 @@ export function RuleForm({ value, onChange, info, mode, readOnly, problems }: Ru
 
       <Section title="How it is checked">
         <div className="space-y-4">
-          <Field label="Check" hint={capability?.description ?? (custom && rule.check.engine === "ast-grep" ? `youi check runs this ast-grep rule on ${custom.language} files; its body stays as written in the rule file.` : "This check cannot run here yet; pick one that can.")} error={error("check")}>
+          <Field label="Check" hint={capability?.description ?? (custom && rule.check.engine === "ast-grep" ? `youiyoux check runs this ast-grep rule on ${custom.language} files; its body stays as written in the rule file.` : "This check cannot run here yet; pick one that can.")} error={error("check")}>
             {(id, describedBy) => (
               <Select id={id} aria-describedby={describedBy} value={capability ? checkKey(rule.check) : rule.check.engine === "ast-grep" ? "ast-grep" : "unsupported"} onChange={(e) => set({ check: e.target.value === "ast-grep" && custom ? custom : checkFor(e.target.value, info.checks) })}>
                 {custom && <option value="ast-grep">Custom ast-grep rule ({custom.language}, kept as written)</option>}

@@ -366,8 +366,8 @@ function Handoff({ draft }: { draft: DraftView }) {
       {draft.kind === "rule" ? (
         <>
           <p className="text-small text-muted">
-            Once merged into the design checkout agents use, they get it on their next lookup: <code className="font-mono text-mono-sm">system_get_rules</code> and <code className="font-mono text-mono-sm">youi check</code> read that checkout, and{" "}
-            <code className="font-mono text-mono-sm">youi sync</code> refreshes the project's AGENTS.md block. Agents will read:
+            Once merged into the design checkout agents use, they get it on their next lookup: <code className="font-mono text-mono-sm">system_get_rules</code> and <code className="font-mono text-mono-sm">youiyoux check</code> read that checkout, and{" "}
+            <code className="font-mono text-mono-sm">youiyoux sync</code> refreshes the project's AGENTS.md block. Agents will read:
           </p>
           <blockquote className="rounded-md border-l-2 border-line-strong bg-sunken px-3 py-2 text-body text-ink-2">{draft.content.rule.agent}</blockquote>
         </>
@@ -375,7 +375,7 @@ function Handoff({ draft }: { draft: DraftView }) {
         <p className="text-small text-muted">Once merged, the item is in the Library{draft.content.request === "adopt" ? " as a candidate, for a person to adopt into the System" : " as a reference: not in the System, and not built with"}. Nothing was installed in any project.</p>
       ) : (
         <p className="text-small text-muted">
-          Once merged, <code className="font-mono text-mono-sm">youi sync</code> in each project writes the new values into its tokens (CSS variables, Tailwind theme, TS and React Native), and the hub shows them after the next snapshot.
+          Once merged, <code className="font-mono text-mono-sm">youiyoux sync</code> in each project writes the new values into its tokens (CSS variables, Tailwind theme, TS and React Native), and the hub shows them after the next snapshot.
         </p>
       )}
       <CodeBlock code={handoff.diff} title={`${handoff.files.length} file(s) changed`} maxHeight="sm" />

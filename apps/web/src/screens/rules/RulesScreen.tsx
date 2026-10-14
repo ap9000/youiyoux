@@ -3,7 +3,7 @@
  * breaks it. Edit and New rule start here; a draft opens on its rule's own page
  * (/rules/draft/<id>): the form, Run preview, Approve, Send for review.
  *
- * Live from the rule editor (`youi ui --project`) when it runs; otherwise the snapshot, read-only.
+ * Live from the rule editor (`youiyoux ui --project`) when it runs; otherwise the snapshot, read-only.
  */
 import { clsx } from "clsx";
 import { PencilLine, Plus, ShieldCheck } from "lucide-react";
@@ -179,7 +179,7 @@ function RuleListItem({ row, active }: { row: RuleRow; active: boolean }) {
 }
 
 function levelText(rule: RuleSpec): string {
-  if (rule.severity === "error") return "Error: fails youi check";
+  if (rule.severity === "error") return "Error: fails youiyoux check";
   if (rule.severity === "off") return "Off";
   return `Warning${rule.rollout ? `, becoming an error ${rule.rollout.after ? `after ${rule.rollout.after}` : "later"}` : ""}`;
 }
@@ -292,7 +292,7 @@ function Places({ row }: { row: RuleRow }) {
           </li>
         ))}
       </ul>
-      {row.flagged > shown.length && <p className="border-t border-line bg-sunken px-3 py-2 text-small text-muted">and {row.flagged - shown.length} more; youi check lists them all</p>}
+      {row.flagged > shown.length && <p className="border-t border-line bg-sunken px-3 py-2 text-small text-muted">and {row.flagged - shown.length} more; youiyoux check lists them all</p>}
     </div>
   );
 }

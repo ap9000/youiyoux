@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { loadProject } from "@youiyoux/scanner";
 import { githubSlug, hookCommand, installClaudeHook, installPreCommit, installWorkflow, main, runClaudeHook, runPreCommitHook, shellQuote, workflowText } from "../src/index.ts";
+import { expectOnlyNpx } from "./bare-command.ts";
 import { addDrift, cli, driftFixture, repoModeWithOldFailures, type Fixture } from "./drift-fixture.ts";
 
 const run = promisify(execFile);
@@ -23,7 +24,7 @@ const contextOf = (stdout: string): string => (JSON.parse(stdout) as { hookSpeci
 /** A clean component edit: only the pass line and how to see it, no findings, drift or older debt. */
 function expectOnlySeeIt(stdout: string, file: string): void {
   const context = contextOf(stdout);
-  expect(context.startsWith(`youi: ${file} passes the design-system check. See it: youi render `)).toBe(true);
+  expect(context.startsWith(`youiyoux: ${file} passes the design-system check. See it: npx -y youiyoux render `)).toBe(true);
   expect(context).not.toMatch(/Fix:|older findings|incomplete|#ff0000|parse/);
   expect(context.split("\n")).toHaveLength(1);
 }
@@ -40,7 +41,7 @@ afterAll(() => {
 
 beforeEach(async () => {
   // A space in every path the hooks see.
-  dir = await mkdtemp(join(tmpdir(), "youi hooks "));
+  dir = await mkdtemp(join(tmpdir(), "youiyoux hooks "));
   app = join(dir, "demo app");
   await cp(join(EXAMPLES, "demo-app"), app, { recursive: true });
   await cp(join(EXAMPLES, "demo-design"), join(dir, "demo-design"), { recursive: true });
@@ -65,17 +66,18 @@ describe("Claude Code PostToolUse hook", () => {
     expect(context).toContain("advisory");
     expect(context).toMatch(/components\/extra file\.tsx:2:\d+ rule color\.no-raw-color/);
     expect(context).not.toContain("invite-form");
+    expectOnlyNpx(context);
   });
 
   test("for a clean component file, says only how to see it; it never renders inside the hook", async () => {
     await writeFile(join(app, "components/extra file.tsx"), CLEAN);
     const context = contextOf((await runClaudeHook(payload(join(app, "components/extra file.tsx")))).stdout);
-    expect(context).toBe("youi: components/extra file.tsx passes the design-system check. See it: youi render 'components/extra file.tsx' (or the MCP tool ui_render), then open the images: light and dark, desktop and phone, accessibility issues and the diff against the base.");
+    expect(context).toBe("youiyoux: components/extra file.tsx passes the design-system check. See it: npx -y youiyoux render 'components/extra file.tsx' (or the MCP tool ui_render), then open the images: light and dark, desktop and phone, accessibility issues and the diff against the base.");
   });
 
   test("a component file's findings end with the line that says how to see it", async () => {
     await writeFile(join(app, "components/extra file.tsx"), RAW_COLOR);
-    expect(contextOf((await runClaudeHook(payload("components/extra file.tsx"))).stdout).split("\n").at(-1)).toMatch(/^See it: youi render 'components\/extra file\.tsx' \(or the MCP tool ui_render\)/);
+    expect(contextOf((await runClaudeHook(payload("components/extra file.tsx"))).stdout).split("\n").at(-1)).toMatch(/^See it: npx -y youiyoux render 'components\/extra file\.tsx' \(or the MCP tool ui_render\)/);
   });
 
   test("is silent for clean non-component files, generated output, unchecked files and bad input", async () => {
@@ -92,7 +94,7 @@ describe("Claude Code PostToolUse hook", () => {
   test("with a baseline, reports only what the edit added", async () => {
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     expect(await main(["baseline", "--project", app])).toBe(0);
-    expect(contextOf((await runClaudeHook(payload("app/settings/index.tsx"))).stdout)).toMatch(/^youi: app\/settings\/index\.tsx passes the design-system check\. See it: /);
+    expect(contextOf((await runClaudeHook(payload("app/settings/index.tsx"))).stdout)).toMatch(/^youiyoux: app\/settings\/index\.tsx passes the design-system check\. See it: /);
     const settings = join(app, "app/settings/index.tsx");
     await writeFile(settings, `${await readFile(settings, "utf8")}\nexport const Bad = () => <p style={{ color: "#00ff00" }} />;\n`);
     const context = contextOf((await runClaudeHook(payload(settings))).stdout);
@@ -286,8 +288,8 @@ describe("drift findings reach the agent after a UI edit", () => {
     const agents = await readFile(join(fixture.app, "AGENTS.md"), "utf8");
     // Committed instructions are portable; the machine-local hook keeps its working path.
     const youiJs = join(import.meta.dirname, "../bin/youi.js");
-    expect(agents).toContain("After UI edits, run `youi check --diff`");
-    expect(agents).toContain("export PATH=\"$PWD/packages/cli/bin:$PATH\"");
+    expect(agents).toContain("After UI edits, run `npx -y youiyoux check --diff`");
+    expect(agents).toContain("Run from the repo root.");
     expect(agents).not.toContain(youiJs);
     expect(await readFile(join(fixture.app, ".git/hooks/pre-commit"), "utf8")).toContain(`node ${youiJs} hooks run pre-commit`);
     expect(agents).toContain("Keep this text.");
@@ -299,12 +301,16 @@ describe("drift findings reach the agent after a UI edit", () => {
     expect(context).toContain("var(--color-brand)");
     expect(context).toContain("var(--radius-card)");
     expect(context).toContain("off-library");
-    expect(contextOf((await runClaudeHook(input("components/quiet-button.tsx"))).stdout)).toContain("near-duplicate");
+    const quiet = contextOf((await runClaudeHook(input("components/quiet-button.tsx"))).stdout);
+    expect(quiet).toContain("near-duplicate");
+    // Every command the agent is told to run works through npx (c5).
+    for (const text of [agents, context, quiet]) expectOnlyNpx(text);
     await fixture.git("add", "components/promo.tsx");
     await writeFile(join(fixture.app, "components/promo.tsx"), "export const Promo = () => <p>Fixed only in working tree</p>;\n");
     const staged = await runPreCommitHook({project: fixture.app}, {strict: true});
     expect(staged.exitCode).toBe(1);
     expect(staged.stdout).toContain("var(--color-brand)");
+    expectOnlyNpx(staged.stdout);
   });
 
   test("outside git the hook explains why lines cannot be isolated without listing old findings", async () => {
@@ -334,7 +340,7 @@ describe("drift findings reach the agent after a UI edit", () => {
     const codex = (JSON.parse(out) as Array<{ kind: string; action: string; file: string; guarantee: string }>).find((r) => r.kind === "Codex");
     expect(codex).toMatchObject({ action: "skipped", file: join(fixture.app, "AGENTS.md") });
     expect(codex?.guarantee).toMatch(/pre-commit/);
-    expect(await readFile(join(fixture.app, "AGENTS.md"), "utf8")).toContain("youi check --diff");
+    expect(await readFile(join(fixture.app, "AGENTS.md"), "utf8")).toContain("youiyoux check --diff");
   });
 
   test("CI: --diff adds a pull-request step that fails on drift; reinstalling keeps it and changes nothing", async () => {
@@ -358,6 +364,15 @@ describe("drift findings reach the agent after a UI edit", () => {
     expect(text).toContain('check --diff "origin/$YOUI_BASE" --strict --format github --project . --design .youi-ci/design');
     expect(first.guarantee).toContain("drift");
     expect((await installWorkflow(project, tool, { project: fixture.app }, false)).action).toBe("unchanged");
+    // A cached npm install has no tool git checkout: CI uses portable commands as well.
+    const portable = await installWorkflow(project, join(fixture.dir, "_npx/hash/node_modules/youiyoux/dist"), { project: fixture.app }, false);
+    const portableText = await readFile(portable.file, "utf8");
+    expect(portableText).toContain("npx -y youiyoux check");
+    expect(portableText).not.toMatch(/_npx|dist\/chunks|\.youi-ci\/tool|repository: npm\/youiyoux/);
+    expect(portableText).toContain('npx -y youiyoux check --diff "origin/$YOUI_BASE"');
+    await writeFile(portable.file, portableText.replaceAll("youiyoux hooks install", "youi hooks install").replaceAll("name: youiyoux check", "name: youi check"));
+    expect((await installWorkflow(project, join(fixture.dir, "_npx/hash/node_modules/youiyoux/dist"), { project: fixture.app }, false)).action).toBe("updated");
+    expect(await readFile(portable.file, "utf8")).toContain('check --diff "origin/$YOUI_BASE"');
   });
 });
 

@@ -85,7 +85,7 @@ describe("drafts", () => {
     expect(scannerExecution.supportedChecks().map((c) => c.id)).toEqual(["raw-color", "arbitrary-value", "native-element", "prop-values", "lookalike-component", null]);
   });
 
-  test("one execution model: an ast-grep rule that compiles previews exactly as youi check runs it", async () => {
+  test("one execution model: an ast-grep rule that compiles previews exactly as youiyoux check runs it", async () => {
     const draft = await workflow.create(PERSON, { mode: "create" });
     const content = withRule(draft, { id: "youi:demo/rule/custom.thing", title: "Custom", statement: "s", agent: "a", check: { engine: "ast-grep", language: "tsx", rule: { kind: "jsx_opening_element" } } });
     expect((await workflow.save(PERSON, draft.id, { revision: 1, content })).problems).toEqual([]);

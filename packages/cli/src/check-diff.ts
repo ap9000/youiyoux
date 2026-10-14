@@ -1,5 +1,5 @@
 /**
- * `youi check --diff`: what a change adds, from git. The working tree (or the staged
+ * `youiyoux check --diff`: what a change adds, from git. The working tree (or the staged
  * content, for the pre-commit hook) is compared with a base: HEAD, or the merge-base of
  * a branch and HEAD. Only added lines count; an untracked file is wholly added, and a
  * renamed file's unchanged lines are not new. Without git the check stops and says why:
@@ -118,7 +118,7 @@ async function headCommit(root: string): Promise<string | null> {
 
 async function ensureRepo(root: string): Promise<void> {
   await git(root, ["rev-parse", "--is-inside-work-tree"]).catch((error: unknown) => {
-    throw new DiffError(`youi check --diff needs a git checkout, and ${root} is not in one (${error instanceof Error ? error.message : String(error)}); without git there is no change to compare, so nothing was checked; run \`git init\` and make an initial commit, then run \`youi check --diff\``);
+    throw new DiffError(`youiyoux check --diff needs a git checkout, and ${root} is not in one (${error instanceof Error ? error.message : String(error)}); without git there is no change to compare, so nothing was checked; run \`git init\` and make an initial commit, then run \`youiyoux check --diff\``);
   });
 }
 
@@ -149,7 +149,7 @@ export async function workingTreeChange(project: ChangeProject, base?: string, p
     commit = head;
     label = head ? "HEAD" : "an empty repository (no commit yet)";
   } else {
-    if (!head) throw new DiffError(`this repository has no commit yet, so it has no merge-base with ${base}; run youi check --diff without a base`);
+    if (!head) throw new DiffError(`this repository has no commit yet, so it has no merge-base with ${base}; run youiyoux check --diff without a base`);
     const resolved = await git(root, ["rev-parse", "--verify", "-q", `${base}^{commit}`]).catch(() => "");
     if (!resolved.trim()) throw new DiffError(`${base} is not a commit or branch git knows here; fetch it first (in CI: actions/checkout with fetch-depth: 0) or name another base`);
     commit = (await git(root, ["merge-base", resolved.trim(), "HEAD"]).catch(() => "")).trim();
@@ -327,7 +327,7 @@ export async function analyseChange(project: Project, scan: ScanResult, change: 
       findings[merged] = { ...into, rule: slugOf(violation.rule), severity: violation.severity === "error" ? "error" : into.severity };
       continue;
     }
-    const fix = violation.suggestion ?? rules.get(violation.rule)?.agent ?? `see \`youi rules\` for ${slugOf(violation.rule)}`;
+    const fix = violation.suggestion ?? rules.get(violation.rule)?.agent ?? `see \`youiyoux rules\` for ${slugOf(violation.rule)}`;
     findings.push({ kind: "rule", file: violation.file, line: violation.line, column: violation.column, message: violation.message, fix, severity: violation.severity, rule: slugOf(violation.rule) });
   }
   findings.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column);

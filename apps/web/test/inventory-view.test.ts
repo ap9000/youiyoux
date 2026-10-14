@@ -88,7 +88,7 @@ describe("library or kit (c1)", () => {
     expect(libraries.of({ kit: "console:src/components/ui", tag: "Button" }, "console", "button").map((g) => g.id)).toEqual(["shadcn"]);
   });
 
-  test("library names come from youi detect when it lists them", () => {
+  test("library names come from youiyoux detect when it lists them", () => {
     const detect = JSON.parse(readFileSync(join(import.meta.dirname, "fixtures/detect.site.json"), "utf8")) as DetectReport;
     const named = new Libraries(extras, detect);
     expect(named.primary("console:src/components/ui").label).toBe(detect.libraries.find((l) => l.id === "shadcn")!.name);

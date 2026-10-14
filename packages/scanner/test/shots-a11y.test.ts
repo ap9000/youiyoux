@@ -28,7 +28,7 @@ describe("accessibility comparison and agent advice", () => {
     const text = shotsText(report(compared));
     expect(text).toContain("pre-existing: already at main (1234567), not from this change");
     expect(text).toContain("fixed by this change");
-    expect(text.split("\n").at(-1)).toBe("next: fix the 1 accessibility issue (button-name), then run youi render button.tsx again");
+    expect(text.split("\n").at(-1)).toBe("next: fix the 1 accessibility issue (button-name), then run youiyoux render button.tsx again");
   });
 
   test("class-only edits and moved elements match, but another look or more failing elements are new", () => {

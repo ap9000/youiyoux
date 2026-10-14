@@ -396,7 +396,7 @@ export const BaselineEntry = z.object({
 });
 export type BaselineEntry = z.infer<typeof BaselineEntry>;
 
-/** Accepted existing violations: `youi check --baseline` fails only on findings beyond these. */
+/** Accepted existing violations: `youiyoux check --baseline` fails only on findings beyond these. */
 export const Baseline = z.object({
   $schema: z.string().optional(),
   schema: z.literal("youi.baseline/v1"),

@@ -6,7 +6,7 @@
   "systems": [
     {
       "id": "demo",
-      "catalog": "demo.catalog.313ae68c4d.json",
+      "catalog": "demo.catalog.a605de2281.json",
       "usage": [
         {
           "project": "demo-app",

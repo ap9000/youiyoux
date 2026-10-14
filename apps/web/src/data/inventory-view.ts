@@ -86,7 +86,7 @@ const slug = (text: string): string => text.toLowerCase().replace(/\.[a-z]+$/, "
 
 /**
  * Sorts each look into a library or kit: no kit → plain elements; a folder of cva() components →
- * shadcn-style (named as `youi detect` names shadcn, when its report lists it); a stylesheet kit →
+ * shadcn-style (named as `youiyoux detect` names shadcn, when its report lists it); a stylesheet kit →
  * a CSS kit by its class prefix (`.ui-*`) or file; and, as well, Radix when its component wraps a
  * Radix primitive (the extras' primitive sites) or the detect report credits Radix for its type.
  */

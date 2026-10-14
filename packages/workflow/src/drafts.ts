@@ -103,7 +103,7 @@ export function validateContent(content: DraftContent, context: ValidationContex
 }
 
 function describeCheck(check: RuleSpec["check"]): string {
-  return check.engine === "youi" ? `the youi check "${check.id}"` : check.engine === "ast-grep" ? "a custom ast-grep rule" : "this check";
+  return check.engine === "youi" ? `the youiyoux check "${check.id}"` : check.engine === "ast-grep" ? "a custom ast-grep rule" : "this check";
 }
 
 export function contentDigest(content: DraftContent): string {

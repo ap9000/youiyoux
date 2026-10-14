@@ -1,5 +1,5 @@
 /**
- * `youi agents install|remove`: one command that tells coding agents to look for the project's
+ * `youiyoux agents install|remove`: one command that tells coding agents to look for the project's
  * existing components first, and gives them the tool to do it, without disturbing anything else.
  *
  * - Rule: a marked block (`<!-- youi:agents:begin -->`) with FIND_FIRST_RULE in the repo's
@@ -15,12 +15,12 @@
 import { readdir, rm, rmdir } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { readTextOrNull, writeFileAtomic } from "@youiyoux/core";
-import { diffInstruction, FIND_FIRST_RULE } from "./agents.ts";
+import { BLOCK_BEGIN, BLOCK_END, diffInstruction, FIND_FIRST_RULE, REPO_BLOCK_HEADING, RULE_BEGIN, RULE_END } from "./agents.ts";
 import type { HookTarget } from "./hooks.ts";
+import { toolCommand } from "./tool-command.ts";
 import { shellQuote, write } from "./hooks-install.ts";
 
-export const RULE_BEGIN = "<!-- youi:agents:begin -->";
-export const RULE_END = "<!-- youi:agents:end -->";
+export { RULE_BEGIN, RULE_END };
 const TOML_BEGIN = "# >>> youi mcp >>>";
 const TOML_END = "# <<< youi mcp <<<";
 export const MCP_NAME = "youiyoux";
@@ -37,15 +37,16 @@ export interface AgentsResult {
 
 /** The youi MCP server as a command line: this youi, pointed at this project (and its out-of-repo config, if any). */
 export function mcpCommand(toolRoot: string, target: HookTarget): { command: string; args: string[] } {
-  const args = [join(toolRoot, "packages/cli/bin/youi.js"), "mcp"];
+  const server = toolCommand(toolRoot);
+  const args = [...server.args, "mcp"];
   for (const key of ["project", "config", "design", "root"] as const) {
     const value = target[key];
     if (value) args.push(`--${key}`, value);
   }
-  return { command: "node", args };
+  return { command: server.command, args };
 }
 
-/** The command with its paths relative to the repo root, where Claude Code starts project servers (as `youi sync` writes it). */
+/** The command with its paths relative to the repo root, where Claude Code starts project servers (as `youiyoux sync` writes it). */
 export function relativeTo(repoRoot: string, server: { command: string; args: readonly string[] }): { command: string; args: string[] } {
   return { command: server.command, args: server.args.map((arg) => (isAbsolute(arg) ? relative(repoRoot, arg) || "." : arg)) };
 }
@@ -89,18 +90,37 @@ async function removeOrWrite(file: string, next: string, guarantee: string): Pro
 
 /* --------------------------------------------------------------- the rule */
 
-export function ruleBlock(root?: string): string {
-  return [RULE_BEGIN, "## UI components (YouIyouX)", "", FIND_FIRST_RULE, "", diffInstruction(root), RULE_END].join("\n");
+/** The rule block; `withDiff` false when the file's other youi block (sync's) already says to run check --diff. */
+export function ruleBlock(root?: string, withDiff = true): string {
+  return [RULE_BEGIN, "## UI components (YouIyouX)", "", FIND_FIRST_RULE, ...(withDiff ? ["", diffInstruction(root)] : []), RULE_END].join("\n");
 }
 
-const RULE_GUARANTEE = "advisory: agents that read this file are told to call ui_find_component before creating a component; nothing enforces it (youi check does)";
+/** The `youi:begin` block in `text`, or null. */
+function youiBlock(text: string | null): string | null {
+  const start = text?.indexOf(BLOCK_BEGIN) ?? -1;
+  const stop = start >= 0 ? text!.indexOf(BLOCK_END, start) : -1;
+  return start >= 0 && stop > start ? text!.slice(start, stop + BLOCK_END.length) : null;
+}
+
+/**
+ * AGENTS.md with one check --diff line, whichever of agents install and hooks install ran first:
+ * the rule block carries it and replaces the repo-mode block hooks install wrote; beside sync's
+ * design-language block (which has the line itself) the rule block leaves it out.
+ */
+function withRule(before: string | null, root: string): string {
+  const other = youiBlock(before);
+  if (other?.includes(REPO_BLOCK_HEADING)) return withBlock(withoutBlock(before!, BLOCK_BEGIN, BLOCK_END), ruleBlock(root), RULE_BEGIN, RULE_END);
+  return withBlock(before, ruleBlock(root, !other?.includes(" check --diff`")), RULE_BEGIN, RULE_END);
+}
+
+const RULE_GUARANTEE = "advisory: agents that read this file are told to call ui_find_component before creating a component; nothing enforces it (youiyoux check does)";
 
 export async function installAgentRule(repoRoot: string): Promise<AgentsResult[]> {
   const results: AgentsResult[] = [];
   for (const name of RULE_FILES) {
     const file = join(repoRoot, name);
     const before = await readTextOrNull(file);
-    results.push(await write(file, withBlock(before, ruleBlock(repoRoot), RULE_BEGIN, RULE_END), before, RULE_GUARANTEE));
+    results.push(await write(file, name === "AGENTS.md" ? withRule(before, repoRoot) : withBlock(before, ruleBlock(repoRoot), RULE_BEGIN, RULE_END), before, RULE_GUARANTEE));
   }
   return results;
 }
@@ -148,7 +168,7 @@ export async function installClaudeMcp(repoRoot: string, server: { command: stri
   const json = readJson(file, before);
   const servers = (json.data.mcpServers ?? {}) as Record<string, unknown>;
   const next = { ...json, data: { ...json.data, mcpServers: { ...servers, [MCP_NAME]: { command: server.command, args: server.args } } } };
-  return write(file, serialize(next), before, `Claude Code starts the ${MCP_NAME} MCP server in this repo (it asks once before trusting a project .mcp.json); the paths are relative to the repo root and point at this machine's youi checkout; youi sync writes the same entry`);
+  return write(file, serialize(next), before, `Claude Code starts the ${MCP_NAME} MCP server in this repo (it asks once before trusting a project .mcp.json); the command uses the installed tool or portable npx invocation; youiyoux sync writes the same entry`);
 }
 
 export async function removeClaudeMcp(repoRoot: string): Promise<AgentsResult> {

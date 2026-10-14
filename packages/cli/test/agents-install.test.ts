@@ -1,4 +1,4 @@
-/** `youi agents install|remove`: the find-first rule and the MCP registrations, idempotent and reversible to the byte. */
+/** `youiyoux agents install|remove`: the find-first rule and the MCP registrations, idempotent and reversible to the byte. */
 import { execFile } from "node:child_process";
 import { cp, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -25,7 +25,7 @@ const read = (file: string): Promise<string> => readFile(join(app, file), "utf8"
 const exists = (file: string): Promise<boolean> => stat(join(app, file)).then(() => true, () => false);
 const snapshot = async (): Promise<Record<string, string | null>> => Object.fromEntries(await Promise.all(["AGENTS.md", "CLAUDE.md", ".mcp.json", ".codex/config.toml"].map(async (f) => [f, (await exists(f)) ? await read(f) : null] as const)));
 
-/** `youi agents …` in-process, with its --json output parsed. */
+/** `youiyoux agents …` in-process, with its --json output parsed. */
 async function agents(...args: string[]): Promise<Array<{ kind: string; file: string; action: string; guarantee: string }>> {
   const out = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
   try {
@@ -38,7 +38,7 @@ async function agents(...args: string[]): Promise<Array<{ kind: string; file: st
 
 beforeEach(async () => {
   // A space in the path, and no git repository: the project directory is the repo root.
-  dir = await mkdtemp(join(tmpdir(), "youi agents "));
+  dir = await mkdtemp(join(tmpdir(), "youiyoux agents "));
   app = join(dir, "find app");
   await cp(FIND_APP, app, { recursive: true });
   await writeFile(join(app, "AGENTS.md"), AGENTS);
@@ -51,7 +51,7 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-describe("youi agents install|remove", () => {
+describe("youiyoux agents install|remove", () => {
   test("install adds the rule to AGENTS.md and CLAUDE.md and registers youiyoux for Claude Code and Codex, keeping what was there", async () => {
     const results = await agents("install");
     expect(results.map((r) => [r.kind, r.file.slice(app.length + 1), r.action])).toEqual([
@@ -66,7 +66,7 @@ describe("youi agents install|remove", () => {
     expect(rule).toContain(`${RULE_BEGIN}\n## UI components (YouIyouX)\n\n${FIND_FIRST_RULE}\n\n${diffInstruction(app)}\n${RULE_END}\n`);
     expect(FIND_FIRST_RULE).toMatch(/^Before creating a UI component, call `ui_find_component`/);
     expect(await read("CLAUDE.md")).toBe(`${RULE_BEGIN}\n## UI components (YouIyouX)\n\n${FIND_FIRST_RULE}\n\n${diffInstruction(app)}\n${RULE_END}\n`);
-    // Claude Code: the same entry youi sync writes, relative to the repo root; the other server is kept.
+    // Claude Code: the same entry youiyoux sync writes, relative to the repo root; the other server is kept.
     const mcp = JSON.parse(await read(".mcp.json")) as { mcpServers: Record<string, { command: string; args: string[] }> };
     expect(Object.keys(mcp.mcpServers)).toEqual(["github", "youiyoux"]);
     expect(mcp.mcpServers.youiyoux).toEqual({ command: "node", args: [expect.stringMatching(/packages\/cli\/bin\/youi\.js$/), "mcp", "--project", "."] });
@@ -127,7 +127,7 @@ describe("youi agents install|remove", () => {
     expect(await read(".mcp.json")).toBe("{ not json");
   });
 
-  test("in a System project it writes the same .mcp.json entry youi sync does, so the two never fight", async () => {
+  test("in a System project it writes the same .mcp.json entry youiyoux sync does, so the two never fight", async () => {
     app = join(dir, "demo app");
     await cp(join(EXAMPLES, "demo-app"), app, { recursive: true });
     await cp(join(EXAMPLES, "demo-design"), join(dir, "demo-design"), { recursive: true });

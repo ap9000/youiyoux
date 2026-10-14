@@ -1,5 +1,5 @@
 /**
- * `youi sync`: bring a project up to its design language.
+ * `youiyoux sync`: bring a project up to its design language.
  *
  *   generated  token outputs, DESIGN.md, the skill, youi-rules: rewritten every sync
  *   managed    the AGENTS.md block, the .mcp.json entry, the .claude skill link: only our part changes
@@ -11,19 +11,19 @@
 import { execFile } from "node:child_process";
 import { lstat, mkdir, mkdtemp, readdir, readlink, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { promisify } from "node:util";
 import { findFiles, LockFile, normalizeRelPath, readDefinition, readTextOrNull, sha256, writeFileAtomic, type ElementId, type LockEntry } from "@youiyoux/core";
 import { buildTokens } from "@youiyoux/tokens";
 import { PROJECT_FILE, vendoredPath, type Project } from "@youiyoux/scanner";
+import { TOOL_ROOT } from "./tool.ts";
+import { toolCommand } from "./tool-command.ts";
 import { agentsBlock, astGrepRules, designMd, GENERATED_MARK, skillMd, unknownToolMentions, upsertBlock, type UnknownToolMention } from "./agents.ts";
 
 export const LOCK_FILE = "youi.lock.json";
 const BASE_DIR = ".youi/base";
 const INCOMING_DIR = ".youi/incoming";
 const CONFLICT_DIR = ".youi/conflicts";
-/** The youi CLI the project's .mcp.json runs: this tool's checkout, not the design repo. */
-const CLI_BIN = resolve(import.meta.dirname, "../bin/youi.js");
 
 export type SyncActionKind = "created" | "updated" | "unchanged" | "adopted" | "merged" | "kept-local" | "conflict" | "skipped" | "removed";
 
@@ -114,7 +114,7 @@ class Writer {
     if (current === content) return this.record({ file, role, action: "unchanged" });
     if (current !== null && !locked && !current.includes(GENERATED_MARK) && !this.options.adopt) {
       delete this.files[file];
-      return this.record({ file, role, action: "skipped", detail: "hand-written file in the way; `youi sync --adopt` replaces it" });
+      return this.record({ file, role, action: "skipped", detail: "hand-written file in the way; `youiyoux sync --adopt` replaces it" });
     }
     const edited = current !== null && locked !== undefined && sha256(current) !== locked.sha256;
     await this.write(file, content);
@@ -144,7 +144,7 @@ class Writer {
     if (this.options.adopt) return settle(local, "kept-local", "adopted as a fork of the current upstream; differences show as drift and merge on later syncs");
     if (base === null) {
       await this.write(`${INCOMING_DIR}/${file}`, upstream);
-      return record("conflict", `differs from upstream with no recorded base; compare with ${INCOMING_DIR}/${file}, or \`youi sync --adopt\` to keep yours`);
+      return record("conflict", `differs from upstream with no recorded base; compare with ${INCOMING_DIR}/${file}, or \`youiyoux sync --adopt\` to keep yours`);
     }
     if (local === base) return settle(upstream, "updated", `${locked?.kind === "vendored" ? locked.version : "?"} → ${version}`);
     if (upstream === base) return settle(local, "kept-local", "local edits (drift); upstream unchanged");
@@ -152,7 +152,7 @@ class Writer {
     if (merged.conflicts === 0) return settle(merged.text, "merged", `local edits kept, upstream ${version} applied`);
     await this.write(`${CONFLICT_DIR}/${file}`, merged.text);
     if (locked) this.files[file] = locked;
-    record("conflict", `${merged.conflicts} conflict(s): resolve ${CONFLICT_DIR}/${file} into the file, then \`youi sync --adopt\` to record it`);
+    record("conflict", `${merged.conflicts} conflict(s): resolve ${CONFLICT_DIR}/${file} into the file, then \`youiyoux sync --adopt\` to record it`);
   }
 
   /**
@@ -165,7 +165,7 @@ class Writer {
       if (entry.kind !== "generated" || file in this.files || !this.isGeneratedPath(file)) continue;
       const current = await readTextOrNull(this.path(file));
       if (current === null) continue;
-      // A retired file left on disk stays in the lock, so every later sync and `youi check` keeps reporting it.
+      // A retired file left on disk stays in the lock, so every later sync and `youiyoux check` keeps reporting it.
       if (sha256(current) !== entry.sha256) {
         this.files[file] = entry;
         this.record({ file, role: "agents", action: "skipped", detail: "no longer generated, but edited by hand: remove it yourself" });
@@ -254,7 +254,7 @@ export async function syncProject(project: Project, options: SyncOptions = {}): 
   for (const rule of astGrepRules(project)) await writer.generated(`youi-rules/${rule.file}`, rule.content, "agents");
   await writer.managedBlock(config.agents.agentsMd, agentsBlock(project));
   if (config.agents.claudeSkillLink) await writer.link(".claude/skills/youiyoux", relative(join(project.root, ".claude/skills"), join(project.root, config.agents.skillDir)));
-  await writer.mcpEntry(".mcp.json", { command: "node", args: mcpArgs(project) });
+  await writer.mcpEntry(".mcp.json", { command: toolCommand(TOOL_ROOT).command, args: mcpArgs(project) });
 
   const sources = new Map<string, { elements: ElementId[]; version: string }>();
   for (const { contract } of system.components) {
@@ -287,7 +287,7 @@ export async function syncProject(project: Project, options: SyncOptions = {}): 
 export function mcpArgs(project: Project): string[] {
   const rel = (path: string): string => relative(project.root, path) || ".";
   return [
-    rel(CLI_BIN),
+    ...toolCommand(TOOL_ROOT).args.map((arg) => arg.startsWith("/") ? rel(arg) : arg),
     "mcp",
     "--project",
     ".",
@@ -317,16 +317,16 @@ export interface LockIssue {
   readonly message: string;
 }
 
-/** Lockfile check for `youi check`: edited generated files are errors, owned-file drift is a warning. */
+/** Lockfile check for `youiyoux check`: edited generated files are errors, owned-file drift is a warning. */
 export async function verifyLock(project: Project): Promise<LockIssue[] | null> {
   const lock = await readLock(project.root);
   if (!lock) return null;
   const issues: LockIssue[] = [];
   for (const [file, entry] of Object.entries(lock.files)) {
     const content = await readTextOrNull(join(project.root, file));
-    if (content === null) issues.push({ file, severity: "error", message: `${entry.kind} file is missing; run youi sync` });
+    if (content === null) issues.push({ file, severity: "error", message: `${entry.kind} file is missing; run youiyoux sync` });
     else if (entry.kind === "generated" && sha256(content) !== entry.sha256) {
-      issues.push({ file, severity: "error", message: "generated file was edited; change the design language and run youi sync" });
+      issues.push({ file, severity: "error", message: "generated file was edited; change the design language and run youiyoux sync" });
     } else if (entry.kind === "vendored" && sha256(content) !== entry.baseSha256) {
       issues.push({ file, severity: "warn", message: `owned ${basename(file)} has local edits (drift from upstream ${entry.version}); sync will 3-way merge them` });
     }

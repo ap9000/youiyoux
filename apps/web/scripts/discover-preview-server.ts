@@ -192,7 +192,7 @@ export function discoverPreviewMiddleware(snapshot: string, base = "/", options:
     const started = performance.now();
     const { discover, scanner, bundles } = await loaded();
     const cache = resolve(options.cache ?? discover.discoverCacheDir(undefined, env));
-    if (!existsSync(join(cache, discover.INDEX_FILE))) throw new Refusal(404, "There is no Discover index on this machine yet: run youi discover sync.");
+    if (!existsSync(join(cache, discover.INDEX_FILE))) throw new Refusal(404, "There is no Discover index on this machine yet: run youiyoux discover sync.");
     const { entry } = await discover.findListing(cache, id).catch((error: unknown) => {
       throw new Refusal(404, sentence(error));
     });
@@ -311,7 +311,7 @@ export function discoverPreviewMiddleware(snapshot: string, base = "/", options:
       const projects = tryIndex()?.projects ?? {};
       const wanted = url.searchParams.get("project");
       const projectId = wanted && Object.hasOwn(projects, wanted) ? wanted : wanted ? null : (Object.keys(projects)[0] ?? null);
-      if (projectId === null) return send(res, 404, { error: wanted ? `The hub has no project "${wanted.slice(0, 60)}".` : "Previews draw in your project's theme, and the hub has no project: open it with youi ui --project." });
+      if (projectId === null) return send(res, 404, { error: wanted ? `The hub has no project "${wanted.slice(0, 60)}".` : "Previews draw in your project's theme, and the hub has no project: open it with youiyoux ui --project." });
       const project = projects[projectId]!;
       const root = resolve(snapshot, project.root);
       const key = `${projectId}\0${id}`;

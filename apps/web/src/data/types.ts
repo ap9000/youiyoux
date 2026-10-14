@@ -84,10 +84,10 @@ export interface Catalog {
   rules: CatalogRule[];
 }
 
-/** A rule with how youi check runs it, compiled when the snapshot was built (older snapshots lack it). */
+/** A rule with how youiyoux check runs it, compiled when the snapshot was built (older snapshots lack it). */
 export type CatalogRule = RuleSpec & { execution?: RuleExecution };
 
-/** How a live snapshot (`youi ui --watch`) was produced; absent from one-off snapshots. */
+/** How a live snapshot (`youiyoux ui --watch`) was produced; absent from one-off snapshots. */
 export interface LiveInfo {
   /** Increases with every re-scan. */
   generation: number;
@@ -130,12 +130,12 @@ export interface Manifest {
   source: { commit: string | null };
   systems: Array<{ id: string; catalog: string; usage: Array<{ project: string; file: string; screens?: ProjectShots }> }>;
   /**
-   * The Inventory page's index (youiyoux.inventory-index/v1, split from a `youi inventory` file
+   * The Inventory page's index (youiyoux.inventory-index/v1, split from a `youiyoux inventory` file
    * by the snapshot), or a whole youi.inventory/v1 file in snapshots older than the split;
    * absent when none was given.
    */
   inventory?: string;
-  /** A `youi detect` report (`youi ui --detect`), for Library > Stack; its screenshots are data files named in it. */
+  /** A `youiyoux detect` report (`youiyoux ui --detect`), for Library > Stack; its screenshots are data files named in it. */
   detect?: { file: string; name: string; kind: "repo" | "site" };
   /** Every file the index names (its chunks and specimen stylesheets), so caches keep them. */
   inventoryFiles?: string[];

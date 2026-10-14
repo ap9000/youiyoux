@@ -88,7 +88,7 @@ export function ImpactPreview({ preview, project, stale }: { preview: Preview; p
               </li>
             ))}
           </ul>
-          {(shown.length > MAX_SHOWN || preview.truncated) && <p className="text-small text-muted">Showing the first {Math.min(shown.length, MAX_SHOWN)}. Run youi check in the project for the full list.</p>}
+          {(shown.length > MAX_SHOWN || preview.truncated) && <p className="text-small text-muted">Showing the first {Math.min(shown.length, MAX_SHOWN)}. Run youiyoux check in the project for the full list.</p>}
         </div>
       )}
     </div>

@@ -4,7 +4,7 @@ import { renderAdoptionRequest, renderLibrarySearch } from "../src/library.ts";
 
 const hit = { id: "lib:example/component/pill", name: "Pill", kind: "component", stage: "library", summary: "A rounded status label.", source: "Example kit", categories: ["status"], swapsWith: ["youi:signal/component/badge"] } as const;
 
-describe("youi library output", () => {
+describe("youiyoux library output", () => {
   test("an empty Library says so and points back at the System", () => {
     const text = renderLibrarySearch({ hits: [], total: 0, note: "" }, "pill");
     expect(text).toContain("empty: no sources are connected yet");

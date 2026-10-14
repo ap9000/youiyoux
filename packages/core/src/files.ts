@@ -1,7 +1,9 @@
 /** Filesystem helpers shared by the loader, scanner and sync. */
-import { glob, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import * as fsp from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
-import { dirname, join, matchesGlob, relative, sep } from "node:path";
+import * as nodePath from "node:path";
+import { dirname, join, relative, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
 import type { z } from "zod";
 
@@ -26,8 +28,76 @@ export function relPath(root: string, absolute: string): string {
   return toPosix(relative(root, absolute));
 }
 
+/*
+ * Node 20 has no fs.glob, and path.matchesGlob only from 20.17: the published youiyoux bundle
+ * runs there, so a small matcher and walk stand in. Node 22 and later use their own.
+ */
+const nativeMatch = (nodePath as { matchesGlob?: (path: string, pattern: string) => boolean }).matchesGlob;
+const nativeGlob = (fsp as { glob?: (pattern: string[], options: { cwd: string; exclude: (path: string) => boolean }) => AsyncIterable<string> }).glob;
+const compiled = new Map<string, RegExp>();
+
+/** A glob as a regular expression: `**` spans directories (zero or more), `*` and `?` stay in one, `{a,b}` and `[…]` as in a shell; `*` skips dot names. */
+export function globRegExp(pattern: string): RegExp {
+  let cached = compiled.get(pattern);
+  if (cached) return cached;
+  let out = "";
+  let braces = 0;
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i]!;
+    if (c === "*" && pattern[i + 1] === "*") {
+      const whole = (i === 0 || pattern[i - 1] === "/") && (i + 2 === pattern.length || pattern[i + 2] === "/");
+      if (whole && pattern[i + 2] === "/") {
+        out += "(?:(?!\\.)[^/]*/)*";
+        i += 2;
+      } else {
+        out += whole ? "(?:(?!\\.)[^/]*(?:/(?!\\.)[^/]*)*)?" : "[^/]*";
+        i += 1;
+      }
+    } else if (c === "*") out += (i === 0 || pattern[i - 1] === "/" ? "(?!\\.)" : "") + "[^/]*";
+    else if (c === "?") out += "[^/]";
+    else if (c === "{") {
+      braces++;
+      out += "(?:";
+    } else if (c === "}" && braces > 0) {
+      braces--;
+      out += ")";
+    } else if (c === "," && braces > 0) out += "|";
+    else if (c === "[") {
+      const end = pattern.indexOf("]", i + 1);
+      if (end < 0) out += "\\[";
+      else {
+        out += `[${pattern.slice(i + 1, end).replace(/^!/, "^").replace(/\\/g, "\\\\")}]`;
+        i = end;
+      }
+    } else out += /[.+^$()|\\\]]/.test(c) ? `\\${c}` : c;
+  }
+  cached = new RegExp(`^${out}$`);
+  compiled.set(pattern, cached);
+  return cached;
+}
+
+const matchesGlob = nativeMatch ?? ((path: string, pattern: string): boolean => globRegExp(pattern).test(path));
+
 export function matchesAny(path: string, patterns: readonly string[]): boolean {
   return patterns.some((pattern) => path === pattern || matchesGlob(path, pattern));
+}
+
+/** fs.glob's files, for Node without it: a walk that never enters an excluded directory. */
+export async function* walkGlob(include: readonly string[], options: { cwd: string; exclude: (path: string) => boolean }): AsyncIterable<string> {
+  const pending = [""];
+  while (pending.length > 0) {
+    const dir = pending.pop()!;
+    const entries = await readdir(join(options.cwd, dir), { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      const path = dir ? `${dir}/${entry.name}` : entry.name;
+      if (options.exclude(path)) continue;
+      // `dir/` meets `**/dir/**`, so an excluded directory is never entered.
+      if (entry.isDirectory()) {
+        if (!entry.name.startsWith(".") && !options.exclude(`${path}/`)) pending.push(path);
+      }
+      else if (include.some((pattern) => matchesGlob(path, pattern))) yield path;
+    }
+  }
 }
 
 const ALWAYS_EXCLUDED = ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/.youi/**"];
@@ -36,7 +106,8 @@ const ALWAYS_EXCLUDED = ["**/node_modules/**", "**/.git/**", "**/dist/**", "**/.
 export async function findFiles(root: string, include: readonly string[], exclude: readonly string[] = []): Promise<string[]> {
   const skip = [...ALWAYS_EXCLUDED, ...exclude];
   const found = new Set<string>();
-  for await (const entry of glob(include as string[], { cwd: root, exclude: (p: string) => matchesAny(toPosix(p), skip) })) {
+  const options = { cwd: root, exclude: (p: string) => matchesAny(toPosix(p), skip) };
+  for await (const entry of nativeGlob ? nativeGlob(include as string[], options) : walkGlob(include, options)) {
     const path = toPosix(entry);
     if (!matchesAny(path, skip)) found.add(path);
   }

@@ -1,11 +1,11 @@
 /**
- * `youi ui`: start the hub (apps/web) on a design system. With no options it shows the
+ * `youiyoux ui`: start the hub (apps/web) on a design system. With no options it shows the
  * committed demo snapshot. Otherwise it snapshots the given system into apps/web/.hub
  * (gitignored, so the tool's checkout stays clean) and points the dev server at it.
  * `--watch` keeps that snapshot live: a watcher re-scans on every save and the open
  * hub loads each new generation (the demo project is watched when nothing is named).
  * `api` is the rule editor's service, which the dev server proxies at /api. `detect` adds a
- * `youi detect` report to the snapshot (Library > Stack), beside the demo system when nothing else is named.
+ * `youiyoux detect` report to the snapshot (Library > Stack), beside the demo system when nothing else is named.
  */
 import { spawn } from "node:child_process";
 import { access } from "node:fs/promises";
@@ -23,11 +23,11 @@ export interface HubOptions {
   readonly port?: string;
   /** Keep the snapshot live while the hub runs. */
   readonly watch?: boolean;
-  /** The rule editor's service (`youi ui --project`), proxied at /api. */
+  /** The rule editor's service (`youiyoux ui --project`), proxied at /api. */
   readonly api?: string;
-  /** A `youi inventory` file for the Inventory page. */
+  /** A `youiyoux inventory` file for the Inventory page. */
   readonly inventory?: string;
-  /** A `youi detect` report (detect.json, screenshots beside it) for Library > Stack. */
+  /** A `youiyoux detect` report (detect.json, screenshots beside it) for Library > Stack. */
   readonly detect?: string;
 }
 
@@ -42,7 +42,7 @@ export interface HubPlan {
 }
 
 export const HUB_SNAPSHOT_DIR = ".hub";
-/** Vite's default; `youi ui` pins it when it prints a link into the hub. */
+/** Vite's default; `youiyoux ui` pins it when it prints a link into the hub. */
 export const DEFAULT_HUB_PORT = "5173";
 
 export function hubPlan(toolRoot: string, options: HubOptions): HubPlan {

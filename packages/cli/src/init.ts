@@ -1,4 +1,4 @@
-/** `youi init`: write youi.project.json from what the project already looks like. */
+/** `youiyoux init`: write youi.project.json from what the project already looks like. */
 import { access, readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { getSystem, loadDesignRepo, OutputConfig, ProjectConfig, readTextOrNull, writeFileAtomic } from "@youiyoux/core";

@@ -4,7 +4,7 @@
  *
  *   node scripts/build-preview.ts
  *
- * YOUI_HUB_SNAPSHOT is dropped for the build, so a snapshot of a real system (`youi ui`
+ * YOUI_HUB_SNAPSHOT is dropped for the build, so a snapshot of a real system (`youiyoux ui`
  * writes one to .hub/) can never be what a public preview URL serves.
  */
 import { spawnSync } from "node:child_process";

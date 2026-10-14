@@ -27,16 +27,28 @@ import { renderInventory } from "./inventory.ts";
 import { renderAdoptionRequest, renderLibrarySearch } from "./library.ts";
 import { renderBom, renderMigration, renderPlan, renderRulePreview, renderRules, renderScan, renderShots as renderShotsText, renderShow, renderSync, renderWhere } from "./render.ts";
 import { mcpArgs, syncProject } from "./sync.ts";
+import { COMMAND } from "./command.ts";
+import { TOOL_ROOT } from "./tool.ts";
+import { runReport, type ReportIo } from "./report/run.ts";
 import { ms, plural, style } from "./ui.ts";
 
-/** This tool's own checkout: the published JSON Schemas live here. Design systems live in their own repos. */
-const TOOL_ROOT = resolve(import.meta.dirname, "../../..");
 
-const HELP = `${style.accent("youi")} ${style.dim("· YouIyouX design language")}
+const HELP = `${style.accent(COMMAND)} ${style.dim("· YouIyouX design language")}
 
-${style.bold("Usage")}  youi <command> [options]
+${style.bold("Usage")}  ${COMMAND} <command> [options]
 
 ${style.bold("Anywhere")}  ${style.dim("no design system needed")}
+  report [path] [--out dir] [--render [--yes]] [--include-code] [--json]
+                           a shareable report on a repo with no setup (npx youiyoux runs this):
+                           projects (one section per workspace package with UI files), UI libraries,
+                           the component inventory, near-duplicate groups, hardcoded values a theme
+                           token holds, off-library imports and the top fixes, each with its next step.
+                           Writes youiyoux-report.html (self-contained, light and dark),
+                           youiyoux-card.png (1200x630) and youiyoux-summary.md to the repo or --out;
+                           nothing else. Rendered looks of the most-used components when a Chromium is
+                           installed; --render downloads the headless shell (~100 MB, once) after
+                           asking, --yes without asking. Paths are relative; no code, home paths,
+                           usernames, env values or credentials unless --include-code adds code lines
   inventory [--project <dir>…] [--include <glob>…] [--exclude <glob>…] [--out file] [--json]
                            every UI element across one or more projects: definitions, kits (CVA folders,
                            class kits), library primitives, and each rendered button, input, card,
@@ -65,7 +77,7 @@ ${style.bold("In a product repo")}
                            discover_* tools (read the Discover index; never fetch), index_* tools
                            (where a family is used, swap impact, what a rule covers; read the local index)
                            ui_find_component (the project's existing component for a need, or where to start),
-                           and ui_render (see a changed component, as youi render)
+                           and ui_render (see a changed component, as youiyoux render)
   agents install|remove [--claude] [--codex]
                            tell coding agents to call ui_find_component before creating a component:
                            a marked rule in AGENTS.md and CLAUDE.md, and the youiyoux MCP server for
@@ -145,8 +157,8 @@ ${style.bold("The hub")}
                            rule editor (System > Rules, Work > Changes): drafts, impact preview,
                            approval, a review branch in the design repo (drafts kept in --state);
                            --watch re-scans on every save and updates the open hub;
-                           --inventory shows a youi inventory file on the Inventory page
-                           --detect adds a youi detect report to Library > Stack
+                           --inventory shows a youiyoux inventory file on the Inventory page
+                           --detect adds a youiyoux detect report to Library > Stack
 
 ${style.bold("In a design repo")} ${style.dim("(the current directory, or --design)")}
   build [--out dir] [--prefix p]   build token outputs
@@ -216,12 +228,15 @@ const OPTIONS = {
   "max-registries": { type: "string" },
   offset: { type: "string" },
   history: { type: "boolean", default: false },
+  render: { type: "boolean", default: false },
+  yes: { type: "boolean", short: "y", default: false },
+  "include-code": { type: "boolean", default: false },
   help: { type: "boolean", short: "h", default: false },
 } satisfies ParseArgsConfig["options"];
 
 type Values = ReturnType<typeof parseArgs<{ options: typeof OPTIONS; allowPositionals: true }>>["values"];
 
-/** `youi inventory` reads several projects: there, --project repeats, and so do --include and --exclude. */
+/** `youiyoux inventory` reads several projects: there, --project repeats, and so do --include and --exclude. */
 const INVENTORY_OPTIONS = { ...OPTIONS, project: { type: "string", multiple: true }, include: { type: "string", multiple: true }, exclude: { type: "string", multiple: true } } satisfies ParseArgsConfig["options"];
 type InventoryValues = ReturnType<typeof parseArgs<{ options: typeof INVENTORY_OPTIONS; allowPositionals: true }>>["values"];
 
@@ -293,7 +308,7 @@ async function recordScan(values: Pick<Values, "cache">, report: InventoryReport
     const store = await sharedStore(path);
     await recordInventory(store, home, report, out);
     const scans = (await store.history({ limit: 500 })).filter((s) => report.projects.some((p) => p.id === s.project)).length;
-    return style.dim(`history → ${store.location} (${plural(scans, "scan")} of these projects; youi inventory --history)`);
+    return style.dim(`history → ${store.location} (${plural(scans, "scan")} of these projects; youiyoux inventory --history)`);
   } catch (error: unknown) {
     return style.warn(`! not recorded in the local index: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -328,12 +343,12 @@ async function cmdIndex(values: Values, positionals: string[]): Promise<number> 
     return 0;
   }
   if (action === "history") return cmdHistory(values, rest);
-  throw new UsageError("youi index path|stats|rebuild|history [project]");
+  throw new UsageError("youiyoux index path|stats|rebuild|history [project]");
 }
 
 async function cmdWhere(values: Values, positionals: string[]): Promise<number> {
   const query = positionals[0];
-  if (!query) throw new UsageError("youi where <component>");
+  if (!query) throw new UsageError("youiyoux where <component>");
   const p = await project(values);
   const { report } = await scanProject(p);
   const limit = values.all ? Number.MAX_SAFE_INTEGER : Number(values.limit ?? (values.json ? 20 : 24));
@@ -345,7 +360,7 @@ async function cmdWhere(values: Values, positionals: string[]): Promise<number> 
 
 async function cmdShow(values: Values, positionals: string[]): Promise<number> {
   const query = positionals[0];
-  if (!query) throw new UsageError("youi show <component>");
+  if (!query) throw new UsageError("youiyoux show <component>");
   const p = await project(values);
   const contract = findContract(p, query);
   if (!contract) throw new Error(`no component "${query}"; known: ${p.system.components.map((c) => c.contract.name).join(", ")}`);
@@ -357,7 +372,7 @@ async function cmdShow(values: Values, positionals: string[]): Promise<number> {
 
 async function cmdBom(values: Values, positionals: string[]): Promise<number> {
   const route = positionals[0];
-  if (!route) throw new UsageError("youi bom <route>");
+  if (!route) throw new UsageError("youiyoux bom <route>");
   const p = await project(values);
   const bom = screenBom(p, (await scanProject(p)).report, route);
   if (values.json) json(bom);
@@ -381,7 +396,7 @@ async function repoPrefix(root: string): Promise<string> {
 
 async function cmdCheck(values: Values, positionals: string[]): Promise<number> {
   const format = values.json ? "json" : (values.format ?? "text");
-  if (!["text", "json", "github"].includes(format)) throw new UsageError("youi check --format text|json|github");
+  if (!["text", "json", "github"].includes(format)) throw new UsageError("youiyoux check --format text|json|github");
   if (values.diff || values.base !== undefined) return cmdCheckDiff(values, positionals, await loadCheckProject(values.project ?? process.cwd(), loadOptions(values), !values.project), format);
   const p = await project(values);
   const result = await runCheck(p, { ...(positionals.length > 0 ? { files: positionals } : {}), ...(values.rule ? { rule: values.rule } : {}), quiet: values.quiet, baseline: baselineFile(values, p) });
@@ -396,9 +411,9 @@ async function cmdCheck(values: Values, positionals: string[]): Promise<number> 
   return exitCodeOf(result);
 }
 
-/** `youi check --diff [base]`: what the change adds, with fixes. Never a pass it could not compute: without git it stops. */
+/** `youiyoux check --diff [base]`: what the change adds, with fixes. Never a pass it could not compute: without git it stops. */
 async function cmdCheckDiff(values: Values, positionals: string[], p: ChangeProject, format: string): Promise<number> {
-  if (values.baseline) throw new UsageError("youi check --diff looks only at added lines, so a baseline does not apply; drop --baseline");
+  if (values.baseline) throw new UsageError("youiyoux check --diff looks only at added lines, so a baseline does not apply; drop --baseline");
   const change = await workingTreeChange(p, values.base);
   const result = configured(p) ? await runCheck(p, { ...(positionals.length > 0 ? { files: positionals } : {}), ...(values.rule ? { rule: values.rule } : {}), quiet: values.quiet, diff: change }) : await runRepoCheck(p, change);
   if (format === "json") json(diffJson(result));
@@ -443,7 +458,7 @@ async function cmdPlan(values: Values, positionals: string[]): Promise<number> {
   let input: PlanInput;
   if (values.token) input = { token: values.token, ...(values.value ? { value: values.value } : {}) };
   else if (positionals[0] && values.patch) input = { element: positionals[0], patch: await readJsonOrFile(values.patch) };
-  else throw new UsageError("youi plan <component> --patch <json|file>   or   youi plan --token <id> [--value v]");
+  else throw new UsageError("youiyoux plan <component> --patch <json|file>   or   youiyoux plan --token <id> [--value v]");
   const plan = await planChange(p, scan, input);
   if (values.json) json(plan);
   else print(renderPlan(plan));
@@ -467,7 +482,7 @@ async function cmdRules(values: Values): Promise<number> {
 
 async function cmdMigrate(values: Values, positionals: string[]): Promise<number> {
   const file = positionals[0];
-  if (!file) throw new UsageError("youi migrate <migration.yaml> [--write] [--diff]");
+  if (!file) throw new UsageError("youiyoux migrate <migration.yaml> [--write] [--diff]");
   const spec = MigrationSpec.parse(parseYaml(await readFile(file, "utf8")));
   const result = await runMigration(await project(values), spec, { write: values.write });
   if (values.json) json(result);
@@ -493,7 +508,7 @@ async function cmdLibrary(values: Values, positionals: string[]): Promise<number
     else print(renderAdoptionRequest(request));
     return 0;
   }
-  throw new UsageError("youi library search <query>   or   youi library request <id> --reason <text>");
+  throw new UsageError("youiyoux library search <query>   or   youiyoux library request <id> --reason <text>");
 }
 
 async function cmdSync(values: Values): Promise<number> {
@@ -505,7 +520,7 @@ async function cmdSync(values: Values): Promise<number> {
 }
 
 async function cmdInit(values: Values): Promise<number> {
-  if (!values.design) throw new UsageError("youi init --design <dir>   (a design repo checkout, the directory holding youi.config.json)");
+  if (!values.design) throw new UsageError("youiyoux init --design <dir>   (a design repo checkout, the directory holding youi.config.json)");
   const root = values.project ?? process.cwd();
   const result = await initProject({ root, design: values.design, schemaDir: join(TOOL_ROOT, "schema"), ...(values.system ? { system: values.system } : {}), ...(values.components ? { componentsDir: values.components } : {}), force: values.force });
   if (!values.json) {
@@ -533,7 +548,7 @@ async function cmdBuild(values: Values): Promise<number> {
 }
 
 async function cmdParity(values: Values): Promise<number> {
-  if (!values.css) throw new UsageError("youi parity --css <file> [--prefix p]");
+  if (!values.css) throw new UsageError("youiyoux parity --css <file> [--prefix p]");
   const root = resolve(values.design ?? process.cwd());
   const system = getSystem(await loadDesignRepo(root), values.system);
   const prefix = values.prefix ?? "youi";
@@ -558,7 +573,7 @@ async function cmdSchema(values: Values): Promise<number> {
     const stale = [];
     for (const { file, content } of schemas) if ((await readFile(join(dir, file), "utf8").catch(() => null)) !== content) stale.push(file);
     if (values.json) json({ dir, stale });
-    else print(stale.length === 0 ? `${style.ok("✓")} ${dir} matches this youi's schemas` : `${style.error("✖")} out of date in ${dir}: ${stale.join(", ")}; run youi schema --write${values.design ? " --design <dir>" : ""}`);
+    else print(stale.length === 0 ? `${style.ok("✓")} ${dir} matches this youi's schemas` : `${style.error("✖")} out of date in ${dir}: ${stale.join(", ")}; run youiyoux schema --write${values.design ? " --design <dir>" : ""}`);
     return stale.length === 0 ? 0 : 1;
   }
   if (values.write) {
@@ -587,9 +602,9 @@ async function cmdHooks(values: Values, positionals: string[]): Promise<number> 
     process.stdout.write(outcome.stdout);
     return outcome.exitCode;
   }
-  if (action !== "install") throw new UsageError("youi hooks install [--claude] [--git] [--ci [--diff]] [--strict]   or   youi hooks run claude|pre-commit");
+  if (action !== "install") throw new UsageError("youiyoux hooks install [--claude] [--git] [--ci [--diff]] [--strict]   or   youiyoux hooks run claude|pre-commit");
   const p = await loadCheckProject(values.project ?? process.cwd(), loadOptions(values), !values.project);
-  if (values.ci && !configured(p)) throw new UsageError("Run youi init --design <dir> before installing the pinned CI workflow; repo-mode CI can run youi check --diff <base> --strict directly");
+  if (values.ci && !configured(p)) throw new UsageError("Run youiyoux init --design <dir> before installing the pinned CI workflow; repo-mode CI can run youiyoux check --diff <base> --strict directly");
   // The hook finds the config it was installed with, even when --project named the config's directory and --root the product.
   const target = { ...hookTarget(values), project: p.root, ...(configured(p) && p.configFile && p.configFile !== join(p.root, PROJECT_FILE) ? { config: p.configFile } : {}), ...(values.root !== undefined ? { root: p.root } : {}) };
   const all = !values.claude && !values.git && !values.ci;
@@ -605,18 +620,18 @@ async function cmdHooks(values: Values, positionals: string[]): Promise<number> 
 }
 
 /**
- * `youi agents install|remove`: the find-first rule in AGENTS.md and CLAUDE.md, and the youi MCP
+ * `youiyoux agents install|remove`: the find-first rule in AGENTS.md and CLAUDE.md, and the youi MCP
  * server for Claude Code (.mcp.json) and Codex (.codex/config.toml), at the repo root. Works with
  * or without a youi.project.json: ui_find_component reads the code either way.
  */
 async function cmdAgents(values: Values, positionals: string[]): Promise<number> {
   const [action] = positionals;
-  if (action !== "install" && action !== "remove") throw new UsageError("youi agents install|remove [--claude] [--codex] [--json]");
+  if (action !== "install" && action !== "remove") throw new UsageError("youiyoux agents install|remove [--claude] [--codex] [--json]");
   const projectRoot = resolve(values.project ?? process.cwd());
   const repoRoot = await repoRootOf(projectRoot);
   const target = { project: projectRoot, ...(values.config ? { config: resolve(values.config) } : {}), ...(values.design ? { design: resolve(values.design) } : {}), ...(values.root !== undefined ? { root: resolve(values.root || ".") } : {}) };
   const server = mcpCommand(TOOL_ROOT, target);
-  // In a System project at the repo root, the same entry youi sync writes, so the two never fight over it.
+  // In a System project at the repo root, the same entry youiyoux sync writes, so the two never fight over it.
   const system = existsSync(resolve(values.config ?? join(projectRoot, PROJECT_FILE))) ? await project(values) : null;
   const claudeServer = system && system.root === repoRoot ? { command: "node", args: mcpArgs(system) } : relativeTo(repoRoot, server);
   const both = !values.claude && !values.codex;
@@ -628,7 +643,7 @@ async function cmdAgents(values: Values, positionals: string[]): Promise<number>
   if (values.json) json(results);
   else {
     for (const r of results) print(`${r.action === "unchanged" ? style.dim("unchanged") : style.ok(r.action)} ${r.kind}: ${r.file}\n  ${style.dim(r.guarantee)}`);
-    print(action === "install" ? `Next: restart your agent so it loads the ${style.bold("youiyoux")} MCP server; it will call ui_find_component before creating a component. Undo with youi agents remove.` : "Next: restart your agent to drop the youiyoux MCP server.");
+    print(action === "install" ? `Next: restart your agent so it loads the ${style.bold("youiyoux")} MCP server; it will call ui_find_component before creating a component. Undo with youiyoux agents remove.` : "Next: restart your agent to drop the youiyoux MCP server.");
   }
   return 0;
 }
@@ -704,7 +719,7 @@ async function cmdUi(values: Values): Promise<number> {
 
 async function cmdDetect(values: Values, positionals: string[]): Promise<number> {
   const target = detectTarget(positionals);
-  if (!target) throw new UsageError("youi detect <repo-path>   or   youi detect <url…> [--expose]   (one repo, or one or more URLs; not both)");
+  if (!target) throw new UsageError("youiyoux detect <repo-path>   or   youiyoux detect <url…> [--expose]   (one repo, or one or more URLs; not both)");
   const { repoReport, siteReport, writeReport } = await import("@youiyoux/detect");
   const out = resolve(values.out ?? ".youi/detect");
   const report = target.kind === "repo" ? await repoReport(target.path) : await siteReport(target.urls, { out, expose: values.expose, ...(process.env.YOUI_CHROMIUM ? { executablePath: process.env.YOUI_CHROMIUM } : {}) });
@@ -717,20 +732,27 @@ async function cmdDetect(values: Values, positionals: string[]): Promise<number>
   return 0;
 }
 
-/** `youi render`: files are named from the current directory, components by name. Exit 1 only when nothing could be drawn. */
+/** `youiyoux render`: files are named from the current directory, components by name. Exit 1 only when nothing could be drawn. */
 async function cmdRender(values: Values, positionals: string[], io: CliIo): Promise<number> {
   const root = resolve(values.root ?? values.project ?? process.cwd());
   const targets = positionals.map((t) => (existsSync(resolve(t)) ? resolve(t) : t));
   try {
     const report = await renderShots(root, targets, { ...(values.base ? { base: values.base } : {}), ...(process.env.YOUI_CHROMIUM ? { executablePath: process.env.YOUI_CHROMIUM } : {}), ...io.render });
-    if (values.json) json({ ...report, next: shotsNext(report, (t) => `run youi render${t ? ` ${t}` : ""} again`) });
+    if (values.json) json({ ...report, next: shotsNext(report, (t) => `run youiyoux render${t ? ` ${t}` : ""} again`) });
     else print(renderShotsText(report));
     return targets.length > 0 && report.components.every((c) => c.shots.length === 0) ? 1 : 0;
   } catch (error: unknown) {
     if (!(error instanceof RenderUnavailableError)) throw error;
-    process.stderr.write(`${style.error("✖")} youi render could not run: ${error.message}. Nothing was checked; this is not a pass.\n`);
+    process.stderr.write(`${style.error("✖")} youiyoux render could not run: ${error.message}. Nothing was checked; this is not a pass.\n`);
     return 1;
   }
+}
+
+/** `youiyoux report [path]`: the zero-setup report (what `npx youiyoux` runs). */
+async function cmdReport(values: Values, positionals: string[], io: CliIo): Promise<number> {
+  if (positionals.length > 1) throw new UsageError("youiyoux report [path] [--out dir] [--render [--yes]] [--include-code] [--json]   (one repo)");
+  const result = await runReport({ ...(positionals[0] ? { path: positionals[0] } : {}), ...(values.out ? { out: values.out } : {}), render: values.render, yes: values.yes, includeCode: values["include-code"], json: values.json }, io.report ?? {});
+  return result.code;
 }
 
 async function cmdMcp(values: Values): Promise<number> {
@@ -745,8 +767,10 @@ export interface CliIo {
   readonly fetcher?: Fetcher;
   /** Per-request timeout for `discover sync` (default 15 s). */
   readonly timeoutMs?: number;
-  /** `youi render`: tests count renders and never download Chromium. */
+  /** `youiyoux render`: tests count renders and never download Chromium. */
   readonly render?: Pick<ShotsOptions, "stats" | "download" | "cache">;
+  /** `youiyoux report`: tests answer the download question and stand in for the download. */
+  readonly report?: ReportIo;
 }
 
 function positiveInt(value: string | undefined, flag: string): number | undefined {
@@ -778,7 +802,7 @@ async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Pr
     return 0;
   }
   if (action === "show") {
-    if (!rest[0]) throw new UsageError("youi discover show <id|ref>");
+    if (!rest[0]) throw new UsageError("youiyoux discover show <id|ref>");
     if (values.source) {
       json(await candidateSource(cacheDir, rest.join(" "), io));
       return 0;
@@ -789,7 +813,7 @@ async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Pr
     return 0;
   }
   const need = positionals.join(" ").trim();
-  if (!need) throw new UsageError("youi discover \"<need>\" [--role r] [--json]   or   youi discover sync   or   youi discover show <id>");
+  if (!need) throw new UsageError("youiyoux discover \"<need>\" [--role r] [--json]   or   youiyoux discover sync   or   youiyoux discover show <id>");
   const licenses = values.license?.split(",").map((l) => l.trim()).filter(Boolean);
   if (values.all) {
     await expandAll(cacheDir, { ...io, icons: values.icons ?? false });
@@ -805,8 +829,11 @@ async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Pr
 type Command = (values: Values, positionals: string[], io: CliIo) => Promise<number>;
 
 const COMMANDS: Record<string, Command> = {
-  show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, render: cmdRender, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+  show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
+
+/** Every command name, for a front end that runs one by default (the youiyoux bin runs report). */
+export const COMMAND_NAMES: readonly string[] = [...Object.keys(COMMANDS), "inventory", "help"];
 
 export async function main(argv: string[], io: CliIo = {}): Promise<number> {
   let parsed;

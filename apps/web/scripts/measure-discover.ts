@@ -158,7 +158,7 @@ async function main(): Promise<void> {
       const cache = await cacheOf(join(work, `listings-${size}`), size);
       await closeSharedStores();
       const listings = (await readIndex(cache))!.entries.length;
-      // The preview server's endpoints read the cache from the environment, as `youi ui`'s do.
+      // The preview server's endpoints read the cache from the environment, as `youiyoux ui`'s do.
       process.env.YOUI_DISCOVER_CACHE = cache;
       const server = await preview({ root: APP, configFile: join(APP, "vite.config.ts"), build: { outDir: dist }, preview: { port: PORT, strictPort: true }, logLevel: "error" });
       try {

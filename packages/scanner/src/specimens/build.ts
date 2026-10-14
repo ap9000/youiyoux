@@ -1,6 +1,6 @@
 /**
  * Specimens: every inventoried look drawn for real, built at hub snapshot time (never by
- * `youi inventory`), once per project and commit. Per project: its CSS, light and dark
+ * `youiyoux inventory`), once per project and commit. Per project: its CSS, light and dark
  * (css.ts), and static HTML per distinct recipe: a component look server-rendered from the
  * project's own code (render.ts), anything else, or a component that would not render, as its
  * tag and classes. Entries are cached outside the project by the content of every input

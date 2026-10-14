@@ -4,7 +4,7 @@
  * project shows the exact install command, to copy, and drafts an adoption request (stage
  * `candidate`, MCP's library_request) for a person to decide. An item whose licence is unknown is
  * never put up for adoption: the button stays off and says why, and the service refuses it too.
- * Without the workflow service (`youi ui --project`), both say so.
+ * Without the workflow service (`youiyoux ui --project`), both say so.
  */
 import type { LibraryEntry } from "@youiyoux/core";
 import { BookmarkPlus, PackagePlus } from "lucide-react";
@@ -15,7 +15,7 @@ import { Button } from "../../ui/Button.tsx";
 import { CopyButton } from "../../ui/CopyButton.tsx";
 import { TextArea } from "../../ui/Field.tsx";
 
-export const NEEDS_SERVICE = "Saving and adopting are drafts for approval: they need the workflow service (open the hub with youi ui --project).";
+export const NEEDS_SERVICE = "Saving and adopting are drafts for approval: they need the workflow service (open the hub with youiyoux ui --project).";
 
 /** Why this item cannot be adopted, or null when it can. */
 export function adoptRefusal(licence: string, name: string): string | null {

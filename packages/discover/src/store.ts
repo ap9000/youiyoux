@@ -12,7 +12,7 @@ import { defaultIndexPath, INDEX_FILE as STORE_FILE } from "@youiyoux/store";
 import type { CachedResponse } from "./http.ts";
 
 export const INDEX_FILE = "index.json";
-/** Listings `youi discover --all` added: kept apart from the index, so a default search stays on the chosen sources. */
+/** Listings `youiyoux discover --all` added: kept apart from the index, so a default search stays on the chosen sources. */
 export const ALL_INDEX_FILE = "index-all.json";
 export const HEALTH_FILE = "health.json";
 export const SIGNALS_FILE = "signals.json";
@@ -27,7 +27,7 @@ export function discoverCacheDir(explicit?: string, env: NodeJS.ProcessEnv = pro
 }
 
 /**
- * The store Discover reads (and `youi inventory` records into): beside an explicit cache
+ * The store Discover reads (and `youiyoux inventory` records into): beside an explicit cache
  * (`--cache`), else YOUI_INDEX, else beside YOUI_DISCOVER_CACHE, else the default
  * `$XDG_CACHE_HOME/youiyoux/index.db`. DATABASE_URL, when set, wins over all of them.
  */
@@ -117,7 +117,7 @@ export async function writeJson(file: string, value: unknown): Promise<void> {
 export class MissingIndexError extends Error {
   readonly cacheDir: string;
   constructor(cacheDir: string) {
-    super(`no Discover index in ${cacheDir}: run \`youi discover sync\` first (search and show read the local index unless --all or --source is requested)`);
+    super(`no Discover index in ${cacheDir}: run \`youiyoux discover sync\` first (search and show read the local index unless --all or --source is requested)`);
     this.cacheDir = cacheDir;
   }
 }

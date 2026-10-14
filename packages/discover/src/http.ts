@@ -86,7 +86,7 @@ export interface HttpStats {
   maxInFlight: number;
 }
 
-const USER_AGENT = "youiyoux-discover/0.1 (+youi discover sync)";
+const USER_AGENT = "youiyoux-discover/0.1 (+youiyoux discover sync)";
 
 /** GitHub: 10 searches a minute and 60 calls an hour without a token; far more with one. */
 export function githubBuckets(token: string | undefined): Record<string, RateBucket> {

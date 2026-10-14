@@ -18,7 +18,7 @@ const expected = [
   { name: "icon", width: 20, height: 20 },
 ];
 
-test("ignored component sources retain size, width and height utilities in specimens and youi render", async () => {
+test("ignored component sources retain size, width and height utilities in specimens and youiyoux render", async () => {
   const dir = mkdtempSync(join(tmpdir(), "youi-sizing-"));
   const root = join(dir, "app");
   cpSync(join(TOOL, "packages/scanner/test/fixtures/inventory/sizing"), root, { recursive: true });

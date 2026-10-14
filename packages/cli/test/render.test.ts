@@ -1,5 +1,5 @@
 /**
- * `youi render`: the CLI over shots.ts. JSON with four screenshots, axe's findings and a diff
+ * `youiyoux render`: the CLI over shots.ts. JSON with four screenshots, axe's findings and a diff
  * for a changed component (c1); a second run with nothing changed draws nothing (c2); a render
  * that cannot run exits 1 and says so, never as a pass. Chromium is the installed headless
  * shell, never downloaded here.
@@ -39,7 +39,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("youi render", () => {
+describe("youiyoux render", () => {
   test("--json: light and dark at 1280 and 390, the unlabelled input, and a diff against main, then what to do next (c1)", async () => {
     const stats = newShotStats();
     expect(await main(["render", SEARCH, "--project", repo.dir, "--json"], { render: { cache, stats, download: false } })).toBe(0);
@@ -56,7 +56,7 @@ describe("youi render", () => {
         expect(d.changed).toBeGreaterThan(0);
       }
     }
-    expect(report.next).toBe(`fix the 1 accessibility issue (label), then run youi render ${SEARCH} again`);
+    expect(report.next).toBe(`fix the 1 accessibility issue (label), then run youiyoux render ${SEARCH} again`);
     expect(stats).toMatchObject({ renders: 1, baseRenders: 1, browsers: 1 });
   }, LONG);
 
@@ -68,7 +68,7 @@ describe("youi render", () => {
     expect(lines[0]).toBe(`${SEARCH}: 1 look (SearchInput), light and dark at 1280 and 390 px; from the cache: nothing it uses changed since it was last drawn`);
     expect(lines.filter((l) => /^ {2}(light|dark) (1280|390): \/.+\.png$/.test(l))).toHaveLength(4);
     expect(out).toMatch(/ {4}- Form elements must have labels \(label, critical/);
-    expect(lines.at(-1)).toBe(`next: fix the 1 accessibility issue (label), then run youi render ${SEARCH} again`);
+    expect(lines.at(-1)).toBe(`next: fix the 1 accessibility issue (label), then run youiyoux render ${SEARCH} again`);
   });
 
   test("a component name finds its file", async () => {
@@ -88,7 +88,7 @@ describe("youi render", () => {
     process.env.YOUI_CHROMIUM = join(fresh.dir, "no-chromium");
     try {
       expect(await main(["render", SEARCH, "--project", repo.dir], { render: { cache: fresh, download: false } })).toBe(1);
-      expect(err).toMatch(/youi render could not run: no Chromium for youi render at .*no-chromium \(YOUI_CHROMIUM\).*Nothing was checked; this is not a pass/);
+      expect(err).toMatch(/youiyoux render could not run: no Chromium for youiyoux render at .*no-chromium \(YOUI_CHROMIUM\).*Nothing was checked; this is not a pass/);
     } finally {
       if (saved === undefined) delete process.env.YOUI_CHROMIUM;
       else process.env.YOUI_CHROMIUM = saved;

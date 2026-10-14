@@ -1,5 +1,5 @@
 /**
- * The fingerprint table: one entry per library, everything `youi detect` knows about it. The
+ * The fingerprint table: one entry per library, everything `youiyoux detect` knows about it. The
  * website markers were settled in a spike against real sites: class prefixes, CSS custom
  * properties on :root, id prefixes, shadcn's own data-slot names. Each marker says how much it
  * decides on its own: `strong` decides a verdict, `weak` alone only gives low confidence.

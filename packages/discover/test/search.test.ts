@@ -28,7 +28,7 @@ describe("reading a need", () => {
   });
 });
 
-describe("youi discover \"command menu\"", () => {
+describe("youiyoux discover \"command menu\"", () => {
   test("ranks command and cmdk-based items first", () => {
     const result = searchIndex(index, "command menu");
     expect(result.concepts).toEqual(["command"]);
@@ -100,7 +100,7 @@ describe("show", () => {
   test("a missing index is an error that says to sync, never a fetch", async () => {
     const empty = await mkdtemp(join(tmpdir(), "youi-discover-empty-"));
     await expect(loadIndex(empty)).rejects.toBeInstanceOf(MissingIndexError);
-    await expect(loadIndex(empty)).rejects.toThrow(/youi discover sync/);
+    await expect(loadIndex(empty)).rejects.toThrow(/youiyoux discover sync/);
     await rm(empty, { recursive: true, force: true });
   });
 });

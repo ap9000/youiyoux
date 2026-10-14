@@ -1,5 +1,5 @@
 /**
- * What a token change reaches, for `youi plan --token`: every token whose value reads it
+ * What a token change reaches, for `youiyoux plan --token`: every token whose value reads it
  * (aliases, multi-hop and partial, in either scheme), the contracts that bind any of them or
  * whose owned implementation uses them, and every direct use in project code: the CSS
  * variable, the Tailwind theme variable and the Tailwind utilities generated for it.

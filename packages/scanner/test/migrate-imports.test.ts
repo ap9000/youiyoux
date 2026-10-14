@@ -27,7 +27,7 @@ afterEach(async () => {
 /**
  * Copies of examples/demo-design and examples/demo-app, side by side (the app's source.path
  * stays valid). The design's component file and contract take the change; with `synced`, the
- * app's vendored copy does too, as `youi sync` would leave it.
+ * app's vendored copy does too, as `youiyoux sync` would leave it.
  */
 async function setup(change: DesignChange, options: { synced?: boolean; files?: Record<string, string> } = {}): Promise<{ app: string; design: string }> {
   const dir = await mkdtemp(join(tmpdir(), "youi-migrate-imports-"));
@@ -180,13 +180,13 @@ describe("renameExport", () => {
     expect(await snapshot(app)).toEqual(before);
   });
 
-  test("before youi sync the exports gate rejects: the vendored file does not export the new name yet", async () => {
+  test("before youiyoux sync the exports gate rejects: the vendored file does not export the new name yet", async () => {
     const { app } = await setup({ exports: { Card: "Panel" } }, { synced: false });
     const before = await snapshot(app);
     const result = await runMigration(await loadProject(app), renameCard, { write: true });
     expect(result.status).toBe("rejected");
     expect(result.changes.length).toBeGreaterThan(0);
-    expect(result.gates.find((g) => g.name === "exports")).toEqual({ name: "exports", ok: false, detail: "components/ui/card.tsx does not export Panel yet: run youi sync, then migrate" });
+    expect(result.gates.find((g) => g.name === "exports")).toEqual({ name: "exports", ok: false, detail: "components/ui/card.tsx does not export Panel yet: run youiyoux sync, then migrate" });
     expect(await snapshot(app)).toEqual(before);
   });
 });

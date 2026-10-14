@@ -371,7 +371,7 @@ export function noneFitsText({ result, discover, componentsDir, inSystem }: None
     lines.push(inSystem ? `Next: propose the best one with library_request {"item": "<lib: id>", "reason": "…"} for a person to approve; don't install or copy it yourself.` : `Next: show these to a person and install only the one they choose (licence first), then build it ${where}; discover_show <id> has the details.`);
     return lines.join("\n");
   }
-  lines.push(discover === null ? `No Discover index on this machine to suggest a starting point: run youi discover sync, then youi discover "${result.need}".` : `Discover has no candidate for "${result.need}" either; try other words, or youi discover "${result.need}" --all.`);
+  lines.push(discover === null ? `No Discover index on this machine to suggest a starting point: run youiyoux discover sync, then youiyoux discover "${result.need}".` : `Discover has no candidate for "${result.need}" either; try other words, or youiyoux discover "${result.need}" --all.`);
   lines.push(inSystem ? `Next: draft it with library_request or ask a person before adding a component outside the System.` : `Next: build it as a new component ${where}, so the next agent finds it with ui_find_component.`);
   return lines.join("\n");
 }

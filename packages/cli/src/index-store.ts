@@ -1,6 +1,6 @@
 /**
- * `youi index`: the local store of derived data, and what fills it. Everything in it comes
- * from files the CLI already writes, and is noted beside the store so `youi index rebuild`
+ * `youiyoux index`: the local store of derived data, and what fills it. Everything in it comes
+ * from files the CLI already writes, and is noted beside the store so `youiyoux index rebuild`
  * can replay it after the store is deleted:
  *
  *   index-sources.json  the Discover cache, inventory files and projects recorded so far
@@ -23,7 +23,7 @@ export const SCANS_LOG = "scans.jsonl";
 export interface ProjectSource {
   readonly root: string;
   readonly options: LoadProjectOptions;
-  /** The usage map youi scan wrote (default <root>/.youi/usage.json). */
+  /** The usage map youiyoux scan wrote (default <root>/.youi/usage.json). */
   readonly usage?: string;
 }
 
@@ -70,7 +70,7 @@ export async function recordInventory(store: Store, home: string, report: Invent
   return run;
 }
 
-/** A project's rules and its usage map (.youi/usage.json, written by youi scan) as graph edges. */
+/** A project's rules and its usage map (.youi/usage.json, written by youiyoux scan) as graph edges. */
 export async function recordProject(store: Store, project: Project, usage: ScanReport | null): Promise<void> {
   await store.replaceGraph(`project:${project.root}`, projectGraph({ project: project.config.id, rules: project.system.rules, components: project.system.components.map((c) => ({ id: c.contract.id, name: c.contract.name })), usage }));
 }
@@ -199,7 +199,7 @@ export function renderRebuild(summary: RebuildSummary): string {
   const t = summary.tables;
   return [
     `${style.ok("rebuilt")} ${summary.location} ${style.dim(`in ${summary.durationMs} ms`)}`,
-    `  discover    ${summary.discover.cache ? `${plural(summary.discover.chosen, "listing")} · ${summary.discover.all} from --all ${style.dim(`(${summary.discover.cache})`)}` : style.dim("no Discover catalog yet (youi discover sync)")}`,
+    `  discover    ${summary.discover.cache ? `${plural(summary.discover.chosen, "listing")} · ${summary.discover.all} from --all ${style.dim(`(${summary.discover.cache})`)}` : style.dim("no Discover catalog yet (youiyoux discover sync)")}`,
     `  history     ${plural(summary.scans, "inventory run")} replayed · ${plural(t.scans ?? 0, "scan")} by project`,
     `  inventory   ${plural(summary.inventories.replayed, "file")} replayed${summary.inventories.missing.length ? style.warn(` · ${summary.inventories.missing.length} gone (history kept, looks not)`) : ""}`,
     `  projects    ${plural(summary.projects.replayed, "project")} (rules and usage)`,
@@ -212,7 +212,7 @@ const delta = (now: number, before: number | undefined): string => (before === u
 
 /** Trends per project, newest first: looks, families and near-duplicates, with the change since the scan before. */
 export function renderHistory(scans: readonly ScanRecord[]): string {
-  if (scans.length === 0) return style.dim("no inventory history yet: youi inventory records each scan");
+  if (scans.length === 0) return style.dim("no inventory history yet: youiyoux inventory records each scan");
   const lines = [`${style.bold("inventory history")} ${style.dim(`· ${plural(scans.length, "scan")}`)}`, ""];
   const projects = [...new Set(scans.map((s) => s.project))];
   for (const project of projects) {

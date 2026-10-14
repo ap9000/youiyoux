@@ -1,5 +1,5 @@
 /**
- * Live snapshot status for `youi ui --watch`: one dot in the nav rail that says whether
+ * Live snapshot status for `youiyoux ui --watch`: one dot in the nav rail that says whether
  * what is on screen is current and complete. Hidden for one-off snapshots.
  */
 import { clsx } from "clsx";

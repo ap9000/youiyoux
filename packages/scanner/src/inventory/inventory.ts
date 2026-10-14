@@ -1,5 +1,5 @@
 /**
- * `youi inventory`: every UI element across one or more projects, with no design system.
+ * `youiyoux inventory`: every UI element across one or more projects, with no design system.
  * Each project is read on its own (collect.ts); looks are then grouped per role across all of
  * them by resolved shape (cluster.ts), and the flags compare definitions across projects.
  */
@@ -17,7 +17,7 @@ export interface InventoryOptions extends TargetGlobs {
   readonly examples?: number;
   /** Where relative project roots are reported from (default: the current directory). */
   readonly cwd?: string;
-  /** Also record each role-bearing definition's own root as a look, rendered or not (off for `youi inventory`). */
+  /** Also record each role-bearing definition's own root as a look, rendered or not (off for `youiyoux inventory`). */
   readonly definitionRoots?: boolean;
 }
 

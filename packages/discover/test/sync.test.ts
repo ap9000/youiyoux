@@ -22,7 +22,7 @@ async function sync(fixtures = fixtureFetcher({ delayMs: 3 }), at = NOW, extra: 
   return { summary, fixtures, index: (await readIndex(dir)) as DiscoverIndex };
 }
 
-describe("youi discover sync", () => {
+describe("youiyoux discover sync", () => {
   test("indexes the official registry and healthy community registries, skipping and recording the rest", async () => {
     const { summary, index } = await sync();
     const refs = index.entries.map((e) => e.source.ref);

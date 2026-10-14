@@ -369,7 +369,7 @@ export interface RulePlace {
 }
 
 export interface PublishedRule {
-  /** The rule, with how youi check executes it (the scanner's one execution model). */
+  /** The rule, with how youiyoux check executes it (the scanner's one execution model). */
   readonly rule: RuleSpec & { readonly execution: RuleExecution };
   readonly file: string;
   readonly components: readonly ElementId[];

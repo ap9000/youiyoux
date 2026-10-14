@@ -4,7 +4,7 @@
  * imports it as `@youiyoux/core/rules`.
  *
  * `off` is off everywhere: not checked, not shown to agents, not emitted as ast-grep.
- * A rule is only ever `enforced` when `youi check` actually runs it; a check this
+ * A rule is only ever `enforced` when `youiyoux check` actually runs it; a check this
  * youi cannot run is `unsupported`, never reported as enforced or as clean.
  */
 import type { RuleSpec } from "./schemas.ts";
@@ -13,7 +13,7 @@ export type BuiltInCheckId = Extract<RuleSpec["check"], { engine: "youi" }>["id"
 export type AstGrepLanguage = Extract<RuleSpec["check"], { engine: "ast-grep" }>["language"];
 
 export type RuleExecution =
-  /** `youi check` runs it on every file its globs match and fails on its errors. */
+  /** `youiyoux check` runs it on every file its globs match and fails on its errors. */
   | { readonly state: "enforced"; readonly by: string }
   /** Prose for people and agents; nothing checks it. */
   | { readonly state: "advisory" }
@@ -53,7 +53,7 @@ export function ruleExecution(rule: Pick<RuleSpec, "severity" | "check">, proble
 export function executionLabel(execution: RuleExecution): string {
   switch (execution.state) {
     case "enforced":
-      return execution.by.startsWith("youi:") ? `Checked by youi check (${execution.by.slice(5)})` : `Checked by youi check (ast-grep, ${execution.by.slice(9)})`;
+      return execution.by.startsWith("youi:") ? `Checked by youiyoux check (${execution.by.slice(5)})` : `Checked by youiyoux check (ast-grep, ${execution.by.slice(9)})`;
     case "advisory":
       return "Advisory: shown to people and agents, not checked";
     case "off":

@@ -84,7 +84,7 @@ export function queryMiddleware(options: QueryOptions = {}, base = "/", load: ()
     const path = options.index ?? d.discoverIndexPath(undefined, env);
     const { limit, offset } = page(params);
     if (kind === "discover") {
-      if (!existsSync(join(cache, d.INDEX_FILE))) throw new NotFound("no Discover index: run youi discover sync");
+      if (!existsSync(join(cache, d.INDEX_FILE))) throw new NotFound("no Discover index: run youiyoux discover sync");
       const store = await d.readCatalog(cache, path, env);
       const need = params.get("q")?.trim();
       const all = params.get("all") === "1";
@@ -107,7 +107,7 @@ export function queryMiddleware(options: QueryOptions = {}, base = "/", load: ()
       const named = known === true ? held : known === false ? ["unknown"] : licences;
       return { kind, limit, ...(await d.browseCatalog(store, { ...scope, ...(named ? { licences: named } : {}) }, { limit, offset })) };
     }
-    if (!env.DATABASE_URL && !existsSync(path)) throw new NotFound("no local index yet: run youi inventory, youi scan or youi index rebuild");
+    if (!env.DATABASE_URL && !existsSync(path)) throw new NotFound("no local index yet: run youiyoux inventory, youiyoux scan or youiyoux index rebuild");
     const store = await d.sharedStore(path, env, { readOnly: true });
     if (kind === "history") {
       const project = params.get("project") ?? undefined;

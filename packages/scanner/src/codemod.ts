@@ -7,7 +7,7 @@
  * import pass (import-rewrite.ts); props are then planned on a rescan of the
  * import-rewritten sources. Nothing is written unless every gate holds on the
  * rewritten sources, checked in memory first:
- *   exports       the element's file exports every new name (`youi sync` has run); import changes only
+ *   exports       the element's file exports every new name (`youiyoux sync` has run); import changes only
  *   parse-errors  no new tree-sitter ERROR nodes in any touched file
  *   usage-count   the element's usage count is unchanged (± the spec's declared delta, + sites the
  *                 import pass makes resolvable again)
@@ -266,16 +266,16 @@ async function planAll(project: Project, migration: MigrationSpec, scan: ScanRes
   return { outputs: new Map([...imports.outputs, ...props.outputs]), edited: imports.edited + props.edited, residuals: mergeResiduals([...imports.residuals, ...props.residuals]), imports, basis };
 }
 
-/** The element's file must already export every new name: rewriting imports before `youi sync` breaks them. */
+/** The element's file must already export every new name: rewriting imports before `youiyoux sync` breaks them. */
 async function exportsGate(migration: MigrationSpec, after: ScanResult, target: string): Promise<GateResult> {
   const wanted = [...new Set(exportChanges(migration).flatMap((c) => (c.to === null ? [] : [c.to])))];
   const module = await after.graph.load(target);
   const names = module ? exportedNames(module) : new Set<string>();
   const missing = wanted.filter((name) => !names.has(name));
-  if (!module) return { name: "exports", ok: false, detail: `cannot read ${target || migration.element}: run youi sync, then migrate` };
+  if (!module) return { name: "exports", ok: false, detail: `cannot read ${target || migration.element}: run youiyoux sync, then migrate` };
   return missing.length === 0
     ? { name: "exports", ok: true, detail: wanted.length > 0 ? `${target} exports ${wanted.join(", ")}` : "no new export names" }
-    : { name: "exports", ok: false, detail: `${target} does not export ${missing.join(", ")} yet: run youi sync, then migrate` };
+    : { name: "exports", ok: false, detail: `${target} does not export ${missing.join(", ")} yet: run youiyoux sync, then migrate` };
 }
 
 /**

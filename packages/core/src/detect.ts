@@ -1,5 +1,5 @@
 /**
- * youi.detect/v1: which UI libraries a repo or website uses, as `youi detect` found them. A
+ * youi.detect/v1: which UI libraries a repo or website uses, as `youiyoux detect` found them. A
  * verdict per library and per element type, each with a confidence and the evidence behind it.
  * A website report covers only the pages it crawled; a repo report lists packages that are
  * declared but never imported apart from the verdicts, never counted in them.

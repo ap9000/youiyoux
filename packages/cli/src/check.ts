@@ -1,5 +1,5 @@
 /**
- * The one check service behind `youi check`, `youi watch`, the agent hooks and CI:
+ * The one check service behind `youiyoux check`, `youiyoux watch`, the agent hooks and CI:
  * scan (whole project, or focused on some files), apply an existing-violation
  * baseline if there is one, verify the lockfile, and decide pass, fail or incomplete.
  * Every result carries the identity it was computed against.
@@ -24,7 +24,7 @@ export interface CheckOptions {
   /** Verify the lockfile and generated-file wiring (default true; hooks skip it). */
   readonly lock?: boolean;
   readonly cache?: ScanCache;
-  /** Also report what this change adds (`youi check --diff`): its files are the scope unless `files` is given, its staged sources the content. */
+  /** Also report what this change adds (`youiyoux check --diff`): its files are the scope unless `files` is given, its staged sources the content. */
   readonly diff?: ChangeSet;
 }
 
@@ -78,7 +78,7 @@ export async function runCheck(project: Project, options: CheckOptions = {}): Pr
   const notRun = failedChecks(report.checks).filter((c) => wantedRule(c.rule));
   const lock = options.lock === false || (diff && options.lock !== true) ? null : await lockIssues(project);
   const recorded = options.baseline ? await readBaseline(options.baseline) : null;
-  if (options.baseline && !recorded) throw new Error(`no baseline at ${options.baseline}; record one with \`youi baseline\``);
+  if (options.baseline && !recorded) throw new Error(`no baseline at ${options.baseline}; record one with \`youiyoux baseline\``);
   const baseline = recorded && options.baseline ? { file: options.baseline, recorded: recorded.identity, comparison: compareToBaseline(recorded, violations, scope ?? undefined) } : null;
   const failing = baseline ? [...baseline.comparison.new, ...baseline.comparison.regressed] : violations;
   const errors = failing.filter((v) => v.severity === "error").length + (lock ?? []).filter((i) => i.severity === "error").length;
@@ -95,7 +95,7 @@ async function lockIssues(project: Project): Promise<LockIssue[] | null> {
 /** 0 passes, 1 fails or is incomplete. */
 export const exitCodeOf = (result: CheckResult): number => (result.errors > 0 || result.incomplete ? 1 : 0);
 
-/** `youi check --diff`: advisory (0) unless `strict`, which fails on any finding or an incomplete result. */
+/** `youiyoux check --diff`: advisory (0) unless `strict`, which fails on any finding or an incomplete result. */
 export const diffExitCodeOf = (result: DiffCheckResult, strict: boolean): number => (strict && ((result.diff?.findings.length ?? 0) > 0 || result.incomplete) ? 1 : 0);
 
 export interface BaselineWrite {

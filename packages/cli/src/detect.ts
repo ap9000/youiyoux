@@ -1,4 +1,4 @@
-/** Terminal output for `youi detect`: which UI libraries a repo or website uses, and what that covers. */
+/** Terminal output for `youiyoux detect`: which UI libraries a repo or website uses, and what that covers. */
 import type { DetectConfidence, DetectReport } from "@youiyoux/core";
 import { padEnd, plural, style } from "./ui.ts";
 
@@ -30,6 +30,6 @@ export function renderDetect(report: DetectReport, file: string): string {
   if (report.fonts.length > 0) lines.push("", `${style.bold("Fonts")}  ${report.fonts.map((f) => f.family).join(", ")}`);
   for (const page of report.pages.filter((p) => p.status === "failed")) lines.push(style.error(`  ✖ ${page.url}: ${page.error ?? "failed"}`));
   for (const note of report.notes) lines.push(style.dim(`  · ${note}`));
-  lines.push("", report.coverage, "", `${style.ok("wrote")} ${file} ${style.dim(`· see it in the hub: youi ui --detect ${file}`)}`);
+  lines.push("", report.coverage, "", `${style.ok("wrote")} ${file} ${style.dim(`· see it in the hub: youiyoux ui --detect ${file}`)}`);
   return lines.join("\n");
 }

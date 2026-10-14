@@ -78,7 +78,7 @@ export interface RenderOptions {
   readonly totalTimeoutMs?: number;
   /**
    * Contents to bundle instead of what is on disk, by absolute path: a file as it was at a base
-   * commit (`youi render`'s before side). null: the file did not exist then, so a module that
+   * commit (`youiyoux render`'s before side). null: the file did not exist then, so a module that
    * imports it fails to bundle. Only files the fence already lets in are read this way.
    */
   readonly overlay?: ReadonlyMap<string, string | null>;

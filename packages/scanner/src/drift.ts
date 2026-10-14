@@ -1,5 +1,5 @@
 /**
- * UI drift in a change (`youi check --diff`): what the change adds that the project already
+ * UI drift in a change (`youiyoux check --diff`): what the change adds that the project already
  * has a better answer for, each with the concrete fix. Pure: the caller says which lines are
  * added and supplies the inventory, the token index and the library each element comes from.
  *
@@ -161,7 +161,7 @@ function describeShape(look: Look): string {
 }
 
 /** The existing look a person should reuse, written as they would write it. */
-function reuseOf(look: Look, definitions: ReadonlyMap<string, Definition>, importOf: NearDuplicateInput["importOf"], fromFile: string): { name: string; fix: string } {
+export function reuseOf(look: Look, definitions: ReadonlyMap<string, Definition>, importOf: NearDuplicateInput["importOf"], fromFile: string): { name: string; fix: string } {
   const recipe = look.recipe;
   if (recipe?.kind === "component") {
     const variants = definitions.get(look.definition ?? "")?.variants ?? {};

@@ -1,5 +1,5 @@
 /**
- * Discover on the store. The JSON files `youi discover sync` writes (index.json, and
+ * Discover on the store. The JSON files `youiyoux discover sync` writes (index.json, and
  * index-all.json for `--all`) stay the source; the store holds their listings, signals and
  * licences, is refreshed whenever those files change, and can be deleted at any time.
  *
@@ -247,7 +247,7 @@ export async function showFromCatalog(store: Store, query: string, options: { re
   const q = cleanText(query).trim();
   const scopes = scopesOf(options.all ?? true);
   const row = (await store.getDiscoverItem(q, scopes)) ?? (await store.getDiscoverItem(`${SHADCN.name}/${q}`, scopes));
-  if (!row) throw new Error(`no Discover candidate "${q}": pass a lib: id or a ref (@coss/command) from youi discover / discover_search`);
+  if (!row) throw new Error(`no Discover candidate "${q}": pass a lib: id or a ref (@coss/command) from youiyoux discover / discover_search`);
   return { entry: row.entry as LibraryEntry, indexBuiltAt: (await store.meta(BUILT_AT)) ?? "", note: DISCOVER_RULE };
 }
 

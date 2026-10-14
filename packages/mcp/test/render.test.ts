@@ -1,4 +1,4 @@
-/** ui_render: the same render as `youi render`, answered in plain lines with absolute image paths and a next step as a tool call. */
+/** ui_render: the same render as `youiyoux render`, answered in plain lines with absolute image paths and a next step as a tool call. */
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 import { tmpdir } from "node:os";

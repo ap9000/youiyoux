@@ -53,12 +53,12 @@ async function ask(project: string, specimen: string, base: string): Promise<{ s
   try {
     response = await fetch(`${base}${TRY_ENDPOINT}?project=${encodeURIComponent(project)}&specimen=${encodeURIComponent(specimen)}`, { cache: "no-store" });
   } catch {
-    return { error: "Try it needs the hub's own server (pnpm dev, youi ui or vite preview), which did not answer; the static specimen stays." };
+    return { error: "Try it needs the hub's own server (pnpm dev, youiyoux ui or vite preview), which did not answer; the static specimen stays." };
   }
   // A host that only serves files answers with a page or nothing, not the endpoint's JSON.
   const body = (await response.json().catch(() => null)) as { script?: unknown; error?: unknown } | null;
   if (response.ok && typeof body?.script === "string") return { script: body.script };
-  if (typeof body?.error !== "string") return { error: "Try it needs the hub's own server (pnpm dev, youi ui or vite preview); this host only serves files, so the static specimen stays." };
+  if (typeof body?.error !== "string") return { error: "Try it needs the hub's own server (pnpm dev, youiyoux ui or vite preview); this host only serves files, so the static specimen stays." };
   return { error: response.status === 404 || response.status === 503 ? body.error : `Try it could not bundle this look (${body.error.replace(/\.$/, "")}); the static specimen stays.` };
 }
 

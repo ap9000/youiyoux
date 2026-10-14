@@ -117,7 +117,7 @@ describe("ui_find_component", () => {
     expect(withIndex.lines.at(-1)).toMatch(/^Next: show these to a person and install only the one they choose/);
     const without = await find(await connect(FIND_APP, empty), "date picker");
     expect(without.text).not.toMatch(/lucide|CalendarClock/);
-    expect(without.text).toContain('No Discover index on this machine to suggest a starting point: run youi discover sync, then youi discover "date picker".');
+    expect(without.text).toContain('No Discover index on this machine to suggest a starting point: run youiyoux discover sync, then youiyoux discover "date picker".');
     expect(without.lines.at(-1)).toMatch(/^Next: build it as a new component in components\//);
   });
 

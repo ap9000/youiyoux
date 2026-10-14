@@ -74,7 +74,7 @@ async function openWith(connection: PgConnection, location: string, options: { r
   return store;
 }
 
-/** The URL without its password, for messages and `youi index path`. */
+/** The URL without its password, for messages and `youiyoux index path`. */
 export function redactUrl(url: string): string {
   try {
     const parsed = new URL(url);

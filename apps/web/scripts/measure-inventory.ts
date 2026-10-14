@@ -19,7 +19,7 @@
  * And when it asks the local index (/__youi/query): the page paints from the snapshot's chunks,
  * so the index can grow to any size without the first paint waiting on it.
  * Results go to perf/inventory.json. Its snapshots and builds are made in apps/web/.measure (a
- * snapshot's preview components resolve the hub's own packages, as `youi ui`'s .hub does),
+ * snapshot's preview components resolve the hub's own packages, as `youiyoux ui`'s .hub does),
  * removed afterwards unless --keep.
  */
 import { execFileSync } from "node:child_process";

@@ -1,5 +1,5 @@
 /**
- * The rule editor that `youi ui --project` runs beside the hub: the workflow service
+ * The rule editor that `youiyoux ui --project` runs beside the hub: the workflow service
  * (drafts, impact preview, approval, review branch) on an ephemeral loopback port, which
  * the hub's dev server proxies at /api. Writes need this run's session key, which travels
  * only in the link printed to the terminal (as a URL fragment, which no request carries).
@@ -31,7 +31,7 @@ export interface RuleEditor {
   close(): Promise<void>;
 }
 
-/** What swapping a Library item in for an inventory family touches, from the local index `youi inventory` records into; null when it cannot say. */
+/** What swapping a Library item in for an inventory family touches, from the local index `youiyoux inventory` records into; null when it cannot say. */
 async function swapImpact(candidate: string, family: string): Promise<{ looks: number; files: number; routes: number; listed: boolean } | null> {
   try {
     const { discoverIndexPath, sharedStore } = await import("@youiyoux/discover");

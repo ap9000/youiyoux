@@ -1,7 +1,7 @@
 /**
  * The index_* tools' answers: a few plain lines each (about ten), read from the store's graph.
  * Lists show their first few items and say how many more there are. ui_render's answer is the
- * same text `youi render` prints, with the next step said as a tool call.
+ * same text `youiyoux render` prints, with the next step said as a tool call.
  */
 import { shotsText, type ShotsReport } from "@youiyoux/scanner";
 import type { RuleCovers, SwapImpact, WhereUsed } from "@youiyoux/store";

@@ -1,5 +1,5 @@
 /**
- * What `youi inventory` reads in one directory. No design repo, no element index: if the
+ * What `youiyoux inventory` reads in one directory. No design repo, no element index: if the
  * directory has a youi.project.json, only its include, exclude, tsconfig and routes are used;
  * otherwise default globs, and routes detected from the files (Expo Router, Next.js `app/`
  * pages, Astro `src/pages/`). Include globs given on the command line replace either include;

@@ -9,13 +9,13 @@
  *   dark, from `--screens` or `<project>/.youi/screens` (screens.json plus images, written by
  *   scripts/capture-screens.ts). They belong to the project, like its usage map, so they never
  *   live in this repo; a route without a picture shows an empty state.
- * - <out>/public/data/inventory.<hash>.json: a `youi inventory` file for the Inventory page,
+ * - <out>/public/data/inventory.<hash>.json: a `youiyoux inventory` file for the Inventory page,
  *   from `--inventory` (validated against youi.inventory/v1). The committed default carries an
  *   inventory of the scanner's two inventory fixtures, so the page has something to show. It is
  *   split for lazy loading (src/data/inventory-split.ts): that file is a small index, with
  *   inventory.<project>.<role>.<hash>.json chunks and inventory.extras.<hash>.json beside it.
  * - <out>/public/data/specimens.<project>.<light|dark>.<hash>.css: each inventoried project's
- *   real CSS (and, in its chunks, static HTML per look), built here, never by `youi inventory`,
+ *   real CSS (and, in its chunks, static HTML per look), built here, never by `youiyoux inventory`,
  *   from the project's own Tailwind and components, read-only, and cached by commit and content
  *   outside the project (scanner/src/specimens). A project root the inventory names that is not
  *   on this machine gets no specimens; its looks show their shape. `specimens.css` in a
@@ -25,7 +25,7 @@
  * - <out>/try.json: for Try it, each project's root (relative to <out>) and tsconfig and each
  *   component specimen's recipe and sibling looks, so the hub's own server can bundle one look on
  *   request (scripts/try-server.ts). Beside public/, never in it: it is never served or built.
- * - <out>/public/data/detect.<hash>.json and detect.shot.<hash>.png: a `youi detect` report
+ * - <out>/public/data/detect.<hash>.json and detect.shot.<hash>.png: a `youiyoux detect` report
  *   (`--detect`, validated as youi.detect/v1) and its element screenshots, for Library > Stack.
  *   Like screens, it belongs to whoever ran it and never lives in this repo.
  * - <out>/public/data/discover.<hash>.json: Discover's listings for a static host, which has no
@@ -43,7 +43,7 @@
  * `--discover <dir>` names the Discover cache whose listings a static host searches.
  * `--project` scans a product repo (read-only) for the usage map; its youi.project.json
  * (or `--config`) names the design repo and the CSS prefix and Tailwind names the
- * components use. `--design` overrides the design repo. `youi ui` runs this with
+ * components use. `--design` overrides the design repo. `youiyoux ui` runs this with
  * `--out apps/web/.hub`, so pointing the hub at a real system never touches the
  * committed snapshot.
  */
@@ -89,7 +89,7 @@ type TokensModule = typeof import("@youiyoux/tokens");
 /** The scanner calls used here, typed locally so the hub's typecheck never pulls in the scanner's sources. */
 interface ScannerModule {
   loadProject(root: string, options: LoadOptions): Promise<ScannedProject>;
-  /** How youi check executes a rule; the scanner compiles ast-grep bodies, which the browser cannot. */
+  /** How youiyoux check executes a rule; the scanner compiles ast-grep bodies, which the browser cannot. */
   ruleCapability(rule: import("@youiyoux/core").RuleSpec): unknown;
   scanProject(project: ScannedProject, options?: { cache?: unknown }): Promise<{ report: unknown; identity: import("@youiyoux/core").CheckIdentity }>;
   describeIdentity(identity: import("@youiyoux/core").CheckIdentity): string;
@@ -389,7 +389,7 @@ async function writeSystem(out: string, designRoot: string, systemId: string | u
     },
     tokens: catalogTokens(config.id, output.cssVarPrefix, built.tokens, darkOverrides(repo.root, config, core, lib), lib),
     components: system.components.map(({ contract }) => ({ contract, files: componentFiles(componentsRoot, contract.source.file, config.support) })),
-    // Each rule with how youi check executes it, so the hub never shows an uncompilable rule as enforced.
+    // Each rule with how youiyoux check executes it, so the hub never shows an uncompilable rule as enforced.
     rules: system.rules.map((rule) => ({ ...rule, execution: scanner.ruleCapability(rule) })),
   };
   const catalogText = json(catalog);
@@ -653,7 +653,7 @@ async function watchSnapshot(values: { design?: string; project?: string; config
       return { report, rules: libs.scanner.describeIdentity(scan.identity) };
     },
     onUpdate: (update) => {
-      if (!system) return void process.stderr.write(`youi ui: ${update.status === "failed" ? update.error : "no system"}\n`);
+      if (!system) return void process.stderr.write(`youiyoux ui: ${update.status === "failed" ? update.error : "no system"}\n`);
       if (update.status === "ok") {
         const { report } = update.result;
         if (shots === undefined) {
@@ -670,7 +670,7 @@ async function watchSnapshot(values: { design?: string; project?: string; config
       const current = new Set([system.catalogFile, ...usageFiles(usage), ...(inventory ? [inventory.file, ...inventory.files] : []), ...(detect ? [detect.file, ...detect.shots] : []), ...(discover ? [discover] : [])]);
       pruneData(dataDir, new Set([...current, ...previous]));
       previous = current;
-      process.stdout.write(`youi ui: generation ${update.generation} ${live.status}${live.message ? `: ${live.message}` : ""}\n`);
+      process.stdout.write(`youiyoux ui: generation ${update.generation} ${live.status}${live.message ? `: ${live.message}` : ""}\n`);
     },
   });
   const stop = (): void => {

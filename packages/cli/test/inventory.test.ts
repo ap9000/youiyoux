@@ -22,7 +22,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("youi inventory", () => {
+describe("youiyoux inventory", () => {
   test("--project repeats; --json prints a valid youi.inventory/v1 document and --out writes the same", async () => {
     const dir = await mkdtemp(join(tmpdir(), "youi-inventory-"));
     try {
@@ -82,7 +82,7 @@ describe("youi inventory", () => {
         "src/components/ui/button.stories.tsx: decorator at line 51 skipped: ThemeProvider comes from package next-themes; only providers defined in this project are applied; its stories are drawn without it",
       ])
         expect(out).toContain(line);
-      expect(out).toContain(`Next: rewrite the skipped stories as CSF 3 args stories of a component in this project (or fix the file), run youi inventory again, then see them beside their real uses with youi ui --inventory ${file}`);
+      expect(out).toContain(`Next: rewrite the skipped stories as CSF 3 args stories of a component in this project (or fix the file), run youiyoux inventory again, then see them beside their real uses with youiyoux ui --inventory ${file}`);
       out = "";
       expect(await main(["inventory", "--project", STORYBOOK, "--json", "--out", file])).toBe(0);
       const printed = InventoryReport.parse(JSON.parse(out));
@@ -133,7 +133,7 @@ describe("youi inventory", () => {
     expect(err).toContain("is not a directory");
   });
 
-  test("help lists it; youi ui --inventory passes the file to the snapshot", async () => {
+  test("help lists it; youiyoux ui --inventory passes the file to the snapshot", async () => {
     expect(await main(["--help"])).toBe(0);
     expect(out).toContain("inventory [--project <dir>…] [--include <glob>…] [--exclude <glob>…]");
     const plan = hubPlan("/opt/youi", { inventory: "/tmp/inventory.json" });

@@ -1,5 +1,5 @@
 /**
- * `youi plan`: what would this change touch? Read-only.
+ * `youiyoux plan`: what would this change touch? Read-only.
  *
  * The change class (and so the semver bump and the machinery it needs) is
  * computed from the contract diff, never chosen by the author. Impact comes

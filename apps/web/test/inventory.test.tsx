@@ -86,7 +86,7 @@ describe("Inventory page: headline and wall (c2)", () => {
   test("with no inventory the page says how to make one", () => {
     render(<InventoryView inventory={null} />);
     expect(screen.getByRole("heading", { name: "No inventory yet" })).toBeTruthy();
-    expect(text(document.body)).toContain("youi ui --inventory");
+    expect(text(document.body)).toContain("youiyoux ui --inventory");
   });
 });
 

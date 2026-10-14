@@ -204,7 +204,7 @@ function Editor({ model: hub, initialDraft }: { model: Model; initialDraft: Styl
   if (usable.length === 0) {
     return (
       <EmptyState icon={Paintbrush} title="This snapshot cannot be edited yet">
-        It was built before the style editor. Run <code className="font-mono text-mono-sm">pnpm data</code> (or <code className="font-mono text-mono-sm">youi ui</code>) again.
+        It was built before the style editor. Run <code className="font-mono text-mono-sm">pnpm data</code> (or <code className="font-mono text-mono-sm">youiyoux ui</code>) again.
       </EmptyState>
     );
   }

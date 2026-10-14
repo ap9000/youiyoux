@@ -40,7 +40,7 @@ export class SqlStore implements Store {
       const rows = await this.db.all<{ id: unknown }>(`SELECT MAX(id) AS id FROM migrations`);
       if (int(rows[0]?.id) !== SCHEMA_VERSION) throw new Error("schema mismatch");
     } catch {
-      throw new Error("Index schema is outdated: run youi index rebuild");
+      throw new Error("Index schema is outdated: run youiyoux index rebuild");
     }
   }
 

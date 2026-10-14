@@ -86,7 +86,7 @@ Re-measured 2026-10-12 with the local index in place (`/__youi/query` on the pre
 
 ## The local index at 100,000 Library items
 
-`packages/store/bench/library.ts` builds 100,000 synthetic Library listings shaped like Discover's (about 1 KB each, with provenance: 1% official, 70% community registries, 29% npm) and an inventory of 5,000 looks, loads them into each engine, and times 20 needs (command menu, toast, date picker, …), five runs each after a warm-up. A search is what `youi discover` and `discover_search` do: the full-text index narrows the catalog to at most 400 listings per source class, Discover's scorer ranks them, the first page is shaped for output. `YOUI_PERF=1 pnpm vitest run packages/store/test/store.perf.test.ts` runs it and fails when SQLite's p95 is 50 ms or more; `node packages/store/bench/library.ts` prints the same.
+`packages/store/bench/library.ts` builds 100,000 synthetic Library listings shaped like Discover's (about 1 KB each, with provenance: 1% official, 70% community registries, 29% npm) and an inventory of 5,000 looks, loads them into each engine, and times 20 needs (command menu, toast, date picker, …), five runs each after a warm-up. A search is what `youiyoux discover` and `discover_search` do: the full-text index narrows the catalog to at most 400 listings per source class, Discover's scorer ranks them, the first page is shaped for output. `YOUI_PERF=1 pnpm vitest run packages/store/test/store.perf.test.ts` runs it and fails when SQLite's p95 is 50 ms or more; `node packages/store/bench/library.ts` prints the same.
 
 Measured 2026-10-12, Apple silicon laptop, Node 24.21:
 

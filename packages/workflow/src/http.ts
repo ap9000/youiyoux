@@ -137,7 +137,7 @@ function screen(req: IncomingMessage, sessionKey: string): void {
   const origin = req.headers.origin;
   if (origin !== undefined && !LOOPBACK_ORIGIN.test(origin)) throw new HttpError(403, "cross-site requests are refused");
   const key = req.headers[SESSION_HEADER];
-  if (typeof key !== "string" || !sameSecret(key, sessionKey)) throw new HttpError(401, "this change needs the session key: open the hub from the link `youi ui` printed");
+  if (typeof key !== "string" || !sameSecret(key, sessionKey)) throw new HttpError(401, "this change needs the session key: open the hub from the link `youiyoux ui` printed");
 }
 
 async function api(req: IncomingMessage, res: ServerResponse, path: string, options: HandlerOptions): Promise<void> {

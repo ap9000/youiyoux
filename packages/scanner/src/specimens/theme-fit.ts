@@ -169,7 +169,7 @@ export function themeFit({ theme, item, project, cssVars }: FitInput): ThemeFit 
 }
 
 /**
- * A project's theme and its component code, read from disk the way `youi inventory` reads it
+ * A project's theme and its component code, read from disk the way `youiyoux inventory` reads it
  * (its stylesheets, its Tailwind config statically, never run). Files outside the root are not read.
  */
 export async function projectTheme(root: string): Promise<{ theme: Theme; sources: string[] }> {

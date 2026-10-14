@@ -4,7 +4,7 @@
  * column type the adapter names (TEXT or JSONB). The full-text index is the one part each
  * engine writes its own way (Dialect.searchDdl).
  *
- * Everything here is derived and rebuildable (`youi index rebuild`): decisions (tokens,
+ * Everything here is derived and rebuildable (`youiyoux index rebuild`): decisions (tokens,
  * contracts, rules, adopted Library items, approvals) stay in git and are never stored.
  */
 import type { Dialect } from "./driver.ts";

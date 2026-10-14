@@ -37,7 +37,7 @@ export interface WorkflowOptions extends LoadProjectOptions {
   readonly newId?: (prefix: "d" | "p") => string;
   /**
    * What swapping a Library item in for an inventory family would touch, from the local index
-   * (`youi inventory` records it); null when the index cannot say. Without it, a library
+   * (`youiyoux inventory` records it); null when the index cannot say. Without it, a library
    * preview names the families but cannot count their looks.
    */
   readonly swapImpact?: (candidate: string, family: string) => Promise<{ looks: number; files: number; routes: number; listed: boolean } | null>;
@@ -415,7 +415,7 @@ export class RuleWorkflow {
    */
   private async indexedLicence(content: LibraryDraftContent): Promise<LibraryDraftContent> {
     if (!this.options.libraryLicence) {
-      if (content.request === "adopt") throw new WorkflowError("invalid", `${content.entry.name}'s licence cannot be checked: the hub has no Discover index to check it against (run youi discover sync), so it cannot be adopted yet.`, [`licence: unchecked for ${content.entry.id}`]);
+      if (content.request === "adopt") throw new WorkflowError("invalid", `${content.entry.name}'s licence cannot be checked: the hub has no Discover index to check it against (run youiyoux discover sync), so it cannot be adopted yet.`, [`licence: unchecked for ${content.entry.id}`]);
       return content;
     }
     const listed = await this.options.libraryLicence(content.entry.id).catch(() => null);
@@ -542,8 +542,8 @@ export class RuleWorkflow {
       limits: [
         "Nothing is installed: approving writes the Library item for review; adding it to a project stays a person's step, after adoption.",
         ...(draft.content.request === "save" ? ["Saved to the Library, it is a reference: not in the System, and not to be built with."] : []),
-        ...(swaps.some((s) => s.kind === "family") && !indexed ? ["Some families could not be counted: the local index has no inventory for them (run youi inventory)."] : []),
-        ...(swaps.some((s) => s.kind === "element") ? ["System elements are named, not counted: youi where-used counts their sites."] : []),
+        ...(swaps.some((s) => s.kind === "family") && !indexed ? ["Some families could not be counted: the local index has no inventory for them (run youiyoux inventory)."] : []),
+        ...(swaps.some((s) => s.kind === "element") ? ["System elements are named, not counted: youiyoux where-used counts their sites."] : []),
       ],
     };
     const next: LibraryDraft = { ...draft, preview, updatedAt: this.now(), events: [...draft.events, this.event(actor, "previewed", `${previewSummary({ ...draft, preview })[0]!.toUpperCase()}${previewSummary({ ...draft, preview }).slice(1)}.`)] };

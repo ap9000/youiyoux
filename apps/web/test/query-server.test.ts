@@ -118,8 +118,8 @@ describe("/__youi/query", () => {
     expect(await call("/__youi/query?kind=nope")).toMatchObject({ status: 404 });
     const empty = join(scratch, "empty");
     const bare = queryMiddleware({ cache: join(empty, "discover"), index: join(empty, "index.db"), env: {} });
-    expect(await call("/__youi/query?kind=history", { mw: bare })).toMatchObject({ status: 404, body: { error: expect.stringMatching(/youi inventory/) } });
-    expect(await call("/__youi/query?kind=discover&q=toast", { mw: bare })).toMatchObject({ status: 404, body: { error: expect.stringMatching(/youi discover sync/) } });
+    expect(await call("/__youi/query?kind=history", { mw: bare })).toMatchObject({ status: 404, body: { error: expect.stringMatching(/youiyoux inventory/) } });
+    expect(await call("/__youi/query?kind=discover&q=toast", { mw: bare })).toMatchObject({ status: 404, body: { error: expect.stringMatching(/youiyoux discover sync/) } });
     expect(existsSync(empty)).toBe(false);
   });
 

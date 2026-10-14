@@ -17,7 +17,7 @@ import type { ElementHit, Signal } from "./score.ts";
 import { siteSignals, type PageFacts } from "./site-signals.ts";
 
 /** The one line printed before the headless shell is downloaded. */
-export const DOWNLOAD_NOTICE = "youi detect: downloading Chromium headless shell (~100 MB, once)";
+export const DOWNLOAD_NOTICE = "youiyoux detect: downloading Chromium headless shell (~100 MB, once)";
 export const SCREENSHOT_DIR = "screenshots";
 const TRIGGER_ATTR = "data-youi-trigger";
 
@@ -45,7 +45,7 @@ export interface BrowserPurpose {
   readonly command: string;
 }
 
-export const WEBSITE_DETECTION: BrowserPurpose = { what: "website detection", command: "youi detect" };
+export const WEBSITE_DETECTION: BrowserPurpose = { what: "website detection", command: "youiyoux detect" };
 
 /** What launchBrowser does to the outside world, replaceable in tests. */
 export interface LaunchDeps {
@@ -64,7 +64,7 @@ export function playwrightCli(): string {
   return join(dirname(createRequire(import.meta.url).resolve("playwright-core/package.json")), "cli.js");
 }
 
-/** The installer's output goes to stderr, so `youi detect --json` keeps a clean stdout. */
+/** The installer's output goes to stderr, so `youiyoux detect --json` keeps a clean stdout. */
 function spawnToStderr(command: string, args: readonly string[]): Promise<number> {
   return new Promise((resolve, reject) => {
     const child = spawnChild(command, args, { stdio: ["ignore", 2, 2] });
@@ -190,7 +190,7 @@ export function siteCoverage(pages: readonly DetectPage[], expose: boolean): str
 
 /** Detect the libraries behind one or more pages. Each URL is a page crawled; nothing else on the site is. */
 export async function siteReport(urls: readonly string[], options: SiteOptions): Promise<DetectReport> {
-  if (urls.length === 0) throw new Error("youi detect needs at least one URL");
+  if (urls.length === 0) throw new Error("youiyoux detect needs at least one URL");
   for (const url of urls) if (!/^https?:\/\//.test(url)) throw new Error(`${url} is not an http(s) URL`);
   await rm(join(options.out, SCREENSHOT_DIR), { recursive: true, force: true });
   await mkdir(join(options.out, SCREENSHOT_DIR), { recursive: true });

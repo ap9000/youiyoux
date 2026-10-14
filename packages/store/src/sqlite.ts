@@ -2,22 +2,30 @@
  * The local engine: node:sqlite (Node 24), one file, WAL so a reader (the MCP server, the
  * hub) never waits on a writer. Search is FTS5 (`porter unicode61`), kept in step with the
  * listings by triggers and ranked by bm25. The file is a cache: VACUUM is never run (it could
- * renumber the rowids the full-text index points at); `youi index rebuild` makes a new one.
+ * renumber the rowids the full-text index points at); `youiyoux index rebuild` makes a new one.
  */
 import { mkdirSync, statSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname } from "node:path";
-import { DatabaseSync, type SQLInputValue, type StatementSync } from "node:sqlite";
+import type { DatabaseSync as Database, SQLInputValue, StatementSync } from "node:sqlite";
 import { Lock, searchTerms, type Adapter, type Param } from "./driver.ts";
 import { SqlStore } from "./store.ts";
 
 const STATEMENT_CACHE = 200;
+
+/** node:sqlite, loaded on first open: a command that never opens the index (youiyoux's report) runs where it is missing (Node 20). */
+let sqlite: { DatabaseSync: typeof Database } | null = null;
+function openDatabase(...args: ConstructorParameters<typeof Database>): Database {
+  sqlite ??= createRequire(import.meta.url)("node:sqlite") as { DatabaseSync: typeof Database };
+  return new sqlite.DatabaseSync(...args);
+}
 
 /** Words as an FTS5 OR-list, each quoted, so FTS5 reads it as a plain token, never as syntax. */
 const words = (terms: readonly string[]): string => searchTerms(terms).map((t) => `"${t.replace(/"/g, "")}"`).join(" OR ");
 
 export function sqliteAdapter(path: string, options: { readOnly?: boolean } = {}): Adapter {
   if (!options.readOnly && path !== ":memory:") mkdirSync(dirname(path), { recursive: true });
-  const db = new DatabaseSync(path, { timeout: 5_000, readOnly: options.readOnly ?? false });
+  const db = openDatabase(path, { timeout: 5_000, readOnly: options.readOnly ?? false });
   if (!options.readOnly) db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;");
   const statements = new Map<string, StatementSync>();
   const prepare = (sql: string): StatementSync => {
@@ -128,7 +136,7 @@ export async function openSqlite(path: string, options: { readOnly?: boolean } =
 
 /** Seal a replacement file before publishing it; no WAL contents remain outside the file. */
 export function checkpointSqlite(path: string): void {
-  const db = new DatabaseSync(path);
+  const db = openDatabase(path);
   try {
     const result = db.prepare("PRAGMA wal_checkpoint(TRUNCATE)").get();
     if (Number(result?.busy ?? 0)) throw new Error("Index checkpoint is busy; retry rebuild");

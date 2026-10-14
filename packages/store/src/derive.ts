@@ -113,7 +113,7 @@ export interface ProjectGraphInput {
   readonly project: string;
   readonly rules: readonly Pick<RuleSpec, "id" | "title" | "statement" | "agent" | "check" | "severity">[];
   readonly components: ReadonlyArray<{ readonly id: string; readonly name: string }>;
-  /** The usage map's sites (`youi scan`), as much of them as the graph needs. */
+  /** The usage map's sites (`youiyoux scan`), as much of them as the graph needs. */
   readonly usage: { readonly usages: ReadonlyArray<Pick<ScanReport["usages"][number], "element" | "file"> & { readonly routes: readonly string[] }> } | null;
 }
 

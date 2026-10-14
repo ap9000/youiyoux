@@ -11,7 +11,7 @@ const DEMO_APP = join(TOOL, "examples/demo-app");
 const DEMO_DESIGN = join(TOOL, "examples/demo-design");
 
 describe("snapshot source", () => {
-  // `youi ui --config C --root T`: a pilot config kept beside the design repo, its product elsewhere.
+  // `youiyoux ui --config C --root T`: a pilot config kept beside the design repo, its product elsewhere.
   test("--config with --root and no --project scans the product --root names for the usage map", async () => {
     const dir = await mkdtemp(join(tmpdir(), "youi-pilot-"));
     try {
@@ -64,7 +64,7 @@ describe("snapshot source", () => {
 describe("snapshot specimens: stylesheets and their order", () => {
   const SERVED = join(TOOL, "packages/scanner/test/fixtures/inventory/served");
 
-  // `youi ui --config C` with `root`: the product's stylesheets listed beside the design repo, the product never edited.
+  // `youiyoux ui --config C` with `root`: the product's stylesheets listed beside the design repo, the product never edited.
   test("specimens.css in a --config kept outside the product is used for the product its root names, and the order is printed", async () => {
     const dir = await mkdtemp(join(tmpdir(), "youi-pilot-css-"));
     const previous = process.env.YOUI_SPECIMEN_CACHE;

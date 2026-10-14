@@ -5,7 +5,7 @@
  *
  *   node packages/store/bench/library.ts [--items 100000] [--looks 5000] [--runs 5] [--engines sqlite,pglite] [--json]
  *
- * A search is what `youi discover "<need>"` and discover_search do: the store narrows the
+ * A search is what `youiyoux discover "<need>"` and discover_search do: the store narrows the
  * listings by full-text match (at most 400 per source class), the scorer ranks them, the first
  * page is shaped for output. Each of 20 needs runs `--runs` times after one warm-up; p50, p95
  * and max are over every run. It also times where_used and swap_impact on the 5,000-look graph.

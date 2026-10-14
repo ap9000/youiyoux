@@ -1,5 +1,5 @@
 import { cleanData as safe } from "@youiyoux/discover";
-/** Terminal output for `youi discover`: the sync summary, ranked candidates, and one candidate in full. */
+/** Terminal output for `youiyoux discover`: the sync summary, ranked candidates, and one candidate in full. */
 import type { DiscoverSearch, DiscoverShow, SyncSummary } from "@youiyoux/discover";
 import { ms, padEnd, plural, style, truncate } from "./ui.ts";
 
@@ -40,7 +40,7 @@ export function renderDiscoverSearch(result: DiscoverSearch): string {
   result = safe(result);
   const header = `${style.bold("Discover")} ${style.dim(`· ${plural(result.matched, "match", "matches")} for "${result.need}"${result.concepts.length ? ` (${result.concepts.join(", ")})` : ""} in ${plural(result.total, "candidate")} · index ${result.indexBuiltAt.slice(0, 10)}`)}`;
   const facets = result.facets ? [style.dim(`  ${facetLine(result.facets)}`)] : [];
-  if (result.hits.length === 0) return [header, ...facets, "", style.dim("  nothing matched: try another word for it, or run youi discover sync to refresh the index"), "", style.dim(result.note)].join("\n");
+  if (result.hits.length === 0) return [header, ...facets, "", style.dim("  nothing matched: try another word for it, or run youiyoux discover sync to refresh the index"), "", style.dim(result.note)].join("\n");
   const width = Math.min(40, Math.max(...result.hits.map((h) => (h.source.ref ?? h.name).length)));
   const rows = result.hits.flatMap((h) => {
     const s = h.signals;
@@ -49,7 +49,7 @@ export function renderDiscoverSearch(result: DiscoverSearch): string {
   });
   const from = result.offset ?? 0;
   const more = result.matched > from + result.hits.length ? style.dim(`  ${from + 1}–${from + result.hits.length} of ${result.matched}: --offset ${from + result.hits.length} for more`) : null;
-  return [header, ...facets, "", ...rows, ...(more ? ["", more] : []), "", style.dim(`youi discover show <ref> for provenance and dependencies. ${result.note}`)].join("\n");
+  return [header, ...facets, "", ...rows, ...(more ? ["", more] : []), "", style.dim(`youiyoux discover show <ref> for provenance and dependencies. ${result.note}`)].join("\n");
 }
 
 export function renderDiscoverShow(result: DiscoverShow): string {

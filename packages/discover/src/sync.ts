@@ -1,5 +1,5 @@
 /**
- * `youi discover sync` reads the official shadcn registry, the directory and selected
+ * `youiyoux discover sync` reads the official shadcn registry, the directory and selected
  * community registries, the headless catalogs (for category names) and npm, then refreshes
  * signals and writes the index. Each file is written whole and atomically, so a reader
  * sees the last index or the new one, never half of one.

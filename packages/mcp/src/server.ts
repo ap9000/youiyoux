@@ -4,9 +4,9 @@
  *   system_*   approved elements: build with these (contracts, tokens, rules,
  *              where-used, check) and plan a change to them.
  *   library_*  ingested references: browse and draft an adoption request only.
- *   discover_* candidates from the local Discover index (`youi discover sync` builds it):
+ *   discover_* candidates from the local Discover index (`youiyoux discover sync` builds it):
  *              search by need and show one; read-only, they never fetch.
- *   index_*    the local index's graph (`youi inventory`, `youi scan`, `youi index rebuild`
+ *   index_*    the local index's graph (`youiyoux inventory`, `youiyoux scan`, `youiyoux index rebuild`
  *              fill it): where an inventory family is used, what swapping a candidate in
  *              for one would touch, what a rule covers. A few plain lines each.
  *   ui_find_component  call before writing UI: the project's own components that fit a need
@@ -150,7 +150,7 @@ export function createServer(options: ServerOptions): McpServer {
   const catalog = () => readCatalog(discoverDir, indexPath);
   /** The store for the index_* tools. A store that does not exist yet is not created here: it says what fills it. */
   async function graph(): Promise<Store> {
-    if (!process.env.DATABASE_URL && !existsSync(indexPath)) throw new Error(`no local index at ${storeLocation({ path: indexPath })}: run youi inventory (families), youi scan (rules and usage) or youi index rebuild`);
+    if (!process.env.DATABASE_URL && !existsSync(indexPath)) throw new Error(`no local index at ${storeLocation({ path: indexPath })}: run youiyoux inventory (families), youiyoux scan (rules and usage) or youiyoux index rebuild`);
     return sharedStore(indexPath, process.env, { readOnly: true });
   }
 
@@ -204,7 +204,7 @@ export function createServer(options: ServerOptions): McpServer {
 
   server.registerTool(
     "system_get_rules" satisfies McpTool,
-    { title: "Get System rules", description: "Every System rule that is on: severity, whether `youi check` enforces it (execution: enforced, advisory or unsupported), the instruction to follow, and a bad/good example. Follow advisory and unsupported rules yourself: nothing checks them.", inputSchema: {}, annotations: READ_ONLY },
+    { title: "Get System rules", description: "Every System rule that is on: severity, whether `youiyoux check` enforces it (execution: enforced, advisory or unsupported), the instruction to follow, and a bad/good example. Follow advisory and unsupported rules yourself: nothing checks them.", inputSchema: {}, annotations: READ_ONLY },
     guard(async () => ({ rules: ruleRows(await state.loadProject()) })),
   );
 
@@ -339,12 +339,12 @@ export function createServer(options: ServerOptions): McpServer {
   };
   const knownFamilies = async (store: Store): Promise<string> => {
     const { rows, total } = await store.families({ limit: 12 });
-    return total ? `known: ${rows.map((f) => f.id).join(", ")}${total > rows.length ? ", …" : ""}` : "no inventory recorded: run youi inventory";
+    return total ? `known: ${rows.map((f) => f.id).join(", ")}${total > rows.length ? ", …" : ""}` : "no inventory recorded: run youiyoux inventory";
   };
 
   server.registerTool(
     "index_where_used" satisfies McpTool,
-    { title: "Where an inventory family is used", description: "Where one inventory family (a look the project builds, e.g. button-2 from youi inventory) is used: its files and routes, walked through the local index's graph, and the families it is a near-duplicate of. About ten plain lines.", inputSchema: { project: z.string().min(1).optional(), family: z.string().min(1).describe("An inventory family id, e.g. button-2") }, annotations: READ_ONLY },
+    { title: "Where an inventory family is used", description: "Where one inventory family (a look the project builds, e.g. button-2 from youiyoux inventory) is used: its files and routes, walked through the local index's graph, and the families it is a near-duplicate of. About ten plain lines.", inputSchema: { project: z.string().min(1).optional(), family: z.string().min(1).describe("An inventory family id, e.g. button-2") }, annotations: READ_ONLY },
     lines(async ({ family, project }) => {
       const store = await graph();
       const where = await store.whereUsed(family.trim(), { project: project ?? (await defaultProject(store)) });
@@ -368,11 +368,11 @@ export function createServer(options: ServerOptions): McpServer {
 
   server.registerTool(
     "index_rule_covers" satisfies McpTool,
-    { title: "What a System rule covers", description: "The System components a rule governs, and the files and routes that use them, from the local index's graph (youi scan records the rules and the usage map). About ten plain lines.", inputSchema: { project: z.string().min(1).optional(), rule: z.string().min(1).describe("A rule id, full (youi:demo/rule/color.no-raw-color) or short (color.no-raw-color)") }, annotations: READ_ONLY },
+    { title: "What a System rule covers", description: "The System components a rule governs, and the files and routes that use them, from the local index's graph (youiyoux scan records the rules and the usage map). About ten plain lines.", inputSchema: { project: z.string().min(1).optional(), rule: z.string().min(1).describe("A rule id, full (youi:demo/rule/color.no-raw-color) or short (color.no-raw-color)") }, annotations: READ_ONLY },
     lines(async ({ rule, project }) => {
       const store = await graph();
       const covers = await store.ruleCovers(rule.trim(), { project: project ?? (await defaultProject(store)) });
-      if (!covers) throw new Error(`no rule "${rule}" in the index: youi scan records the project's rules and usage`);
+      if (!covers) throw new Error(`no rule "${rule}" in the index: youiyoux scan records the project's rules and usage`);
       if ("choices" in covers) return ["Choose a project or full node id:", ...covers.choices.slice(0, 8).map((n) => `${n.project ?? "unknown"} · ${n.id}`)].join("\n");
       const spec = await state.loadProject().then((p) => p.system.rules.find((r) => r.id === covers.rule), () => undefined);
       return ruleCoversText(covers, spec ? { title: spec.title, severity: spec.severity, files: spec.files } : {});

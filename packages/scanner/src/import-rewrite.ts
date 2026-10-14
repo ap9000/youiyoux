@@ -2,7 +2,7 @@
  * The import pass of a migration: an element's implementation file renames or removes an export.
  *
  * A name counts only if it resolves (through barrels, `export *` and re-exports) to the element's
- * vendored file under the old name, before `youi sync` or after it, when the old name no longer
+ * vendored file under the old name, before `youiyoux sync` or after it, when the old name no longer
  * resolves and the chain is followed to that file instead. Lookalikes that resolve elsewhere are
  * never touched, nor are vendored implementation files. Rewritten:
  *   import specifiers  named, aliased, default (`{ default as Card }`), type-only, keeping `type`

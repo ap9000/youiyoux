@@ -28,7 +28,7 @@ describe("rule execution in the hub", () => {
   });
 
   test("built-in, advisory and off rules read the same model as the CLI", () => {
-    expect(checkLabel(rule({}))).toBe("Checked by youi check (raw-color)");
+    expect(checkLabel(rule({}))).toBe("Checked by youiyoux check (raw-color)");
     expect(executionOf(rule({ check: { engine: "advisory" } })).state).toBe("advisory");
     expect(executionOf(rule({ severity: "off" })).state).toBe("off");
   });

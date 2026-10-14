@@ -1,5 +1,5 @@
 /**
- * Inventory: every UI element across the inventoried projects, from `youi inventory`, laid out
+ * Inventory: every UI element across the inventoried projects, from `youiyoux inventory`, laid out
  * around their specimens. Filters (type, library or kit, project, near-duplicates, search) sit
  * on top and live in the URL; then a headline: how many families there are and could be, and
  * the top three fixes; then the specimen wall, one row per role, each family a tile with its
@@ -51,7 +51,7 @@ export function InventoryView({ inventory, detect = null }: { inventory: Invento
       <div className="flex min-h-0 flex-1 flex-col">
         <PaneHeader title="Inventory" count={0} />
         <EmptyState icon={ScanSearch} title={index ? "No elements found" : "No inventory yet"}>
-          {index ? "The inventoried projects render no buttons, inputs, cards, badges, dialogs or tabs this scanner recognises." : "Run youi inventory --project <dir> (once per project), then open the hub with youi ui --inventory .youi/inventory.json."}
+          {index ? "The inventoried projects render no buttons, inputs, cards, badges, dialogs or tabs this scanner recognises." : "Run youiyoux inventory --project <dir> (once per project), then open the hub with youiyoux ui --inventory .youi/inventory.json."}
         </EmptyState>
       </div>
     );

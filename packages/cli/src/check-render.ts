@@ -25,7 +25,7 @@ export function renderCheckText(result: CheckResult): string {
     const gone = comparison.fixed.reduce((n, f) => n + f.gone, 0);
     lines.push(
       style.dim(`baseline ${file}: ${plural(comparison.known.length, "known violation")} accepted · ${comparison.new.length} new · ${comparison.regressed.length} regressed`),
-      ...(gone > 0 ? [style.ok(`  ${plural(gone, "baselined violation")} fixed: run \`youi baseline\` to ratchet it down`)] : []),
+      ...(gone > 0 ? [style.ok(`  ${plural(gone, "baselined violation")} fixed: run \`youiyoux baseline\` to ratchet it down`)] : []),
       ...(recorded.definitions !== result.identity.definitions ? [style.dim(`  recorded against definitions ${recorded.definitions}; checking ${result.identity.definitions}`)] : []),
     );
   }
@@ -83,10 +83,10 @@ export function githubSummary(result: CheckResult): string {
     ["Tool", `\`${identity.tool}\``],
     ["Baseline", baselineRow],
   ];
-  return [`### youi check: ${verdict}`, "", "| | |", "|---|---|", ...rows.map(([k, v]) => `| ${k} | ${v} |`), ""].join("\n");
+  return [`### youiyoux check: ${verdict}`, "", "| | |", "|---|---|", ...rows.map(([k, v]) => `| ${k} | ${v} |`), ""].join("\n");
 }
 
-/* ------------------------------------------------------------ youi check --diff */
+/* ------------------------------------------------------------ youiyoux check --diff */
 
 const KIND_LABEL: Record<DiffFinding["kind"], string> = { "near-duplicate": "near-duplicate", "hardcoded-value": "hardcoded value", "off-library": "off-library import", rule: "rule" };
 
@@ -106,10 +106,10 @@ export const diffFindingLine = (f: DiffFinding): string => `${f.file}:${f.line}:
 /** `hardcoded value (also rule raw-color)`, or `rule raw-color` for a plain rule violation. */
 const kindOf = (f: DiffFinding): string => (f.kind === "rule" ? `rule ${f.rule}` : `${KIND_LABEL[f.kind]}${f.rule ? ` (also rule ${f.rule})` : ""}`);
 
-/** `youi check --diff` in a terminal: each finding with its fix, then what to do next. */
+/** `youiyoux check --diff` in a terminal: each finding with its fix, then what to do next. */
 export function renderDiffText(result: DiffCheckResult): string {
   const diff = result.diff!;
-  const lines: string[] = [style.dim(`youi check --diff against ${diff.base}: ${plural(diff.files.length, "changed file")}`)];
+  const lines: string[] = [style.dim(`youiyoux check --diff against ${diff.base}: ${plural(diff.files.length, "changed file")}`)];
   for (const [file, list] of Map.groupBy(diff.findings, (f) => f.file)) {
     lines.push(style.bold(file));
     for (const f of list) {
@@ -121,9 +121,9 @@ export function renderDiffText(result: DiffCheckResult): string {
   for (const gap of gaps) lines.push(style.warn(`! incomplete: ${gap}`));
   for (const note of diff.notes) lines.push(style.dim(`note: ${note}`));
   lines.push("");
-  if (diff.findings.length > 0) lines.push(style.error(`✖ ${plural(diff.findings.length, "finding")} in this change: apply each fix (→), then run \`youi check --diff\` again`));
-  else if (gaps.length > 0) lines.push(style.warn("! Not a pass: parts of this change could not be checked (above). Fix what could not be read, then run `youi check --diff` again"));
-  else if (diff.files.length === 0) lines.push(style.ok(`✓ No checked files changed against ${diff.base}: nothing to check. Compare with a branch: youi check --diff main`));
+  if (diff.findings.length > 0) lines.push(style.error(`✖ ${plural(diff.findings.length, "finding")} in this change: apply each fix (→), then run \`youiyoux check --diff\` again`));
+  else if (gaps.length > 0) lines.push(style.warn("! Not a pass: parts of this change could not be checked (above). Fix what could not be read, then run `youiyoux check --diff` again"));
+  else if (diff.files.length === 0) lines.push(style.ok(`✓ No checked files changed against ${diff.base}: nothing to check. Compare with a branch: youiyoux check --diff main`));
   else lines.push(style.ok(`✓ No drift in this change: ${plural(diff.files.length, "file")} checked against ${diff.base}. Nothing to fix`));
   return lines.join("\n");
 }
@@ -139,22 +139,22 @@ export function diffJson(result: DiffCheckResult): Record<string, unknown> {
     incomplete: result.incomplete,
     gaps: diffGaps(result),
     notes: diff.notes,
-    next: diff.findings.length > 0 ? "apply each finding's fix, then run youi check --diff again" : result.incomplete ? "not a pass: fix what could not be checked (gaps), then run youi check --diff again" : "nothing to fix",
+    next: diff.findings.length > 0 ? "apply each finding's fix, then run youiyoux check --diff again" : result.incomplete ? "not a pass: fix what could not be checked (gaps), then run youiyoux check --diff again" : "nothing to fix",
     identity: result.identity,
   };
 }
 
-/** PR annotations for `youi check --diff --format github`: one per finding on its added line, plus what could not be checked. */
+/** PR annotations for `youiyoux check --diff --format github`: one per finding on its added line, plus what could not be checked. */
 export function githubDiffAnnotations(result: DiffCheckResult, prefix: string): string[] {
   const lines = (result.diff?.findings ?? []).map((f) => command(f.severity === "error" ? "error" : "warning", `${f.message} Fix: ${f.fix}`, { file: `${prefix}${f.file}`, line: f.line, col: f.column, title: `youi ${kindOf(f)}` }));
   for (const gap of diffGaps(result)) lines.push(command("error", `${gap}; a clean result here is not a pass`, { title: "youi incomplete" }));
   return lines;
 }
 
-/** Markdown for $GITHUB_STEP_SUMMARY after `youi check --diff`. */
+/** Markdown for $GITHUB_STEP_SUMMARY after `youiyoux check --diff`. */
 export function githubDiffSummary(result: DiffCheckResult): string {
   const diff = result.diff!;
   const verdict = diff.findings.length > 0 ? `❌ ${plural(diff.findings.length, "finding")}` : result.incomplete ? "⚠️ incomplete" : "✅ no drift";
   const byKind = [...Map.groupBy(diff.findings, (f) => KIND_LABEL[f.kind])].map(([kind, list]) => `${list.length} ${kind}`).join(" · ") || "none";
-  return [`### youi check --diff: ${verdict}`, "", "| | |", "|---|---|", `| Base | ${diff.base} |`, `| Changed files | ${diff.files.length} |`, `| Findings | ${byKind} |`, result.identity ? `| Rules | \`${result.identity.system.id}@${result.identity.system.version}\`, definitions \`${result.identity.definitions}\` |` : "| Rules | Repository inference; run youi init --design <dir> for rules |", ""].join("\n");
+  return [`### youiyoux check --diff: ${verdict}`, "", "| | |", "|---|---|", `| Base | ${diff.base} |`, `| Changed files | ${diff.files.length} |`, `| Findings | ${byKind} |`, result.identity ? `| Rules | \`${result.identity.system.id}@${result.identity.system.version}\`, definitions \`${result.identity.definitions}\` |` : "| Rules | Repository inference; run youiyoux init --design <dir> for rules |", ""].join("\n");
 }

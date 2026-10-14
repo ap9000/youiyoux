@@ -1,5 +1,5 @@
 /**
- * Library > Stack: the UI libraries a repo or website uses, as `youi detect` found them. Each
+ * Library > Stack: the UI libraries a repo or website uses, as `youiyoux detect` found them. Each
  * library with its confidence and evidence, each element type with its screenshot, what the
  * report covers, and packages declared but never imported. "Add to Library" drafts a
  * youi.library/v1 item from an element, to copy or download: nothing is written from here.
@@ -243,8 +243,8 @@ export function StackEmpty() {
   return (
     <EmptyState icon={FileSearch} title="No stack detected yet">
       <p>
-        Run <span className="font-mono text-mono-sm text-ink">youi detect &lt;repo-path|url…&gt;</span> to find which UI libraries a repo or website uses, then open the hub with{" "}
-        <span className="font-mono text-mono-sm text-ink">youi ui --detect .youi/detect/detect.json</span>.
+        Run <span className="font-mono text-mono-sm text-ink">youiyoux detect &lt;repo-path|url…&gt;</span> to find which UI libraries a repo or website uses, then open the hub with{" "}
+        <span className="font-mono text-mono-sm text-ink">youiyoux ui --detect .youi/detect/detect.json</span>.
       </p>
     </EmptyState>
   );

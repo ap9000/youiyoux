@@ -1,4 +1,4 @@
-/** `youi scan`: discover → parse (ast-grep, in parallel) → resolve identity → attribute routes → check. */
+/** `youiyoux scan`: discover → parse (ast-grep, in parallel) → resolve identity → attribute routes → check. */
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { findFiles, readTextOrNull, sha256, shortHash, type CheckIdentity, type ScanReport, type UnknownSite, type UsageSite, type Lookalike } from "@youiyoux/core";

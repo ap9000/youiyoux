@@ -218,7 +218,7 @@ export async function searchDiscover(query: DiscoverQuery, options: { base?: str
   }
   listings ??= discoverListingsFile().then((file) => (file ? loadDiscoverListings<ListingsFile>(file) : null));
   const file = await listings.catch(() => null);
-  if (!file) throw new NoListings("No Discover listings here: run youi discover sync, then open the hub with youi ui (its own server reads the local index).");
+  if (!file) throw new NoListings("No Discover listings here: run youiyoux discover sync, then open the hub with youiyoux ui (its own server reads the local index).");
   return searchListings(file, query, limit);
 }
 

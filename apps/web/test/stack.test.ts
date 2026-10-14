@@ -50,10 +50,10 @@ describe("Library > Stack", () => {
     expect(screen.getAllByText("Found in the code: no screenshot").length).toBe(report.elements.length);
   });
 
-  test("with no report, the empty state explains youi detect", () => {
+  test("with no report, the empty state explains youiyoux detect", () => {
     render(createElement(StackEmpty));
     expect(screen.getByText("No stack detected yet")).toBeTruthy();
-    expect(document.body.textContent).toContain("youi detect <repo-path|url…>");
-    expect(document.body.textContent).toContain("youi ui --detect");
+    expect(document.body.textContent).toContain("youiyoux detect <repo-path|url…>");
+    expect(document.body.textContent).toContain("youiyoux ui --detect");
   });
 });

@@ -7,7 +7,7 @@ import "./styles/app.css";
 
 // Fetch the snapshot while React mounts; on repeat visits it comes from Cache Storage.
 startModel();
-// Keep the rule editor's key from the link `youi ui` printed, whichever page it opens.
+// Keep the rule editor's key from the link `youiyoux ui` printed, whichever page it opens.
 sessionKey();
 
 const root = document.getElementById("root");

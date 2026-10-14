@@ -330,13 +330,13 @@ describe("Save to Library and Add to my project (c4)", () => {
     expect(text(within(actions).getByRole("status"))).toContain("Adoption request drafted for approval");
   });
 
-  test("without the workflow service, both say it needs youi ui --project", async () => {
+  test("without the workflow service, both say it needs youiyoux ui --project", async () => {
     service = "down";
     show("?q=command%20menu");
     await waitFor(() => expect(card("lib:shadcn/component/command")).not.toBeNull());
     fireEvent.click(within(card("lib:shadcn/component/command")).getByRole("button", { name: /^Preview Command in your theme/ }));
     const drawer = await screen.findByTestId("candidate-drawer");
-    await waitFor(() => expect(text(within(drawer).getByTestId("candidate-actions"))).toContain("youi ui --project"));
+    await waitFor(() => expect(text(within(drawer).getByTestId("candidate-actions"))).toContain("youiyoux ui --project"));
     const actions = within(drawer).getByTestId("candidate-actions");
     expect(within(actions).getByRole("button", { name: /Save to Library/ }).hasAttribute("disabled")).toBe(true);
     expect(within(actions).getByRole("button", { name: /Add to my project/ }).hasAttribute("disabled")).toBe(true);

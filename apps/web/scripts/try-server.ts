@@ -29,7 +29,7 @@ const VITE_DENY = [".env", ".env.*", "*.{crt,pem,key,p12,pfx,cer,der}", ".npmrc"
 /**
  * `server.fs.deny` for a hub whose snapshot is `snapshot`: Vite's defaults and the snapshot's
  * try.json. The dev server serves any file under its root (apps/web, where the committed snapshot
- * and `youi ui`'s .hub live) and, through /@fs/, the workspace; a denied file is refused on every
+ * and `youiyoux ui`'s .hub live) and, through /@fs/, the workspace; a denied file is refused on every
  * route (root, /@fs/, an alias, `?import` or `?raw`), case-insensitively. Glob characters in the
  * path are escaped.
  */
