@@ -1,8 +1,17 @@
 {
   "name": "youiyoux",
   "version": "0.1.0",
-  "description": "A shareable report on any repo's UI with no setup: npx youiyoux. Components, near-duplicates, hardcoded values a token holds, off-library imports and the top fixes; plus the youi CLI.",
+  "description": "Your agent rebuilds components you already have. youiyoux catches it: npx youiyoux turns any repo into a shareable report of near-duplicate components, hardcoded token values and off-library imports, with the fixes.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ap9000/youiyoux.git",
+    "directory": "packages/youiyoux"
+  },
+  "homepage": "https://github.com/ap9000/youiyoux#readme",
+  "bugs": {
+    "url": "https://github.com/ap9000/youiyoux/issues"
+  },
   "type": "module",
   "bin": {
     "youiyoux": "./dist/youiyoux.js",
@@ -20,8 +29,14 @@
     "design-system",
     "ui",
     "components",
+    "ai-agents",
+    "claude-code",
+    "codex",
+    "cursor",
+    "mcp",
     "tailwind",
     "shadcn",
+    "react",
     "audit"
   ],
   "scripts": {
