@@ -55,6 +55,8 @@ export interface Finding {
   /** A near-duplicate's keeper sentence and every file's step (`next` lists the first few). */
   readonly lead?: string;
   readonly steps?: readonly string[];
+  /** A near-duplicate's distinct exported components (the kept one and the copies). */
+  readonly exported?: number;
 }
 
 export interface ComponentUse {
@@ -104,6 +106,8 @@ export interface ReportTotals {
   readonly definitions: number;
   readonly uses: number;
   readonly nearDuplicates: number;
+  /** Near-duplicate groups with two or more exported components: the card's and summary's headline. */
+  readonly componentDuplicates: number;
   readonly hardcoded: number;
   readonly offLibrary: number;
 }
@@ -333,6 +337,10 @@ function topNext(f: Finding): string {
   return `${text.charAt(0).toLowerCase()}${text.slice(1).replace(/\.$/, "")}`;
 }
 
+/** The rule behind the headline duplicate count, said once wherever that count is shown. */
+export const DUPLICATE_RULE = "Duplicated components: groups of 2+ exported components that look alike or share a name.";
+export const isComponentDuplicate = (f: Finding): boolean => (f.exported ?? 0) >= 2;
+
 /** The five plain-English lines printed and put at the top of every output. */
 export function summaryLines(model: Pick<ReportModel, "repo" | "totals" | "topFixes" | "projects">): string[] {
   const t = model.totals;
@@ -341,7 +349,7 @@ export function summaryLines(model: Pick<ReportModel, "repo" | "totals" | "topFi
   return [
     `${model.repo}: ${plural(t.projects, "project")}, ${plural(t.files, "file")} scanned; UI libraries: ${t.libraries.length > 0 ? t.libraries.join(", ") : "none found"}.`,
     `Components: ${t.definitions} defined, ${plural(t.uses, "button, input, card or other UI element", "buttons, inputs, cards and other UI elements")} in use${top ? `; most used: ${top.name} (${plural(top.uses, "use")})` : ""}.`,
-    `Near-duplicates: ${plural(t.nearDuplicates, "group")} of components that look the same but are built more than once.`,
+    `Near-duplicates: ${plural(t.nearDuplicates, "group")} of UI that looks the same but is built more than once; ${t.componentDuplicates} of them between exported components.`,
     `Hardcoded values: ${plural(t.hardcoded, "colour, spacing or radius", "colours, spacings and radii")} a theme token already holds; off-library imports: ${t.offLibrary}.`,
     first ? `Top fix: ${first.title.replace(/\.$/, "")}; ${topNext(first)}.` : `Nothing to fix first; next: ${NPX} agents install, so your agent keeps it that way.`,
   ];
@@ -374,6 +382,7 @@ export async function buildReportModel(dir: string, options: ModelOptions = {}):
     definitions: projects.reduce((n, p) => n + p.definitions, 0),
     uses: projects.reduce((n, p) => n + p.uses, 0),
     nearDuplicates: near.length,
+    componentDuplicates: near.filter(isComponentDuplicate).length,
     hardcoded: projects.reduce((n, p) => n + p.hardcoded.reduce((m, f) => m + f.count, 0), 0),
     offLibrary: projects.reduce((n, p) => n + p.offLibrary.reduce((m, f) => m + f.count, 0), 0),
   };

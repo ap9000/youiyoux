@@ -1,26 +1,36 @@
 # youiyoux
 
-A shareable report on any repo's UI, with no setup:
+**Your agent rebuilds components you already have. youiyoux catches it.**
+
+UI context and verification for coding agents: it tells the agent what your repo already has before
+it writes UI, then checks what it wrote.
 
 ```sh
-npx youiyoux            # in a repo: scan it, write the report
-npx youiyoux path/to/repo
+npx youiyoux              # scan this repo
+npx youiyoux path/to/repo # or another one; --out <dir> writes elsewhere
 ```
 
-It prints five plain-English lines and writes three files to the repo (or `--out <dir>`), and nothing else:
+No config, no account. You get:
 
-| File | What |
-| --- | --- |
-| `youiyoux-report.html` | One self-contained page (no network requests, light and dark, readable on a phone): projects (one section per workspace package with UI files), UI libraries, the component inventory, near-duplicate groups, hardcoded values a theme token already holds, off-library imports and the top fixes, each with a concrete next step |
-| `youiyoux-card.png` | A 1200×630 share card with the repo's name and the headline numbers |
-| `youiyoux-summary.md` | A short summary for a README or pull request |
+- `youiyoux-report.html`: near-duplicate components and which to keep, hardcoded values your theme already has, off-library imports, and the top fixes with their next steps. One offline page.
+- `youiyoux-card.png`: a 1200×630 card with the headline numbers.
+- `youiyoux-summary.md`: paste it into a PR or issue.
 
-**Rendered looks.** When a Chromium is installed (the Playwright headless shell, or `YOUI_CHROMIUM`), the most-used components are drawn with the project's own code and CSS and embedded. Otherwise the report says how: `npx youiyoux --render` asks before downloading the headless shell (~100 MB, once); `--yes` allows it without asking. Everything else works without a browser.
+## For your agent
 
-**Safe to share by default.** Paths are relative to the repo. Includes relative paths, component names, class lists, counts and rendered images when available. Captions and fixes omit literal prop values and text content; source lines require `--include-code`. Home paths, usernames, environment or `.env` values, and credentials in URLs are removed. `--include-code` adds source lines and full look captions (keys and tokens in it still removed).
+```sh
+npx youiyoux agents install   # rule in AGENTS.md + CLAUDE.md, MCP server for Claude Code + Codex
+npx youiyoux hooks install    # check after each Claude Code edit, and at git commit
+```
 
-**Set up youiyoux for your agent:** `npx youiyoux agents install` tells Claude Code and Codex to look up the project's existing components before writing new ones. Every other `youiyoux` command runs the same way (`npx youiyoux check --diff`), The `youi` bin remains a silent compatibility alias.
+- `ui_find_component` (MCP): before writing a component, the existing one with its import, props and a real usage.
+- `npx youiyoux check --diff`: after UI edits, what the change adds, each with its fix.
+- `ui_render` (MCP) or `npx youiyoux render <file>`: screenshots light and dark, accessibility issues, a diff against base.
 
-Node 20 or later. Nothing is uploaded, there is no telemetry and no account.
+## Privacy
 
-Specimen images are cached outside the repo in `~/.cache/youiyoux/specimens` (`XDG_CACHE_HOME` overrides `~/.cache`; `YOUI_SPECIMEN_CACHE` overrides the specimen directory). Rendered images show the component as rendered, including visible labels.
+Runs locally; nothing is uploaded, no telemetry. The report includes relative paths, component names, class lists, counts and rendered images when available. No source lines unless `--include-code`; home paths, usernames, env values and credentials are stripped. Rendered looks need a headless Chromium (`--render` offers to download it, ~100 MB, once); specimen images are cached in `~/.cache/youiyoux/specimens`.
+
+Node 20 or later. The `youi` bin is a silent alias.
+
+Docs, agent reference and source: [github.com/ap9000/youiyoux](https://github.com/ap9000/youiyoux)

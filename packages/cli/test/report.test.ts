@@ -48,7 +48,7 @@ describe("youiyoux report: the shadcn-style fixture", () => {
     expect(lines.slice(0, 5)).toEqual([
       "acme-shop: 1 project, 9 files scanned; UI libraries: shadcn/ui, Headless UI, Radix Primitives.",
       "Components: 6 defined, 11 buttons, inputs, cards and other UI elements in use; most used: Button (5 uses).",
-      "Near-duplicates: 1 group of components that look the same but are built more than once.",
+      "Near-duplicates: 1 group of UI that looks the same but is built more than once; 1 of them between exported components.",
       "Hardcoded values: 3 colours, spacings and radii a theme token already holds; off-library imports: 1.",
       expect.stringMatching(/^Top fix: Colour #dc2626 is hardcoded in 2 places; .*use var\(--color-danger\)/),
     ]);

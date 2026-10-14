@@ -38,6 +38,8 @@ export interface GroupFinding {
   /** One per file to change, in order. */
   readonly steps: readonly string[];
   readonly next: string;
+  /** Distinct exported components among the group's definitions (the kept one and the copies); hand-styled elements, CSS classes and file-local components never count. */
+  readonly exported: number;
 }
 
 /** What phase one keeps of a project's parsed modules, so they can be dropped before grouping. */
@@ -402,17 +404,19 @@ export async function nearDuplicateGroups(input: GroupInput): Promise<GroupFindi
     const where = keeperFacts.project.name && importedBy(keeperFacts) > 0 ? `${keeperFacts.project.name}, ${keeperFile}` : keeperFile;
     const lead = kept ? `Keep ${keeperName} (${where})` : `Create ${keeperName} in ${keeperFile} (a new file in ${extract!.where}) with this shape`;
     const [one, many] = KIND_WORDS[kind];
+    // A component Version is an exported one (an inventory definition or a recipe's export); elements and classes are not.
+    const components = new Set([kept, ...copies].flatMap((v) => (v?.kind === "component" ? [v.id] : []))).size;
     findings.push(finding(home.project.dir, `${plural(members.length, one, many)} look the same (${shapeWords(family.shape)}) but are built ${sides.length} ways`, counted.length,
-      [...copies].sort((a, b) => path(a).localeCompare(path(b)) || a.line - b.line).slice(0, SITES_PER_FINDING).map((v) => ({ at: `${path(v)}:${v.line}`, file: path(v), line: v.line })), lead, steps));
+      [...copies].sort((a, b) => path(a).localeCompare(path(b)) || a.line - b.line).slice(0, SITES_PER_FINDING).map((v) => ({ at: `${path(v)}:${v.line}`, file: path(v), line: v.line })), lead, steps, components));
   }
   findings.push(...sameNamed.map((g) => g.finding));
   return findings.sort((a, b) => b.count - a.count || a.title.localeCompare(b.title));
 }
 
-function finding(project: string, title: string, count: number, sites: GroupFinding["sites"], lead: string, steps: readonly string[]): GroupFinding {
+function finding(project: string, title: string, count: number, sites: GroupFinding["sites"], lead: string, steps: readonly string[], exported: number): GroupFinding {
   const shown = steps.slice(0, STEPS_SHOWN);
   const more = steps.length > shown.length ? `; and ${plural(steps.length - shown.length, "more file")} (listed in the report)` : "";
-  return { kind: "near-duplicate", project, title, detail: null, count, sites, lead, steps, next: `${lead}. ${shown.join(". ")}${more}` };
+  return { kind: "near-duplicate", project, title, detail: null, count, sites, lead, steps, next: `${lead}. ${shown.join(". ")}${more}`, exported };
 }
 
 function commonDir(files: readonly string[]): string {
@@ -476,7 +480,7 @@ async function sameNamedGroups(facts: readonly ProjectFacts[], defs: ReadonlyMap
     const lead = how === "same" ? `Keep ${name} (${keeperFile})` : how === "near" ? `Keep one ${name} (${keeperFile}) that takes what differs as props` : `Keep ${name} (${keeperFile}) as the one ${name}`;
     const sites = [keep, ...copies].slice(0, SITES_PER_FINDING).map((d) => ({ at: `${repoPath(dir, d.file)}:${d.line}`, file: repoPath(dir, d.file), line: d.line }));
     const title = how === "different" ? `${name} is defined in ${copies.length + 1} files as different components` : `${name} is defined in ${copies.length + 1} files with ${how === "same" ? "the same" : "near-identical"} structure`;
-    return { ids: [keep, ...copies].map((d) => idOf(d.file)), finding: finding(dir, title, copies.length, sites, lead, steps) };
+    return { ids: [keep, ...copies].map((d) => idOf(d.file)), finding: finding(dir, title, copies.length, sites, lead, steps, [keep, ...copies].filter((d) => d.exported).length) };
   }
   return found;
 }

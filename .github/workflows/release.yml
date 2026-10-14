@@ -1,0 +1,161 @@
+# Publishes the youiyoux package to npm and creates the GitHub Release (docs/releasing.md).
+# Runs on a pushed tag vX.Y.Z (pnpm release pushes one), or by hand for an existing tag to fill in
+# what a failed run left out. Only a tag whose commit is on main publishes.
+#
+# Three jobs, each with only what it needs:
+#   build    contents: read             verify the tag, typecheck, test, pnpm pack, upload the tarball
+#   publish  contents: read, id-token   npm trusted publishing (OIDC, provenance) of that exact tarball,
+#                                       in the `npm` environment, so the owner can require a reviewer
+#   release  contents: write            the GitHub Release with generated notes and the tarball
+# Idempotent: a version already on npm is not published again; an existing Release only gets the
+# tarball re-attached.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to publish, e.g. v0.1.1"
+        required: true
+        type: string
+
+permissions: {}
+
+# One run per tag at a time; a second waits instead of racing the first.
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.verify.outputs.version }}
+      tarball: ${{ steps.pack.outputs.name }}
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - name: The tag is a release tag
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then echo "::error::\"$TAG\" is not a vX.Y.Z tag"; exit 1; fi
+      # Full history, so the tag can be checked against main.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: The tag exists, is checked out, is on main and matches the package version
+        id: verify
+        run: |
+          COMMIT=$(git rev-parse -q --verify "refs/tags/$TAG^{commit}") || { echo "::error::no tag $TAG"; exit 1; }
+          if [ "$(git rev-parse HEAD)" != "$COMMIT" ]; then echo "::error::HEAD is not $TAG"; exit 1; fi
+          if ! git merge-base --is-ancestor "$COMMIT" refs/remotes/origin/main; then echo "::error::$TAG is not on main; only merged commits are released"; exit 1; fi
+          VERSION=$(node -p "require('./packages/youiyoux/package.json').version")
+          if [ "v$VERSION" != "$TAG" ]; then echo "::error::tag $TAG does not match packages/youiyoux/package.json version $VERSION"; exit 1; fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # As in ci.yml: the system libraries for youiyoux detect's Chromium, and the headless shell
+      # youiyoux render's tests draw with.
+      - name: System libraries for youiyoux detect's Chromium
+        run: pnpm --filter @youiyoux/detect exec playwright-core install-deps chromium-headless-shell
+      - name: Headless shell for youiyoux render's tests
+        run: pnpm --filter @youiyoux/scanner exec playwright-core install chromium-headless-shell
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Tests
+        run: pnpm test
+        env:
+          YOUI_DETECT_SITE: "1"
+
+      # pnpm pack builds dist (prepack) and rewrites workspace:* ranges; plain npm pack would not.
+      - name: Pack
+        id: pack
+        working-directory: packages/youiyoux
+        run: |
+          mkdir -p "$RUNNER_TEMP/pack"
+          pnpm pack --pack-destination "$RUNNER_TEMP/pack"
+          TARBALL=$(ls "$RUNNER_TEMP"/pack/youiyoux-*.tgz)
+          if tar -xzOf "$TARBALL" package/package.json | grep -q '"workspace:'; then echo "::error::the packed package.json still has workspace: ranges"; exit 1; fi
+          echo "path=$TARBALL" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$TARBALL")" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tarball
+          path: ${{ steps.pack.outputs.path }}
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Add required reviewers to this environment in the repo settings to approve each publish.
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing and provenance
+    steps:
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1 or later.
+      - name: npm with trusted publishing
+        run: |
+          npm install -g npm@^11.5.1
+          npm --version
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tarball
+          path: ${{ runner.temp }}/pack
+      - name: Publish to npm
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+          TARBALL: ${{ runner.temp }}/pack/${{ needs.build.outputs.tarball }}
+        run: |
+          if [ "$(npm view "youiyoux@$VERSION" version 2>/dev/null)" = "$VERSION" ]; then
+            echo "youiyoux@$VERSION is already on npm; not publishing again."
+          elif [[ "$VERSION" == *-* ]]; then
+            npm publish "$TARBALL" --access public --provenance --tag next
+          else
+            npm publish "$TARBALL" --access public --provenance
+          fi
+
+  release:
+    needs: [build, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # gh release create
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      VERSION: ${{ needs.build.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tarball
+          path: ${{ runner.temp }}/pack
+      - name: GitHub Release
+        env:
+          TARBALL: ${{ runner.temp }}/pack/${{ needs.build.outputs.tarball }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" "$TARBALL" --clobber
+          elif [[ "$VERSION" == *-* ]]; then
+            gh release create "$TAG" "$TARBALL" --title "$TAG" --generate-notes --verify-tag --prerelease
+          else
+            gh release create "$TAG" "$TARBALL" --title "$TAG" --generate-notes --verify-tag
+          fi

@@ -3,7 +3,7 @@
  * summary lines, the headline numbers, the top fixes with their next steps and the agent setup
  * line. Like the HTML, it is written from the cleaned model and holds no code by default.
  */
-import { NPX, type ReportModel } from "./model.ts";
+import { DUPLICATE_RULE, NPX, type ReportModel } from "./model.ts";
 
 const STEPS_SHOWN = 5;
 
@@ -17,9 +17,11 @@ export function renderMarkdown(model: ReportModel, reportFile: string): string {
     "",
     ...model.summary.map((line) => `- ${md(line)}`),
     "",
-    "| Projects | Components | Near-duplicate groups | Hardcoded values | Off-library imports |",
+    "| Projects | Components | Duplicated components | Hardcoded values | Off-library imports |",
     "| ---: | ---: | ---: | ---: | ---: |",
-    `| ${t.projects} | ${t.definitions} | ${t.nearDuplicates} | ${t.hardcoded} | ${t.offLibrary} |`,
+    `| ${t.projects} | ${t.definitions} | ${t.componentDuplicates} | ${t.hardcoded} | ${t.offLibrary} |`,
+    "",
+    md(DUPLICATE_RULE),
     "",
   ];
   if (model.topFixes.length > 0) {

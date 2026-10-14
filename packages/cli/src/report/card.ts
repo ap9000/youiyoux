@@ -17,7 +17,9 @@ const INK = { background: [11, 16, 32], tile: [22, 30, 54], accent: [124, 156, 2
 export interface CardInput {
   readonly repo: string;
   readonly stats: ReadonlyArray<{ readonly value: number; readonly label: readonly string[]; readonly tone?: "warn" | "ok" }>;
-  /** One line under the tiles: the UI libraries found. */
+  /** One small line right under the tiles: what a number counts, when it needs saying. */
+  readonly note?: string;
+  /** One line at the bottom: the UI libraries found. */
   readonly footer: string;
 }
 
@@ -134,6 +136,11 @@ export function drawCard(input: CardInput): Buffer {
       canvas.text(x + 24, top + 28 + 7 * 12 + 26 + n * 30, label.text, label.scale, INK.muted);
     });
   });
+
+  if (input.note) {
+    const note = fit(input.note, inner, 2, 2);
+    canvas.text(margin, top + tileHeight + 20, note.text, note.scale, INK.muted);
+  }
 
   const credit = "npx youiyoux";
   const creditWidth = textWidth(credit, 3);

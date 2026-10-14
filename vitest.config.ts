@@ -7,7 +7,7 @@ if (!site) console.log(`${SITE_TEST} skipped: nothing in detect changed versus o
 
 export default defineConfig({
   test: {
-    include: ["packages/*/test/**/*.test.ts"],
+    include: ["packages/*/test/**/*.test.ts", "scripts/test/**/*.test.ts"],
     exclude: [...configDefaults.exclude, ...(site ? [] : [SITE_TEST])],
     testTimeout: 30_000,
     setupFiles: ["./vitest.setup.ts"],

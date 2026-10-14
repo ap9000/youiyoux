@@ -1,6 +1,6 @@
 {
   "name": "youiyoux-workspace",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "MIT",
   "private": true,
   "description": "YouIyouX: design-language tooling. The youi CLI, scanner, MCP server and hub; design systems live in their own repos.",
@@ -13,7 +13,8 @@
     "youi": "node packages/cli/bin/youi.js",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json",
-    "schemas": "node packages/cli/bin/youi.js schema --write"
+    "schemas": "node packages/cli/bin/youi.js schema --write",
+    "release": "node scripts/release.ts"
   },
   "devDependencies": {
     "@youiyoux/cli": "workspace:*",

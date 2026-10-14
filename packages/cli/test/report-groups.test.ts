@@ -4,7 +4,8 @@ import { dirname, join } from "node:path";
 import ts from "typescript";
 import { renderHtml } from "../src/report/html.ts";
 import { renderMarkdown } from "../src/report/markdown.ts";
-import { buildReportModel, type ReportModel } from "../src/report/model.ts";
+import { CARD_WIDTH, textWidth } from "../src/report/card.ts";
+import { buildReportModel, DUPLICATE_RULE, type ReportModel } from "../src/report/model.ts";
 import { fixtureRepo, monorepoFiles, singleFiles, type FixtureRepo } from "./report-fixtures.ts";
 
 const repos: FixtureRepo[] = [];
@@ -279,4 +280,42 @@ test("same-named components: near-copies, a shared name, a private copy, and gen
   expect(byName("Header")).toEqual([]);
   expect(byName("Page")).toEqual([]);
   expect(JSON.stringify(groups)).not.toMatch(/route\.ts|GET/);
+});
+
+/** An exported copy of the kit's Button, hand-styled buttons in two files, and a file-local helper twice: three groups, one between exported components. */
+function headlineFiles(): Record<string, string> {
+  const helper = (label: string) => `function PriceRow({ amount }) {\n  return <div className="flex justify-between"><span>${label}</span><strong>{amount}</strong><small>{amount}</small></div>;\n}\n`;
+  return {
+    "package.json": JSON.stringify({ name: "headline", private: true, dependencies: TAILWIND }),
+    "tsconfig.json": JSON.stringify({ compilerOptions: { jsx: "react-jsx", baseUrl: ".", paths: { "@/*": ["./src/*"] } } }),
+    "src/styles.css": '@import "tailwindcss";\n',
+    "src/components/ui/button.tsx": `export function Button(props) { return <button className="${SHAPE}" {...props} />; }\n`,
+    "src/components/fancy-button.tsx": `export function FancyButton(props) { return <button className="${SHAPE}" {...props} />; }\n`,
+    "src/widgets/toolbar.tsx": `export function Toolbar() { return <div><button className="h-7 px-2 rounded text-xs">Undo</button></div>; }\n`,
+    "src/widgets/footer.tsx": `export function Footer() { return <footer><button className="h-7 px-2 rounded text-xs">Top</button></footer>; }\n`,
+    "src/cart/summary.tsx": `${helper("Total")}export function CartSummary() { return <section><PriceRow amount={1} /></section>; }\n`,
+    "src/checkout/summary.tsx": `${helper("Due")}export function CheckoutSummary() { return <section><PriceRow amount={2} /></section>; }\n`,
+    "src/app.tsx": 'import { Button } from "@/components/ui/button";\nimport { FancyButton } from "@/components/fancy-button";\nimport { Toolbar } from "./widgets/toolbar";\nimport { Footer } from "./widgets/footer";\nimport { CartSummary } from "./cart/summary";\nimport { CheckoutSummary } from "./checkout/summary";\nexport function App() { return <><Button /><FancyButton /><Toolbar /><Footer /><CartSummary /><CheckoutSummary /></>; }\n',
+  };
+}
+
+test("the card and summary headline count only groups of 2+ exported components; the report keeps every group", async () => {
+  const repo = fixture("headline", headlineFiles());
+  const model = await buildReportModel(repo.dir);
+  const groups = model.projects.flatMap((p) => p.nearDuplicates);
+  // Every group stays in the report: Button and its exported copy (2), Button and the hand-styled buttons (1), the file-local helper (0).
+  expect(groups.map((g) => g.exported).sort()).toEqual([0, 1, 2]);
+  expect(groups.find((g) => g.exported === 2)?.next).toContain("build FancyButton on Button");
+  expect(groups.find((g) => g.exported === 1)?.next).toContain("replace the hand-styled <button>");
+  expect(groups.find((g) => g.exported === 0)?.title).toBe("PriceRow is defined in 2 files with the same structure");
+  expect(model.totals.nearDuplicates).toBe(3);
+  expect(model.totals.componentDuplicates).toBe(1);
+  expect(model.summary[2]).toBe("Near-duplicates: 3 groups of UI that looks the same but is built more than once; 1 of them between exported components.");
+  const md = renderMarkdown(model, "youiyoux-report.html");
+  expect(md).toContain("| Projects | Components | Duplicated components | Hardcoded values | Off-library imports |");
+  expect(md).toMatch(/\| 1 \| \d+ \| 1 \| /);
+  expect(md).toContain("Duplicated components: groups of 2+ exported components that look alike or share a name.");
+  // The rule fits the card on one line at its smallest size, so it is never cut.
+  expect(textWidth(DUPLICATE_RULE, 2)).toBeLessThanOrEqual(CARD_WIDTH - 2 * 72);
+  expect(renderHtml(model)).toContain("PriceRow is defined in 2 files");
 });
