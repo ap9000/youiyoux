@@ -15,7 +15,7 @@
 import { readdir, rm, rmdir } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative } from "node:path";
 import { readTextOrNull, writeFileAtomic } from "@youiyoux/core";
-import { FIND_FIRST_RULE } from "./agents.ts";
+import { diffInstruction, FIND_FIRST_RULE } from "./agents.ts";
 import type { HookTarget } from "./hooks.ts";
 import { shellQuote, write } from "./hooks-install.ts";
 
@@ -89,8 +89,8 @@ async function removeOrWrite(file: string, next: string, guarantee: string): Pro
 
 /* --------------------------------------------------------------- the rule */
 
-export function ruleBlock(): string {
-  return [RULE_BEGIN, "## UI components (YouIyouX)", "", FIND_FIRST_RULE, RULE_END].join("\n");
+export function ruleBlock(root?: string): string {
+  return [RULE_BEGIN, "## UI components (YouIyouX)", "", FIND_FIRST_RULE, "", diffInstruction(root), RULE_END].join("\n");
 }
 
 const RULE_GUARANTEE = "advisory: agents that read this file are told to call ui_find_component before creating a component; nothing enforces it (youi check does)";
@@ -100,7 +100,7 @@ export async function installAgentRule(repoRoot: string): Promise<AgentsResult[]
   for (const name of RULE_FILES) {
     const file = join(repoRoot, name);
     const before = await readTextOrNull(file);
-    results.push(await write(file, withBlock(before, ruleBlock(), RULE_BEGIN, RULE_END), before, RULE_GUARANTEE));
+    results.push(await write(file, withBlock(before, ruleBlock(repoRoot), RULE_BEGIN, RULE_END), before, RULE_GUARANTEE));
   }
   return results;
 }

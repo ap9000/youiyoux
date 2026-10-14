@@ -87,6 +87,8 @@ In a product repo:
 
 `youi check --diff` also works without `youi.project.json`: it infers components, library choices and declared CSS/Tailwind theme variables from the repo. Pass `--project <dir>` to limit it to one product; otherwise it finds the git root. No Tailwind default is treated as a project token. Run `youi init --design <dir>` to add design-system rules. If a chosen library has a project wrapper, fixes name that wrapper. Components that compose existing components are not near-duplicates.
 
+Generated agent instructions use `npx --no-install youi check --diff` when the project declares `@youiyoux/cli`, otherwise `youi check --diff` with a one-line PATH setup for an installed YouIyouX checkout. They contain no machine-specific CLI path; local hooks keep their installed path.
+
 The post-edit hook lists only findings on lines added or changed against HEAD, with older findings reduced to one count. An edit adding no findings is silent. `hooks install --claude --git` works in repo mode too, adding the post-edit check instruction to AGENTS.md for agents such as Codex. For CI without a config, run `youi check --diff <base> --strict --format github` after checking out full git history; installing the pinned design-rule workflow still requires `youi init --design <dir>`.
 
 `show`, `where`, `bom`, `check`, `plan` and `migrate` work on the System.
@@ -111,7 +113,7 @@ In a design repo (the current directory, or `--design <dir>`):
 
 | Command | Does |
 | --- | --- |
-| `youi build` | Validate the token files with `youi.tokens/v1` and build the outputs (`--out`, `--prefix`): springs become a CSS `linear()` easing plus its settle duration, focus rings an outline shorthand plus offset, and contract states `--<prefix>-<component>-<state>-<role>` variables. Family names are written as escaped CSS strings and descriptions as comments that cannot be closed early |
+| `youi build` | Validate the token files with `youi.tokens/v1` and build the outputs (`--out`, `--prefix`): springs become a CSS `linear()` easing plus its settle duration, focus rings an outline shorthand plus offset, and contract states `--<prefix>-<component>-<state>-<role>` variables. Family names are written as escaped CSS strings and descriptions as comments that cannot be closed early. Unsafe system ids are refused by name, and output paths are checked for escapes, including symlinks |
 | `youi parity --css <file>` | Compare the generated CSS with a product's shipped CSS, light and dark |
 | `youi schema --check` | Check the repo's `schema/` copies against this tool's schemas (`--write` refreshes them) |
 
@@ -178,7 +180,7 @@ Websites are read from these fingerprints, all in one pass per page: class prefi
 
 `youi render src/components/ui/button.tsx` (or the MCP tool `ui_render`, or a component name: `youi render Button`) shows an agent the component it just changed. The PostToolUse hook (`youi hooks install --claude`) adds one line after each edit of a `.tsx` or `.jsx` file saying so; it never renders inside the hook.
 
-- **What is drawn.** The component's looks as the app renders them (inventory recipes: its props and labels at each site, up to 8 distinct looks; a component no site renders yet is drawn with no props), server-rendered with the project's own React and laid out on one page per scheme with the project's own CSS, exactly as specimens are. A file that only uses components draws the looks it renders.
+- **What is drawn.** The component's looks as the app renders them (inventory recipes: its props and labels at each site, up to 8 distinct looks; a component no site renders yet is drawn with no props), server-rendered with the project's own React and laid out on one page per scheme with the project's own CSS, exactly as specimens are. Inventoried source files contribute their Tailwind utilities even when automatic discovery ignores them (for example, gitignored vendored components); explicit `source(none)` remains explicit. A file that only uses components draws the looks it renders.
 - **What comes back.** Four screenshots (light and dark at 1280 and 390 px); accessibility issues from [axe-core](https://github.com/dequelabs/axe-core) (WCAG 2.2 A and AA, on both schemes and widths), each with the element and the fix; and before, after and diff images against the base commit with the share of pixels that changed. The text ends with `next:` (fix these issues and render again; confirm the change is the one you meant; or nothing to do). `--json` gives the same with every path. Exit 1 only when nothing could be drawn (no Chromium, no such component), said plainly, never as a pass.
 Accessibility findings are marked new, pre-existing or fixed against the base render (not-compared when no base is available). Expression name props receive deterministic example values (including matching id/title values on both renders); failed placeholder renders retry without them. Components whose recorded sites all share a parent render inside that parent, including across modules and one root helper. Accessible-name findings caused by props the specimen cannot supply (such as external aria-labelledby links) are marked `specimen-only: real usages pass …`; `next:` points only to new issues that are not specimen-only.
 

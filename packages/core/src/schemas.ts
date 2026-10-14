@@ -6,7 +6,7 @@ import { posix } from "node:path";
 import { z } from "zod";
 import { DetectReport } from "./detect.ts";
 import { LibraryEntry } from "./hierarchy.ts";
-import { ElementId } from "./ids.ts";
+import { ElementId, safeId } from "./ids.ts";
 import { TokenDocument } from "./tokens.ts";
 
 const SemVer = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, "expected semver x.y.z");
@@ -23,7 +23,9 @@ const IsoTime = z.string().datetime({ offset: true });
 /* ---------------------------------------------------------------- youi.config/v1 */
 
 export const SystemConfig = z.object({
-  id: z.string().regex(/^[a-z][a-z0-9-]*$/),
+  id: z.string().regex(/^[a-z][a-z0-9-]*$/, { error: ({ input }) => safeId(input) === null
+    ? `Invalid system id ${JSON.stringify(input)}: use a plain name without ".." or path separators`
+    : `Invalid system id ${JSON.stringify(input)}: use lowercase letters, digits and hyphens, starting with a letter` }),
   name: z.string().min(1),
   version: SemVer,
   description: z.string().default(""),

@@ -1,0 +1,5 @@
+{
+  "name": "sizing",
+  "private": true,
+  "dependencies": { "react": "*", "react-dom": "*", "tailwindcss": "^4" }
+}

@@ -35,7 +35,7 @@ import { buildProjectCss, SCHEMES, type Scheme } from "./css.ts";
 import { renderComponents, withNamePlaceholders, type ComponentRecipe, type RenderJob } from "./render.ts";
 
 /** Bump when what a render entry holds, or how it is drawn, changes: old entries are never read. */
-export const SHOTS_FORMAT = "youiyoux.shots/3";
+export const SHOTS_FORMAT = "youiyoux.shots/4";
 /** Desktop and phone. */
 export const SHOT_WIDTHS: readonly number[] = [1280, 390];
 /** Distinct looks drawn per component: enough to see its variants, few enough to read. */

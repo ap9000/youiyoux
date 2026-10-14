@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { FIND_FIRST_RULE, installCodexMcp, main, mcpArgs, mcpCommand, RULE_BEGIN, RULE_END, loadOptions } from "../src/index.ts";
+import { diffInstruction } from "../src/agents.ts";
 import { loadProject } from "@youiyoux/scanner";
 
 const run = promisify(execFile);
@@ -62,9 +63,9 @@ describe("youi agents install|remove", () => {
     for (const r of results) expect(r.guarantee.length).toBeGreaterThan(0);
     const rule = await read("AGENTS.md");
     expect(rule.startsWith(AGENTS)).toBe(true);
-    expect(rule).toContain(`${RULE_BEGIN}\n## UI components (YouIyouX)\n\n${FIND_FIRST_RULE}\n${RULE_END}\n`);
+    expect(rule).toContain(`${RULE_BEGIN}\n## UI components (YouIyouX)\n\n${FIND_FIRST_RULE}\n\n${diffInstruction(app)}\n${RULE_END}\n`);
     expect(FIND_FIRST_RULE).toMatch(/^Before creating a UI component, call `ui_find_component`/);
-    expect(await read("CLAUDE.md")).toBe(`${RULE_BEGIN}\n## UI components (YouIyouX)\n\n${FIND_FIRST_RULE}\n${RULE_END}\n`);
+    expect(await read("CLAUDE.md")).toBe(`${RULE_BEGIN}\n## UI components (YouIyouX)\n\n${FIND_FIRST_RULE}\n\n${diffInstruction(app)}\n${RULE_END}\n`);
     // Claude Code: the same entry youi sync writes, relative to the repo root; the other server is kept.
     const mcp = JSON.parse(await read(".mcp.json")) as { mcpServers: Record<string, { command: string; args: string[] }> };
     expect(Object.keys(mcp.mcpServers)).toEqual(["github", "youiyoux"]);

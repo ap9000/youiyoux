@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { devNull } from "node:os";
-import { dirname, isAbsolute, relative, resolve } from "node:path";
+import { dirname, extname, isAbsolute, relative, resolve } from "node:path";
 import { parentPort, workerData } from "node:worker_threads";
 import { inPackage, packageName, packageUnderRoot, within } from "./contain.ts";
 
@@ -21,6 +21,8 @@ interface Input {
   readonly oxide: string;
   /** Project-relative symlinks that leave the root. */
   readonly exclude: readonly string[];
+  /** Inventory sources also count when automatic discovery ignores them (e.g. vendored files). */
+  readonly files?: readonly string[];
   /** Directories outside the root scanned for class names too (a Discover preview's files). */
   readonly extraSources?: readonly string[];
 }
@@ -31,7 +33,7 @@ interface TailwindNode {
 }
 type Resolver = (id: string, base: string) => Promise<string | false | undefined>;
 
-const { root, from, node: nodePath, oxide: oxidePath, exclude, extraSources = [] } = workerData as Input;
+const { root, from, node: nodePath, oxide: oxidePath, exclude, files = [], extraSources = [] } = workerData as Input;
 const require = createRequire(import.meta.url);
 const warnings: string[] = [];
 const dependencies: string[] = [];
@@ -63,7 +65,7 @@ const insideSource = (source: { base: string; pattern: string }): boolean => wit
 
 async function run(): Promise<{ css: string } | { error: string }> {
   const tailwind = require(nodePath) as TailwindNode;
-  const oxide = require(oxidePath) as { Scanner: new (options: { sources: Source[] }) => { scan(): string[] } };
+  const oxide = require(oxidePath) as { Scanner: new (options: { sources: Source[] }) => { scan(): string[]; scanFiles(files: Array<{ content: string; extension: string }>): string[] } };
   const css = readFileSync(from, "utf8");
   const compiler = await tailwind.compile(css, {
     base: dirname(from),
@@ -88,7 +90,14 @@ async function run(): Promise<{ css: string } | { error: string }> {
   for (const link of exclude) sources.push({ base: root, pattern: link, negated: true }, { base: root, pattern: `${link}/**`, negated: true });
   // Scanned for class names only, as the caller asked: their files are never imported.
   for (const base of extraSources) sources.push({ base, pattern: "**/*", negated: false });
-  const candidates = new oxide.Scanner({ sources }).scan();
+  const scanner = new oxide.Scanner({ sources });
+  const candidates = scanner.scan();
+  // Inventory deliberately includes ignored source files. Automatic Tailwind discovery
+  // can skip them, so feed those known inputs too; retain explicit source(none) behavior.
+  if (compiler.root !== "none") {
+    const inputs = files.map((file) => resolve(root, file)).filter((file) => within(root, file));
+    candidates.push(...scanner.scanFiles(inputs.map((file) => ({ content: readFileSync(file, "utf8"), extension: extname(file).slice(1) }))));
+  }
   return { css: tailwind.optimize(compiler.build(candidates), { file: from, minify: false }).code };
 }
 

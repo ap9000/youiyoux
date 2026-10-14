@@ -32,3 +32,8 @@ export function matchesQuery(id: string, query: string): boolean {
   const q = query.trim().toLowerCase();
   return q === id || q === `${parsed.kind}/${parsed.name}` || q === parsed.name;
 }
+
+/** A plain id safe to use as one path segment, or null for an unsafe value. */
+export function safeId(id: unknown): string | null {
+  return typeof id === "string" && /^[a-z0-9][a-z0-9._-]*$/i.test(id) && !id.includes("..") ? id : null;
+}

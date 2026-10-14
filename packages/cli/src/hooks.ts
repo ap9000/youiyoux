@@ -23,6 +23,7 @@ import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { relPath } from "@youiyoux/core";
 import type { Project } from "@youiyoux/scanner";
+import { portableYoui } from "./agents.ts";
 import { baselinePath, runCheck, type CheckResult, type DiffCheckResult } from "./check.ts";
 import { isChecked, stagedChange, workingTreeChange, isAdded, type ChangeProject, type ChangeSet } from "./check-diff.ts";
 import { diffFindingLine, diffGaps } from "./check-render.ts";
@@ -65,10 +66,13 @@ async function baselineFor(project: Project, target: HookTarget): Promise<string
 }
 
 /** Findings as a short list an agent can act on: rule violations, then the drift the change adds, each with its fix. */
-function findingLines(result: DiffCheckResult): string[] {
+function findingLines(result: DiffCheckResult, root: string): string[] {
   const findings = result.diff?.findings ?? [];
   const lines = findings.slice(0, MAX_LISTED).map((f) => `- ${diffFindingLine(f)}`);
-  if (findings.length > MAX_LISTED) lines.push(`- …and ${findings.length - MAX_LISTED} more (run \`youi check --diff\`)`);
+  if (findings.length > MAX_LISTED) {
+    const { run, setup } = portableYoui(root);
+    lines.push(`- …and ${findings.length - MAX_LISTED} more. ${setup} Run \`${run} check --diff\`.`);
+  }
   for (const gap of diffGaps(result)) lines.push(`- incomplete: ${gap}; 0 findings there is not a pass`);
   return lines;
 }
@@ -113,7 +117,7 @@ export async function runClaudeHook(input: string, target: HookTarget = {}): Pro
     const { change, problem } = await changeFor(() => workingTreeChange(project, undefined, [relative]));
     if (problem) return claudeContext(problem);
     const result = configured(project) ? await runCheck(project, { files: [file], lock: false, baseline: await baselineFor(project, target), ...(change ? { diff: change } : {}) }) : await runRepoCheck(project, change!);
-    const lines = findingLines(result);
+    const lines = findingLines(result, project.root);
     const see = COMPONENT_FILE.test(relative) ? `See it: youi render ${quoted(relative)} (or the MCP tool ui_render), then open the images: light and dark, desktop and phone, accessibility issues and the diff against the base.` : null;
     if (lines.length === 0) return see ? claudeContext(`youi: ${relative} passes the design-system check. ${see}`) : SILENT;
     const older = change && "violations" in result ? (result as CheckResult).violations.filter((v) => !isAdded(change.added, v.file, v.line)).length : 0;
@@ -153,7 +157,7 @@ export async function runPreCommitHook(target: HookTarget = {}, options: { stric
     const { change, problem } = await changeFor(() => stagedChange(project));
     if (problem) return { stdout: `${problem}\n`, exitCode: options.strict ? 1 : 0 };
     const result = configured(project) ? await runCheck(project, { files: files.map((f) => join(project.root, f)), overrides: staged, lock: false, baseline: await baselineFor(project, target), ...(change ? { diff: change } : {}) }) : await runRepoCheck(project, change!);
-    const lines = findingLines(result);
+    const lines = findingLines(result, project.root);
     const failing = result.incomplete || (result.diff?.findings.length ?? 0) > 0;
     if (lines.length === 0) return { stdout: `${label}: ${files.length} staged file(s) clean, no drift\n`, exitCode: 0 };
     const verdict = !failing ? "warnings only" : options.strict ? "commit blocked; fix these, or commit with --no-verify and let CI decide" : "not blocking; fix these before you push (CI fails on errors)";

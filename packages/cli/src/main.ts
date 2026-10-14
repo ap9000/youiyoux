@@ -5,11 +5,11 @@ import { appendFile, readFile } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { parseArgs, promisify, type ParseArgsConfig } from "node:util";
 import { parse as parseYaml } from "yaml";
-import { DefinitionError, getSystem, loadDesignRepo, loadLibrary, MigrationSpec, OutputConfig, renderJsonSchemas, writeFileAtomic, type InventoryReport, type ScanReport } from "@youiyoux/core";
+import { DefinitionError, getSystem, loadDesignRepo, loadLibrary, MigrationSpec, OutputConfig, renderJsonSchemas, safeId, writeFileAtomic, type InventoryReport, type ScanReport } from "@youiyoux/core";
 import { candidateSource, expandAll, selectSources, discoverCacheDir, discoverIndexPath, ingestCatalog, readCatalog, searchCatalog, sharedStore, showFromCatalog, syncIndex, type Fetcher } from "@youiyoux/discover";
 import { indexHome, storeLocation } from "@youiyoux/store";
 import { buildTokens, compareParity } from "@youiyoux/tokens";
-import { adoptionRequest, buildInventory, RenderUnavailableError, renderShots, shotsNext, type ShotsOptions, checkCapabilities, componentCard, describeIdentity, evaluateRule, findContract, loadProject, planChange, PROJECT_FILE, type LoadProjectOptions, ProjectWatcher, ruleCapability, runMigration, scanProject, screenBom, searchLibrary, whereUsed, type CacheStats, type PlanInput, type Project, type WatchUpdate } from "@youiyoux/scanner";
+import { adoptionRequest, buildInventory, within, RenderUnavailableError, renderShots, shotsNext, type ShotsOptions, checkCapabilities, componentCard, describeIdentity, evaluateRule, findContract, loadProject, planChange, PROJECT_FILE, type LoadProjectOptions, ProjectWatcher, ruleCapability, runMigration, scanProject, screenBom, searchLibrary, whereUsed, type CacheStats, type PlanInput, type Project, type WatchUpdate } from "@youiyoux/scanner";
 import { baselinePath, diffExitCodeOf, exitCodeOf, runCheck, writeBaseline, type CheckResult } from "./check.ts";
 import { configured, loadCheckProject, runRepoCheck } from "./check-repo.ts";
 import { workingTreeChange, type ChangeProject } from "./check-diff.ts";
@@ -519,10 +519,13 @@ async function cmdInit(values: Values): Promise<number> {
 async function cmdBuild(values: Values): Promise<number> {
   const root = resolve(values.design ?? process.cwd());
   const system = getSystem(await loadDesignRepo(root), values.system);
+  if (safeId(system.config.id) === null) throw new Error(`Cannot build system ${JSON.stringify(system.config.id)}: the id must be a plain name without ".." or path separators.`);
   const output = OutputConfig.parse({ cssVarPrefix: values.prefix ?? "youi", targets: ["css-vars", "tailwind-v4", "ts", "react-native"] });
   const started = performance.now();
   const built = await buildTokens(root, system.config, output, { contracts: system.components.map((c) => c.contract) });
   const out = resolve(values.out ?? join(root, "build", system.config.id));
+  const boundary = values.out ? out : join(root, "build");
+  if (!within(boundary, out) || built.files.some((file) => !within(out, join(out, file.path)))) throw new Error(`Cannot build system ${JSON.stringify(system.config.id)}: an output path leaves the output directory.`);
   for (const file of built.files) await writeFileAtomic(join(out, file.path), file.content);
   if (values.json) json({ out, files: built.files.map((f) => f.path), tokens: built.tokens.length });
   else print(`${style.ok("built")} ${plural(built.tokens.length, "token")} → ${built.files.map((f) => f.path).join(", ")} ${style.dim(`in ${out} (${ms(performance.now() - started)})`)}`);
@@ -593,7 +596,7 @@ async function cmdHooks(values: Values, positionals: string[]): Promise<number> 
   const results = [];
   if (values.claude || all) results.push({ kind: "Claude Code", ...(await installClaudeHook(await repoRootOf(p.root), hookCommand(TOOL_ROOT, "claude", target))) });
   if (values.git || all) results.push({ kind: "git pre-commit", ...(await installPreCommit(p.root, hookCommand(TOOL_ROOT, "pre-commit", target, values.strict ? ["--strict"] : []), values.strict)) });
-  if (values.git || all) results.push({ kind: "Codex", ...(configured(p) ? codexFallback(p.root, p.config.agents.agentsMd) : await installRepoAgentInstructions(p.root, TOOL_ROOT)) });
+  if (values.git || all) results.push({ kind: "Codex", ...(configured(p) ? codexFallback(p.root, p.config.agents.agentsMd) : await installRepoAgentInstructions(p.root)) });
   if (values.ci && configured(p)) results.push({ kind: "CI", ...(await installWorkflow(p, TOOL_ROOT, target, values.force, { diff: values.diff })) });
   if (values.json) json(results);
   else for (const r of results) print(`${r.action === "unchanged" || r.action === "skipped" ? style.dim(r.action) : style.ok(r.action)} ${r.kind}: ${r.file}

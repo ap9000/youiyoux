@@ -284,9 +284,11 @@ describe("drift findings reach the agent after a UI edit", () => {
     expect(installed.code).toBe(0);
     expect(await readFile(join(fixture.app, ".claude/settings.local.json"), "utf8")).toContain("--project");
     const agents = await readFile(join(fixture.app, "AGENTS.md"), "utf8");
-    // The same youi the pre-commit hook runs, by absolute path: `youi` is usually not on an agent's PATH.
+    // Committed instructions are portable; the machine-local hook keeps its working path.
     const youiJs = join(import.meta.dirname, "../bin/youi.js");
-    expect(agents).toContain(`After UI edits, run \`node ${youiJs} check --diff\``);
+    expect(agents).toContain("After UI edits, run `youi check --diff`");
+    expect(agents).toContain("export PATH=\"$PWD/packages/cli/bin:$PATH\"");
+    expect(agents).not.toContain(youiJs);
     expect(await readFile(join(fixture.app, ".git/hooks/pre-commit"), "utf8")).toContain(`node ${youiJs} hooks run pre-commit`);
     expect(agents).toContain("Keep this text.");
     await cli(["hooks", "install", "--git", "--project", fixture.app]);

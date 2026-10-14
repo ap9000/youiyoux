@@ -60,6 +60,30 @@ beforeAll(async () => {
 afterAll(() => rmSync(cacheDir, { recursive: true, force: true }));
 
 describe("specimen CSS: the project's own build (c1)", () => {
+  test("ignored inventoried sources still generate sizing utilities, while source(none) stays explicit", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "youi-sizing-css-"));
+    try {
+      const root = copyFixture(join(FIXTURES, "sizing"), join(dir, "app"));
+      writeFileSync(join(root, ".gitignore"), "src/radio-card.tsx\n");
+      const target = await loadInventoryTarget(root);
+      expect(target.files).toContain("src/radio-card.tsx");
+      // Automatic discovery alone omits the ignored file's classes.
+      const missing = await buildProjectCss(root, ["src/app.tsx", "src/app.css"], newStats());
+      expect(missing.light).not.toContain(".size-4 {");
+      const built = await buildProjectCss(root, target.files, newStats());
+      expect(built.warnings).toEqual([]);
+      for (const css of [built.light!, built.dark!]) {
+        expect(css).toMatch(/\.size-4 \{\s*width: calc\(var\(--spacing\) \* 4\);\s*height: calc\(var\(--spacing\) \* 4\)/);
+        for (const utility of [".size-6 {", ".w-5 {", ".h-5 {"]) expect(css).toContain(utility);
+      }
+      writeFileSync(join(root, "src/app.css"), '@import "tailwindcss" source(none);\n');
+      const explicit = await buildProjectCss(root, target.files, newStats());
+      expect(explicit.light).not.toContain(".size-4 {");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("stylesheets in the page's order: layouts' imports first, then each component's", () => {
     expect(pageStylesheets(CONSOLE, ["src/browser/toolbar.tsx", "src/app/layout.tsx", "src/app/page.tsx"])).toEqual(["src/app/globals.css", "src/browser/ui.css"]);
     expect(pageStylesheets(SITE, ["src/pages/pricing.astro", "src/layouts/Base.astro"])).toEqual(["src/styles/ui.css", "src/styles/marketing.css"]);

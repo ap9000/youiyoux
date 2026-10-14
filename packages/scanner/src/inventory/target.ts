@@ -7,7 +7,7 @@
  */
 import { readFile, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
-import { findFiles, normalizeRelPath, RouteConfig } from "@youiyoux/core";
+import { findFiles, normalizeRelPath, RouteConfig, safeId } from "@youiyoux/core";
 import { PROJECT_FILE } from "../project.ts";
 
 export interface InventoryTarget {
@@ -37,11 +37,6 @@ const STYLES = ["**/*.css"];
 const TEMPLATES = ["**/*.{html,htm,ejs,hbs,handlebars}"];
 
 const ROUTE_FILE = /\.(tsx|ts|jsx|js)$/;
-
-/** A configured id is used only when it is a plain name: it reaches cache paths, so `..` or a separator falls back to the derived id. */
-function safeId(id: unknown): string | null {
-  return typeof id === "string" && /^[a-z0-9][a-z0-9._-]*$/i.test(id) && !id.includes("..") ? id : null;
-}
 
 function idOf(name: string): string {
   return name.toLowerCase().replace(/^@[^/]+\//, "").replace(/[^a-z0-9-]+/g, "-").replace(/^[^a-z]+|-+$/g, "") || "project";

@@ -1,0 +1,5 @@
+@import "tailwindcss";
+
+@layer base {
+  [role="radio"] { border: 1px solid; border-radius: 9999px; }
+}

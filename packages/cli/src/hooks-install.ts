@@ -130,12 +130,11 @@ export async function installPreCommit(projectRoot: string, command: string, str
 
 /* -------------------------------------------------------------------- Codex */
 
-/** Give repo-mode agents the same post-edit instruction sync writes for configured projects, invoking youi the way the hooks do (it is often not on PATH). */
-export async function installRepoAgentInstructions(root: string, toolRoot: string): Promise<InstallResult> {
+/** Give repo-mode agents the same post-edit instruction sync writes for configured projects, using a portable command for teammates too. */
+export async function installRepoAgentInstructions(root: string): Promise<InstallResult> {
   const file = join(root, "AGENTS.md");
   const before = await readTextOrNull(file);
-  const run = ["node", join(toolRoot, "packages/cli/bin/youi.js")].map(shellQuote).join(" ");
-  return write(file, upsertBlock(before, repoAgentsBlock(run)), before, "agents run youi check --diff after UI edits; pre-commit also checks staged edits");
+  return write(file, upsertBlock(before, repoAgentsBlock(root)), before, "agents run youi check --diff after UI edits; pre-commit also checks staged edits");
 }
 
 /** Codex has no documented hook that runs after its edits: say what covers it instead, and install nothing. */

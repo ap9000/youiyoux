@@ -520,7 +520,7 @@ interface TailwindResult {
 }
 
 /** One Tailwind entry compiled, scanned and optimised in a worker (tailwind-worker.ts), stopped after `timeoutMs`. */
-export function compileTailwind(input: { root: string; from: string; node: string; oxide: string; exclude: readonly string[]; extraSources?: readonly string[] }, timeoutMs: number, signal?: AbortSignal): Promise<TailwindResult> {
+export function compileTailwind(input: { root: string; from: string; node: string; oxide: string; exclude: readonly string[]; files?: readonly string[]; extraSources?: readonly string[] }, timeoutMs: number, signal?: AbortSignal): Promise<TailwindResult> {
   return new Promise((done) => {
     if (signal?.aborted) return done({ error: "stopped", dependencies: [], warnings: [] });
     const worker = new Worker(new URL("./tailwind-worker.ts", import.meta.url), { workerData: input, stdout: true, stderr: true });
@@ -572,7 +572,7 @@ export async function buildProjectCss(root: string, files: readonly string[], st
     if (consumed.has(realOf(sheet.path))) continue;
     if (tailwind?.node && tailwind.oxide && isTailwindEntry(sheet.path)) {
       stats.tailwindCompiles++;
-      const result = await compileTailwind({ root, from: sheet.path, node: tailwind.node, oxide: tailwind.oxide, exclude, extraSources: options.extraSources ?? [] }, options.tailwindTimeoutMs ?? TAILWIND_TIMEOUT_MS, options.signal);
+      const result = await compileTailwind({ root, from: sheet.path, node: tailwind.node, oxide: tailwind.oxide, exclude, files: files.filter((file) => !file.endsWith(".css") && !("refused" in relativeInside(root, file))), extraSources: options.extraSources ?? [] }, options.tailwindTimeoutMs ?? TAILWIND_TIMEOUT_MS, options.signal);
       warnings.push(...result.warnings.map((w) => `${sheet.sheet}: ${w}`));
       if (result.css !== undefined) {
         for (const dependency of result.dependencies) consumed.add(realOf(dependency));
