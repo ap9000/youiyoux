@@ -1,0 +1,13 @@
+$schema: ../../../../schema/youi.rule.schema.json
+schema: youi.rule/v1
+id: youi:youiyoux/rule/type.mono-machine-facts
+title: "Machine facts in mono, sentences in sans"
+severity: warn
+statement: "Paths, file:line places, values (8px, #dc2626), token names, component names in code position, and commands are set in the mono face; sentences are set in the sans face. Numbers in headlines, legends and tables use tabular figures."
+rationale: "The mono face tells a reader \"this is exactly what is in your code; copy it\". Mixing faces inside a sentence is how the eye finds the fact."
+agent: "Wrap paths, file:line, literal values, token names and commands in the mono style; use tabular-nums for numbers that line up."
+check:
+  engine: advisory
+files:
+  - "apps/web/src/**/*.tsx"
+  - "packages/cli/src/report/html.ts"

@@ -1,0 +1,17 @@
+{
+  "$schema": "../../../schema/youi.config.schema.json",
+  "schema": "youi.config/v1",
+  "name": "youiyoux",
+  "systems": [
+    {
+      "id": "youiyoux",
+      "name": "YouIyouX",
+      "version": "1.0.0",
+      "description": "youiyoux's own surfaces: the hub and the npx youiyoux report. A quiet developer-tool dashboard: neutral greys, one desaturated indigo (Linear-style: base, accent, contrast), muted sage and clay only for state, mono for machine facts.",
+      "tokens": "youiyoux.resolver.json",
+      "themeModifier": { "name": "theme", "light": "light", "dark": "dark" },
+      "rules": "rules",
+      "design": "design.md"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+$schema: ../../../../schema/youi.rule.schema.json
+schema: youi.rule/v1
+id: youi:youiyoux/rule/findings.show-compare
+title: "Show a near-duplicate, don't only describe it"
+severity: warn
+statement: "A near-duplicate puts the build to keep and its copies side by side, labelled Keep and Copy, with the measurements they share (height, padding, corners, text) as mono chips. When a rendered look exists it is shown in the comparison."
+rationale: "After Figma's Compare changes. \"Looks the same but is built twice\" is youiyoux's core finding; seeing the two side by side is what convinces a reader, and it is the part people share."
+agent: "For each near-duplicate group render a two-column comparison (Keep | Copy) with the shared measurements as mono chips and the rendered looks when available."
+check:
+  engine: advisory
+files:
+  - "apps/web/src/**/*.tsx"
+  - "packages/cli/src/report/html.ts"

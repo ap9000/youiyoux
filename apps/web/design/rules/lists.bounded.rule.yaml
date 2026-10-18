@@ -1,0 +1,13 @@
+$schema: ../../../../schema/youi.rule.schema.json
+schema: youi.rule/v1
+id: youi:youiyoux/rule/lists.bounded
+title: "No list runs on forever"
+severity: warn
+statement: "A list shows its first five items and folds the rest behind \"and N more\", which opens in place. Places (file:line) wrap as compact chips rather than one per line."
+rationale: "After Google AI Studio's folded file rows. A finding with 23 places should cost one line, not a screen; the count already says how many there are."
+agent: "Show at most five items of any list, fold the rest behind a details element that says how many; lay out file:line places as wrapping chips."
+check:
+  engine: advisory
+files:
+  - "apps/web/src/**/*.tsx"
+  - "packages/cli/src/report/html.ts"

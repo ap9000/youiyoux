@@ -1,0 +1,13 @@
+$schema: ../../../../schema/youi.rule.schema.json
+schema: youi.rule/v1
+id: youi:youiyoux/rule/data.headline
+title: "Lead with a sentence, a split bar and a shape map, not a row of boxes"
+severity: warn
+statement: "A page that sums something up opens with one sentence that carries its numbers (\"7 looks are built more than once and 253 values skip the theme: 302 places to fix\"), then one bar that splits the total into its parts with a legend of counts, then the picture of the finding itself. For youiyoux that picture is the shape map: one row per kind of element, one square per distinct shape, the first square solid neutral and every extra square outlined in the accent. Numbers stay ink, never an alarm colour. Zero says Clean in sage text; anything that could not be measured says so instead of showing zero."
+rationale: "After Zillow's and Adaline's headline numbers, Plain's and Higgsfield's split bars, and Perplexity's heatmap. A row of four equal boxes is the generic dashboard; a sentence is quotable, a split bar shows where the work is, and seventeen squares say \"your buttons come in 17 shapes\" before anyone reads a number."
+agent: "Open a summary with a sentence that embeds its numbers, then a single split bar with a counted legend, then a direct picture of the finding (for drift: one square per distinct shape per element). Don't use a row of equal KPI boxes. Never show an unmeasured value as zero."
+check:
+  engine: advisory
+files:
+  - "apps/web/src/**/*.tsx"
+  - "packages/cli/src/report/html.ts"

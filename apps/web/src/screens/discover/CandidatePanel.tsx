@@ -15,7 +15,7 @@ import { candidateTile } from "./candidate.tsx";
 import { LicenceBadge } from "./LicenceBadge.tsx";
 
 /** Behind a scheme's tile whatever scheme the hub is in, for a page that paints no background of its own. */
-const SCHEME_BACKDROP: Readonly<Record<Scheme, string>> = { light: "#ffffff", dark: "#0a0a0a" };
+const SCHEME_BACKDROP: Readonly<Record<Scheme, string>> = { light: "#fcfcfd", dark: "#0f1011" };
 
 function Drawing({ answer, failure, scheme }: { answer: PreviewAnswer; failure: string | null; scheme: Scheme }) {
   const html = useDrawn(answer.id);

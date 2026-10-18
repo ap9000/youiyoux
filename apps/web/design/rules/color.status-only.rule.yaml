@@ -1,0 +1,14 @@
+$schema: ../../../../schema/youi.rule.schema.json
+schema: youi.rule/v1
+id: youi:youiyoux/rule/color.status-only
+title: "One accent over neutrals; everything else is a step of it"
+severity: warn
+statement: "Like Linear, the palette comes from three inputs: a cool neutral base, one desaturated indigo accent, and contrast. Text, surfaces and lines are steps of the neutral. The accent is the only hue that marks something: links and focus, the extra shapes in the shape map, the near-duplicate segment of the split bar. Other kinds of finding are lighter steps of that same accent, never a new hue. Two muted tones exist for state only: sage for Clean and clay for could-not-read, as text or a small dot, never a fill. No pure primaries (no #f00, #0f0, #00f, no traffic-light green, amber or red) and no yellow. Counts stay ink."
+rationale: "Linear reached a calmer, timeless look by limiting how much chrome colour went into its theme and building hierarchy from neutral opacity steps. With one hue a reader learns its meaning in one screen; a rainbow of status colours reads as alarm and makes a report look like a poster."
+agent: "Use neutral tokens for text, surfaces and lines; use accent (and accent mixed toward surface for secondary kinds) for the one thing that needs marking; use success (sage) and danger (clay) only as text or a dot for clean and could-not-read. Never introduce a new hue, a saturated primary, or yellow."
+check:
+  engine: youi
+  id: raw-color
+  options: {}
+files:
+  - "apps/web/src/**/*.tsx"

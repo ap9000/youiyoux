@@ -11,10 +11,10 @@ import { join, relative, resolve } from "node:path";
 import { writeFileAtomic } from "@youiyoux/core";
 import type { SpecimenCache } from "@youiyoux/scanner";
 import { drawCard } from "./card.ts";
-import { renderHtml } from "./html.ts";
+import { placesByKind, renderHtml } from "./html.ts";
 import { addLooks, chromiumStatus, downloadChromium, DOWNLOAD_SIZE, looksOff } from "./looks.ts";
 import { renderMarkdown } from "./markdown.ts";
-import { buildReportModel, DUPLICATE_RULE, NPX, type ReportModel } from "./model.ts";
+import { buildReportModel, NPX, type ReportModel } from "./model.ts";
 import { Redactor } from "./safe.ts";
 
 export const REPORT_FILE = "youiyoux-report.html";
@@ -117,13 +117,7 @@ export async function runReport(options: ReportOptions = {}, io: ReportIo = {}):
   const t = clean.totals;
   const card = {
     repo: redactor.scrub(clean.repo),
-    stats: [
-      { value: t.definitions, label: ["components", "defined"] },
-      { value: t.componentDuplicates, label: ["duplicated", "components"], tone: t.componentDuplicates > 0 ? ("warn" as const) : ("ok" as const) },
-      { value: t.hardcoded, label: ["hardcoded", "values"], tone: t.hardcoded > 0 ? ("warn" as const) : ("ok" as const) },
-      { value: t.offLibrary, label: ["off-library", "imports"], tone: t.offLibrary > 0 ? ("warn" as const) : ("ok" as const) },
-    ],
-    note: DUPLICATE_RULE,
+    parts: placesByKind(clean),
     footer: redactor.scrub(t.libraries.length > 0 ? `UI libraries: ${t.libraries.join(", ")}` : "No UI library found"),
   };
   const html = redactor.scrub(renderHtml(clean));

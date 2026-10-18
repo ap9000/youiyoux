@@ -16,20 +16,43 @@ import { Section, Table } from "../../ui/Section.tsx";
 const SHORT_SHA = 7;
 const TOP_COMPONENTS = 8;
 
-function Stat({ label, value, href }: { label: string; value: ReactNode; href?: string }) {
-  const body = (
-    <>
-      <div className="tabular text-display">{value}</div>
-      <div className="text-small text-muted">{label}</div>
-    </>
-  );
-  const tile = "block rounded-lg border border-line bg-surface px-4 py-3 transition-colors duration-100";
+/** A number inside the headline sentence: ink with a hairline underline, a link when it leads somewhere. */
+function Num({ value, href, clean }: { value: ReactNode; href?: string; clean?: boolean }) {
+  const look = `tabular font-semibold underline decoration-line-strong decoration-2 underline-offset-[0.2em] ${clean ? "text-success" : "text-ink"}`;
   return href ? (
-    <Link href={href} className={`${tile} hover:border-line-strong hover:bg-raised`}>
-      {body}
+    <Link href={href} className={`${look} hover:decoration-accent`}>
+      {value}
     </Link>
   ) : (
-    <div className={tile}>{body}</div>
+    <span className={look}>{value}</span>
+  );
+}
+
+/** The headline (rule data.headline): one sentence that carries the numbers, never a row of equal boxes. */
+function Headline({ counts, projects, sites, violations }: { counts: ReturnType<typeof countByKind>; projects: number | null; sites: number | null; violations: number | null }) {
+  const plural = (n: number, one: string, many = `${one}s`): string => (n === 1 ? one : many);
+  return (
+    <p data-headline className="max-w-3xl text-title text-ink-2">
+      <Num value={counts.component} href="/elements" /> {plural(counts.component, "component")}, <Num value={counts.token} href="/tokens" /> {plural(counts.token, "token")} and <Num value={counts.rule} href="/elements" /> {plural(counts.rule, "rule")}
+      {projects !== null && sites !== null && violations !== null ? (
+        <>
+          , used at <Num value={sites} href="/screens" /> {plural(sites, "site")} in <Num value={projects} href="/screens" /> {plural(projects, "project")}
+          {violations > 0 ? (
+            <>
+              {" "}
+              with <Num value={violations} /> {plural(violations, "violation")}.
+            </>
+          ) : (
+            <>
+              {" "}
+              with <Num value="no" clean /> violations.
+            </>
+          )}
+        </>
+      ) : (
+        "."
+      )}
+    </p>
   );
 }
 
@@ -169,14 +192,7 @@ function Home({ model }: { model: Model }) {
           </div>
         </header>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          <Stat label="Components" value={counts.component} href="/elements" />
-          <Stat label="Tokens" value={counts.token} href="/tokens" />
-          <Stat label="Rules" value={counts.rule} href="/elements" />
-          <Stat label="Projects" value={index ? index.reports.length : "–"} href="/screens" />
-          <Stat label="Usage sites" value={sites ?? "–"} href="/screens" />
-          <Stat label="Violations" value={violations ?? "–"} />
-        </div>
+        <Headline counts={counts} projects={index ? index.reports.length : null} sites={sites} violations={violations} />
 
         {index ? <Usage model={model} index={index} /> : <ResourceState state={usage} onRetry={() => location.reload()} what="the usage map" />}
 

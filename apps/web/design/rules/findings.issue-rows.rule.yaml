@@ -1,0 +1,13 @@
+$schema: ../../../../schema/youi.rule.schema.json
+schema: youi.rule/v1
+id: youi:youiyoux/rule/findings.issue-rows
+title: "Findings are rows in a panel, each with its next step"
+severity: warn
+statement: "Findings are rows separated by hairlines inside one panel, not free-floating cards. A row leads with its count, says what is wrong in a sentence, carries a kind chip, and ends with the next step."
+rationale: "After Semrush's issue list and HubSpot's recommendations. Rows scan faster than cards, the count ranks them at a glance, and the next step turns reading into doing."
+agent: "Render findings as hairline-separated rows inside one panel: count, sentence, kind chip, then \"Next:\" with the concrete step. Never a card per finding."
+check:
+  engine: advisory
+files:
+  - "apps/web/src/**/*.tsx"
+  - "packages/cli/src/report/html.ts"

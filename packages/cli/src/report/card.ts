@@ -1,6 +1,6 @@
 /**
- * The share card: a 1200×630 PNG (the Open Graph size) with the repo's name and the headline
- * numbers, drawn pixel by pixel with the bitmap font (font.ts) and compressed with node:zlib, so
+ * The share card: a 1200×630 PNG (the Open Graph size) with the repo's name, the headline's
+ * places to fix and the same split bar as the report, in the hub's dark palette, drawn pixel by pixel with the bitmap font (font.ts) and compressed with node:zlib, so
  * it needs no browser, no font files and no network. The PNG carries no text chunks: the only
  * text is drawn, and it has been through the redactor (safe.ts) first.
  */
@@ -12,13 +12,13 @@ export const CARD_HEIGHT = 630;
 
 type Rgb = readonly [number, number, number];
 
-const INK = { background: [11, 16, 32], tile: [22, 30, 54], accent: [124, 156, 255], text: [232, 236, 248], muted: [147, 160, 191], warn: [251, 191, 36], ok: [74, 222, 128] } satisfies Record<string, Rgb>;
+/** The hub's dark tokens (apps/web/design/youiyoux.dark.tokens.json): canvas, neutral-soft, accent (and its 55%/25% steps toward surface, as in the report), ink, muted, success. */
+const INK = { background: [8, 9, 10], track: [25, 26, 29], accent: [113, 112, 255], accent2: [69, 69, 147], accent3: [40, 40, 76], text: [247, 248, 248], muted: [138, 143, 152], ok: [143, 181, 164] } satisfies Record<string, Rgb>;
 
 export interface CardInput {
   readonly repo: string;
-  readonly stats: ReadonlyArray<{ readonly value: number; readonly label: readonly string[]; readonly tone?: "warn" | "ok" }>;
-  /** One small line right under the tiles: what a number counts, when it needs saying. */
-  readonly note?: string;
+  /** Places to fix by kind, as the report's headline counts them. */
+  readonly parts: ReadonlyArray<{ readonly label: string; readonly places: number }>;
   /** One line at the bottom: the UI libraries found. */
   readonly footer: string;
 }
@@ -115,32 +115,40 @@ export function drawCard(input: CardInput): Buffer {
   const canvas = new Canvas(CARD_WIDTH, CARD_HEIGHT, INK.background);
   const margin = 72;
   const inner = CARD_WIDTH - margin * 2;
-  canvas.rect(0, 0, CARD_WIDTH, 10, INK.accent);
-  canvas.text(margin, 64, "YOUIYOUX REPORT", 4, INK.accent);
-  const name = fit(input.repo, inner, 10, 5);
-  canvas.text(margin, 64 + 7 * 4 + 32, name.text, name.scale, INK.text);
+  canvas.text(margin, 64, "youiyoux report", 3, INK.muted);
+  const name = fit(input.repo, inner, 9, 5);
+  canvas.text(margin, 104, name.text, name.scale, INK.text);
 
-  const gap = 16;
-  const tiles = input.stats.slice(0, 4);
-  const tileWidth = Math.floor((inner - gap * (tiles.length - 1)) / Math.max(1, tiles.length));
-  const top = 290;
-  const tileHeight = 220;
-  tiles.forEach((stat, i) => {
-    const x = margin + i * (tileWidth + gap);
-    canvas.rect(x, top, tileWidth, tileHeight, INK.tile, 18);
-    const value = fit(String(stat.value), tileWidth - 48, 12, 6);
-    const tone = stat.tone === "warn" ? INK.warn : stat.tone === "ok" ? INK.ok : INK.text;
-    canvas.text(x + 24, top + 28, value.text, value.scale, tone);
-    stat.label.slice(0, 2).forEach((line, n) => {
-      const label = fit(line, tileWidth - 48, 3, 2);
-      canvas.text(x + 24, top + 28 + 7 * 12 + 26 + n * 30, label.text, label.scale, INK.muted);
+  // The headline: the total in ink (sage when clean), then what it counts.
+  const total = input.parts.reduce((n, part) => n + part.places, 0);
+  const value = fit(String(total), inner / 2, 14, 8);
+  const valueWidth = canvas.text(margin, 236, value.text, value.scale, total > 0 ? INK.text : INK.ok);
+  const words = total === 0 ? "places to fix: clean" : total === 1 ? "place to fix" : "places to fix";
+  canvas.text(margin + valueWidth + 28, 236 + 7 * value.scale - 7 * 4, words, 4, INK.muted);
+
+  // The split bar: one segment per kind, in the accent's steps, on the neutral track.
+  const top = 380;
+  const steps = [INK.accent, INK.accent2, INK.accent3];
+  canvas.rect(margin, top, inner, 20, INK.track, 10);
+  if (total > 0) {
+    let x = margin;
+    const shown = input.parts.filter((part) => part.places > 0);
+    const room = inner - 6 * (shown.length - 1);
+    input.parts.forEach((part, i) => {
+      if (part.places === 0) return;
+      const last = part === shown.at(-1);
+      const width = last ? margin + inner - x : Math.max(10, Math.round((part.places / total) * room));
+      canvas.rect(x, top, width, 20, steps[i] ?? INK.accent3, 10);
+      x += width + 6;
     });
-  });
-
-  if (input.note) {
-    const note = fit(input.note, inner, 2, 2);
-    canvas.text(margin, top + tileHeight + 20, note.text, note.scale, INK.muted);
   }
+  let x = margin;
+  input.parts.forEach((part, i) => {
+    canvas.rect(x, top + 52, 18, 18, part.places > 0 ? (steps[i] ?? INK.accent3) : INK.track, 4);
+    x += 32;
+    x += canvas.text(x, top + 52, part.label.split(" ")[0]!, 3, INK.muted) + 16;
+    x += canvas.text(x, top + 52, String(part.places), 3, part.places > 0 ? INK.text : INK.ok) + 40;
+  });
 
   const credit = "npx youiyoux";
   const creditWidth = textWidth(credit, 3);

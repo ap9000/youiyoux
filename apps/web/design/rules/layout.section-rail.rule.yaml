@@ -1,0 +1,13 @@
+$schema: ../../../../schema/youi.rule.schema.json
+schema: youi.rule/v1
+id: youi:youiyoux/rule/layout.section-rail
+title: "Long pages get a section rail with counts"
+severity: warn
+statement: "A page with more than three sections has a rail that names each section and its count (Top fixes 5, Duplicates 7). It stays in view on a wide screen and becomes a horizontal strip under the header on a phone."
+rationale: "After Vanta's Findings and Semrush's Site Audit. A report can run to thousands of pixels; the rail shows its whole shape at once and lets a reader jump to the part they care about."
+agent: "Give any page with more than three sections a sticky rail of anchor links, each with its section's count; at phone width render it as a horizontal, scrollable strip."
+check:
+  engine: advisory
+files:
+  - "apps/web/src/**/*.tsx"
+  - "packages/cli/src/report/html.ts"
