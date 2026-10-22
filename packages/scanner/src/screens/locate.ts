@@ -220,9 +220,11 @@ export function originalPosition(map: SourceMap, line: number, column: number): 
 
 /** A served module's source map: inline, or at the URL its last comment names. */
 export async function sourceMapOf(url: string, text: string, fetchText: (url: string) => Promise<string | null>): Promise<SourceMap | null> {
-  const comment = /\/\/[#@]\s*sourceMappingURL=(\S+)\s*$/m.exec(text.slice(-200_000));
-  if (!comment) return null;
-  const target = comment[1]!;
+  // The last such comment, however long: an inline map can be megabytes of base64 on one line.
+  const at = text.lastIndexOf("sourceMappingURL=");
+  if (at < 0 || !/\/\/[#@]\s*$/.test(text.slice(Math.max(0, at - 8), at))) return null;
+  const target = text.slice(at + "sourceMappingURL=".length).split(/\s/, 1)[0]!;
+  if (!target) return null;
   let json: string | null;
   if (target.startsWith("data:")) {
     const at = target.indexOf(",");

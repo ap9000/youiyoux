@@ -7,7 +7,7 @@ import { build, transform } from "esbuild";
 import type { Browser } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { launchBrowser } from "@youiyoux/detect";
-import { captureScreens, captureText, decodeMap, originalPosition, projectPath, readScreensSpec, resolvePlaces, screenSlug, type PlacesFile } from "../src/index.ts";
+import { captureScreens, captureText, decodeMap, sourceMapOf, originalPosition, projectPath, readScreensSpec, resolvePlaces, screenSlug, type PlacesFile } from "../src/index.ts";
 
 const PACKAGE = join(import.meta.dirname, "..");
 const scratch = mkdtempSync(join(tmpdir(), "youi-screens-"));
@@ -25,6 +25,11 @@ describe("source maps", () => {
     const column = generated[at]!.indexOf("jsxDEV(Button") + 1;
     expect(originalPosition(map, at + 1, column)).toEqual({ source: "app.tsx", line: 4, column: 5 });
     expect(decodeMap({ sources: ["a.ts"], mappings: "A!" })).toBeNull();
+    // An inline map is found however long it is (a development bundle's runs to megabytes).
+    const big = { version: 3, sources: ["app.tsx"], sourcesContent: ["x".repeat(400_000)], mappings: "AAAA" };
+    const inline = `code();\n//# sourceMappingURL=data:application/json;base64,${Buffer.from(JSON.stringify(big)).toString("base64")}\n`;
+    expect((await sourceMapOf("http://localhost/app.js", inline, async () => null))?.sources).toEqual(["app.tsx"]);
+    expect(await sourceMapOf("http://localhost/app.js", "const s = 'sourceMappingURL=nope';", async () => null)).toBeNull();
   });
 
   test("a map's source becomes a project path: beside the module, Vite's /@fs, webpack's, never outside the root", () => {
