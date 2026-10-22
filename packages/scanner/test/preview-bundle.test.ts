@@ -25,6 +25,11 @@ test("a compound is drawn with the parts its kind needs; a plain component with 
   expect(composeOf("button", ["Button", "buttonVariants"], "Button")).toEqual({ export: "Button", props: {}, children: ["Button"] });
   expect(composeOf("input", ["Input"], "Email")).toEqual({ export: "Input", props: { placeholder: "Email" }, children: [] });
   expect(composeOf("x", ["helper"], "X")).toBeNull();
+  // Parts that must sit inside another: an accordion's triggers in its items, a menubar's in its menus.
+  expect(composeOf("accordion", ["Accordion", "AccordionItem", "AccordionTrigger", "AccordionContent"], "Accordion")).toMatchObject({ export: "Accordion", props: { type: "single", defaultValue: "item-1" }, children: [{ export: "AccordionItem", props: { value: "item-1" }, children: [{ export: "AccordionTrigger" }, { export: "AccordionContent" }] }, { export: "AccordionItem" }] });
+  expect(composeOf("menubar", ["Menubar", "MenubarMenu", "MenubarTrigger", "MenubarContent", "MenubarItem"], "Menubar")).toMatchObject({ export: "Menubar", children: [{ export: "MenubarMenu", children: [{ export: "MenubarTrigger", children: ["File"] }, { export: "MenubarContent" }] }, { export: "MenubarMenu" }, { export: "MenubarMenu" }] });
+  // A dialog has a trigger and content but no items: still drawn open.
+  expect(composeOf("alert-dialog", ["AlertDialog", "AlertDialogTrigger", "AlertDialogContent", "AlertDialogTitle"], "Alert Dialog")).toMatchObject({ props: { open: true } });
 });
 
 test("the item bundles with the project's cn and React; an import that leaves the project, its packages and the preview is refused", async () => {
@@ -38,6 +43,15 @@ test("the item bundles with the project's cn and React; an import that leaves th
   expect(refused).toEqual({ error: expect.stringMatching(/resolves outside the preview, your project.s aliased source, the project components it was given and the installed packages/) });
   const missing = previewDir("missing", { "ui/y.tsx": 'import { motion } from "motion/react";\nexport function Y() { return <motion.div />; }\n' });
   expect(await bundlePreview({ root: CONSOLE, tsconfig: "tsconfig.json", dir: missing, main: "ui/y.tsx", compose: { export: "Y", props: {}, children: [] }, fallback: null })).toEqual({ error: "it needs motion, which is installed in neither your project nor the hub" });
+}, 60_000);
+
+test("radix-ui parts come from the @radix-ui packages there are; a part nobody has is a reason, not a crash when it runs", async () => {
+  // The console has @radix-ui/react-tabs but not react-accordion, and no radix-ui meta-package.
+  const tabs = previewDir("radix-tabs", { "ui/tabs.tsx": 'import { Tabs as TabsPrimitive } from "radix-ui";\nexport function Tabs() { return <TabsPrimitive.Root />; }\n' });
+  const built = await bundlePreview({ root: CONSOLE, tsconfig: "tsconfig.json", dir: tabs, main: "ui/tabs.tsx", compose: { export: "Tabs", props: {}, children: [] }, fallback: null });
+  expect("hash" in built && built.notes).toContain("radix-ui is not installed: its Tabs comes from @radix-ui/react-tabs");
+  const accordion = previewDir("radix-accordion", { "ui/accordion.tsx": 'import { Accordion as AccordionPrimitive } from "radix-ui";\nexport function Accordion() { return <AccordionPrimitive.Root type="single" />; }\n' });
+  expect(await bundlePreview({ root: CONSOLE, tsconfig: "tsconfig.json", dir: accordion, main: "ui/accordion.tsx", compose: { export: "Accordion", props: {}, children: [] }, fallback: null })).toEqual({ error: "it needs radix-ui's Accordion (@radix-ui/react-accordion), installed in neither your project nor the hub" });
 }, 60_000);
 
 describe("what a fetched file may read", () => {

@@ -82,7 +82,7 @@ export function composeOf(itemName: string, exports: readonly string[], label: s
   const main = components.find((e) => e === PASCAL(itemName)) ?? components[0];
   if (!main) return null;
   const has = (suffix: string): string | null => (components.includes(`${main}${suffix}`) ? `${main}${suffix}` : null);
-  const [input, list, item, group, trigger, content, header, title, description, footer] = ["Input", "List", "Item", "Group", "Trigger", "Content", "Header", "Title", "Description", "Footer"].map(has);
+  const [input, list, item, group, trigger, content, header, title, description, footer, menu] = ["Input", "List", "Item", "Group", "Trigger", "Content", "Header", "Title", "Description", "Footer", "Menu"].map(has);
   if (list && item) {
     // A command menu or listbox: a search field and a group of items.
     const items = ["Calendar", "Search emoji", "Calculator"].map((text) => node(item, {}, [text]));
@@ -94,6 +94,17 @@ export function composeOf(itemName: string, exports: readonly string[], label: s
       node(list, {}, [node(trigger, { value: "account" }, ["Account"]), node(trigger, { value: "password" }, ["Password"])]),
       node(content, { value: "account" }, ["Make changes to your account here."]),
       node(content, { value: "password" }, ["Change your password here."]),
+    ]);
+  }
+  if (menu && trigger) {
+    // A menubar: each trigger inside a menu of its own.
+    return node(main, {}, ["File", "Edit", "View"].map((text) => node(menu, {}, [node(trigger, {}, [text]), ...(content && item ? [node(content, {}, [node(item, {}, ["New tab"])])] : [])])));
+  }
+  if (item && trigger && content) {
+    // An accordion: its triggers live inside items, the first one open.
+    return node(main, { type: "single", collapsible: true, defaultValue: "item-1", style: { width: 320 } }, [
+      node(item, { value: "item-1" }, [node(trigger, {}, ["Is it accessible?"]), node(content, {}, ["Yes, with your tokens."])]),
+      node(item, { value: "item-2" }, [node(trigger, {}, ["Is it styled?"]), node(content, {}, ["In your theme."])]),
     ]);
   }
   if (trigger && content) {
@@ -367,6 +378,8 @@ export async function bundlePreview(job: PreviewJob, options: { readonly bundleT
       if (message.startsWith("esbuild timed out")) return { error: `bundling took over ${limitOf(timeoutMs)} and was stopped` };
       return { error: `it did not bundle: ${message}` };
     }
+    // A radix-ui part nobody has bundles to nothing, and would only fail once it runs: say why now.
+    if (refusals.size > 0) return { error: [...refusals][0]! };
     if (radix.size > 0) notes.add(`radix-ui is not installed: its ${[...radix.keys()].sort().join(", ")} ${radix.size === 1 ? "comes" : "come"} from ${[...new Set(radix.values())].sort().join(", ")}`);
     if (fromHub.size > 0) notes.add(`${[...fromHub].sort().join(", ")}: not installed in your project, so the hub's own ${fromHub.size === 1 ? "copy draws it" : "copies draw them"}`);
     const inputs: BundleInput[] = [];
