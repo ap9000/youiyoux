@@ -8,14 +8,14 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { extname, join, resolve, sep } from "node:path";
 
 export const HEALTH_PATH = "/healthz";
-const IMMUTABLE = "public, max-age=31536000, immutable";
-const REVALIDATE = "no-cache";
+export const IMMUTABLE = "public, max-age=31536000, immutable";
+export const REVALIDATE = "no-cache";
 /** Vite's hashed bundles, and the snapshot's content-hashed catalog and usage files. */
 const HASHED = /^\/assets\/|^\/data\/.+\.[0-9a-f]{10}\.json$/;
 /** The build's directories of files; anything missing there is a 404, never the hub. */
 const STATIC_DIRS = /^\/(?:assets|data|previews)\//;
 
-const TYPES: Readonly<Record<string, string>> = {
+export const TYPES: Readonly<Record<string, string>> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -25,10 +25,11 @@ const TYPES: Readonly<Record<string, string>> = {
   ".png": "image/png",
   ".woff2": "font/woff2",
   ".woff": "font/woff",
+  ".mjs": "text/javascript; charset=utf-8",
   ".txt": "text/plain; charset=utf-8",
 };
 
-const BASE_HEADERS: Readonly<Record<string, string>> = {
+export const BASE_HEADERS: Readonly<Record<string, string>> = {
   "X-Robots-Tag": "noindex, nofollow",
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "no-referrer",
@@ -36,12 +37,12 @@ const BASE_HEADERS: Readonly<Record<string, string>> = {
   "X-Frame-Options": "SAMEORIGIN",
 };
 
-function send(res: ServerResponse, status: number, body: string): void {
+export function send(res: ServerResponse, status: number, body: string): void {
   res.writeHead(status, { ...BASE_HEADERS, "Content-Type": "text/plain; charset=utf-8", "Cache-Control": REVALIDATE });
   res.end(body);
 }
 
-function sendFile(req: IncomingMessage, res: ServerResponse, file: string, cache: string): void {
+export function sendFile(req: IncomingMessage, res: ServerResponse, file: string, cache: string): void {
   res.writeHead(200, { ...BASE_HEADERS, "Content-Type": TYPES[extname(file)] ?? "application/octet-stream", "Content-Length": statSync(file).size, "Cache-Control": cache });
   if (req.method === "HEAD") return void res.end();
   createReadStream(file)
@@ -57,7 +58,7 @@ function sendFile(req: IncomingMessage, res: ServerResponse, file: string, cache
 const isStaticPath = (pathname: string): boolean => STATIC_DIRS.test(pathname) || extname(pathname) in TYPES;
 
 /** The file under `root` that `pathname` names, or null when it escapes `root` or is not a file. */
-function fileFor(root: string, pathname: string): string | null {
+export function fileFor(root: string, pathname: string): string | null {
   const file = resolve(join(root, pathname));
   if (file !== root && !file.startsWith(`${root}${sep}`)) return null;
   return existsSync(file) && statSync(file).isFile() ? file : null;

@@ -21,10 +21,9 @@
 import { existsSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { loadPackage } from "./packages.ts";
 
 export const QUERY_PATH = "/__youi/query";
-const DISCOVER = resolve(import.meta.dirname, "../../../packages/discover/src/index.ts");
 const MAX_LIMIT = 100;
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
@@ -73,7 +72,7 @@ function page(params: URLSearchParams): { limit: number; offset: number } {
 }
 
 /** The /__youi/query endpoint, as connect middleware under the hub's `base`. */
-export function queryMiddleware(options: QueryOptions = {}, base = "/", load: () => Promise<Discover> = () => import(pathToFileURL(DISCOVER).href) as Promise<Discover>) {
+export function queryMiddleware(options: QueryOptions = {}, base = "/", load: () => Promise<Discover> = () => loadPackage<Discover>("discover")) {
   let discover: Promise<Discover> | null = null;
   const loaded = () => (discover ??= load());
   const env = options.env ?? process.env;

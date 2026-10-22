@@ -34,7 +34,7 @@ import { existsSync, readFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { loadPackage } from "./packages.ts";
 import { isLocalHost } from "./query-server.ts";
 import { TRY_INDEX, type TryIndex } from "./try-server.ts";
 
@@ -52,8 +52,6 @@ export const MAX_QUEUED = 4;
 const STOP_GRACE_MS = 2_000;
 const LOOPBACK_ORIGIN = /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/;
 
-const DISCOVER = resolve(import.meta.dirname, "../../../packages/discover/src/index.ts");
-const SCANNER = resolve(import.meta.dirname, "../../../packages/scanner/src/index.ts");
 /** The hub's own packages: what draws a candidate whose packages the project does not have. */
 export const HUB_ROOT = resolve(import.meta.dirname, "..");
 
@@ -162,7 +160,7 @@ function projectParts(root: string, files: readonly string[], exportNames: (sour
  * The preview endpoint for a snapshot directory, as connect middleware under the hub's `base`.
  * `load` loads the discover and scanner modules (a test passes its own).
  */
-export function discoverPreviewMiddleware(snapshot: string, base = "/", options: PreviewOptions = {}, load: () => Promise<{ discover: Discover; scanner: Scanner }> = async () => ({ discover: (await import(pathToFileURL(DISCOVER).href)) as Discover, scanner: (await import(pathToFileURL(SCANNER).href)) as Scanner })) {
+export function discoverPreviewMiddleware(snapshot: string, base = "/", options: PreviewOptions = {}, load: () => Promise<{ discover: Discover; scanner: Scanner }> = async () => ({ discover: await loadPackage<Discover>("discover"), scanner: await loadPackage<Scanner>("scanner") })) {
   const env = options.env ?? process.env;
   const fallback = options.fallback === undefined ? HUB_ROOT : options.fallback;
   let modules: Promise<{ discover: Discover; scanner: Scanner; bundles: InstanceType<Scanner["BrowserBundleCache"]> }> | null = null;

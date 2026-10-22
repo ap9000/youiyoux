@@ -20,9 +20,12 @@ import { createHash } from "node:crypto";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { chromium, type Page } from "playwright-core";
+import { launchBrowser } from "../../../packages/detect/src/index.ts";
 import { discoverCacheDir, loadIndex } from "../../../packages/discover/src/index.ts";
 import { needsCapture, prunePictures, readThumbIndex, selectCandidates, THUMB_SCHEMES, THUMBS_PATH, thumbsDir, writeThumbIndex, type ThumbIndex } from "./discover-thumbs.ts";
+
+/** A page of the browser launchBrowser starts (its playwright-core, not the hub's own copy). */
+type Page = Awaited<ReturnType<Awaited<ReturnType<typeof launchBrowser>>["newPage"]>>;
 
 /** The preview's own limit (60 s) and the frame's draw limit (15 s), with room to spare. */
 const DRAW_TIMEOUT_MS = 90_000;
@@ -125,7 +128,8 @@ async function main(): Promise<number> {
   const dir = thumbsDir(cache, project);
   await mkdir(dir, { recursive: true });
   const offsite: string[] = [];
-  const browser = await chromium.launch({ headless: true });
+  // YOUI_CHROMIUM, else the headless shell, downloaded once if it is missing (as youiyoux detect does).
+  const browser = await launchBrowser(process.env.YOUI_CHROMIUM, { purpose: { what: "Discover previews", command: "youiyoux discover previews" } });
   let drawn = 0;
   let failed = 0;
   try {

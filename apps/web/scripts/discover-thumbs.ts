@@ -21,6 +21,7 @@ import { readdir, rm } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { join, resolve } from "node:path";
 import { writeFileAtomic } from "@youiyoux/core";
+import { loadPackage } from "./packages.ts";
 import { isLocalHost } from "./query-server.ts";
 import { TRY_INDEX, type TryIndex } from "./try-server.ts";
 
@@ -169,7 +170,7 @@ function listingDigests(cache: string): Map<string, string> {
 }
 
 /** The thumbnail endpoints for a snapshot directory, as connect middleware under the hub's `base`. */
-export function discoverThumbsMiddleware(snapshot: string, base = "/", options: ThumbsOptions = {}, cacheDir: () => Promise<string> = async () => (await import("../../../packages/discover/src/index.ts")).discoverCacheDir(undefined, options.env ?? process.env)) {
+export function discoverThumbsMiddleware(snapshot: string, base = "/", options: ThumbsOptions = {}, cacheDir: () => Promise<string> = async () => (await loadPackage<typeof import("../../../packages/discover/src/index.ts")>("discover")).discoverCacheDir(undefined, options.env ?? process.env)) {
   const projects = (): string[] => {
     const file = join(snapshot, TRY_INDEX);
     if (!existsSync(file)) return [];

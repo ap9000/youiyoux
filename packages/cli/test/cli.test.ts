@@ -1,10 +1,11 @@
-import { cp, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { loadProject } from "@youiyoux/scanner";
-import { generatedPrefix, hubPlan, loadOptions, main, previewsPlan, runHub } from "../src/index.ts";
+import { builtHubPlan, generatedPrefix, hubPlan, loadOptions, main, previewsPlan, runHub } from "../src/index.ts";
 
 const FIXTURE = join(import.meta.dirname, "../../scanner/test/fixtures/expo-app");
 const DEMO = join(import.meta.dirname, "../../../examples/demo-design");
@@ -220,6 +221,61 @@ describe("youi", () => {
     expect(hubPlan(tool, { project: "/src/acme-app", api: "http://127.0.0.1:50123" }).env).toEqual({ YOUI_HUB_SNAPSHOT: "/opt/youi/apps/web/.hub", YOUI_API: "http://127.0.0.1:50123" });
     // A detect report alone snapshots the demo system plus the report, into .hub.
     expect(hubPlan(tool, { detect: "/tmp/acme/detect.json" }).snapshot).toEqual(["/opt/youi/apps/web/scripts/snapshot.ts", "--out", "/opt/youi/apps/web/.hub", "--detect", "/tmp/acme/detect.json"]);
+  });
+
+  test("from the npm package, ui serves the built hub with its own server: the demo as shipped, a named system snapshotted to a temporary directory", () => {
+    const tool = "/opt/pkg/dist";
+    expect(builtHubPlan(tool, {}, "/tmp/hub-1")).toEqual({
+      snapshot: null,
+      server: ["/opt/pkg/dist/hub-server.js", "--dist", "/opt/pkg/dist/hub", "--kit", "/opt/pkg/dist/hub/kit", "--snapshot", "/opt/pkg/dist/hub-demo"],
+      watch: null,
+    });
+    const plan = builtHubPlan(tool, { design: "/data/acme-design", project: "/src/acme-app", port: "5180", api: "http://127.0.0.1:50123", watch: true }, "/tmp/hub-1");
+    expect(plan.snapshot).toEqual(["/opt/pkg/dist/hub-snapshot.js", "--out", "/tmp/hub-1", "--design", "/data/acme-design", "--project", "/src/acme-app"]);
+    // The snapshot's frame is built from its demos; the rule editor is proxied; --watch makes it live.
+    expect(plan.server).toEqual(["/opt/pkg/dist/hub-server.js", "--dist", "/opt/pkg/dist/hub", "--kit", "/opt/pkg/dist/hub/kit", "--snapshot", "/tmp/hub-1", "--build-frame", "--port", "5180", "--api", "http://127.0.0.1:50123", "--live"]);
+    expect(plan.watch).toEqual([...plan.snapshot!, "--watch"]);
+    // The package carries no demo project to watch.
+    expect(() => builtHubPlan(tool, { watch: true }, "/tmp/hub-1")).toThrowError(/name it with --design or --project/);
+  });
+
+  test("ui runs the built hub when the tool's root has one, and removes the snapshot it made when the hub stops", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "youi-built-hub-"));
+    try {
+      await mkdir(join(dir, "hub"), { recursive: true });
+      await writeFile(join(dir, "hub/index.html"), "<!doctype html>");
+      // Stand-ins for the bundled scripts: the snapshot names its --out, the server exits at once.
+      await writeFile(join(dir, "hub-snapshot.js"), 'import { writeFileSync } from "node:fs"; const out = process.argv[process.argv.indexOf("--out") + 1]; writeFileSync(process.env.YOUI_TEST_OUT, out); writeFileSync(out + "/made", "");');
+      await writeFile(join(dir, "hub-server.js"), 'import { appendFileSync } from "node:fs"; appendFileSync(process.env.YOUI_TEST_OUT, "\\n" + process.argv.slice(2).join(" "));');
+      vi.stubEnv("YOUI_TEST_OUT", join(dir, "seen"));
+      expect(await runHub(dir, { design: DEMO })).toBe(0);
+      const [out, server] = (await readFile(join(dir, "seen"), "utf8")).split("\n");
+      expect(server).toContain(`--snapshot ${out} --build-frame`);
+      expect(existsSync(out!)).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a stopped built hub stops its server and still removes its snapshot", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "youi-built-hub-"));
+    try {
+      await mkdir(join(dir, "hub"), { recursive: true });
+      await writeFile(join(dir, "hub/index.html"), "<!doctype html>");
+      await writeFile(join(dir, "hub-snapshot.js"), 'import { writeFileSync } from "node:fs"; writeFileSync(process.env.YOUI_TEST_OUT, process.argv[process.argv.indexOf("--out") + 1]);');
+      // A server that runs until it is stopped, and says when it is up.
+      await writeFile(join(dir, "hub-server.js"), 'import { writeFileSync } from "node:fs"; writeFileSync(process.env.YOUI_TEST_OUT + ".up", ""); setInterval(() => {}, 1000);');
+      vi.stubEnv("YOUI_TEST_OUT", join(dir, "seen"));
+      const hub = runHub(dir, { design: DEMO });
+      await vi.waitFor(() => expect(existsSync(join(dir, "seen.up"))).toBe(true), { timeout: 10_000 });
+      process.emit("SIGINT");
+      expect(await hub).toBe(0);
+      expect(existsSync(await readFile(join(dir, "seen"), "utf8"))).toBe(false);
+    } finally {
+      vi.unstubAllEnvs();
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   test("detect on a repo writes youi.detect/v1 and lists declared-but-unused packages apart from the verdicts", async () => {

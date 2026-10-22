@@ -18,7 +18,7 @@
 import { existsSync, readFileSync, statSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { loadPackage } from "./packages.ts";
 
 export const TRY_PATH = "/__youi/try";
 export const TRY_INDEX = "try.json";
@@ -108,8 +108,6 @@ interface Scanner {
   BrowserBundleCache: new () => { get(key: string, build: () => Promise<Built>): Promise<Built>; code(hash: string): string | null };
 }
 
-const SCANNER = resolve(import.meta.dirname, "../../../packages/scanner/src/index.ts");
-
 /** The try.json of a snapshot, re-read when it changes; null when there is none. */
 function reader(snapshot: string): () => TryIndex | null {
   const file = join(snapshot, TRY_INDEX);
@@ -139,7 +137,7 @@ const send = (res: ServerResponse, status: number, body: unknown): void => {
  * The Try it endpoint for a snapshot directory, as connect middleware under the hub's `base`:
  * `next()` for any other URL. `load` is how the scanner is loaded (a test passes its own).
  */
-export function tryMiddleware(snapshot: string, base = "/", load: () => Promise<Scanner> = () => import(pathToFileURL(SCANNER).href) as Promise<Scanner>) {
+export function tryMiddleware(snapshot: string, base = "/", load: () => Promise<Scanner> = () => loadPackage<Scanner>("scanner")) {
   const index = reader(snapshot);
   let scanner: Promise<{ module: Scanner; cache: InstanceType<Scanner["BrowserBundleCache"]> }> | null = null;
   const loaded = () => (scanner ??= load().then((module) => ({ module, cache: new module.BrowserBundleCache() })));

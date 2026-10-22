@@ -24,6 +24,12 @@ The hub shows one design system at a time, read from a snapshot directory. The c
 
 Rules and Changes are live rather than a snapshot when the rule editor runs: `youiyoux ui --project <dir>` starts it beside the dev server, which proxies `/api` to it.
 
+### From npm
+
+`npx youiyoux ui` has no Vite: the npm package carries this hub built (`vite build` on the committed demo snapshot, its data left out) and `scripts/hub-server.ts`, its own server, which serves it with a snapshot's `public/` and everything the dev server adds: Try it, `/__youi/query`, Discover's previews and thumbnails, `/api` proxied to the workflow service, and with `--watch` an event stream (`/__youi/events`, named in `index.html`) on which each new generation is announced, as the dev server's HMR event does. It answers on 127.0.0.1 only and refuses any other `Host`. A named system's snapshot goes to a temporary directory, removed when the hub stops (Ctrl-C included).
+
+The preview frame is built without Vite (`scripts/frame.ts`): the package carries a kit (`/kit/`): the frame's own code, and React, Radix (dialog, label, separator, slot, switch, tabs), cva, clsx, tailwind-merge and lucide-react as one module each, sharing one React, with Tailwind's sheets and Geist. For each snapshot the server bundles every `<name>.demo.tsx` with esbuild, those packages left to the kit, the snapshot's own component files the only others it may import (a demo that imports anything else is listed in `demos.js` with why, and the frame says so in its place), and compiles the frame's sheet with Tailwind's compiler, the system's `system.css` and every class name in the frame's code and the system's components (`/frame/`).
+
 ## Screens
 
 The nav (a labelled sidebar from 1280px wide, an icon rail with tooltips below that) has three labelled groups: **System** (Overview, Components, Tokens, Rules, Screens: approved elements, their rules and live usage; what products build with), **Library** (Browse, Inventory, Discover, Stack, Sources: what is ingested, detected or found outside, to browse and propose; never built with) and **Work** (Style, Changes). Access stays reachable at `/access`.

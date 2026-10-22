@@ -9,15 +9,11 @@ import { type ComponentType, StrictMode, useEffect, useRef, useState } from "rea
 import { createRoot } from "react-dom/client";
 import { PINNED_STATES, pinState, type PinnedState } from "./pin.ts";
 import { PREVIEW_SCREENS, type PreviewFocus, type PreviewScreen, type PreviewToken, type PreviewVars, type ToFrame } from "./protocol.ts";
+import { DEMO_ERRORS, DEMOS } from "./demos.ts";
 import { Screen } from "./screens.tsx";
 import "./preview.css";
 
 type Scheme = "light" | "dark";
-type DemoModule = { default: ComponentType };
-
-const DEMOS: Readonly<Record<string, () => Promise<DemoModule>>> = Object.fromEntries(
-  Object.entries(import.meta.glob<DemoModule>("@snapshot/preview/components/*.demo.tsx")).map(([path, load]) => [path.split("/").at(-1)!.replace(/\.demo\.tsx$/, ""), load]),
-);
 
 const params = new URLSearchParams(location.search);
 const name = params.get("c") ?? "";
@@ -112,6 +108,8 @@ function Frame() {
           <Screen screen={screen as PreviewScreen} tokens={tokens} demos={DEMOS} replay={replay} focus={focus} />
         ) : Demo ? (
           <Demo />
+        ) : Demo === null && Object.hasOwn(DEMO_ERRORS, name) ? (
+          <p className="opacity-70">The preview for “{name}” could not be built: {DEMO_ERRORS[name]}</p>
         ) : Demo === null ? (
           <p className="opacity-70">The design repo has no preview for “{name}” yet: add {name}.demo.tsx beside its contract.</p>
         ) : null}

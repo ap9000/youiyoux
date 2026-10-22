@@ -53,6 +53,7 @@
     "@youiyoux/tokens": "workspace:*",
     "@youiyoux/workflow": "workspace:*",
     "embla-carousel-react": "8.6.0",
+    "esbuild": "0.28.2",
     "input-otp": "1.5.0",
     "jsdom": "30.1.1",
     "next-themes": "0.4.6",

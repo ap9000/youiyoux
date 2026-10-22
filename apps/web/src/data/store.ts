@@ -183,8 +183,13 @@ export function useLiveState(): LiveState {
   );
 }
 
-// `youiyoux ui --watch`: the dev server announces each new snapshot generation.
+// `youiyoux ui --watch`: the dev server announces each new snapshot generation; the built hub's own
+// server (scripts/hub-server.ts) sends the same on the event stream index.html names.
 if (import.meta.hot) import.meta.hot.on("youi:snapshot", () => void refreshSnapshot());
+else if (typeof document !== "undefined") {
+  const events = document.querySelector<HTMLMetaElement>('meta[name="youi-live"]')?.content;
+  if (events) new EventSource(events).addEventListener("snapshot", () => void refreshSnapshot());
+}
 
 export const startModel = (): void => modelLoader.start();
 export const retryModel = (): void => modelLoader.retry();

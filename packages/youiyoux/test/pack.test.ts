@@ -6,7 +6,9 @@
  * bundle that Node 20 can load (no node:sqlite, fs.glob, path.matchesGlob or util.styleText import).
  */
 import { execFile, execFileSync, spawn, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -127,6 +129,45 @@ describe("npx youiyoux from the packed tarball", () => {
     } finally { fixture.remove(); }
   }, LONG);
 
+  test("youiyoux ui serves the hub built into the package on a named design system, with its preview frame", async () => {
+    const design = join(work, "design");
+    cpSync(join(PACKAGE, "../../examples/demo-design"), design, { recursive: true });
+    const port = await new Promise<number>((done) => {
+      const probe = createServer().listen(0, "127.0.0.1", () => {
+        const { port } = probe.address() as AddressInfo;
+        probe.close(() => done(port));
+      });
+    });
+    const child = spawn(NPX, ["--yes", "--package", tarball, "youiyoux", "ui", "--design", design, "--port", String(port)], { cwd: repo.dir, env, stdio: ["ignore", "pipe", "pipe"], detached: true });
+    let output = "";
+    child.stdout.on("data", (chunk) => (output += String(chunk)));
+    child.stderr.on("data", (chunk) => (output += String(chunk)));
+    try {
+      await new Promise<void>((done, fail) => {
+        const timer = setTimeout(() => fail(new Error(`the hub did not start:\n${output}`)), 120_000);
+        child.stdout.on("data", () => output.includes(`hub http://localhost:${port}/`) && (clearTimeout(timer), done()));
+        child.on("exit", () => (clearTimeout(timer), fail(new Error(`youiyoux ui exited:\n${output}`))));
+      });
+      const get = async (path: string) => {
+        const response = await fetch(`http://localhost:${port}${path}`);
+        return { status: response.status, body: await response.text() };
+      };
+      expect((await get("/elements")).body).toContain('<div id="root">');
+      const manifest = JSON.parse((await get("/data/manifest.json")).body) as { systems: Array<{ id: string }> };
+      expect(manifest.systems.map((s) => s.id)).toEqual(["demo"]);
+      expect((await get("/preview.html")).body).toContain("/kit/frame.js");
+      expect((await get("/frame/demos.js")).body).toContain('"button": () => import("./button.demo.js")');
+      // The system's own variables (a design repo alone gets youiyoux's prefix).
+      expect((await get("/frame/frame.css")).body).toContain("--youi-color-accent:");
+      expect(output).not.toMatch(/has no live preview/);
+    } finally {
+      // npx starts the CLI, which starts the server: stop the whole group.
+      try {
+        process.kill(-child.pid!, "SIGTERM");
+      } catch {}
+    }
+  }, LONG);
+
   test("the package's youi bin runs the full CLI", async () => {
     const help = await npx(repo.dir, ["--package", tarball, "youi", "--help"]);
     expect(help.status).toBe(0);
@@ -147,6 +188,8 @@ describe("the bundle", () => {
     expect(code).not.toMatch(/import\s*\{[^}]*\bmatchesGlob\b[^}]*\}\s*from\s*"node:path"/);
     expect(code).not.toMatch(/import\s*\{[^}]*\bstyleText\b[^}]*\}\s*from\s*"node:util"/);
     expect(code).not.toMatch(/from\s*"node:sqlite"/);
+    // Node 20.11+ and 24.2+: each file works out its own directory, and a script's main runs from its entry.
+    expect(code).not.toMatch(/import\.meta\.(dirname|main)\b/);
   });
 
   test("runs the report with the Node 22+ APIs it can do without taken away, as on Node 20", () => {
