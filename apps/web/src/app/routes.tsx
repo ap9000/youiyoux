@@ -1,5 +1,5 @@
 /** Route table: every screen is its own chunk, preloaded on hover/focus and on idle after first paint. */
-import { Boxes, Compass, LayoutGrid, Layers, Library, type LucideIcon, Monitor, Paintbrush, Palette, PlugZap, Scale, ScanSearch, GitPullRequestArrow } from "lucide-react";
+import { Boxes, Compass, LayoutGrid, Layers, Library, type LucideIcon, Monitor, Paintbrush, Palette, PlugZap, Puzzle, Scale, ScanSearch, GitPullRequestArrow } from "lucide-react";
 import { type ComponentType, createElement } from "react";
 
 /**
@@ -42,6 +42,7 @@ const rules = preloadable(() => import("../screens/rules/RulesScreen.tsx"), (m) 
 const screens = preloadable(() => import("../screens/screens/ScreensScreen.tsx"), (m) => m.ScreensScreen);
 const library = preloadable(() => import("../screens/library/LibraryScreen.tsx"), (m) => m.LibraryScreen);
 const stack = preloadable(() => import("../screens/stack/StackScreen.tsx"), (m) => m.StackScreen);
+const gaps = preloadable(() => import("../screens/gaps/GapsScreen.tsx"), (m) => m.GapsScreen);
 const changes = preloadable(() => import("../screens/changes/ChangesScreen.tsx"), (m) => m.ChangesScreen);
 const inventory = preloadable(() => import("../screens/inventory/InventoryScreen.tsx"), (m) => m.InventoryScreen);
 const discover = preloadable(() => import("../screens/discover/DiscoverScreen.tsx"), (m) => m.DiscoverScreen);
@@ -57,6 +58,7 @@ export const CatalogScreen = catalog.Component;
 export const TokensScreen = tokens.Component;
 export const LibraryScreen = library.Component;
 export const StackScreen = stack.Component;
+export const GapsScreen = gaps.Component;
 export const ScreensScreen = screens.Component;
 export const RulesScreen = rules.Component;
 export const SourcesScreen = sources.Component;
@@ -76,6 +78,7 @@ const loaders = {
   screens: screens.preload,
   library: library.preload,
   stack: stack.preload,
+  gaps: gaps.preload,
   changes: changes.preload,
   inventory: inventory.preload,
   discover: discover.preload,
@@ -115,6 +118,7 @@ export const NAV: readonly NavItem[] = [
   { href: "/library", label: "Browse", icon: Library, key: "l", loader: "library", section: "library" },
   { href: "/inventory", label: "Inventory", icon: ScanSearch, key: "v", loader: "inventory", section: "library" },
   { href: "/discover", label: "Discover", icon: Compass, key: "f", loader: "discover", section: "library" },
+  { href: "/library/gaps", label: "Gaps", icon: Puzzle, key: "p", loader: "gaps", section: "library" },
   { href: "/library/stack", label: "Stack", icon: Layers, key: "d", loader: "stack", section: "library" },
   { href: "/library/sources", label: "Sources", icon: PlugZap, key: "i", loader: "stubs", section: "library" },
   { href: "/style", label: "Style", icon: Paintbrush, key: "e", loader: "style", section: "work" },

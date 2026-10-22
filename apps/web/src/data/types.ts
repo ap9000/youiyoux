@@ -165,6 +165,8 @@ export interface Manifest {
   inventoryFiles?: string[];
   /** Discover's listings (youiyoux.discover-listings/v1) for a static host, which has no /__youi/query; absent when no Discover cache was synced. */
   discover?: string;
+  /** Gaps (youi.gaps/v1) for the inventoried projects, for Library > Gaps; absent without an inventory. */
+  gaps?: string;
   live?: LiveInfo;
 }
 

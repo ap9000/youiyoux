@@ -1,7 +1,7 @@
 {
   "schema": "youiyoux.manifest/v1",
   "source": {
-    "commit": "f5a348eafb15de41df167203418859e420fcff22"
+    "commit": "0b54362dc99c8c224431b5933f0ab28ee3be6eb8"
   },
   "systems": [
     {
@@ -10,29 +10,30 @@
       "usage": [
         {
           "project": "demo-app",
-          "file": "demo-app.usage.a6af557c21.json"
+          "file": "demo-app.usage.bedd9c82fe.json"
         }
       ]
     }
   ],
-  "inventory": "inventory.9aa0fe67ec.json",
+  "inventory": "inventory.165a4f6408.json",
   "inventoryFiles": [
     "specimens.console.light.aaffa2d213.css",
     "specimens.console.dark.046471907d.css",
     "specimens.site.light.3ddbc8d28d.css",
     "specimens.site.dark.94a6706908.css",
-    "inventory.console.button.d544e4e8de.json",
+    "inventory.console.button.3249daff35.json",
     "inventory.site.button.720938384e.json",
-    "inventory.console.link-as-button.ee018fd12f.json",
+    "inventory.console.link-as-button.1ce7faa1f3.json",
     "inventory.site.link-as-button.9c1f8a55bf.json",
     "inventory.console.input.bdffb756a7.json",
     "inventory.console.card.9ea88708ac.json",
     "inventory.site.card.d8df5f6873.json",
-    "inventory.console.badge.74d86c54dd.json",
+    "inventory.console.badge.ad0238784e.json",
     "inventory.site.badge.047a68f644.json",
-    "inventory.console.dialog.dc37978865.json",
-    "inventory.console.tabs.e472f73435.json",
+    "inventory.console.dialog.8b6574d93a.json",
+    "inventory.console.tabs.813e694c44.json",
     "inventory.site.tabs.59bd0200b9.json",
     "inventory.extras.e5d06c6ff4.json"
-  ]
+  ],
+  "gaps": "gaps.129a93538d.json"
 }

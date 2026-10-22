@@ -181,4 +181,16 @@ describe("snapshot Discover listings (a static host's fallback)", () => {
     const manifest = JSON.parse(await readFile(join(import.meta.dirname, "../snapshot/public/data/manifest.json"), "utf8")) as Record<string, unknown>;
     expect(manifest.discover).toBeUndefined();
   });
+
+  test("the committed demo snapshot carries gaps for its inventory, without candidates (no Discover index is read for it)", async () => {
+    const data = join(import.meta.dirname, "../snapshot/public/data");
+    const manifest = JSON.parse(await readFile(join(data, "manifest.json"), "utf8")) as { gaps?: string; inventory?: string };
+    expect(manifest.gaps).toMatch(/^gaps\.[0-9a-f]{10}\.json$/);
+    const { GapsReport } = await import("@youiyoux/core");
+    const gaps = GapsReport.parse(JSON.parse(await readFile(join(data, manifest.gaps!), "utf8")));
+    expect(gaps).toMatchObject({ system: "Demo", discover: "not-synced" });
+    expect(gaps.projects.map((p) => p.id)).toEqual(["console", "site"]);
+    // The demo System has Button, Input and Card: they are its, not gaps.
+    expect(gaps.projects[0]!.concepts.filter((c) => c.status === "system").map((c) => c.concept).sort()).toEqual(["button", "card", "input"]);
+  });
 });

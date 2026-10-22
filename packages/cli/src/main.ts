@@ -2,11 +2,11 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { appendFile, readFile } from "node:fs/promises";
-import { basename, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { parseArgs, promisify, type ParseArgsConfig } from "node:util";
 import { parse as parseYaml } from "yaml";
-import { DefinitionError, getSystem, loadDesignRepo, loadLibrary, MigrationSpec, OutputConfig, renderJsonSchemas, safeId, writeFileAtomic, type InventoryReport, type ScanReport } from "@youiyoux/core";
-import { candidateSource, expandAll, selectSources, discoverCacheDir, discoverIndexPath, ingestCatalog, readCatalog, searchCatalog, sharedStore, showFromCatalog, syncIndex, type Fetcher } from "@youiyoux/discover";
+import { DefinitionError, getSystem, loadDesignRepo, loadLibrary, MigrationSpec, OutputConfig, renderJsonSchemas, safeId, writeFileAtomic, InventoryReport, type ScanReport } from "@youiyoux/core";
+import { buildGaps, candidateSource, declaredPackages, expandAll, MissingIndexError, selectSources, discoverCacheDir, discoverIndexPath, ingestCatalog, readCatalog, searchCatalog, sharedStore, showFromCatalog, syncIndex, type Fetcher } from "@youiyoux/discover";
 import { indexHome, storeLocation } from "@youiyoux/store";
 import { buildTokens, compareParity } from "@youiyoux/tokens";
 import { adoptionRequest, buildInventory, captureScreens, captureText, chosenSession, openLoginBrowser, recordSession, sessionFile, type LoginBrowser, type LoginPage, within, RenderUnavailableError, renderShots, shotsNext, type ShotsOptions, checkCapabilities, componentCard, describeIdentity, evaluateRule, findContract, loadProject, planChange, PROJECT_FILE, type LoadProjectOptions, ProjectWatcher, ruleCapability, runMigration, scanProject, screenBom, searchLibrary, whereUsed, type CacheStats, type PlanInput, type Project, type WatchUpdate } from "@youiyoux/scanner";
@@ -24,6 +24,7 @@ import { DEFAULT_HUB_PORT, runHub, runPreviews } from "./hub.ts";
 import { renderBrief, renderRequests } from "./requests.ts";
 import { initProject } from "./init.ts";
 import { noteSource, rebuildIndex, recordInventory, recordProject, renderHistory, renderRebuild, SCANS_LOG, SOURCES_FILE } from "./index-store.ts";
+import { renderGaps } from "./gaps.ts";
 import { renderInventory } from "./inventory.ts";
 import { renderAdoptionRequest, renderLibrarySearch } from "./library.ts";
 import { renderBom, renderMigration, renderPlan, renderRulePreview, renderRules, renderScan, renderShots as renderShotsText, renderShow, renderSync, renderWhere } from "./render.ts";
@@ -62,6 +63,10 @@ ${style.bold("Anywhere")}  ${style.dim("no design system needed")}
                            <first project>/.youi/inventory.json unless --out, and records the scan
                            (project, commit, time, counts, families) in the local index for trends
   inventory --history      every recorded scan per project, newest first, with what changed
+  gaps [--project <dir>…] [--inventory <file>] [--json] [--out <file>]
+                           per project, each kind of element: in the System, from a library, built
+                           by hand or missing from the standard kit, with licensed candidates from
+                           the Discover index, and what is built by hand in more than one project
   requests [--status open|addressed|closed|all] [--route r] [--json]
                            comments and change requests people pinned to components on captured
                            screens: what is asked, the file:line, the picture, and what to do next
@@ -307,6 +312,26 @@ async function recordUsage(values: Values, p: Project, report: ScanReport, usage
 function indexOf(values: Pick<Values, "cache">): { path: string; home: string } {
   const path = discoverIndexPath(values.cache);
   return { path, home: indexHome(path) };
+}
+
+/** `youiyoux gaps`: per project, each kind of element in the System, from a library, built by hand or missing, with candidates. */
+async function cmdGaps(values: InventoryValues): Promise<number> {
+  const dirs = values.project?.length ? values.project : [process.cwd()];
+  const inventory = values.inventory ? InventoryReport.parse(JSON.parse(await readFile(resolve(values.inventory), "utf8"))) : await buildInventory(dirs, { ...(values.include ? { include: values.include } : {}), ...(values.exclude ? { exclude: values.exclude } : {}) });
+  // Paths in an inventory file are from where it was made: the file's own directory, else here.
+  const cwd = values.inventory ? dirname(resolve(values.inventory)) : process.cwd();
+  const project = await loadProject(resolve(dirs[0]!), loadOptions(values)).catch(() => null);
+  const system = project ? { name: project.system.config.name, components: project.system.components.map((c) => c.contract.name) } : null;
+  const store = await readCatalog(resolve(discoverCacheDir(values.cache)), indexOf(values).path).catch((error: unknown) => {
+    if (error instanceof MissingIndexError) return null;
+    throw error;
+  });
+  const roots = new Map(inventory.projects.map((p) => [p.id, resolve(cwd, p.root)]));
+  const report = await buildGaps({ inventory, system, dependencies: declaredPackages(roots) }, store);
+  if (values.out) await writeFileAtomic(resolve(values.out), `${JSON.stringify(report, null, 2)}\n`);
+  if (values.json) json(report);
+  else print(renderGaps(report));
+  return 0;
 }
 
 async function cmdInventory(values: InventoryValues): Promise<number> {
@@ -961,14 +986,14 @@ const COMMANDS: Record<string, Command> = {
 };
 
 /** Every command name, for a front end that runs one by default (the youiyoux bin runs report). */
-export const COMMAND_NAMES: readonly string[] = [...Object.keys(COMMANDS), "inventory", "help"];
+export const COMMAND_NAMES: readonly string[] = [...Object.keys(COMMANDS), "inventory", "gaps", "help"];
 
 export async function main(argv: string[], io: CliIo = {}): Promise<number> {
   let parsed;
   try {
-    if (argv[0] === "inventory") {
+    if (argv[0] === "inventory" || argv[0] === "gaps") {
       const inventory = parseArgs({ args: argv, options: INVENTORY_OPTIONS, allowPositionals: true });
-      if (!inventory.values.help) return await guarded(() => cmdInventory(inventory.values));
+      if (!inventory.values.help) return await guarded(() => (argv[0] === "gaps" ? cmdGaps(inventory.values) : cmdInventory(inventory.values)));
     }
     parsed = parseArgs({ args: diffArgs(argv), options: OPTIONS, allowPositionals: true });
   } catch (error: unknown) {

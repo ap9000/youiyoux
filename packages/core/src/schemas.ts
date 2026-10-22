@@ -7,6 +7,7 @@ import { z } from "zod";
 import { DetectReport } from "./detect.ts";
 import { LibraryEntry } from "./hierarchy.ts";
 import { ElementId, safeId } from "./ids.ts";
+import { GapsReport } from "./gaps.ts";
 import { RequestDoc } from "./requests.ts";
 import { TokenDocument } from "./tokens.ts";
 
@@ -662,6 +663,7 @@ export const PUBLISHED_SCHEMAS = {
   "youi.detect.schema.json": DetectReport,
   "youi.tokens.schema.json": TokenDocument,
   "youi.request.schema.json": RequestDoc,
+  "youi.gaps.schema.json": GapsReport,
 } as const;
 
 /** Project config with every path normalized, so comparisons with scanned paths are exact. Loaders call this. */

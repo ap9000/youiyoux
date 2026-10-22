@@ -79,7 +79,7 @@ describe("other formats", () => {
 
   test("every published schema is emitted as JSON Schema 2020-12 and matches the committed copy", async () => {
     const rendered = renderJsonSchemas();
-    expect(rendered.map((s) => s.file)).toHaveLength(13);
+    expect(rendered.map((s) => s.file)).toHaveLength(14);
     for (const { file, content } of rendered) {
       const parsed = JSON.parse(content) as Record<string, unknown>;
       expect(parsed.$schema).toBe("https://json-schema.org/draft/2020-12/schema");

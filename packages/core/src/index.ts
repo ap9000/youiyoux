@@ -2,6 +2,7 @@ export * from "./detect.ts";
 export * from "./detect-draft.ts";
 export * from "./diff.ts";
 export * from "./files.ts";
+export * from "./gaps.ts";
 export * from "./hash.ts";
 export * from "./hierarchy.ts";
 export * from "./ids.ts";

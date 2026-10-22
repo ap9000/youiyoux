@@ -9,7 +9,8 @@
  */
 import { useSyncExternalStore } from "react";
 import type { InventorySource } from "./inventory-source.ts";
-import { DataError, absoluteDataUrl, loadCatalog, loadDetect, loadInventory, loadInventoryPart, loadManifest, loadUsage, pruneCache } from "./load.ts";
+import type { GapsReport } from "@youiyoux/core";
+import { DataError, absoluteDataUrl, loadCatalog, loadDetect, loadGaps, loadInventory, loadInventoryPart, loadManifest, loadUsage, pruneCache } from "./load.ts";
 import type { DetectReport, InventoryChunk, InventoryExtras, Manifest } from "./types.ts";
 import { buildModel, type Model } from "./model.ts";
 import { indexUsage, type UsageIndex } from "./usage.ts";
@@ -130,6 +131,10 @@ const inventoryLoader = createLoader(async (): Promise<InventorySource | null> =
 const detectFor = async (manifest: Manifest): Promise<DetectReport | null> => (manifest.detect ? loadDetect(manifest.detect.file) : null);
 const detectLoader = createLoader(async (): Promise<DetectReport | null> => detectFor(await pinnedManifest()));
 
+/** The gaps the snapshot carries (with an inventory), or null when it has none. */
+const gapsFor = async (manifest: Manifest): Promise<GapsReport | null> => (manifest.gaps ? loadGaps(manifest.gaps) : null);
+const gapsLoader = createLoader(async (): Promise<GapsReport | null> => gapsFor(await pinnedManifest()));
+
 /** The Discover listings file the snapshot carries for a static host, or null (read only when the query endpoint is absent). */
 export async function discoverListingsFile(): Promise<string | null> {
   return (await pinnedManifest()).discover ?? null;
@@ -156,12 +161,14 @@ export function refreshSnapshot(): Promise<void> {
         const usageInUse = usageLoader.get().status !== "idle";
         const inventoryInUse = inventoryLoader.get().status !== "idle";
         const detectInUse = detectLoader.get().status !== "idle";
-        const [model, usage, inventory, detect] = await Promise.all([modelFor(manifest), usageInUse ? usageFor(manifest) : null, inventoryInUse ? inventoryFor(manifest) : undefined, detectInUse ? detectFor(manifest) : undefined]);
+        const gapsInUse = gapsLoader.get().status !== "idle";
+        const [model, usage, inventory, detect, gaps] = await Promise.all([modelFor(manifest), usageInUse ? usageFor(manifest) : null, inventoryInUse ? inventoryFor(manifest) : undefined, detectInUse ? detectFor(manifest) : undefined, gapsInUse ? gapsFor(manifest) : undefined]);
         pinned = Promise.resolve(manifest);
         modelLoader.replace(model);
         if (usage) usageLoader.replace(usage);
         if (inventory !== undefined) inventoryLoader.replace(inventory);
         if (detect !== undefined) detectLoader.replace(detect);
+        if (gaps !== undefined) gapsLoader.replace(gaps);
         setLive({ manifest, error: null });
       } catch (error: unknown) {
         setLive({ ...live, error: messageOf(error) });
@@ -214,6 +221,15 @@ export function useInventoryState(): Resource<InventorySource | null> {
 export function useDetectState(): Resource<DetectReport | null> {
   const state = useSyncExternalStore(detectLoader.subscribe, detectLoader.get);
   if (state.status === "idle") queueMicrotask(() => detectLoader.start());
+  return state;
+}
+
+export const retryGaps = (): void => gapsLoader.retry();
+
+/** The gaps report; reading it starts the load. Ready with null when the snapshot has none. */
+export function useGapsState(): Resource<GapsReport | null> {
+  const state = useSyncExternalStore(gapsLoader.subscribe, gapsLoader.get);
+  if (state.status === "idle") queueMicrotask(() => gapsLoader.start());
   return state;
 }
 

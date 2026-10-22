@@ -382,6 +382,9 @@ type Live = { generation: number; status: "complete" | "partial" | "failed"; upd
 
 interface WrittenSystem {
   readonly id: string;
+  readonly name: string;
+  /** Its components' names, for Gaps. */
+  readonly components: readonly string[];
   readonly catalogFile: string;
   readonly commit: string | null;
   readonly summary: string;
@@ -418,7 +421,7 @@ async function writeSystem(out: string, designRoot: string, systemId: string | u
   const demos = writePreview(previewDir, system, componentsRoot);
   const commit = commitOverride ?? definitionsCommit(repo.root, ["youi.config.json", dirname(config.tokens), config.components, config.rules, ...(config.design ? [config.design] : [])]);
   const summary = `${config.name} from ${repo.root} @ ${commit ?? "unknown"}: ${catalog.tokens.length} tokens, ${catalog.components.length} components (${demos} demos), ${catalog.rules.length} rules`;
-  return { id: config.id, catalogFile, commit, summary };
+  return { id: config.id, name: config.name, components: system.components.map((c) => c.contract.name), catalogFile, commit, summary };
 }
 
 function writeUsage(dataDir: string, report: ScanReport, screens: ProjectShots | null): UsageRef {
@@ -611,14 +614,28 @@ function discoverCache(values: { discover?: string }, out: string, discover: Dis
   return existsSync(join(dir, discover.INDEX_FILE)) ? dir : null;
 }
 
+/**
+ * Gaps (youi.gaps/v1) for the inventoried projects against the system on show, with candidates
+ * from the Discover index when it is synced. Dated by the inventory, so the same inputs give the
+ * same file. Each project's package.json is read where the inventory's roots are on this machine.
+ */
+export async function writeGaps(dataDir: string, inventory: InventoryReport, path: string | undefined, system: WrittenSystem, discoverDir: string | null, discoverArg: string | undefined, discover: DiscoverModule): Promise<string> {
+  const store = discoverDir ? await discover.readCatalog(discoverDir, discover.discoverIndexPath(discoverArg ? discoverDir : undefined)).catch(() => null) : null;
+  const report = await discover.buildGaps({ inventory, system: { name: system.name, components: system.components }, dependencies: discover.declaredPackages(inventoryRoots(inventory, path)), now: new Date(inventory.generatedAt) }, store);
+  const text = json(report);
+  const file = `gaps.${hash(text)}.json`;
+  write(join(dataDir, file), text);
+  return file;
+}
+
 /** Every data file a usage ref names: its usage map and its screenshots. */
 function usageFiles(usage: readonly UsageRef[]): string[] {
   return usage.flatMap((u) => [u.file, ...(u.screens?.screens ?? []).flatMap((shot) => [shot.light, shot.dark].flatMap((f) => (f ? [f.full, f.thumb] : [])))]);
 }
 
 /** The manifest last: written to a temporary name and renamed, so a reader never sees half of it. */
-function writeManifest(dataDir: string, system: WrittenSystem, usage: readonly UsageRef[], live?: Live, inventory?: WrittenInventory | null, detect?: DetectRef | null, discover?: string | null): void {
-  const manifest = { schema: "youiyoux.manifest/v1", source: { commit: system.commit }, systems: [{ id: system.id, catalog: system.catalogFile, usage }], ...(inventory ? { inventory: inventory.file, inventoryFiles: inventory.files } : {}), ...(detect ? { detect: { file: detect.file, name: detect.name, kind: detect.kind } } : {}), ...(discover ? { discover } : {}), ...(live ? { live } : {}) };
+function writeManifest(dataDir: string, system: WrittenSystem, usage: readonly UsageRef[], live?: Live, inventory?: WrittenInventory | null, detect?: DetectRef | null, discover?: string | null, gaps?: string | null): void {
+  const manifest = { schema: "youiyoux.manifest/v1", source: { commit: system.commit }, systems: [{ id: system.id, catalog: system.catalogFile, usage }], ...(inventory ? { inventory: inventory.file, inventoryFiles: inventory.files } : {}), ...(detect ? { detect: { file: detect.file, name: detect.name, kind: detect.kind } } : {}), ...(discover ? { discover } : {}), ...(gaps ? { gaps } : {}), ...(live ? { live } : {}) };
   const file = join(dataDir, "manifest.json");
   write(`${file}.tmp`, `${JSON.stringify(manifest, null, 2)}\n`);
   renameSync(`${file}.tmp`, file);
@@ -653,6 +670,8 @@ async function watchSnapshot(values: { design?: string; project?: string; config
   // Screenshots are copied once: they come from a capture, not from the sources being watched.
   let shots: ProjectShots | null | undefined;
   let previous = new Set<string>();
+  // Gaps read the inventory and the system's component names: written once the system is known.
+  let gaps: string | null = null;
   const stamp = (): string => new Date().toISOString();
   const watcher = await libs.scanner.ProjectWatcher.start({
     root,
@@ -664,6 +683,7 @@ async function watchSnapshot(values: { design?: string; project?: string; config
         dropPreviewsOfOtherSystem(out, previousId, system.id);
         previousId = system.id;
         systemOf = project;
+        if (read) gaps = await writeGaps(dataDir, read, values.inventory, system, discoverDir, values.discover, libs.discover);
       }
       const scan = await libs.scanner.scanProject(project, { cache });
       const report = libs.core.ScanReport.parse(scan.report);
@@ -683,8 +703,8 @@ async function watchSnapshot(values: { design?: string; project?: string; config
         update.status === "ok"
           ? { generation: update.generation, status: update.result.report.status, updatedAt: stamp(), rules: update.result.rules }
           : { generation: update.generation, status: "failed", updatedAt: stamp(), message: update.error };
-      writeManifest(dataDir, system, usage, live, inventory, detect, discover);
-      const current = new Set([system.catalogFile, ...usageFiles(usage), ...(inventory ? [inventory.file, ...inventory.files] : []), ...(detect ? [detect.file, ...detect.shots] : []), ...(discover ? [discover] : [])]);
+      writeManifest(dataDir, system, usage, live, inventory, detect, discover, gaps);
+      const current = new Set([system.catalogFile, ...usageFiles(usage), ...(inventory ? [inventory.file, ...inventory.files] : []), ...(detect ? [detect.file, ...detect.shots] : []), ...(discover ? [discover] : []), ...(gaps ? [gaps] : [])]);
       pruneData(dataDir, new Set([...current, ...previous]));
       previous = current;
       process.stdout.write(`youiyoux ui: generation ${update.generation} ${live.status}${live.message ? `: ${live.message}` : ""}\n`);
@@ -728,9 +748,10 @@ export async function main(): Promise<void> {
   const detect = values.detect ? writeDetect(values.detect, dataDir, libs.core) : null;
   const discoverDir = discoverCache(values, out, libs.discover);
   const discover = discoverDir ? await writeDiscover(dataDir, discoverDir, libs.discover) : null;
-  writeManifest(dataDir, system, usage, undefined, inventory, detect, discover);
+  const gaps = read ? await writeGaps(dataDir, read, values.inventory, system, discoverDir, values.discover, libs.discover) : null;
+  writeManifest(dataDir, system, usage, undefined, inventory, detect, discover, gaps);
   if (out === DEFAULT_OUT) await buildHubTokens(libs.core, libs.lib);
-  process.stdout.write(`snapshot of ${system.summary}; ${usage.length ? `usage map of ${usage[0]!.project}${shots ? ` with ${shots.screens.length} screens` : ""}` : "no usage map"}${inventory ? `; ${inventory.file} (+${inventory.files.length} chunks and stylesheets)` : ""}${detect ? `; detect report of ${detect.name} (${detect.shots.length} screenshots)` : ""}${discover ? `; Discover listings ${discover}` : ""} → ${relative(process.cwd(), out) || "."}\n`);
+  process.stdout.write(`snapshot of ${system.summary}; ${usage.length ? `usage map of ${usage[0]!.project}${shots ? ` with ${shots.screens.length} screens` : ""}` : "no usage map"}${inventory ? `; ${inventory.file} (+${inventory.files.length} chunks and stylesheets)` : ""}${gaps ? `; ${gaps}` : ""}${detect ? `; detect report of ${detect.name} (${detect.shots.length} screenshots)` : ""}${discover ? `; Discover listings ${discover}` : ""} → ${relative(process.cwd(), out) || "."}\n`);
 }
 
 // Run as a script, not when a test imports readSource.

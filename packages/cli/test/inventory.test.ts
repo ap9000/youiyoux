@@ -141,3 +141,55 @@ describe("youiyoux inventory", () => {
     expect(hubPlan("/opt/youi", { inventory: "/tmp/inventory.json", watch: true }).watch).toEqual(["/opt/youi/apps/web/scripts/snapshot.ts", "--out", "/opt/youi/apps/web/.hub", "--inventory", "/tmp/inventory.json", "--project", "/opt/youi/examples/demo-app", "--watch"]);
   });
 });
+
+describe("youiyoux gaps", () => {
+  test("per project: what is built by hand, what the kit has that it lacks, and across projects; without Discover it says how to get candidates", async () => {
+    const cache = await mkdtemp(join(tmpdir(), "youi-gaps-cache-"));
+    vi.stubEnv("YOUI_DISCOVER_CACHE", cache);
+    vi.stubEnv("YOUI_INDEX", join(cache, "index.db"));
+    try {
+      const file = join(cache, "gaps.json");
+      expect(await main(["gaps", "--project", CONSOLE, "--project", SITE, "--json", "--out", file])).toBe(0);
+      const { GapsReport } = await import("@youiyoux/core");
+      const report = GapsReport.parse(JSON.parse(out));
+      expect(GapsReport.parse(JSON.parse(await readFile(file, "utf8")))).toEqual(report);
+      expect(report.discover).toBe("not-synced");
+      expect(report.projects.map((p) => p.id)).toEqual(["console", "site"]);
+      const consoleGaps = report.projects[0]!;
+      // The console imports Radix dialog and tabs: libraries, not gaps.
+      expect(consoleGaps.concepts.filter((c) => c.status === "library").map((c) => c.concept).sort()).toEqual(["dialog", "tabs"]);
+      expect(consoleGaps.concepts.find((c) => c.concept === "button")).toMatchObject({ status: "hand-built", candidates: null });
+      expect(report.across.map((a) => a.concept)).toContain("badge");
+
+      out = "";
+      expect(await main(["gaps", "--project", CONSOLE, "--project", SITE])).toBe(0);
+      expect(out).toMatch(/^console\n {2}Built by hand, with what could stand in for it:\n {4}button +\d+ components named for it, \d+ uses, in \d+ files \(/);
+      expect(out).toContain("no candidates: the Discover index is not synced");
+      expect(out).toMatch(/Not in it, from the standard kit \(\d+\): alert, drawer/);
+      expect(out).toContain("Built by hand in more than one project, worth adding to the System once:");
+      expect(out.trimEnd().split("\n").at(-1)).toBe("Next: youiyoux discover sync, then run youiyoux gaps again for candidates.");
+    } finally {
+      vi.unstubAllEnvs();
+      await rm(cache, { recursive: true, force: true });
+    }
+  });
+
+  test("an inventory file can stand in for scanning; help lists the command", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "youi-gaps-"));
+    vi.stubEnv("YOUI_DISCOVER_CACHE", dir);
+    vi.stubEnv("YOUI_INDEX", join(dir, "index.db"));
+    try {
+      const file = join(dir, "inventory.json");
+      expect(await main(["inventory", "--project", CONSOLE, "--out", file])).toBe(0);
+      out = "";
+      expect(await main(["gaps", "--inventory", file, "--json"])).toBe(0);
+      expect(JSON.parse(out).projects.map((p: { id: string }) => p.id)).toEqual(["console"]);
+      out = "";
+      expect(await main(["--help"])).toBe(0);
+      expect(out).toContain("gaps [--project <dir>…] [--inventory <file>] [--json] [--out <file>]");
+    } finally {
+      vi.unstubAllEnvs();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});

@@ -61,7 +61,7 @@
           },
           "siblings": []
         },
-        "cf18639ed670": {
+        "230d3d46e6ed": {
           "look": {
             "recipe": {
               "kind": "component",
@@ -72,6 +72,11 @@
               },
               "label": "Live",
               "wrappers": [],
+              "parent": {
+                "file": "src/components/ui/card.tsx",
+                "export": "Card",
+                "props": {}
+              },
               "tag": "span",
               "classes": [
                 "inline-flex",
@@ -91,7 +96,7 @@
           },
           "siblings": []
         },
-        "5300a43e9f1a": {
+        "7091a93abf1e": {
           "look": {
             "recipe": {
               "kind": "component",
@@ -100,6 +105,11 @@
               "props": {},
               "label": "New run",
               "wrappers": [],
+              "parent": {
+                "file": "src/components/ui/card.tsx",
+                "export": "Card",
+                "props": {}
+              },
               "tag": "button",
               "classes": [
                 "inline-flex",
@@ -124,7 +134,7 @@
           },
           "siblings": []
         },
-        "93c023b75bb0": {
+        "4aaeb7a16352": {
           "look": {
             "recipe": {
               "kind": "component",
@@ -135,6 +145,11 @@
               },
               "label": "Export",
               "wrappers": [],
+              "parent": {
+                "file": "src/components/ui/card.tsx",
+                "export": "Card",
+                "props": {}
+              },
               "tag": "button",
               "classes": [
                 "inline-flex",
@@ -160,7 +175,7 @@
           },
           "siblings": []
         },
-        "aaa0927dda6e": {
+        "b4b70379dc1d": {
           "look": {
             "recipe": {
               "kind": "component",
@@ -169,6 +184,11 @@
               "props": {},
               "label": "Settings",
               "wrappers": [],
+              "parent": {
+                "file": "src/components/ui/card.tsx",
+                "export": "Card",
+                "props": {}
+              },
               "tag": "button",
               "classes": [
                 "inline-flex",
@@ -212,7 +232,7 @@
           },
           "siblings": []
         },
-        "d01ef30cc0e0": {
+        "bebb75bde947": {
           "look": {
             "recipe": {
               "kind": "component",
@@ -229,6 +249,13 @@
                   }
                 }
               ],
+              "parent": {
+                "file": "src/components/ui/tabs.tsx",
+                "export": "Tabs",
+                "props": {
+                  "defaultValue": "runs"
+                }
+              },
               "tag": "button",
               "classes": [
                 "inline-flex",
@@ -244,7 +271,7 @@
           },
           "siblings": []
         },
-        "e57482076ef2": {
+        "98526f1d17ec": {
           "look": {
             "recipe": {
               "kind": "component",
@@ -268,6 +295,11 @@
                   "props": {}
                 }
               ],
+              "parent": {
+                "file": "src/components/ui/tabs.tsx",
+                "export": "TabsList",
+                "props": {}
+              },
               "tag": "button",
               "classes": [
                 "inline-flex",
@@ -308,6 +340,11 @@
                     "props": {}
                   }
                 ],
+                "parent": {
+                  "file": "src/components/ui/tabs.tsx",
+                  "export": "TabsList",
+                  "props": {}
+                },
                 "tag": "button",
                 "classes": [
                   "inline-flex",
@@ -347,6 +384,11 @@
                     "props": {}
                   }
                 ],
+                "parent": {
+                  "file": "src/components/ui/tabs.tsx",
+                  "export": "TabsList",
+                  "props": {}
+                },
                 "tag": "button",
                 "classes": [
                   "inline-flex",
@@ -365,7 +407,7 @@
             }
           ]
         },
-        "eba271cf00be": {
+        "3dd28124d99c": {
           "look": {
             "recipe": {
               "kind": "component",
@@ -389,6 +431,11 @@
                   "props": {}
                 }
               ],
+              "parent": {
+                "file": "src/components/ui/tabs.tsx",
+                "export": "TabsList",
+                "props": {}
+              },
               "tag": "button",
               "classes": [
                 "inline-flex",
@@ -429,6 +476,11 @@
                     "props": {}
                   }
                 ],
+                "parent": {
+                  "file": "src/components/ui/tabs.tsx",
+                  "export": "TabsList",
+                  "props": {}
+                },
                 "tag": "button",
                 "classes": [
                   "inline-flex",
@@ -468,6 +520,11 @@
                     "props": {}
                   }
                 ],
+                "parent": {
+                  "file": "src/components/ui/tabs.tsx",
+                  "export": "TabsList",
+                  "props": {}
+                },
                 "tag": "button",
                 "classes": [
                   "inline-flex",
@@ -609,7 +666,7 @@
           },
           "siblings": []
         },
-        "69e53e0fd148": {
+        "def3e3c43815": {
           "look": {
             "recipe": {
               "kind": "component",
@@ -620,6 +677,11 @@
               },
               "label": "Delete…",
               "wrappers": [],
+              "parent": {
+                "file": "src/components/ui/dialog.tsx",
+                "export": "DialogTrigger",
+                "props": {}
+              },
               "tag": "button",
               "classes": [
                 "inline-flex",
@@ -642,7 +704,7 @@
           },
           "siblings": []
         },
-        "fbee02d5bfbe": {
+        "47ce65253840": {
           "look": {
             "recipe": {
               "kind": "component",
@@ -659,6 +721,11 @@
                   }
                 }
               ],
+              "parent": {
+                "file": "src/components/ui/dialog.tsx",
+                "export": "Dialog",
+                "props": {}
+              },
               "tag": "div",
               "classes": [
                 "fixed",
