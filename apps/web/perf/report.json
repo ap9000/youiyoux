@@ -16,7 +16,7 @@
     "withinBudget": true,
     "assets": [
       {
-        "file": "assets/main-1fZHnb8m.js",
+        "file": "assets/main-BABWPM8S.js",
         "kbGzip": 15.9
       },
       {
@@ -94,18 +94,18 @@
       "kbGzip": 64
     },
     {
-      "file": "assets/main-1fZHnb8m.js",
+      "file": "assets/main-BABWPM8S.js",
       "kbRaw": 43.4,
       "kbGzip": 15.9
     },
     {
-      "file": "assets/StyleScreen-DW60dBYg.js",
+      "file": "assets/StyleScreen-DmSwJFBR.js",
       "kbRaw": 42.3,
       "kbGzip": 13.5
     },
     {
-      "file": "assets/ScreensScreen-DMAkEKgK.js",
-      "kbRaw": 39.7,
+      "file": "assets/ScreensScreen-l0p1wYka.js",
+      "kbRaw": 39.9,
       "kbGzip": 12.3
     },
     {
@@ -114,27 +114,27 @@
       "kbGzip": 12
     },
     {
-      "file": "assets/CatalogScreen-BUbyJJct.js",
+      "file": "assets/CatalogScreen-P33QcoxT.js",
       "kbRaw": 38.8,
       "kbGzip": 11.9
     },
     {
-      "file": "assets/DraftEditor-D_XoAbWR.js",
+      "file": "assets/DraftEditor-CqFW8BFs.js",
       "kbRaw": 41.8,
       "kbGzip": 11.4
     },
     {
-      "file": "assets/InventoryScreen-3FBR6RKv.js",
+      "file": "assets/InventoryScreen-DXMYtnQa.js",
       "kbRaw": 35.5,
       "kbGzip": 10.3
     },
     {
-      "file": "assets/Specimens-2_jwIFZh.js",
+      "file": "assets/Specimens-GKC6Udxh.js",
       "kbRaw": 26.5,
       "kbGzip": 9.9
     },
     {
-      "file": "assets/dist-DgA3U8HX.js",
+      "file": "assets/dist-DnL80HcQ.js",
       "kbRaw": 26.1,
       "kbGzip": 9
     },
@@ -149,7 +149,7 @@
       "kbGzip": 7.3
     },
     {
-      "file": "assets/CommandPalette-xVlkfsLN.js",
+      "file": "assets/CommandPalette-BKBv_Ndp.js",
       "kbRaw": 18.4,
       "kbGzip": 7
     },
@@ -164,7 +164,7 @@
       "kbGzip": 5.7
     },
     {
-      "file": "assets/DiscoverScreen-Dd-aIh_i.js",
+      "file": "assets/DiscoverScreen-D6d_CfWU.js",
       "kbRaw": 15.6,
       "kbGzip": 5.6
     },
@@ -174,12 +174,12 @@
       "kbGzip": 4.8
     },
     {
-      "file": "assets/CandidatePanel-92NFbo13.js",
+      "file": "assets/CandidatePanel-E5wywO1I.js",
       "kbRaw": 12.3,
       "kbGzip": 4.8
     },
     {
-      "file": "assets/dist-DdUEi64F.js",
+      "file": "assets/dist-DQoVSm7C.js",
       "kbRaw": 13.3,
       "kbGzip": 4.7
     },
@@ -189,27 +189,27 @@
       "kbGzip": 4.6
     },
     {
-      "file": "assets/StackScreen-nPcdWlEx.js",
+      "file": "assets/StackScreen-CqTsAe1X.js",
       "kbRaw": 11.8,
       "kbGzip": 4.2
     },
     {
-      "file": "assets/Opened-CdVE-eFL.js",
+      "file": "assets/Opened-CbEuV5ra.js",
       "kbRaw": 9.6,
       "kbGzip": 3.8
     },
     {
-      "file": "assets/RulesScreen-B02YMKN3.js",
+      "file": "assets/RulesScreen-BL_qQ4zo.js",
       "kbRaw": 10.4,
       "kbGzip": 3.6
     },
     {
-      "file": "assets/ScreenImage-CLgVB6Yh.js",
+      "file": "assets/ScreenImage-oQtciPVJ.js",
       "kbRaw": 9,
       "kbGzip": 3.6
     },
     {
-      "file": "assets/HomeScreen-DJl9iVxK.js",
+      "file": "assets/HomeScreen-5kS_TGzL.js",
       "kbRaw": 10.7,
       "kbGzip": 3.6
     },
@@ -219,7 +219,7 @@
       "kbGzip": 3.2
     },
     {
-      "file": "assets/dist-C9XG7-nH.js",
+      "file": "assets/dist-DJbzNr1p.js",
       "kbRaw": 7.9,
       "kbGzip": 3
     },
@@ -229,17 +229,17 @@
       "kbGzip": 2.9
     },
     {
-      "file": "assets/RuleDetail-Cg6DKU3z.js",
+      "file": "assets/RuleDetail-BZm-nuqW.js",
       "kbRaw": 7.7,
       "kbGzip": 2.8
     },
     {
-      "file": "assets/TokensScreen-mc_MyHyM.js",
+      "file": "assets/TokensScreen-M78eQCkz.js",
       "kbRaw": 5.2,
       "kbGzip": 2.4
     },
     {
-      "file": "assets/TokenDetail-DQa2fZYl.js",
+      "file": "assets/TokenDetail-CYPo0_KI.js",
       "kbRaw": 6.4,
       "kbGzip": 2.2
     },
@@ -249,27 +249,27 @@
       "kbGzip": 2.2
     },
     {
-      "file": "assets/ChangesScreen-BrxOIl5r.js",
+      "file": "assets/ChangesScreen-6-q2WroD.js",
       "kbRaw": 5.6,
       "kbGzip": 2.2
     },
     {
-      "file": "assets/LibraryScreen-BJwHY1qQ.js",
+      "file": "assets/LibraryScreen-CVYEu3Vg.js",
       "kbRaw": 5,
       "kbGzip": 1.8
     },
     {
-      "file": "assets/StubScreens-DiOCP2d2.js",
+      "file": "assets/StubScreens-CrtbeT2D.js",
       "kbRaw": 3.9,
       "kbGzip": 1.7
     },
     {
-      "file": "assets/discover-gQI7OHvl.js",
+      "file": "assets/discover-D4tUpmO6.js",
       "kbRaw": 3.6,
       "kbGzip": 1.7
     },
     {
-      "file": "assets/try-live-VALGoBPM.js",
+      "file": "assets/try-live-DhfX0E-e.js",
       "kbRaw": 3.4,
       "kbGzip": 1.7
     },
@@ -279,7 +279,7 @@
       "kbGzip": 1.6
     },
     {
-      "file": "assets/Preview-DCGUZoFC.js",
+      "file": "assets/Preview-e1qO1BH8.js",
       "kbRaw": 3.6,
       "kbGzip": 1.6
     },
@@ -294,12 +294,12 @@
       "kbGzip": 1.4
     },
     {
-      "file": "assets/workflow-ByLFH30F.js",
+      "file": "assets/workflow-BSPB6mSN.js",
       "kbRaw": 2.5,
       "kbGzip": 1.1
     },
     {
-      "file": "assets/client-C4juAjAV.js",
+      "file": "assets/client-DENJBdpZ.js",
       "kbRaw": 2.1,
       "kbGzip": 1.1
     },
@@ -309,12 +309,12 @@
       "kbGzip": 1
     },
     {
-      "file": "assets/ServiceDown-D327hAHR.js",
+      "file": "assets/ServiceDown-Bjui675A.js",
       "kbRaw": 2.2,
       "kbGzip": 0.9
     },
     {
-      "file": "assets/SpecimenCapture-DlVvrENy.js",
+      "file": "assets/SpecimenCapture-CJMaY0nI.js",
       "kbRaw": 1.6,
       "kbGzip": 0.8
     },
@@ -329,12 +329,12 @@
       "kbGzip": 0.7
     },
     {
-      "file": "assets/SearchField-CjXgjnF5.js",
+      "file": "assets/SearchField-CBAxuD3w.js",
       "kbRaw": 1.4,
       "kbGzip": 0.7
     },
     {
-      "file": "assets/CheatSheet-pqJlzVJz.js",
+      "file": "assets/CheatSheet-6VgYPcWN.js",
       "kbRaw": 1.5,
       "kbGzip": 0.7
     },
@@ -379,7 +379,7 @@
       "kbGzip": 0.5
     },
     {
-      "file": "assets/Tabs-Dd6R243q.js",
+      "file": "assets/Tabs-C8meOyLg.js",
       "kbRaw": 0.9,
       "kbGzip": 0.5
     },
@@ -522,18 +522,18 @@
   "search": {
     "system": {
       "docs": 38,
-      "indexMs": 3.1,
-      "p50": 0.02,
-      "p95": 0.037,
-      "max": 1.316
+      "indexMs": 2.7,
+      "p50": 0.018,
+      "p95": 0.034,
+      "max": 1.037
     },
     "scaled": {
       "factor": 50,
       "docs": 1900,
-      "indexMs": 41.9,
-      "p50": 0.133,
-      "p95": 0.317,
-      "max": 0.597
+      "indexMs": 36.4,
+      "p50": 0.131,
+      "p95": 0.306,
+      "max": 0.452
     }
   }
 }

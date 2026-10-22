@@ -49,6 +49,10 @@ describe("the board", () => {
     expect(document.querySelector('[data-canvas-screen="app:/"] [data-canvas-pin]')).toBeNull();
     expect(document.querySelector('[data-canvas-screen="site:/"] [data-canvas-pin]')).not.toBeNull();
     expect(document.querySelector('[data-canvas-screen="app:/empty"]')!.textContent).toContain("No screenshot yet");
+    // A project's screens wrap four to a row, so a long project still fits at a readable zoom.
+    const row = document.querySelector<HTMLElement>('[data-canvas-screen="app:/"]')!.parentElement!;
+    expect(row.style.width).toBe(`${4 * 360 + 3 * 48}px`);
+    expect(row.className).toContain("flex-wrap");
   });
 
   test("a pin opens its request on the screen's page; + − and 0 zoom and fit, and zoomed in the full pictures are drawn", () => {

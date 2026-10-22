@@ -1,5 +1,5 @@
 /**
- * Every screen of every project on one board: each project a row of its pictures, each with its
+ * Every screen of every project on one board: each project its pictures in rows of four, each with its
  * open requests as numbered pins. Drag to pan, scroll to pan, ⌘/Ctrl-scroll or pinch to zoom,
  * + / − / 0 on the keyboard, and Fit. A screen opens its page; a pin opens its request there.
  * Pictures are the thumbnails while zoomed out and the full captures when zoomed in.
@@ -19,6 +19,8 @@ import { IssueBadge } from "./IssueCounts.tsx";
 /** A screen's width on the board, in board pixels. */
 export const CARD_WIDTH = 360;
 const GAP = 48;
+/** Screens per row before a project's wrap, so a project with many fits at a readable zoom. */
+export const PER_ROW = 4;
 export const MIN_SCALE = 0.1;
 export const MAX_SCALE = 3;
 /** Past this zoom the thumbnails are too soft: the full pictures are drawn. */
@@ -194,7 +196,7 @@ export function ScreensCanvas({ screens, scheme, requests }: { screens: ScreenIn
           {projects.map((project) => (
             <section key={project} aria-label={project} className="space-y-4">
               <h2 className="text-heading">{project}</h2>
-              <div className="flex items-start" style={{ gap: GAP }}>
+              <div className="flex flex-wrap items-start" style={{ gap: GAP, width: PER_ROW * CARD_WIDTH + (PER_ROW - 1) * GAP }}>
                 {screens.screens
                   .filter((s) => s.project === project)
                   .map((screen) => (
