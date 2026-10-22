@@ -169,13 +169,20 @@ describe("discover helpers", () => {
     expect(sameHomepage("https://coss.com", "https://coss.com/ui")).toBe(false);
   });
 
-  test("a repository's site holds the registry's when the host matches and one path is inside the other", () => {
+  test("a repository's homepage covers the registry's when the host matches and the registry is at or under its path", () => {
     expect(sameSite("https://coss.com", "https://coss.com/ui")).toBe(true);
-    expect(sameSite("https://www.kibo-ui.com/", "https://kibo-ui.com/docs")).toBe(true);
-    expect(sameSite("https://coss.com/uix", "https://coss.com/ui")).toBe(false);
+    expect(sameSite("https://www.kibo-ui.com/", "https://kibo-ui.com")).toBe(true);
+    expect(sameSite("https://kibo-ui.com/docs", "https://kibo-ui.com/docs/registry")).toBe(true);
+    // Only downward: a deeper repository homepage covers nothing above it.
+    expect(sameSite("https://kibo-ui.com/docs", "https://kibo-ui.com")).toBe(false);
+    expect(sameSite("https://coss.com/ui", "https://coss.com/uix")).toBe(false);
     expect(sameSite("https://coss.com/blog", "https://coss.com/ui")).toBe(false);
     expect(sameSite("https://coss.dev", "https://coss.com")).toBe(false);
     expect(sameSite(null, "https://coss.com")).toBe(false);
+    // Where tenants are paths, only the exact page: a repository whose homepage is github.com claims no one's registry there.
+    expect(sameSite("https://github.com", "https://github.com/evil/registry")).toBe(false);
+    expect(sameSite("https://www.npmjs.com/", "https://www.npmjs.com/package/x")).toBe(false);
+    expect(sameSite("https://github.com/acme/ui", "https://github.com/acme/ui")).toBe(true);
   });
 
   test("a page's GitHub repository links, most-linked first, without GitHub's own pages", () => {

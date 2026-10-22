@@ -68,11 +68,17 @@ export function sameHomepage(a: string | null | undefined, b: string | null | un
   return ka !== null && ka === key(b);
 }
 
+/** Hosts whose tenants are paths, not subdomains: one account's page there says nothing of another's. */
+const PATH_TENANTS = new Set(["github.com", "gitlab.com", "bitbucket.org", "codeberg.org", "npmjs.com", "codesandbox.io", "stackblitz.com", "gitbook.io", "medium.com", "notion.site"]);
+
 /**
- * `https://coss.com` and `https://coss.com/ui` are one site: the same host (less www), with one
- * path inside the other, segment by segment (`/ui` is not inside `/uix`).
+ * Whether a repository's homepage covers a registry's: the same host (less www), and the registry
+ * at or under the repository's path, segment by segment (`https://coss.com` covers
+ * `https://coss.com/ui`; `/ui` does not cover `/uix`, and a deeper repository homepage covers
+ * nothing above it). On a host whose tenants are paths (github.com, npmjs.com…) only the exact
+ * homepage counts, so no account there can claim another's repository.
  */
-export function sameSite(a: string | null | undefined, b: string | null | undefined): boolean {
+export function sameSite(repository: string | null | undefined, registry: string | null | undefined): boolean {
   const parts = (value: string): { host: string; path: string } | null => {
     try {
       const url = new URL(value.includes("://") ? value : `https://${value}`);
@@ -81,12 +87,12 @@ export function sameSite(a: string | null | undefined, b: string | null | undefi
       return null;
     }
   };
-  if (!a || !b) return false;
-  const pa = parts(a);
-  const pb = parts(b);
-  if (!pa || !pb || pa.host !== pb.host) return false;
-  const inside = (outer: string, inner: string): boolean => outer === "" || inner === outer || inner.startsWith(`${outer}/`);
-  return inside(pa.path, pb.path) || inside(pb.path, pa.path);
+  if (!repository || !registry) return false;
+  const repo = parts(repository);
+  const home = parts(registry);
+  if (!repo || !home || repo.host !== home.host) return false;
+  if (PATH_TENANTS.has(repo.host)) return repo.path === home.path && repo.path !== "";
+  return repo.path === "" || home.path === repo.path || home.path.startsWith(`${repo.path}/`);
 }
 
 /** GitHub's own pages, which look like `owner/repo` links but are not repositories. */
