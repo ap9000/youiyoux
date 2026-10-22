@@ -60,7 +60,7 @@ describe("Discover previews (c1, c2)", () => {
     expect(body.license).toBe("MIT");
     expect(body.install?.command).toBe("npx shadcn add command");
     expect(body.compose?.export).toBe("Command");
-    expect(body.notes).toEqual(expect.arrayContaining(["cn: your src/lib/utils.ts", "cmdk, lucide-react: not installed in your project, so the hub's own copies draw them"]));
+    expect(body.notes).toEqual(expect.arrayContaining(["cn: your src/lib/utils.ts", "cmdk, lucide-react, radix-ui: not installed in your project, so the hub's own copies draw them"]));
     expect(body.implicitDeps).toEqual(expect.arrayContaining(["lucide-react"]));
     expect(body.fit.themed).toContain("rounded-md draws with your --radius-md: 8px (Tailwind's default is 6px)");
     expect(body.fit.unthemed.some((line) => /bg-popover.*your theme has no .*--color-popover/.test(line))).toBe(true);

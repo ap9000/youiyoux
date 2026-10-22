@@ -20,7 +20,7 @@ import { installAgentRule, installClaudeMcp, installCodexMcp, mcpCommand, relati
 import { detectTarget, renderDetect } from "./detect.ts";
 import { renderDiscoverSearch, renderDiscoverShow, renderDiscoverSync } from "./discover.ts";
 import { startRuleEditor, type RuleEditor } from "./editor.ts";
-import { DEFAULT_HUB_PORT, runHub } from "./hub.ts";
+import { DEFAULT_HUB_PORT, runHub, runPreviews } from "./hub.ts";
 import { initProject } from "./init.ts";
 import { noteSource, rebuildIndex, recordInventory, recordProject, renderHistory, renderRebuild, SCANS_LOG, SOURCES_FILE } from "./index-store.ts";
 import { renderInventory } from "./inventory.ts";
@@ -132,6 +132,9 @@ ${style.bold("Discover")}  ${style.dim("UI components by need, across shadcn reg
                            and facets (role, source, licence, headless/styled); --all also lists
                            every other registry, kept apart from the default search
   discover show <id|ref> [--source] [--json]   one candidate: provenance, licence evidence, dependencies
+  discover previews [--port n] [--registry @shadcn|all] [--role r] [--limit n] [--force]
+                           photograph candidates in your theme for the hub's gallery, from a hub
+                           running on your project (youiyoux ui --project <dir>)
                            (cache: --cache, else YOUI_DISCOVER_CACHE, else ~/.cache/youiyoux/discover)
 
 ${style.bold("Index")}  ${style.dim("the local store of derived data: rebuildable, never the authority")}
@@ -225,6 +228,7 @@ const OPTIONS = {
   license: { type: "string" },
   icons: { type: "boolean" },
   source: { type: "boolean" },
+  registry: { type: "string" },
   "max-registries": { type: "string" },
   offset: { type: "string" },
   history: { type: "boolean", default: false },
@@ -800,6 +804,11 @@ async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Pr
     if (values.json) json(summary);
     else print(`${renderDiscoverSync(summary)}\n${style.dim(`store → ${storeLocation({ path })} (${plural(loaded.chosen, "listing")})`)}`);
     return 0;
+  }
+  if (action === "previews") {
+    if (rest.length > 0) throw new UsageError("youiyoux discover previews [--port n] [--registry @shadcn|all] [--role r] [--limit n] [--force]");
+    positiveInt(values.limit, "--limit");
+    return runPreviews(TOOL_ROOT, { ...(values.port ? { port: values.port } : {}), ...(values.registry ? { registry: values.registry } : {}), ...(values.role ? { role: values.role } : {}), ...(values.limit ? { limit: values.limit } : {}), ...(values.cache ? { cache: values.cache } : {}), force: values.force });
   }
   if (action === "show") {
     if (!rest[0]) throw new UsageError("youiyoux discover show <id|ref>");

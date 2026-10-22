@@ -84,3 +84,35 @@ export async function runHub(toolRoot: string, options: HubOptions): Promise<num
     watcher?.kill("SIGTERM");
   }
 }
+
+export interface PreviewsOptions {
+  /** The running hub's port (default DEFAULT_HUB_PORT). */
+  readonly port?: string;
+  /** One registry's items (`@shadcn`, the default), or `all`. */
+  readonly registry?: string;
+  readonly role?: string;
+  readonly limit?: string;
+  /** Photograph again even what is current, and retry what could not be drawn. */
+  readonly force?: boolean;
+  readonly cache?: string;
+}
+
+/** `youiyoux discover previews`: the hub's capture script, pointed at a hub running on this machine. */
+export function previewsPlan(toolRoot: string, options: PreviewsOptions): { web: string; args: string[] } {
+  const web = join(toolRoot, "apps/web");
+  const registry = options.registry ?? "@shadcn";
+  const args = [join(web, "scripts/capture-discover-thumbs.ts"), "--hub", `http://localhost:${options.port ?? DEFAULT_HUB_PORT}`];
+  if (registry !== "all") args.push("--registry", registry);
+  for (const key of ["role", "limit"] as const) if (options[key]) args.push(`--${key}`, options[key]!);
+  if (options.cache) args.push("--cache", resolve(options.cache));
+  if (options.force) args.push("--force");
+  return { web, args };
+}
+
+export async function runPreviews(toolRoot: string, options: PreviewsOptions): Promise<number> {
+  const plan = previewsPlan(toolRoot, options);
+  await access(join(plan.web, "node_modules/playwright-core")).catch(() => {
+    throw new Error(`the hub's dependencies are not installed: run \`pnpm install\` in ${toolRoot}`);
+  });
+  return run(plan.args, plan.web, {});
+}

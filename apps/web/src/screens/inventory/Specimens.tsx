@@ -28,6 +28,8 @@ export const MARGIN = 32;
 export const TILE_HEIGHT = 88;
 /** A wall tile's specimen, drawn larger. */
 export const LARGE_TILE_HEIGHT = 136;
+/** A Discover thumbnail's stage: one look, photographed for the gallery (small, so a small look fills it). */
+export const STAGE_TILE_HEIGHT = 150;
 const TILE_PAD = 10;
 export const MAX_RENDERING = 6;
 /** Frames mounted at once, loading or drawn (FrameBudget). */
@@ -522,8 +524,8 @@ function useLive(near: boolean, container: RefObject<HTMLElement | null>) {
 interface SpecimenTileProps {
   tile: Tile;
   scheme: Scheme;
-  /** small: a strip of looks; large: a wall tile or a compare card. */
-  size?: "small" | "large";
+  /** small: a strip of looks; large: a wall tile or a compare card; stage: a Discover thumbnail. */
+  size?: "small" | "large" | "stage";
   /** A list item in a strip; a plain box anywhere else. */
   as?: "li" | "div";
   /** The project and file:line under the specimen. */
@@ -549,7 +551,7 @@ export function SpecimenTile({ tile, scheme, size = "small", as: Tag = "li", cap
   const visible = useInView(ref);
   const drawn = tile.specimen !== null && tile.css !== null;
   const mounted = useFrameBudget(drawn && near, visible);
-  const height = size === "large" ? LARGE_TILE_HEIGHT : TILE_HEIGHT;
+  const height = size === "stage" ? STAGE_TILE_HEIGHT : size === "large" ? LARGE_TILE_HEIGHT : TILE_HEIGHT;
   const tryable = tryIt && drawn && tile.specimen!.kind === "component" && (!!tile.specimenId || !!tile.script);
   const { state, start, ready, end, button } = useLive(near, ref);
   const [background, setBackground] = useState<string | undefined>(undefined);

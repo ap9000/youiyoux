@@ -39,10 +39,12 @@ export interface DiscoverQuery {
   readonly family: string | null;
   /** The candidate open in the preview. */
   readonly open: string | null;
+  /** How results are laid out; null: the gallery when there are pictures, else the list. */
+  readonly view: "gallery" | "list" | null;
   readonly offset: number;
 }
 
-export const EMPTY_QUERY: DiscoverQuery = { q: "", role: null, source: null, licence: null, style: null, family: null, open: null, offset: 0 };
+export const EMPTY_QUERY: DiscoverQuery = { q: "", role: null, source: null, licence: null, style: null, family: null, open: null, view: null, offset: 0 };
 export const PAGE_SIZE = 20;
 
 export interface DiscoverPage {
@@ -79,6 +81,7 @@ export function parseQuery(search: string): DiscoverQuery {
     style: pick("style", ["headless", "styled"] as const),
     family: pick("family"),
     open: pick("open"),
+    view: pick("view", ["gallery", "list"] as const),
     offset: Number.isSafeInteger(offset) && offset > 0 ? offset : 0,
   };
 }
@@ -86,7 +89,7 @@ export function parseQuery(search: string): DiscoverQuery {
 export function queryToSearch(query: DiscoverQuery): string {
   const params = new URLSearchParams();
   if (query.q.trim()) params.set("q", query.q);
-  for (const key of ["role", "source", "licence", "style", "family", "open"] as const) if (query[key]) params.set(key, query[key]!);
+  for (const key of ["role", "source", "licence", "style", "family", "open", "view"] as const) if (query[key]) params.set(key, query[key]!);
   if (query.offset > 0) params.set("offset", String(query.offset));
   const text = params.toString();
   return text ? `?${text}` : "";

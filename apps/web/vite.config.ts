@@ -5,6 +5,7 @@ import react from "@vitejs/plugin-react";
 import type { Plugin } from "vite";
 import { defineConfig } from "vitest/config";
 import { discoverPreviewMiddleware } from "./scripts/discover-preview-server.ts";
+import { discoverThumbsMiddleware } from "./scripts/discover-thumbs.ts";
 import { queryMiddleware } from "./scripts/query-server.ts";
 import { tryIndexDeny, tryMiddleware } from "./scripts/try-server.ts";
 
@@ -98,8 +99,24 @@ function discoverPreview(): Plugin {
   };
 }
 
+/**
+ * Discover thumbnails (scripts/discover-thumbs.ts): the pictures `youiyoux discover previews`
+ * took, for the gallery; localhost only. A static host has none, and Discover lists without them.
+ */
+function discoverThumbs(): Plugin {
+  return {
+    name: "youiyoux-discover-thumbs",
+    configureServer(server) {
+      server.middlewares.use(discoverThumbsMiddleware(snapshot, server.config.base));
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(discoverThumbsMiddleware(snapshot, server.config.base));
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss(), snapshotFiles(), tryIt(), query(), discoverPreview()],
+  plugins: [react(), tailwindcss(), snapshotFiles(), tryIt(), query(), discoverPreview(), discoverThumbs()],
   resolve: { alias: { "@snapshot": snapshot } },
   // A system's demos may use any of the hub's UI packages. Pre-bundled up front, so the preview
   // frame's first visit to such a demo never makes the dev server re-optimize and reload mid-render.

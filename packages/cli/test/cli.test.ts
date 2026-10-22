@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { loadProject } from "@youiyoux/scanner";
-import { generatedPrefix, hubPlan, loadOptions, main, runHub } from "../src/index.ts";
+import { generatedPrefix, hubPlan, loadOptions, main, previewsPlan, runHub } from "../src/index.ts";
 
 const FIXTURE = join(import.meta.dirname, "../../scanner/test/fixtures/expo-app");
 const DEMO = join(import.meta.dirname, "../../../examples/demo-design");
@@ -194,6 +194,13 @@ describe("youi", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+
+  test("discover previews runs the hub's capture against a hub on this machine: official items by default", () => {
+    const tool = "/opt/youi";
+    expect(previewsPlan(tool, {})).toEqual({ web: "/opt/youi/apps/web", args: ["/opt/youi/apps/web/scripts/capture-discover-thumbs.ts", "--hub", "http://localhost:5173", "--registry", "@shadcn"] });
+    expect(previewsPlan(tool, { port: "5180", registry: "all", role: "dialog", limit: "12", force: true }).args.slice(1)).toEqual(["--hub", "http://localhost:5180", "--role", "dialog", "--limit", "12", "--force"]);
+    expect(previewsPlan(tool, { registry: "@coss" }).args).toContain("@coss");
   });
 
   test("ui shows the committed demo by default, and snapshots a named system into a gitignored dir", () => {

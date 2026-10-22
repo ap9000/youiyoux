@@ -20,10 +20,12 @@ import { queryMiddleware } from "../scripts/query-server.ts";
 import { writeDiscover } from "../scripts/snapshot.ts";
 import { compact, parseQuery, queryToSearch, resetDiscoverSource, searchListings, signalLines, type ListingsFile } from "../src/data/discover.ts";
 import { cleanMarkup, previewRequests, setDrawn, type PreviewAnswer } from "../src/data/discover-preview.ts";
+import { resetThumbs, type Thumbs } from "../src/data/discover-thumbs.ts";
 import { memorySource, type InventorySource } from "../src/data/inventory-source.ts";
 import type { Resource } from "../src/data/store.ts";
 import { pinnedRows } from "../src/screens/discover/PinnedCompare.tsx";
 import { DiscoverView } from "../src/screens/discover/DiscoverScreen.tsx";
+import { SpecimenCapture } from "../src/screens/discover/SpecimenCapture.tsx";
 import { InventoryView } from "../src/screens/inventory/InventoryScreen.tsx";
 
 const TOOL = resolve(import.meta.dirname, "../../..");
@@ -89,12 +91,16 @@ function answerFor(entry: LibraryEntry, extra: Partial<PreviewAnswer> = {}): Pre
 let calls: string[];
 let drafts: unknown[];
 let service: "up" | "down";
+/** What `/__youi/discover-thumbs` answers: none by default, as a hub before `youiyoux discover previews`. */
+let thumbs: Thumbs | null;
 
 beforeEach(() => {
   calls = [];
   drafts = [];
   service = "up";
+  thumbs = null;
   resetDiscoverSource();
+  resetThumbs();
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -102,6 +108,7 @@ beforeEach(() => {
       calls.push(`${url.pathname}${url.search}`);
       if (url.pathname === "/__youi/query") return viaMiddleware(url);
       if (url.pathname === "/__youi/discover-preview") return json(answerFor(await entryOf(url.searchParams.get("id")!)));
+      if (url.pathname === "/__youi/discover-thumbs") return thumbs ? json(thumbs) : new Response("not found", { status: 404 });
       if (url.pathname === "/api/info") return service === "up" ? json({ schema: "youiyoux.workflow/v1", kinds: ["rule", "style", "library"] }) : new Response("<html>", { status: 502, headers: { "Content-Type": "text/html" } });
       if (url.pathname === "/api/drafts" && init?.method === "POST") {
         const body = JSON.parse(String(init.body)) as { content: { request: string; entry: LibraryEntry } };
@@ -158,7 +165,7 @@ describe("search by need (c1)", () => {
     expect(window.location.search).toContain("licence=unknown");
     expect([...document.querySelectorAll<HTMLElement>("[data-hit]")].every((hit) => text(hit).includes("licence unknown"))).toBe(true);
     expect(calls.some((c) => c.includes("licence=unknown"))).toBe(true);
-    expect(parseQuery("?q=x&role=button&source=%40shadcn&licence=known&style=styled&family=button-1&open=lib%3Ax&offset=20")).toEqual({ q: "x", role: "button", source: "@shadcn", licence: "known", style: "styled", family: "button-1", open: "lib:x", offset: 20 });
+    expect(parseQuery("?q=x&role=button&source=%40shadcn&licence=known&style=styled&family=button-1&open=lib%3Ax&offset=20")).toEqual({ q: "x", role: "button", source: "@shadcn", licence: "known", style: "styled", family: "button-1", open: "lib:x", view: null, offset: 20 });
     expect(queryToSearch(parseQuery("?licence=bogus&style=nope&q=a"))).toBe("?q=a");
   });
 
@@ -342,5 +349,103 @@ describe("Save to Library and Add to my project (c4)", () => {
     const actions = within(drawer).getByTestId("candidate-actions");
     expect(within(actions).getByRole("button", { name: /Save to Library/ }).hasAttribute("disabled")).toBe(true);
     expect(within(actions).getByRole("button", { name: /Add to my project/ }).hasAttribute("disabled")).toBe(true);
+  });
+});
+
+describe("the gallery (pictures from youiyoux discover previews)", () => {
+  const SHADCN = "lib:shadcn/component/command";
+  const COSS = "lib:coss/component/command";
+  const pictures = (): Thumbs => ({
+    project: "console",
+    items: { [SHADCN]: { light: "/__youi/discover-thumbs/console/0123456789abcdef.light.webp", dark: "/__youi/discover-thumbs/console/0123456789abcdef.dark.webp", width: 928, height: 568, capturedAt: "2026-10-22T12:00:00.000Z" } },
+    failed: { [COSS]: "it needs recharts, which is installed in neither your project nor the hub" },
+  });
+
+  test("with pictures, results are cards led by how each draws in your theme; one without says why in a few words", async () => {
+    thumbs = pictures();
+    show("?q=command%20menu");
+    await waitFor(() => expect(document.querySelector("[data-gallery]")).not.toBeNull());
+    const shadcn = card(SHADCN);
+    expect(shadcn.dataset.picture).toBe("yes");
+    expect(shadcn.querySelector("img")!.getAttribute("src")).toBe("/__youi/discover-thumbs/console/0123456789abcdef.light.webp");
+    const coss = card(COSS);
+    expect(coss.dataset.picture).toBe("failed");
+    expect(within(coss).getByText("Needs recharts").getAttribute("title")).toBe("it needs recharts, which is installed in neither your project nor the hub");
+    expect([...document.querySelectorAll<HTMLElement>("[data-hit]")].filter((hit) => hit.dataset.picture === "none").every((hit) => text(hit).includes("No picture yet"))).toBe(true);
+    // The picture opens it, as Preview in your theme does; nothing was asked for before that.
+    expect(previewCalls()).toEqual([]);
+    fireEvent.click(within(shadcn).getByRole("button", { name: /^Preview Command in your theme/ }));
+    expect(await screen.findByTestId("candidate-drawer")).toBeTruthy();
+    expect(window.location.search).toContain(`open=${encodeURIComponent(SHADCN)}`);
+  });
+
+  test("nothing searched: a shelf per type, of its pictured candidates, and All N opens that type", async () => {
+    thumbs = pictures();
+    show("");
+    await waitFor(() => expect(document.querySelectorAll("[data-shelf]").length).toBeGreaterThan(0));
+    expect(text(document.querySelector("[data-results-summary]")!)).toMatch(/^Browsing by type: the \d+ commonest of \d+$/);
+    const shelf = document.querySelector<HTMLElement>('[data-shelf="command"]')!;
+    await waitFor(() => expect(shelf.querySelectorAll("[data-hit]").length).toBeGreaterThan(0));
+    // Only shadcn's command has a picture, so it is the shelf; a shelf with none shows its first four as they are.
+    expect([...shelf.querySelectorAll("[data-hit]")].map((hit) => hit.getAttribute("data-hit"))).toEqual([SHADCN]);
+    const unpictured = [...document.querySelectorAll<HTMLElement>("[data-shelf]")].find((other) => !other.querySelector('[data-picture="yes"]'));
+    if (unpictured) await waitFor(() => expect(unpictured.querySelectorAll("[data-hit]").length).toBeGreaterThan(0));
+    fireEvent.click(within(shelf).getByRole("button", { name: /^All \d+/ }));
+    await waitFor(() => expect(document.querySelector("[data-shelves]")).toBeNull());
+    expect(window.location.search).toContain("role=command");
+    expect(document.querySelector("[data-gallery]")).not.toBeNull();
+  });
+
+  test("the layout switches to the list and back, and stays in the URL; without pictures there is only the list", async () => {
+    thumbs = pictures();
+    show("?q=command%20menu");
+    await waitFor(() => expect(document.querySelector("[data-gallery]")).not.toBeNull());
+    const layout = screen.getByRole("group", { name: "Layout" });
+    fireEvent.click(within(layout).getByRole("button", { name: "List" }));
+    await waitFor(() => expect(document.querySelector("[data-gallery]")).toBeNull());
+    expect(window.location.search).toContain("view=list");
+    expect(within(card(SHADCN)).getByText("npx shadcn add command")).toBeTruthy();
+    fireEvent.click(within(layout).getByRole("button", { name: "Gallery" }));
+    await waitFor(() => expect(document.querySelector("[data-gallery]")).not.toBeNull());
+    expect(window.location.search).toContain("view=gallery");
+    expect(parseQuery("?view=gallery").view).toBe("gallery");
+    expect(parseQuery("?view=wall").view).toBeNull();
+
+    cleanup();
+    resetThumbs();
+    thumbs = null;
+    show("?q=command%20menu");
+    await waitFor(() => expect(card(SHADCN)).not.toBeNull());
+    await waitFor(() => expect(calls).toContain("/__youi/discover-thumbs"));
+    expect(document.querySelector("[data-gallery]")).toBeNull();
+    expect(document.querySelector("[data-view-switch]")).toBeNull();
+  });
+});
+
+describe("the capture page youiyoux discover previews photographs", () => {
+  test("it draws one candidate on a light and a dark stage once drawn, says it is ready, and names its project and listing", async () => {
+    // One no earlier test drew (drawings are kept for the page's life).
+    const id = "lib:shadcn/component/input";
+    window.history.replaceState(null, "", `/discover/specimen?id=${encodeURIComponent(id)}`);
+    render(<SpecimenCapture />);
+    const capture = (): HTMLElement => document.querySelector<HTMLElement>(`[data-capture="${id}"]`)!;
+    // Fetching, then drawing in the hidden frame: not ready to photograph yet.
+    await waitFor(() => expect(capture().dataset.captureProject).toBe("console"));
+    expect(capture().dataset.captureState).toBe("drawing");
+    expect(previewCalls()).toEqual([`/__youi/discover-preview?id=${encodeURIComponent(id)}`]);
+    act(() => setDrawn(id, '<input class="rounded-md" placeholder="Email">'));
+    await waitFor(() => expect(capture().dataset.captureState).toBe("ready"));
+    const page = capture();
+    expect([...page.querySelectorAll<HTMLElement>("[data-capture-stage]")].map((stage) => stage.dataset.captureStage)).toEqual(["light", "dark"]);
+    expect(page.dataset.captureProject).toBe("console");
+    expect(page.dataset.captureSha).toBe((await entryOf(id)).provenance!.sha256);
+  });
+
+  test("a candidate that cannot be drawn says so, with why, for the capture to record", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => json({ error: "There is no Discover index on this machine yet: run youiyoux discover sync." }, 404)));
+    window.history.replaceState(null, "", "/discover/specimen?id=lib%3Ashadcn%2Fcomponent%2Fnothing");
+    render(<SpecimenCapture />);
+    await waitFor(() => expect(document.querySelector("[data-capture-state=failed]")).not.toBeNull());
+    expect(document.querySelector("[data-capture-state=failed]")!.getAttribute("data-capture-reason")).toMatch(/no Discover index/);
   });
 });

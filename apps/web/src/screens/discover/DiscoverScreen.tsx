@@ -10,18 +10,23 @@
  *   3. From an Inventory family (Find alternatives) the family is pinned, and every opened
  *      candidate gets a compare card beside it (PinnedCompare).
  *
- * The query, the facets, the pinned family and the open candidate live in the URL. The page
+ * With pictures from `youiyoux discover previews` (discover-thumbs.ts), results are a gallery:
+ * each candidate as it draws in the project's theme, in the hub's scheme, with a type strip to
+ * browse by when nothing is searched; `view=list` keeps the plain list.
+ *
+ * The query, the facets, the pinned family, the open candidate and the view live in the URL. The page
  * paints from nothing but its own shell (search, facets, result cards); listings arrive after.
  * What exists only once something is opened or pinned (the drawer, the specimen tiles, the
  * sandboxed frames, the compare cards) is its own chunk (Opened.tsx), and its frames mount only
  * near the screen.
  */
 import { clsx } from "clsx";
-import { ArrowLeft, ArrowRight, Compass } from "lucide-react";
+import { ArrowLeft, ArrowRight, Compass, LayoutGrid, List } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useSearch } from "wouter";
-import { useTheme } from "../../app/theme.tsx";
+import { type Scheme, useTheme } from "../../app/theme.tsx";
 import { PAGE_SIZE, parseQuery, queryToSearch, searchDiscover, signalLines, sourceOf, type DiscoverHit, type DiscoverPage, type DiscoverQuery } from "../../data/discover.ts";
+import { hasPictures, shortReason, useThumbs, type Thumbs } from "../../data/discover-thumbs.ts";
 import type { InventorySource } from "../../data/inventory-source.ts";
 import type { Resource } from "../../data/store.ts";
 import { Badge } from "../../ui/Badge.tsx";
@@ -41,6 +46,9 @@ const CandidateLayer = lazy(() => loadOpened().then((m) => ({ default: m.Candida
 const SUGGESTIONS = ["command menu", "date picker", "toast", "dialog", "tabs"];
 const TYPING_MS = 250;
 const ROLE_FACETS = 12;
+/** Browsing the gallery with nothing searched: a shelf for each of the commonest types. */
+const SHELVES = 8;
+const SHELF_SIZE = 4;
 
 type Loaded = { status: "loading" } | { status: "ready"; page: DiscoverPage } | { status: "error"; message: string };
 
@@ -87,6 +95,8 @@ export function DiscoverView({ inventory }: { inventory?: Resource<InventorySour
 
   const listings = useListings(query);
   const page = listings.status === "ready" ? listings.page : null;
+  const thumbs = useThumbs();
+  const gallery = query.view ? query.view === "gallery" : hasPictures(thumbs);
 
   // Every listing seen this visit, so an open candidate stays open across pages and searches.
   const seen = useRef(new Map<string, DiscoverHit>());
@@ -137,7 +147,7 @@ export function DiscoverView({ inventory }: { inventory?: Resource<InventorySour
                 <h2 id="discover-results" className="sr-only">
                   Results
                 </h2>
-                <Results listings={listings} query={query} onOpen={open} onPage={(offset) => setQuery({ ...query, offset, open: null })} />
+                <Results listings={listings} query={query} onOpen={open} onPage={(offset) => setQuery({ ...query, offset, open: null })} gallery={gallery} thumbs={thumbs ?? null} scheme={scheme} onView={(view) => setQuery({ ...query, view, open: null })} onRole={(role) => set({ role })} />
               </section>
             </div>
 
@@ -219,7 +229,19 @@ function Facets({ query, page, onChange }: { query: DiscoverQuery; page: Discove
 
 /* ----------------------------------------------------------------------- results */
 
-function Results({ listings, query, onOpen, onPage }: { listings: ReturnType<typeof useListings>; query: DiscoverQuery; onOpen: (hit: DiscoverHit) => void; onPage: (offset: number) => void }) {
+interface ResultsProps {
+  listings: ReturnType<typeof useListings>;
+  query: DiscoverQuery;
+  onOpen: (hit: DiscoverHit) => void;
+  onPage: (offset: number) => void;
+  gallery: boolean;
+  thumbs: Thumbs | null;
+  scheme: Scheme;
+  onView: (view: "gallery" | "list") => void;
+  onRole: (role: string) => void;
+}
+
+function Results({ listings, query, onOpen, onPage, gallery, thumbs, scheme, onView, onRole }: ResultsProps) {
   if (listings.status === "loading")
     return (
       <p aria-busy="true" className="text-small text-faint">
@@ -240,19 +262,43 @@ function Results({ listings, query, onOpen, onPage }: { listings: ReturnType<typ
       </EmptyState>
     );
   const last = Math.min(page.offset + page.hits.length, page.matched);
+  const types = Object.entries(page.facets.role).slice(0, ROLE_FACETS);
+  // Nothing searched, no type chosen, on the gallery's first page: browse it by type instead.
+  const shelves = gallery && hasPictures(thumbs) && !query.q && !query.role && page.offset === 0 && types.length > 0;
   return (
     <>
-      <p className="text-small text-muted" data-results-summary>
-        {query.q ? `For “${query.q}”: ` : "Browsing, official first: "}
-        {page.offset + 1}–{last} of {page.matched}
-        {page.from === "snapshot" ? ` · from this snapshot's listings${page.capped ? " (the first of more)" : ""}` : ""}
-      </p>
-      <ul className="grid gap-3 lg:grid-cols-2" aria-label="Candidates">
-        {page.hits.map((hit) => (
-          <ResultCard key={hit.id} hit={hit} onOpen={onOpen} />
-        ))}
-      </ul>
-      {(page.offset > 0 || last < page.matched) && (
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <p className="min-w-0 flex-1 text-small text-muted" data-results-summary>
+          {shelves ? `Browsing by type: the ${Math.min(SHELVES, types.length)} commonest of ${page.matched}` : (
+            <>
+              {query.q ? `For “${query.q}”: ` : query.role ? `${query.role.replace(/-/g, " ")}: ` : "Browsing, official first: "}
+              {page.offset + 1}–{last} of {page.matched}
+            </>
+          )}
+          {page.from === "snapshot" ? ` · from this snapshot's listings${page.capped ? " (the first of more)" : ""}` : ""}
+        </p>
+        {hasPictures(thumbs) && <ViewSwitch gallery={gallery} onView={onView} />}
+      </div>
+      {shelves ? (
+        <div className="space-y-8" data-shelves>
+          {types.slice(0, SHELVES).map(([role, count]) => (
+            <Shelf key={role} query={query} role={role} count={count} thumbs={thumbs} scheme={scheme} onOpen={onOpen} onRole={onRole} />
+          ))}
+        </div>
+      ) : gallery ? (
+        <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3" aria-label="Candidates" data-gallery>
+          {page.hits.map((hit) => (
+            <GalleryCard key={hit.id} hit={hit} thumbs={thumbs} scheme={scheme} onOpen={onOpen} />
+          ))}
+        </ul>
+      ) : (
+        <ul className="grid gap-3 lg:grid-cols-2" aria-label="Candidates">
+          {page.hits.map((hit) => (
+            <ResultCard key={hit.id} hit={hit} onOpen={onOpen} />
+          ))}
+        </ul>
+      )}
+      {!shelves && (page.offset > 0 || last < page.matched) && (
         <nav aria-label="Pages" className="flex items-center gap-2">
           <Button disabled={page.offset === 0} onClick={() => onPage(Math.max(0, page.offset - PAGE_SIZE))} className="max-md:h-11">
             <ArrowLeft /> Previous
@@ -303,3 +349,93 @@ function ResultCard({ hit, onOpen }: { hit: DiscoverHit; onOpen: (hit: DiscoverH
   );
 }
 
+function ViewSwitch({ gallery, onView }: { gallery: boolean; onView: (view: "gallery" | "list") => void }) {
+  return (
+    <div role="group" aria-label="Layout" className="inline-flex rounded-md border border-line p-0.5" data-view-switch>
+      {(["gallery", "list"] as const).map((view) => {
+        const active = (view === "gallery") === gallery;
+        const Icon = view === "gallery" ? LayoutGrid : List;
+        return (
+          <button key={view} type="button" aria-pressed={active} onClick={() => onView(view)} className={clsx("inline-flex items-center gap-1.5 rounded-sm px-2 py-1 text-small transition-colors duration-100 max-md:h-11 max-md:px-3", active ? "bg-raised text-ink" : "text-muted hover:text-ink")}>
+            <Icon aria-hidden className="size-3.5" />
+            {view === "gallery" ? "Gallery" : "List"}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * A candidate as a picture: how it draws in the project's theme, in the hub's scheme, then what it
+ * is. Without a picture it says why (it could not be drawn on its own) or that none was taken.
+ * The picture opens it, as Preview in your theme does.
+ */
+function GalleryCard({ hit, thumbs, scheme, onOpen }: { hit: DiscoverHit; thumbs: Thumbs | null; scheme: Scheme; onOpen: (hit: DiscoverHit) => void }) {
+  const thumb = thumbs?.items[hit.id];
+  const failed = thumbs?.failed[hit.id];
+  const name = hit.title ?? hit.name;
+  const signals = signalLines(hit);
+  return (
+    <li className="group flex min-w-0 flex-col overflow-hidden rounded-lg border border-line bg-surface transition-colors duration-100 hover:border-line-strong" data-hit={hit.id} data-picture={thumb ? "yes" : failed ? "failed" : "none"}>
+      <button type="button" onClick={() => onOpen(hit)} aria-label={`Preview ${name} in your theme`} data-open={hit.id} className="block border-b border-line bg-sunken outline-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-focus">
+        <span className="relative block aspect-[5/3] overflow-hidden">
+          {thumb ? (
+            <img src={thumb[scheme]} width={thumb.width} height={thumb.height} alt="" loading="lazy" decoding="async" className="absolute inset-0 size-full object-cover" />
+          ) : (
+            <span className="absolute inset-0 grid place-items-center p-4 text-center text-small text-faint" title={failed}>
+              {failed ? shortReason(failed) : "No picture yet"}
+            </span>
+          )}
+        </span>
+      </button>
+      <div className="flex min-w-0 flex-1 flex-col gap-1 p-3">
+        <div className="flex min-w-0 items-start gap-2">
+          <h3 className="min-w-0 flex-1 truncate text-body font-medium text-ink">{name}</h3>
+          <LicenceBadge licence={hit.license} />
+        </div>
+        <p className="truncate font-mono text-mono-sm text-muted">{hit.source.ref ?? hit.name}</p>
+        {signals.length > 0 && (
+          <p className="flex flex-wrap gap-x-3 text-caption text-muted">
+            {signals.map((s) => (
+              <span key={s} className="tabular" data-signal>
+                {s}
+              </span>
+            ))}
+          </p>
+        )}
+      </div>
+    </li>
+  );
+}
+
+/** One type's shelf: its first candidates with a picture (any, when none has one), and the way to all of them. */
+function Shelf({ query, role, count, thumbs, scheme, onOpen, onRole }: { query: DiscoverQuery; role: string; count: number; thumbs: Thumbs | null; scheme: Scheme; onOpen: (hit: DiscoverHit) => void; onRole: (role: string) => void }) {
+  const listings = useListings({ ...query, role, offset: 0 });
+  const label = role.replace(/-/g, " ");
+  const found = listings.status === "ready" ? listings.page.hits : [];
+  const pictured = found.filter((hit) => thumbs?.items[hit.id]);
+  const hits = (pictured.length > 0 ? pictured : found).slice(0, SHELF_SIZE);
+  return (
+    <section aria-labelledby={`shelf-${role}`} className="space-y-3" data-shelf={role}>
+      <header className="flex items-baseline gap-3">
+        <h3 id={`shelf-${role}`} className="text-heading first-letter:uppercase">
+          {label}
+        </h3>
+        <span className="tabular text-small text-faint">{count}</span>
+        <button type="button" onClick={() => onRole(role)} className="ml-auto inline-flex items-center gap-1 text-small text-accent hover:underline max-md:h-11">
+          All {count} <ArrowRight aria-hidden className="size-3.5" />
+        </button>
+      </header>
+      {listings.status === "error" ? (
+        <p className="text-small text-muted">{listings.message}</p>
+      ) : (
+        <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label={`${label} candidates`} aria-busy={listings.status === "loading" || undefined}>
+          {hits.map((hit) => (
+            <GalleryCard key={hit.id} hit={hit} thumbs={thumbs} scheme={scheme} onOpen={onOpen} />
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
