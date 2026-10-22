@@ -312,6 +312,30 @@ function Intro({ live }: { live: Live | null }) {
 }
 
 /** A draft on its rule's own page. Reached from Rules (Edit, New rule) and from the Changes queue. */
+/** Rules / <the rule> / draft, and All changes: one line at any width; the rule's title gives way (truncates), never the crumbs around it. */
+export function DraftBreadcrumb({ title, href }: { title: string; href: string | null }) {
+  return (
+    <nav aria-label="Breadcrumb" className="flex h-10 shrink-0 items-center gap-1.5 border-b border-line px-6 text-small whitespace-nowrap text-muted max-sm:px-4" data-draft-breadcrumb>
+      <Link href="/rules" className="shrink-0 hover:text-ink">
+        Rules
+      </Link>
+      <span aria-hidden>/</span>
+      {href ? (
+        <Link href={href} className="min-w-0 truncate hover:text-ink">
+          {title}
+        </Link>
+      ) : (
+        <span className="min-w-0 truncate">{title}</span>
+      )}
+      <span aria-hidden>/</span>
+      <span className="shrink-0 text-ink-2">draft</span>
+      <Link href="/changes" className="ml-auto shrink-0 pl-2 hover:text-ink">
+        All changes
+      </Link>
+    </nav>
+  );
+}
+
 function DraftPage({ id, live, onChanged }: { id: string; live: Live; onChanged: () => void }) {
   const load = useCallback(() => workflowApi.draft(id), [id]);
   const { state, reload, set } = useRemote(load, id);
@@ -330,24 +354,7 @@ function DraftPage({ id, live, onChanged }: { id: string; live: Live; onChanged:
   const published = live.published.rules.some((r) => r.rule.id === draft.ruleId);
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <nav aria-label="Breadcrumb" className="flex h-10 shrink-0 items-center gap-1.5 border-b border-line px-6 text-small text-muted">
-        <Link href="/rules" className="hover:text-ink">
-          Rules
-        </Link>
-        <span>/</span>
-        {published ? (
-          <Link href={`/rules/${nameOf(draft.ruleId)}`} className="truncate hover:text-ink">
-            {draft.content.rule.title}
-          </Link>
-        ) : (
-          <span className="truncate">{draft.content.rule.title || "New rule"}</span>
-        )}
-        <span>/</span>
-        <span className="text-ink-2">draft</span>
-        <Link href="/changes" className="ml-auto hover:text-ink">
-          All changes
-        </Link>
-      </nav>
+      <DraftBreadcrumb title={draft.content.rule.title || "New rule"} href={published ? `/rules/${nameOf(draft.ruleId)}` : null} />
       <DraftEditor draft={draft} info={live.info} onUpdate={onUpdate} />
     </div>
   );
