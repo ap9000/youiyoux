@@ -32,7 +32,7 @@ export function LiveStatus() {
   const summary = liveSummary(useLiveState());
   if (!summary) return null;
   return (
-    <div className="group relative grid size-9 place-items-center rounded-md outline-none focus-visible:ring-2 focus-visible:ring-focus" tabIndex={0} aria-label={summary.label}>
+    <div className="group relative grid size-9 place-items-center rounded-md outline-none xl:h-8 xl:w-full xl:justify-items-start xl:px-3.5 focus-visible:ring-2 focus-visible:ring-focus" tabIndex={0} aria-label={summary.label}>
       <span className={clsx("size-2 rounded-full", TONE[summary.tone])} />
       <span role="status" className="sr-only">
         {summary.label}

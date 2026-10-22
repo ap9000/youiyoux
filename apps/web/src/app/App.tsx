@@ -75,7 +75,7 @@ export function App() {
     <div className="flex h-dvh overflow-hidden bg-canvas">
       <NavRail />
       <main className="flex min-w-0 flex-1 py-1.5 pr-1.5 max-md:p-0">
-        <div className="relative flex min-w-0 flex-1 overflow-hidden rounded-lg border border-line bg-surface shadow-raise max-md:rounded-none max-md:border-y-0 max-md:border-r-0">
+        <div className="relative flex min-w-0 flex-1 overflow-hidden rounded-lg border border-line bg-surface max-md:rounded-none max-md:border-y-0 max-md:border-r-0">
           <ScreenBoundary resetKey={location}>
             <Suspense fallback={<PaneSkeleton />}>
               <NavigationSettled />
