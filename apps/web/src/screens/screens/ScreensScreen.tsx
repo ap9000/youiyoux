@@ -1,25 +1,29 @@
 /**
  * Screens: every screen of every scanned project as a thumbnail with its element and
- * issue counts; `/screens/<project>/<screen>` opens one with its full screenshot.
+ * issue counts, or (`?view=canvas`) all of them on one board with their requests pinned;
+ * `/screens/<project>/<screen>` opens one with its full screenshot.
  */
 import { MonitorX } from "lucide-react";
 import { useRef, useState } from "react";
-import { Link, useParams } from "wouter";
+import { Link, useLocation, useParams, useSearch } from "wouter";
 import { type Scheme, useTheme } from "../../app/theme.tsx";
 import type { Model } from "../../data/model.ts";
 import { type Screen, type ScreenIndex, screenHref, screensOf, routeLabel } from "../../data/screens.ts";
 import { retryModel, retryUsage, useModelState, useUsageState } from "../../data/store.ts";
 import type { ProjectShots } from "../../data/types.ts";
 import { EVERY_SCREEN, type UsageIndex } from "../../data/usage.ts";
+import { useRemote, workflowApi } from "../../data/workflow.ts";
 import { useListKeys } from "../../shell/keyboard.ts";
 import { Badge } from "../../ui/Badge.tsx";
 import { Button } from "../../ui/Button.tsx";
 import { Disclosure } from "../../ui/Disclosure.tsx";
 import { EmptyState } from "../../ui/EmptyState.tsx";
 import { PaneHeader, ResourceState } from "../../ui/Pane.tsx";
+import { Segmented } from "../../ui/Segmented.tsx";
 import { ScreenImage } from "../../ui/ScreenImage.tsx";
 import { IssueBadge, issueBreakdown } from "./IssueCounts.tsx";
 import { ScreenDetail } from "./ScreenDetail.tsx";
+import { ScreensCanvas } from "./ScreensCanvas.tsx";
 
 const TOP_ELEMENTS = 3;
 const SHORT_SHA = 7;
@@ -67,10 +71,25 @@ function ScreenGrid({ model, index, screens }: { model: Model; index: UsageIndex
   const cards = (): HTMLAnchorElement[] => [...(gridRef.current?.querySelectorAll<HTMLAnchorElement>("[data-screen-card]") ?? [])];
   useListKeys({ count: screens.screens.length, index: focused, onMove: (i) => cards()[i]?.focus() });
   const projects = [...new Set(screens.screens.map((s) => s.project))];
+  const [location, navigate] = useLocation();
+  const canvas = new URLSearchParams(useSearch()).get("view") === "canvas";
+  const requests = useRemote(workflowApi.requests, "requests");
+  const header = (
+    <PaneHeader title="Screens" count={screens.screens.length}>
+      <Segmented<"grid" | "canvas"> label="Layout" value={canvas ? "canvas" : "grid"} onChange={(v) => navigate(v === "canvas" ? `${location}?view=canvas` : location, { replace: true })} options={[{ value: "grid", label: "Grid" }, { value: "canvas", label: "Canvas" }]} />
+    </PaneHeader>
+  );
+  if (canvas)
+    return (
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {header}
+        <ScreensCanvas screens={screens} scheme={scheme} requests={requests.state.status === "ready" ? requests.state.value.requests : []} />
+      </div>
+    );
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <PaneHeader title="Screens" count={screens.screens.length} />
+      {header}
       <div ref={gridRef} data-list-pane onFocus={(event) => setFocused(cards().findIndex((card) => card === (event.target as Element)))} className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-6xl space-y-10 px-6 py-6 animate-enter max-sm:px-4">
           {projects.map((project) => {
