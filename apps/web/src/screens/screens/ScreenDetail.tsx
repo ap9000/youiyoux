@@ -5,13 +5,15 @@
  * picture (PlacesOverlay): pointed at, picked out, and linked from the element list.
  */
 import { clsx } from "clsx";
-import { ArrowUpRight, ChevronLeft, ChevronRight, Crosshair, X } from "lucide-react";
+import { ArrowUpRight, ChevronLeft, ChevronRight, Crosshair, MessageSquarePlus, X } from "lucide-react";
+import type { RequestDoc, RequestTarget } from "@youiyoux/core";
 import { type ReactNode, useMemo, useState } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import { type Scheme, useTheme } from "../../app/theme.tsx";
 import { elementHref } from "../../data/ids.ts";
 import type { Model } from "../../data/model.ts";
 import { elementOf, isSelected, matchPlaces, usePlaces, type Placed } from "../../data/places.ts";
+import { useRemote, workflowApi } from "../../data/workflow.ts";
 import { type Screen, type ScreenElement, type ScreenIndex, screenHref, routeLabel } from "../../data/screens.ts";
 import { EVERY_SCREEN, type ProjectViolation } from "../../data/usage.ts";
 import { markNavigation } from "../../lib/perf.ts";
@@ -26,7 +28,8 @@ import { Section } from "../../ui/Section.tsx";
 import { Segmented } from "../../ui/Segmented.tsx";
 import { Capped, choiceProps, SiteLocation, SiteRow } from "../element/sites.tsx";
 import { IssueBadge, issueBreakdown } from "./IssueCounts.tsx";
-import { type Outline, PlacesOverlay } from "./PlacesOverlay.tsx";
+import { type Outline, type Pin, PlacesOverlay } from "./PlacesOverlay.tsx";
+import { RequestComposer, RequestThread } from "./Requests.tsx";
 
 /** A collapsible group: native details/summary, so it is keyboard- and reader-friendly for free. */
 function Group({ summary, children, open, onPoint }: { summary: ReactNode; children: ReactNode; open?: boolean; onPoint?: (pointed: boolean) => void }) {
@@ -203,7 +206,7 @@ function StepLink({ target, label, children }: { target: Screen | undefined; lab
 }
 
 /** What is picked on the picture: its name and kind, the line that rendered it and where to go from it. */
-function Selection({ placed, all, name, copies, onClear }: { placed: Placed; all: readonly Placed[]; name: string; copies: string | null; onClear: () => void }) {
+function Selection({ placed, all, name, copies, onClear, onComment }: { placed: Placed; all: readonly Placed[]; name: string; copies: string | null; onClear: () => void; onComment: () => void }) {
   const { place, element, lookalike, at } = placed;
   return (
     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border border-line bg-surface px-3 py-2.5" data-selection={element ?? at ?? place.name}>
@@ -219,6 +222,9 @@ function Selection({ placed, all, name, copies, onClear }: { placed: Placed; all
         </p>
       </div>
       <span className="flex items-center gap-1">
+        <Button size="sm" variant="primary" onClick={onComment} data-comment>
+          <MessageSquarePlus /> Request
+        </Button>
         {at && <CopyButton value={at} label={`Copy ${at}`} />}
         {(element ?? lookalike) && (
           <Button size="sm" variant="outline" asChild>
@@ -238,8 +244,20 @@ export function ScreenDetail({ model, screens, screen }: { model: Model; screens
   const [scheme, setScheme] = useState<Scheme>(hubScheme);
   const { previous, next } = useStepKeys(screens, screen);
   const [location, navigate] = useLocation();
-  const select = new URLSearchParams(useSearch()).get("select");
-  const setSelect = (value: string | null): void => navigate(`${location}${value ? `?select=${encodeURIComponent(value)}` : ""}`, { replace: true });
+  const params = new URLSearchParams(useSearch());
+  const select = params.get("select");
+  const active = params.get("request");
+  // The pick and the open request live in the address, so either can be linked to.
+  const go = (next: { select?: string | null; request?: string | null }): void => {
+    const query = new URLSearchParams();
+    const value = { select, request: active, ...next };
+    if (value.select) query.set("select", value.select);
+    if (value.request) query.set("request", value.request);
+    navigate(`${location}${query.size ? `?${query.toString()}` : ""}`, { replace: true });
+  };
+  const setSelect = (value: string | null): void => go({ select: value, request: null });
+  const [composing, setComposing] = useState(false);
+  const requests = useRemote(workflowApi.requests, "requests");
   const placesState = usePlaces(screen.shot?.places);
   const places = placesState?.status === "ready" ? placesState.value : null;
   // A place names its own file and line, so it is matched against every site of the project, not
@@ -255,6 +273,36 @@ export function ScreenDetail({ model, screens, screen }: { model: Model; screens
   const [pointed, setPointed] = useState<string | null>(null);
   const nameOf = (p: Placed): string => (p.element ? (model.byId.get(p.element)?.name ?? p.element) : p.place.name);
   const picked = placed.filter((p) => isSelected(p, select));
+  // This screen's requests: those filed on it, and those for every use of an element placed on it; numbered oldest first.
+  const all = requests.state.status === "ready" ? requests.state.value.requests : [];
+  const placedElements = new Set(placed.map(elementOf).filter((e): e is string => e !== null));
+  const onScreen = all.filter((r) => r.target.route === screen.route || (r.target.scope === "element" && r.target.element !== undefined && placedElements.has(r.target.element))).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const replace = (next: RequestDoc): void => {
+    if (requests.state.status !== "ready") return requests.reload();
+    const list = requests.state.value.requests;
+    requests.set({ ...requests.state.value, requests: list.some((r) => r.id === next.id) ? list.map((r) => (r.id === next.id ? next : r)) : [next, ...list] });
+  };
+  const pinOf = (request: RequestDoc, number: number): Pin | null => {
+    const at = request.target.route === screen.route && request.target.box ? request.target.box : placed.find((p) => request.target.element && elementOf(p) === request.target.element)?.place.box;
+    return at ? { id: request.id, number, box: { x: at.x, y: at.y }, status: request.status } : null;
+  };
+  const pins = onScreen.map((r, i) => pinOf(r, i + 1)).filter((p): p is Pin => p !== null);
+  const openRequest = (request: RequestDoc): void => {
+    const t = request.target;
+    go({ request: request.id, select: t.scope === "element" && t.element ? t.element : t.file && t.line ? `${t.file}:${t.line}` : (t.element ?? null) });
+  };
+  const targetOf = (p: Placed): RequestTarget => ({
+    route: screen.route,
+    scope: "here",
+    name: p.place.name,
+    ...(elementOf(p) ? { element: elementOf(p)! } : {}),
+    ...(p.lookalike ? { lookalike: true } : {}),
+    ...(p.place.file ? { file: p.place.file } : {}),
+    ...(p.place.line ? { line: p.place.line } : {}),
+    box: p.place.box,
+    ...(places ? { page: places.size } : {}),
+  });
+
   const picture = (id: string): OnPicture | undefined => {
     if (!places) return undefined;
     const count = placed.filter((p) => elementOf(p) === id).length;
@@ -268,7 +316,7 @@ export function ScreenDetail({ model, screens, screen }: { model: Model; screens
   const suspected = screen.elements.filter((e) => e.sites.length === 0);
   const breakdown = issueBreakdown(screen.issues);
   const image = places ? (
-    <PlacesOverlay shot={screen.shot} scheme={scheme} label={`${screen.project} ${label}`} places={places} placed={placed} outline={outline} select={select} pointed={pointed} nameOf={nameOf} onSelect={(p) => setSelect(p ? (p.element ?? p.at) : null)} />
+    <PlacesOverlay shot={screen.shot} scheme={scheme} label={`${screen.project} ${label}`} places={places} placed={placed} outline={outline} select={select} pointed={pointed} nameOf={nameOf} onSelect={(p) => setSelect(p ? (p.element ?? p.at) : null)} pins={pins} activePin={active} onPin={(id) => { const r = onScreen.find((x) => x.id === id); if (r) openRequest(r); }} />
   ) : (
     <ScreenImage shot={screen.shot} scheme={scheme} size="full" label={`${screen.project} ${label}`} {...(ratio ? { ratio } : {})} />
   );
@@ -299,7 +347,22 @@ export function ScreenDetail({ model, screens, screen }: { model: Model; screens
         <div className="min-w-0 xl:flex-1 xl:overflow-y-auto">
           <figure className="space-y-2.5 p-6 max-sm:p-4">
             {places && (picked[0] ? (
-              <Selection placed={picked[0]} all={picked} name={nameOf(picked[0])} copies={picked[0].lookalike ? (model.byId.get(picked[0].lookalike)?.name ?? null) : null} onClear={() => setSelect(null)} />
+              <>
+                <Selection placed={picked[0]} all={picked} name={nameOf(picked[0])} copies={picked[0].lookalike ? (model.byId.get(picked[0].lookalike)?.name ?? null) : null} onClear={() => setSelect(null)} onComment={() => setComposing(true)} />
+                {composing && (
+                  <RequestComposer
+                    key={picked[0].at ?? picked[0].place.name}
+                    target={targetOf(picked[0])}
+                    elementName={elementOf(picked[0]) ? (model.byId.get(elementOf(picked[0])!)?.name ?? null) : null}
+                    onCancel={() => setComposing(false)}
+                    onFiled={(request) => {
+                      replace(request);
+                      setComposing(false);
+                      go({ request: request.id });
+                    }}
+                  />
+                )}
+              </>
             ) : (
               <p className="text-small text-muted" data-places-hint>
                 Point at the screenshot to name a component; click to pick it out. <span className="tabular">{placed.length}</span> components placed: <span className="tabular">{placed.filter((p) => p.element).length}</span> System elements, <span className="tabular">{placed.filter((p) => p.lookalike).length}</span> lookalikes
@@ -346,6 +409,21 @@ export function ScreenDetail({ model, screens, screen }: { model: Model; screens
             </p>
             {breakdown.length > 0 && <p className="tabular text-small text-muted">{breakdown.join(" · ")}, counted from the files that render on this screen.</p>}
           </div>
+          {(onScreen.length > 0 || requests.state.status === "error") && (
+            <Section title="Requests" count={onScreen.filter((r) => r.status !== "closed").length}>
+              {requests.state.status === "error" ? (
+                <p className="text-small text-muted" data-requests-offline>
+                  {requests.state.error.offline ? "Requests on this screen need the local service: open the hub with youiyoux ui --project." : requests.state.error.message}
+                </p>
+              ) : (
+                <ol className="space-y-2" aria-label="Requests on this screen">
+                  {onScreen.map((request, i) => (
+                    <RequestThread key={request.id} request={request} number={i + 1} active={active === request.id} onChange={replace} onPick={() => openRequest(request)} />
+                  ))}
+                </ol>
+              )}
+            </Section>
+          )}
           <Section title="Elements" count={rendered.length}>
             <div className="rounded-md border border-line">
               {rendered.map((element) => (

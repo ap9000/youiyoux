@@ -1,10 +1,11 @@
 /**
- * The design-change workflow service (rule, style and library drafts), reached at /api: `youiyoux ui --project` starts it beside
+ * The design-change workflow service (rule, style and library drafts, and requests on captured screens), reached at /api: `youiyoux ui --project` starts it beside
  * the dev server, which proxies /api to it (same origin when the service serves a built hub). Unlike the snapshot, this is live
  * state, so nothing here is cached.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApiError, DraftContent, DraftView, LibraryDraftContent, LibraryDraftView, PublishedRules, StyleDraftContent, StyleDraftView, WorkflowInfo } from "@youiyoux/workflow/api";
+import type { RequestDoc, RequestStatus, RequestTarget } from "@youiyoux/core";
 import { sessionKey } from "./session-key.ts";
 
 export type { CheckCapability, DraftContent, DraftView, LibraryDraftContent, LibraryDraftView, LibraryPreview, Preview, PreviewFinding, PublishedRule, PublishedRules, RuleDraftView, RuleFields, RulePlace, StyleContrast, StyleDraftContent, StyleDraftView, StylePreview, StyleSite, WorkflowInfo } from "@youiyoux/workflow/api";
@@ -65,6 +66,12 @@ export const workflowApi = {
   rebase: (id: string) => call<DraftView>("POST", `/drafts/${id}/rebase`),
   handoff: (id: string) => call<DraftView>("POST", `/drafts/${id}/handoff`),
   discard: (id: string) => call<DraftView>("DELETE", `/drafts/${id}`),
+  /** Comments and change requests on captured screens, in the product's .youi/requests. */
+  requests: () => call<{ requests: RequestDoc[]; unreadable: Array<{ file: string; reason: string }> }>("GET", "/requests"),
+  fileRequest: (kind: RequestDoc["kind"], body: string, target: RequestTarget) => call<RequestDoc>("POST", "/requests", { kind, body, target }),
+  replyRequest: (id: string, body: string) => call<RequestDoc>("POST", `/requests/${id}/replies`, { body }),
+  /** Closing and reopening are a person's: the service refuses them from an agent. */
+  moveRequest: (id: string, status: RequestStatus, body = "") => call<RequestDoc>("POST", `/requests/${id}/status`, { status, body }),
 };
 
 export type Remote<T> = { status: "loading" } | { status: "ready"; value: T } | { status: "error"; error: WorkflowRequestError };

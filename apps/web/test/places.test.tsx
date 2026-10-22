@@ -109,3 +109,19 @@ describe("the snapshot carries each screen's places", () => {
     expect(readdirSync(data).filter((f) => f.includes("places"))).toEqual([root.places]);
   });
 });
+
+describe("request pins on the picture", () => {
+  test("each pin is a button at its box, numbered, that opens its request without picking what is under it", () => {
+    const onSelect = vi.fn();
+    const onPin = vi.fn();
+    render(<PlacesOverlay shot={null} scheme="light" label="app /" places={places} placed={placed} outline="all" select={null} pointed={null} nameOf={(p) => p.place.name} onSelect={onSelect} pins={[{ id: "r-0000000001", number: 1, box: { x: 100, y: 100 }, status: "open" }, { id: "r-0000000002", number: 2, box: { x: 300, y: 100 }, status: "addressed" }]} activePin="r-0000000002" onPin={onPin} />);
+    const pins = [...document.querySelectorAll<HTMLButtonElement>("[data-pin]")];
+    expect(pins.map((p) => [p.textContent, p.getAttribute("aria-label"), p.getAttribute("aria-pressed"), p.style.left, p.style.top])).toEqual([
+      ["1", "Request 1 (open)", "false", "10%", "20%"],
+      ["2", "Request 2 (addressed)", "true", "30%", "20%"],
+    ]);
+    fireEvent.click(pins[0]!);
+    expect(onPin).toHaveBeenCalledWith("r-0000000001");
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+});

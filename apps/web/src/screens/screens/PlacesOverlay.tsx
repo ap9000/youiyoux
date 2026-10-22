@@ -15,6 +15,14 @@ import { ScreenImage } from "../../ui/ScreenImage.tsx";
 
 export type Outline = "elements" | "all" | "off";
 
+/** A request pinned on the picture: its number, where, and whether it is the one open beside it. */
+export interface Pin {
+  readonly id: string;
+  readonly number: number;
+  readonly box: { readonly x: number; readonly y: number };
+  readonly status: "open" | "addressed" | "closed";
+}
+
 interface Props {
   shot: ScreenShot | null;
   scheme: Scheme;
@@ -27,11 +35,14 @@ interface Props {
   pointed: string | null;
   nameOf: (placed: Placed) => string;
   onSelect: (placed: Placed | null) => void;
+  pins?: readonly Pin[];
+  activePin?: string | null;
+  onPin?: (id: string) => void;
 }
 
 const pct = (value: number, of: number): string => `${(value / of) * 100}%`;
 
-export function PlacesOverlay({ shot, scheme, label, places, placed, outline, select, pointed, nameOf, onSelect }: Props) {
+export function PlacesOverlay({ shot, scheme, label, places, placed, outline, select, pointed, nameOf, onSelect, pins = [], activePin = null, onPin }: Props) {
   const layer = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<Placed | null>(null);
   const { size } = places;
@@ -94,6 +105,28 @@ export function PlacesOverlay({ shot, scheme, label, places, placed, outline, se
             {nameOf(hover)}
           </span>
         )}
+        {pins.map((pin) => (
+          <button
+            key={pin.id}
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onPin?.(pin.id);
+            }}
+            onPointerMove={(event) => event.stopPropagation()}
+            aria-label={`Request ${pin.number} (${pin.status})`}
+            aria-pressed={activePin === pin.id}
+            data-pin={pin.id}
+            className={clsx(
+              "absolute z-20 grid size-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-surface text-caption font-semibold tabular shadow-raise outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus",
+              pin.status === "closed" ? "bg-neutral-soft text-muted" : pin.status === "addressed" ? "bg-success text-on-accent" : "bg-accent text-on-accent",
+              activePin === pin.id && "ring-2 ring-accent ring-offset-1 ring-offset-surface",
+            )}
+            style={{ left: pct(pin.box.x, size.width), top: pct(pin.box.y, size.height) }}
+          >
+            {pin.number}
+          </button>
+        ))}
       </div>
     </div>
   );
