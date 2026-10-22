@@ -1,5 +1,6 @@
 /**
- * The loopback HTTP service: the workflow (rule, style and library drafts) under /api, and (optionally) the built hub at /.
+ * The loopback HTTP service: the workflow (rule, style and library drafts, and requests on
+ * captured screens) under /api, and (optionally) the built hub at /.
  *
  * It listens on 127.0.0.1 only. Requests must name a loopback Host (no DNS rebinding) and
  * may not come cross-site; writes must carry this run's session key (printed only in the
@@ -11,7 +12,7 @@ import { timingSafeEqual } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { extname, join, normalize, resolve, sep } from "node:path";
 import { z } from "zod";
-import { COMPONENT_STATES, DefinitionError, ElementId, LibraryEntry, RuleCheck, RuleRollout } from "@youiyoux/core";
+import { COMPONENT_STATES, DefinitionError, ElementId, LibraryEntry, REQUEST_STATUSES, RequestTarget, RuleCheck, RuleRollout } from "@youiyoux/core";
 import type { Actor, ApiError } from "./api.ts";
 import { WorkflowError } from "./policy.ts";
 import type { RuleWorkflow } from "./service.ts";
@@ -44,6 +45,11 @@ const CreateInput = z.union([
   z.discriminatedUnion("mode", [z.object({ kind: z.literal("rule").optional(), mode: z.literal("edit"), ruleId: ElementId }), z.object({ kind: z.literal("rule").optional(), mode: z.literal("create") })]),
 ]);
 const SaveInput = z.object({ revision: z.number().int().positive(), content: z.union([DraftContentInput, StyleContentInput, LibraryContentInput]) });
+
+/** A comment or change request on a captured screen, and what moves it on (requests.ts). */
+const RequestInput = z.object({ kind: z.enum(["comment", "change"]), body: z.string().min(1).max(4000), target: RequestTarget });
+const ReplyInput = z.object({ body: z.string().min(1).max(4000) });
+const StatusInput = z.object({ status: z.enum(REQUEST_STATUSES), body: z.string().max(4000).optional() });
 
 /** JSON has no undefined: an absent light or dark stays absent (unchanged), null stays null (dark follows light). */
 function styleContent<T extends { tokens: Array<{ light?: unknown; dark?: unknown }> }>(content: T): T {
@@ -150,6 +156,19 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string, opti
     const input = parse(CreateInput, await readJson(req));
     if ("kind" in input && input.kind === "library") return send(res, 201, await workflow.create(actor, { kind: "library", content: input.content }));
     return send(res, 201, await workflow.create(actor, "kind" in input && input.kind === "style" ? { kind: "style", ...(input.content ? { content: styleContent(input.content) } : {}) } : (input as Exclude<typeof input, { kind: "style" } | { kind: "library" }>)));
+  }
+  if (path === "/api/requests" && method === "GET") return send(res, 200, await (await workflow.requests()).list());
+  if (path === "/api/requests" && method === "POST") return send(res, 201, await (await workflow.requests()).create(actor, parse(RequestInput, await readJson(req))));
+  const request = /^\/api\/requests\/(r-[0-9a-f]{10})(?:\/(replies|status))?$/.exec(path);
+  if (request) {
+    const [, id, action] = request as unknown as [string, string, string | undefined];
+    const store = await workflow.requests();
+    if (!action && method === "GET") return send(res, 200, await store.get(id));
+    if (action === "replies" && method === "POST") return send(res, 200, await store.reply(actor, id, parse(ReplyInput, await readJson(req)).body));
+    if (action === "status" && method === "POST") {
+      const input = parse(StatusInput, await readJson(req));
+      return send(res, 200, await store.setStatus(actor, id, input.status, input.body ?? ""));
+    }
   }
   const match = /^\/api\/drafts\/(d-[0-9a-f]{10})(?:\/(preview|approve|rebase|handoff))?$/.exec(path);
   if (match) {

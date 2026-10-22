@@ -7,6 +7,7 @@ export * from "./json-edit.ts";
 export * from "./library-drafts.ts";
 export * from "./policy.ts";
 export * from "./preview.ts";
+export * from "./requests.ts";
 export * from "./service.ts";
 export * from "./store.ts";
 export * from "./style-drafts.ts";

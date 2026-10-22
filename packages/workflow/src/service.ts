@@ -24,6 +24,7 @@ import { scannerExecution, type RuleExecution } from "./execution.ts";
 import { branchTip, changesDigest, createReviewBranch, defaultBranch, hasChanges, headCommit, isAncestor, locate, type RepoLocation } from "./git.ts";
 import { authorize, WorkflowError, type Action } from "./policy.ts";
 import { comparePreview } from "./preview.ts";
+import { RequestStore } from "./requests.ts";
 import type { WorkflowStore } from "./store.ts";
 
 export const WORKFLOW_VERSION = "0.1.0";
@@ -89,6 +90,13 @@ export class RuleWorkflow {
   constructor(options: WorkflowOptions) {
     this.options = options;
     this.execution = options.execution ?? scannerExecution;
+  }
+
+  /** The product's comments and change requests on its captured screens (requests.ts), in its `.youi/requests`. */
+  async requests(): Promise<RequestStore> {
+    const { projectRoot, configPath, designRoot, productRoot } = this.options;
+    const project = await loadProject(projectRoot, { ...(configPath ? { configPath } : {}), ...(designRoot ? { designRoot } : {}), ...(productRoot ? { productRoot } : {}) });
+    return new RequestStore(project.root, project.config.id, this.options.now ? { now: this.options.now } : {});
   }
 
   private now(): string {

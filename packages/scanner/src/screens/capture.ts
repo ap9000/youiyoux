@@ -24,7 +24,9 @@ import { locateInPage, MAX_PLACES, resolvePlaces, type Place } from "./locate.ts
 export const SCREENS_SCHEMA = "youiyoux.screens/v1";
 export const PLACES_SCHEMA = "youiyoux.places/v1";
 const SCHEMES = ["light", "dark"] as const;
-const FULL_SCALE = 2;
+/** Pictures are taken at twice the page's pixels: a box in CSS pixels is this many times larger on one. */
+export const PICTURE_SCALE = 2;
+const FULL_SCALE = PICTURE_SCALE;
 const THUMB_SCALE = 0.5;
 /** After load, for fonts, data and animations to settle. */
 const SETTLE_MS = 1200;

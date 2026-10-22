@@ -6,9 +6,10 @@
  */
 import type { Actor, ApiError } from "./api.ts";
 
-export type Action = "read" | "draft" | "preview" | "approve" | "handoff" | "discard";
+export type Action = "read" | "draft" | "preview" | "approve" | "handoff" | "discard" | "close";
 
-const PERSON_ONLY: ReadonlySet<Action> = new Set(["approve", "handoff"]);
+/** close: closing or reopening a request on a screen, which accepts (or refuses) the work done for it. */
+const PERSON_ONLY: ReadonlySet<Action> = new Set(["approve", "handoff", "close"]);
 
 export class WorkflowError extends Error {
   override name = "WorkflowError";
@@ -22,5 +23,5 @@ export class WorkflowError extends Error {
 }
 
 export function authorize(actor: Actor, action: Action): void {
-  if (PERSON_ONLY.has(action) && actor.kind !== "person") throw new WorkflowError("forbidden", `an ${actor.kind} cannot ${action}: approving a design change is a person's decision`);
+  if (PERSON_ONLY.has(action) && actor.kind !== "person") throw new WorkflowError("forbidden", action === "close" ? `an ${actor.kind} cannot close or reopen a request: mark it addressed, and a person closes it` : `an ${actor.kind} cannot ${action}: approving a design change is a person's decision`);
 }

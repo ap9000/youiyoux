@@ -7,6 +7,7 @@ import { z } from "zod";
 import { DetectReport } from "./detect.ts";
 import { LibraryEntry } from "./hierarchy.ts";
 import { ElementId, safeId } from "./ids.ts";
+import { RequestDoc } from "./requests.ts";
 import { TokenDocument } from "./tokens.ts";
 
 const SemVer = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, "expected semver x.y.z");
@@ -660,6 +661,7 @@ export const PUBLISHED_SCHEMAS = {
   "youi.inventory.schema.json": InventoryReport,
   "youi.detect.schema.json": DetectReport,
   "youi.tokens.schema.json": TokenDocument,
+  "youi.request.schema.json": RequestDoc,
 } as const;
 
 /** Project config with every path normalized, so comparisons with scanned paths are exact. Loaders call this. */
