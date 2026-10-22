@@ -1,6 +1,6 @@
 /**
  * A component's page. A quiet header (name, status, one line of facts) with one primary
- * verb, Propose change; install and copy live in a secondary menu. Then four tabs:
+ * verb, Propose change; sync and copy live in a secondary menu. Then four tabs:
  * Overview, Usage, Contract & tokens, Rules.
  */
 import { ClipboardCopy, Download, Ellipsis, GitPullRequestArrow, Hash, PackageOpen } from "lucide-react";
@@ -23,6 +23,8 @@ import { RulesTab } from "./RulesTab.tsx";
 import { UsageTab } from "./UsageTab.tsx";
 
 const STATUS_MS = 1600;
+/** What brings a project's owned components up to date: it vendors the whole system, not one component. */
+export const SYNC_COMMAND = "youiyoux sync";
 /** Where `youiyoux init` points imports when a project has an `@/` alias; projects can set their own `importFrom`. */
 const DEFAULT_IMPORT_FROM = "@/components/ui";
 
@@ -44,19 +46,17 @@ export function importLine(entry: ComponentEntry): string {
   return `import { ${[source.export, ...source.also].join(", ")} } from "${DEFAULT_IMPORT_FROM}";`;
 }
 
-function InstallPanel({ entry, onClose }: { entry: ComponentEntry; onClose: () => void }) {
-  const name = parseId(entry.contract.id)?.name ?? entry.contract.name.toLowerCase();
-  const command = `youi add ${name}`;
+function SyncPanel({ entry, onClose }: { entry: ComponentEntry; onClose: () => void }) {
   const deps = packageDeps(entry.files);
   return (
     <div className="mt-4 grid gap-3 rounded-lg border border-line bg-sunken p-4 animate-enter">
       <div className="flex items-center gap-2 rounded-md border border-line bg-surface py-1 pr-1 pl-3 font-mono text-mono">
         <span className="text-faint select-none">$</span>
-        <span className="flex-1 text-ink">{command}</span>
-        <CopyButton value={command} label="Copy install command" />
+        <span className="flex-1 text-ink">{SYNC_COMMAND}</span>
+        <CopyButton value={SYNC_COMMAND} label="Copy sync command" />
       </div>
       <p className="text-small text-muted">
-        Vendors <span className="font-mono text-ink-2">{entry.files.map((f) => f.path).join(", ")}</span> into the project's components folder as owned code, pins it in <span className="font-mono text-ink-2">youi.lock</span>, and keeps it updatable from the design language.
+        Run in a project, it vendors every component of the system, {entry.contract.name}&rsquo;s <span className="font-mono text-ink-2">{entry.files.map((f) => f.path).join(", ")}</span> among them, into the project&rsquo;s components folder as owned code, records each file in <span className="font-mono text-ink-2">youi.lock.json</span>, and merges later updates with the project&rsquo;s own edits. A project not set up yet starts with <span className="font-mono text-ink-2">youiyoux init --design &lt;dir&gt;</span>.
       </p>
       <div className="flex flex-wrap items-center gap-1.5 text-small text-muted">
         {deps.length > 0 && (
@@ -97,13 +97,12 @@ function useCopyStatus(): { status: string; copy: (value: string, what: string) 
 export function ComponentPage({ model, entry, tab }: { model: Model; entry: ComponentEntry; tab: ElementTab }) {
   const { contract } = entry;
   const [, navigate] = useLocation();
-  const [installing, setInstalling] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const { status, copy } = useCopyStatus();
   const usage = useUsageState();
   const sites = usage.status === "ready" ? (usage.value.sitesByElement.get(contract.id)?.length ?? 0) : undefined;
   const issues = usage.status === "ready" ? elementIssues(usage.value, contract).total : 0;
   const name = parseId(contract.id)?.name ?? contract.name.toLowerCase();
-  const install = `youi add ${name}`;
   const owners = contract.owners.map((o) => o.replace(/^group:/, ""));
 
   const selectTab = (next: string): void => {
@@ -137,10 +136,10 @@ export function ComponentPage({ model, entry, tab }: { model: Model; entry: Comp
             <MenuButton
               label={`More for ${contract.name}`}
               items={[
-                { label: "Copy install command", detail: install, icon: Download, onSelect: () => copy(install, "the install command") },
+                { label: "Copy sync command", detail: SYNC_COMMAND, icon: Download, onSelect: () => copy(SYNC_COMMAND, "the sync command") },
                 { label: "Copy import", detail: importLine(entry), icon: ClipboardCopy, onSelect: () => copy(importLine(entry), "the import") },
                 { label: "Copy element id", detail: contract.id, icon: Hash, onSelect: () => copy(contract.id, "the element id") },
-                { label: "What install does", detail: "Files, lockfile and dependencies", icon: PackageOpen, onSelect: () => setInstalling(true) },
+                { label: "What sync does", detail: "Files, lockfile and dependencies", icon: PackageOpen, onSelect: () => setSyncing(true) },
               ]}
             >
               <Ellipsis />
@@ -163,7 +162,7 @@ export function ComponentPage({ model, entry, tab }: { model: Model; entry: Comp
             <CopyButton value={contract.id} label="Copy element id" className="size-5" />
           </span>
         </p>
-        {installing && <InstallPanel entry={entry} onClose={() => setInstalling(false)} />}
+        {syncing && <SyncPanel entry={entry} onClose={() => setSyncing(false)} />}
       </header>
       <Tabs value={tab} onValueChange={selectTab} className="flex min-h-0 flex-1 flex-col">
         <TabsList aria-label={`${contract.name} sections`} className="max-sm:px-4">

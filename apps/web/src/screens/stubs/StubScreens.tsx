@@ -63,7 +63,7 @@ export function AccessScreen() {
       stages={[
         { icon: KeyRound, title: "Roles", body: "Viewer or editor per system or element, with approver as a separate grant. Agents can propose but never approve." },
         { icon: ClipboardCheck, title: "Audit", body: "Every grant, approval and rollout recorded, with “view as this person” to check what someone sees." },
-        { icon: Monitor, title: "Projects", body: "Per-project install tokens for `youi add`, scoped to the systems that project uses." },
+        { icon: Monitor, title: "Projects", body: "Per-project tokens for `youiyoux sync`, scoped to the systems that project uses." },
       ]}
     />
   );
