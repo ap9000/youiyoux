@@ -30,7 +30,7 @@ The nav (a labelled sidebar from 1280px wide, an icon rail with tooltips below t
 
 | Route | What it is |
 | --- | --- |
-| `/` | Home: the system and its headline sentence, a link to review its violations, where it lives, the most used components, the rules with violations (clean rules fold under one line), and a line of live speed numbers for the tab |
+| `/` | Home: the system and its headline sentence, a link to review its violations, where it lives, the most used components (each with its use count; the chosen one shows its captured look, its files with their line numbers and a link to open it), the rules with violations (clean rules fold under one line), and a line of live speed numbers for the tab |
 | `/elements[/<system>/<kind>/<name>[/<tab>]]` | Catalog (search, kind filter) beside the element page, or, with nothing picked, an overview of the system (each component with its sites, each token group with its swatches, each rule with its violations or Clean; a dash while the usage map is unknown): Overview (live preview, then one sentence with its uses, screens and what to look at), Usage, Contract & tokens, Rules. Tokens and rules open their own detail. |
 | `/tokens[/<path>]` | Token explorer: palette overview, light and dark values, alias chain, WCAG contrast, consumers |
 | `/rules[/<name>]`, `/rules/draft/<id>` | Every rule: what it checks, its level, where it is broken (counts and places). Edit and New rule open a draft on the rule's page: form, impact preview, approval, review branch. Live from the rule editor (`youiyoux ui --project`, [guide](../../packages/workflow/README.md)); read-only from the snapshot without it |

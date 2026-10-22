@@ -2,13 +2,15 @@
 /** Home and the Elements overview on the demo snapshot: clean rules fold, counts come from the usage map, unknown is a dash. */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
+import { elementHref } from "../src/data/ids.ts";
 import { buildModel, countByKind } from "../src/data/model.ts";
 import type { Catalog, Manifest, ScanReport } from "../src/data/types.ts";
-import { indexUsage } from "../src/data/usage.ts";
+import { indexUsage, type Site } from "../src/data/usage.ts";
 import { SystemOverview } from "../src/screens/catalog/CatalogScreen.tsx";
 import { SpeedNote, Usage } from "../src/screens/home/HomeScreen.tsx";
+import { filesOf } from "../src/screens/home/MostUsed.tsx";
 
 const DATA = join(import.meta.dirname, "../snapshot/public/data");
 const manifest = JSON.parse(readFileSync(join(DATA, "manifest.json"), "utf8")) as Manifest;
@@ -25,7 +27,7 @@ const section = (title: string): HTMLElement => screen.getByRole("heading", { na
 
 describe("Home: rule health", () => {
   test("lists only the rules with violations; the clean ones fold under one line that still links to each", () => {
-    render(<Usage model={model} index={index} />);
+    render(<Usage model={model} index={index} scheme="light" />);
     const health = section("Rule health");
     const brokenRules = [...model.rules.values()].filter((rule) => (index.violationsByRule.get(rule.id)?.length ?? 0) > 0);
     const cleanRules = model.rules.size - brokenRules.length;
@@ -40,7 +42,7 @@ describe("Home: rule health", () => {
   });
 
   test("with no violations every rule is folded as clean and no bar is drawn", () => {
-    render(<Usage model={model} index={clean} />);
+    render(<Usage model={model} index={clean} scheme="light" />);
     const health = section("Rule health");
     expect(health.querySelector(":scope > ul")).toBeNull();
     expect(text(health.querySelector("summary")!)).toMatch(new RegExp(`^${model.rules.size} rules clean`));
@@ -52,6 +54,52 @@ describe("Home: rule health", () => {
     cleanup();
     const over = render(<SpeedNote samples={{ search: [400, 400], navigation: [10] }} />);
     expect(text(over.container)).toMatch(/search 400\.0 ms median, p95 400\.0 ms over its 50 ms budget/);
+  });
+});
+
+describe("Home: most used components", () => {
+  const ranked = [...model.components.values()]
+    .map(({ contract }) => ({ contract, sites: index.sitesByElement.get(contract.id) ?? [] }))
+    .sort((a, b) => b.sites.length - a.sites.length);
+
+  test("each component with its use count, not a bar; the busiest is chosen first and only its panel shows", () => {
+    const { container } = render(<Usage model={model} index={index} scheme="light" />);
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs.map((tab) => [...tab.children].map(text))).toEqual(ranked.map(({ contract, sites }) => [contract.name, String(sites.length)]));
+    expect(tabs[0]!.getAttribute("aria-selected")).toBe("true");
+    expect(container.querySelectorAll("[data-chosen]")).toHaveLength(1);
+    expect(section("Most used components").querySelector(".rounded-full")).toBeNull();
+  });
+
+  test("the chosen one shows one look, its files with their lines and counts, and the way in", () => {
+    const { contract, sites } = ranked[0]!;
+    const files = filesOf(sites);
+    render(<Usage model={model} index={index} scheme="light" />);
+    const panel = screen.getByRole("tabpanel");
+    const looks = within(panel).getAllByRole("img");
+    expect(looks).toHaveLength(1);
+    expect(looks[0]!.getAttribute("src")).toMatch(/previews\/[a-z-]+\.light\.webp$/);
+    expect(text(panel.querySelector("[data-uses]")!)).toBe(`${sites.length} uses in ${files.length} ${files.length === 1 ? "file" : "files"}`);
+    const rows = [...panel.querySelectorAll("li")];
+    expect(rows).toHaveLength(Math.min(files.length, 6));
+    expect(text(rows[0]!)).toContain(`${files[0]!.file}:${files[0]!.lines[0]}`);
+    expect(text(rows[0]!.lastElementChild!)).toBe(String(files[0]!.lines.length));
+    expect(within(panel).getByRole("link", { name: `Open ${contract.name}` }).getAttribute("href")).toBe(elementHref(contract.id));
+  });
+
+  test("choosing another component shows its panel instead", () => {
+    render(<Usage model={model} index={index} scheme="light" />);
+    fireEvent.mouseDown(screen.getAllByRole("tab")[1]!);
+    expect(screen.getByRole("tabpanel").querySelector("[data-chosen]")!.getAttribute("data-chosen")).toBe(ranked[1]!.contract.id);
+  });
+
+  test("filesOf groups sites by file, the busiest first, lines in order", () => {
+    const site = (file: string, line: number, project = "app"): Site => ({ file, line, column: 1, project, commit: null, props: {}, spread: false }) as unknown as Site;
+    expect(filesOf([site("b.tsx", 9), site("a.tsx", 30), site("a.tsx", 4), site("c.tsx", 1, "other")])).toEqual([
+      { project: "app", file: "a.tsx", lines: [4, 30] },
+      { project: "app", file: "b.tsx", lines: [9] },
+      { project: "other", file: "c.tsx", lines: [1] },
+    ]);
   });
 });
 

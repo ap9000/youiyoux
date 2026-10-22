@@ -2,6 +2,7 @@
 import { ArrowRight } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "wouter";
+import { type Scheme, useTheme } from "../../app/theme.tsx";
 import { elementHref } from "../../data/ids.ts";
 import { countByKind, type Model } from "../../data/model.ts";
 import type { CatalogRule } from "../../data/types.ts";
@@ -10,12 +11,13 @@ import { summarize, type UsageIndex } from "../../data/usage.ts";
 import { BUDGETS, percentile, useSamples } from "../../lib/perf.ts";
 import { Badge, SeverityBadge } from "../../ui/Badge.tsx";
 import { Button } from "../../ui/Button.tsx";
+import { Disclosure } from "../../ui/Disclosure.tsx";
 import { Num } from "../../ui/Num.tsx";
 import { ResourceState } from "../../ui/Pane.tsx";
 import { Section, Table } from "../../ui/Section.tsx";
+import { MostUsed } from "./MostUsed.tsx";
 
 const SHORT_SHA = 7;
-const TOP_COMPONENTS = 8;
 
 /** The headline (rule data.headline): one sentence that carries the numbers, never a row of equal boxes. */
 function Headline({ counts, projects, sites, violations }: { counts: ReturnType<typeof countByKind>; projects: number | null; sites: number | null; violations: number | null }) {
@@ -88,14 +90,15 @@ export function SpeedNote({ samples }: { samples: ReturnType<typeof useSamples> 
 function CleanRules({ rules }: { rules: readonly CatalogRule[] }) {
   if (rules.length === 0) return null;
   return (
-    <details className="group mt-1">
-      <summary className="-mx-2 flex cursor-pointer list-none items-center gap-2 rounded-md px-2 py-1 text-body hover:bg-raised [&::-webkit-details-marker]:hidden">
+    <Disclosure
+      className="mt-1"
+      summaryClassName="-mx-2 rounded-md px-2 py-1 text-body hover:bg-raised"
+      summary={
         <span className="text-success">
           {rules.length} {rules.length === 1 ? "rule" : "rules"} clean
         </span>
-        <span className="text-small text-muted group-open:hidden">show</span>
-        <span className="hidden text-small text-muted group-open:inline">hide</span>
-      </summary>
+      }
+    >
       <ul className="-mx-2 mt-0.5 space-y-0.5">
         {rules.map((rule) => (
           <li key={rule.id}>
@@ -106,19 +109,14 @@ function CleanRules({ rules }: { rules: readonly CatalogRule[] }) {
           </li>
         ))}
       </ul>
-    </details>
+    </Disclosure>
   );
 }
 
-export function Usage({ model, index }: { model: Model; index: UsageIndex }) {
-  const components = [...model.components.values()]
-    .map(({ contract }) => ({ contract, sites: index.sitesByElement.get(contract.id)?.length ?? 0 }))
-    .sort((a, b) => b.sites - a.sites)
-    .slice(0, TOP_COMPONENTS);
+export function Usage({ model, index, scheme }: { model: Model; index: UsageIndex; scheme: Scheme }) {
   const rules = [...model.rules.values()].map((rule) => ({ rule, count: index.violationsByRule.get(rule.id)?.length ?? 0 })).sort((a, b) => b.count - a.count);
   const broken = rules.filter((r) => r.count > 0);
   const clean = rules.filter((r) => r.count === 0).map((r) => r.rule);
-  const maxSites = components[0]?.sites ?? 0;
   const maxViolations = broken[0]?.count ?? 0;
   return (
     <>
@@ -143,25 +141,19 @@ export function Usage({ model, index }: { model: Model; index: UsageIndex }) {
           })}
         </Table>
       </Section>
-      <div className="grid gap-10 lg:grid-cols-2">
-        <Section title="Most used components">
+      <Section title="Most used components" aside={<span className="text-small text-muted">uses in scanned projects</span>}>
+        <MostUsed model={model} index={index} scheme={scheme} />
+      </Section>
+      <Section title="Rule health" aside={<span className="text-small text-muted">violations in projects</span>}>
+        {broken.length > 0 && (
           <ul className="-mx-2 space-y-0.5">
-            {components.map(({ contract, sites }) => (
-              <Bar key={contract.id} label={contract.name} value={sites} max={maxSites} href={elementHref(contract.id, "usage")} />
+            {broken.map(({ rule, count }) => (
+              <Bar key={rule.id} label={rule.title} value={count} max={maxViolations} href={elementHref(rule.id)} trailing={<SeverityBadge severity={rule.severity} />} />
             ))}
           </ul>
-        </Section>
-        <Section title="Rule health" aside={<span className="text-small text-muted">violations in projects</span>}>
-          {broken.length > 0 && (
-            <ul className="-mx-2 space-y-0.5">
-              {broken.map(({ rule, count }) => (
-                <Bar key={rule.id} label={rule.title} value={count} max={maxViolations} href={elementHref(rule.id)} trailing={<SeverityBadge severity={rule.severity} />} />
-              ))}
-            </ul>
-          )}
-          <CleanRules rules={clean} />
-        </Section>
-      </div>
+        )}
+        <CleanRules rules={clean} />
+      </Section>
     </>
   );
 }
@@ -175,6 +167,7 @@ export function HomeScreen() {
 function Home({ model }: { model: Model }) {
   const usage = useUsageState();
   const samples = useSamples();
+  const { scheme } = useTheme();
   const counts = countByKind(model.elements);
   const { system } = model.catalog;
   const index = usage.status === "ready" ? usage.value : null;
@@ -208,7 +201,7 @@ function Home({ model }: { model: Model }) {
           <p className="max-w-2xl text-reading text-muted">{system.description}</p>
         </header>
 
-        {index ? <Usage model={model} index={index} /> : <ResourceState state={usage} onRetry={() => location.reload()} what="the usage map" />}
+        {index ? <Usage model={model} index={index} scheme={scheme} /> : <ResourceState state={usage} onRetry={() => location.reload()} what="the usage map" />}
 
         <SpeedNote samples={samples} />
       </div>
