@@ -57,7 +57,7 @@ function Screens({ model, index }: { model: Model; index: UsageIndex }) {
 }
 
 function captureLine(shots: ProjectShots | undefined): string {
-  return shots ? `Screenshots from the ${shots.source}, ${shots.capturedAt}` : "No screenshots captured for this project yet: scripts/capture-screens.ts takes them";
+  return shots ? `Screenshots from the ${shots.source}, ${shots.capturedAt}` : "No screenshots captured for this project yet: youiyoux screens capture --base <url> takes them, with every component placed";
 }
 
 function ScreenGrid({ model, index, screens }: { model: Model; index: UsageIndex; screens: ScreenIndex }) {

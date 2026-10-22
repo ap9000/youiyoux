@@ -91,12 +91,14 @@ The Screens pictures belong to the product, like its usage map: they live in `<p
   "viewport": { "width": 1440, "height": 900 }, "screens": [{ "route": "/settings", "path": "/settings" }] }
 ```
 
-Capture from a running copy with seeded or demo data, never someone's working instance; sign in first in the same `chrome-devtools-axi` session:
+Capture from a running copy in development (`vite`, `next dev`) with seeded or demo data, never someone's working instance. Behind a sign-in, save a signed-in session first (`npx playwright codegen --save-storage=auth.json <url>`) and pass it with `--storage-state`:
 
 ```sh
-node scripts/capture-screens.ts --dir ~/src/acme-app/.youi/screens --base http://127.0.0.1:3000
+youiyoux screens capture --project ~/src/acme-app --base http://127.0.0.1:3000 [--storage-state auth.json]
 youiyoux ui --project ~/src/acme-app        # or: pnpm data --project ~/src/acme-app --out .hub
 ```
+
+Each route is photographed whole (up to six viewports long), light and dark, and its components are placed: in a React development build every component keeps the stack of the JSX that created it, and the served module's source map turns that into the file and line, written beside the pictures as `<slug>.places.json` (`youiyoux.places/v1`). On the screen's page the System elements are outlined on the picture (lookalikes in the warning colour; **All** names any component under the pointer); pointing names one, clicking picks it out with its file:line, the component that rendered it and a link to its element. The pick is in the address (`?select=<element id>` or `?select=<file:line>`), and an element's Usage tab and Top screens open each screen with it lit. A production build is placed without lines, and says so.
 
 Issues reach a screen through the scanner's file-to-route map, even when a file renders no system element. A violation, lookalike or unresolved site counts on every route that reaches its file through scanned imports. Files with no known route appear under **Not on any screen**, with a reason. Older snapshots need a new scan to place their issues.
 
@@ -146,7 +148,7 @@ Budgets: search under 50 ms, navigation under 100 ms, initial download (first ro
 
 ```
 design/            YouIyouX DTCG tokens (light base, dark overrides, resolver)
-scripts/           snapshot.ts (data), measure.ts (budgets), measure-inventory.ts (Inventory first paint), capture.sh (hub images), capture-screens.ts (project screens),
+scripts/           snapshot.ts (data), measure.ts (budgets), measure-inventory.ts (Inventory first paint), capture.sh (hub images),
                    capture-inventory.ts (Inventory page, Playwright), query-server.ts, try-server.ts, discover-preview-server.ts, discover-thumbs.ts (the hub server's endpoints),
                    measure-discover.ts, capture-discover.ts, discover-fixture.ts (Discover page, from recorded responses),
                    capture-discover-thumbs.ts (youiyoux discover previews: the gallery's pictures),

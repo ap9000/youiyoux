@@ -61,7 +61,7 @@ function ScreenGroups({ sites, contract, showAll }: { sites: readonly Site[]; co
                       <span className="tabular text-small text-muted">{screen.sites.length}</span>
                     </button>
                     {screen.route !== UNROUTED && (
-                      <Link href={screenHref(project.project, screen.route)} className="grid size-6 shrink-0 place-items-center rounded-xs text-muted hover:bg-neutral-soft hover:text-ink" aria-label={`Open the ${label} screen`} title="Open the screen">
+                      <Link href={screenHref(project.project, screen.route, contract.id)} className="grid size-6 shrink-0 place-items-center rounded-xs text-muted hover:bg-neutral-soft hover:text-ink" aria-label={`Open the ${label} screen`} title="Open the screen">
                         <ArrowUpRight className="size-3.5" />
                       </Link>
                     )}
@@ -173,7 +173,7 @@ function Usage({ model, contract, index }: { model: Model; contract: ComponentCo
         </p>
         <IssueList issues={issues} name={contract.name} onShow={show} />
         <Distribution contract={contract} distribution={distribution} filters={filters} onToggle={toggle} />
-        <TopScreens list={onScreens} scheme={scheme} />
+        <TopScreens list={onScreens} scheme={scheme} select={contract.id} />
 
         <section ref={listRef} aria-labelledby="usage-sites" className="scroll-mt-4 space-y-3">
           <header className="flex flex-wrap items-center gap-2">

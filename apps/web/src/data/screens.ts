@@ -19,8 +19,9 @@ export function screenSlug(route: string): string {
   return slug || "root";
 }
 
-export function screenHref(project: string, route: string): string {
-  return `/screens/${encodeURIComponent(project)}/${screenSlug(route)}`;
+/** A screen's page; `select` opens it with that element (or `file:line`) picked out on the picture. */
+export function screenHref(project: string, route: string, select?: string): string {
+  return `/screens/${encodeURIComponent(project)}/${screenSlug(route)}${select ? `?select=${encodeURIComponent(select)}` : ""}`;
 }
 
 export function routeLabel(route: string): string {

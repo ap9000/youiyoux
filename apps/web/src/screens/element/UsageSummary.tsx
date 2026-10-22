@@ -141,7 +141,8 @@ export function Distribution({ contract, distribution, filters, onToggle }: { co
 
 const TOP_SCREENS = 4;
 
-export function TopScreens({ list, scheme }: { list: readonly ElementScreen[]; scheme: Scheme }) {
+/** The screens it is on most, each opening with it picked out on the picture (`select`, the element's id). */
+export function TopScreens({ list, scheme, select }: { list: readonly ElementScreen[]; scheme: Scheme; select?: string }) {
   if (list.length === 0) return null;
   const top = list.slice(0, TOP_SCREENS);
   const pictured = top.some(({ screen }) => screen.shot);
@@ -150,7 +151,7 @@ export function TopScreens({ list, scheme }: { list: readonly ElementScreen[]; s
       <ul className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {top.map(({ screen, sites }) => (
           <li key={`${screen.project}:${screen.route}`}>
-            <Link href={screenHref(screen.project, screen.route)} className="group block overflow-hidden rounded-md border border-line transition-colors duration-100 hover:border-line-strong hover:bg-raised">
+            <Link href={screenHref(screen.project, screen.route, select)} className="group block overflow-hidden rounded-md border border-line transition-colors duration-100 hover:border-line-strong hover:bg-raised">
               <ScreenImage shot={screen.shot} scheme={scheme} size="thumb" label={`${screen.project} ${routeLabel(screen.route)}`} whenMissing={pictured ? "placeholder" : "none"} className="border-b border-line" />
               <span className="flex items-center gap-2 px-2.5 py-1.5">
                 <span className="truncate font-mono text-mono-sm text-ink">{routeLabel(screen.route)}</span>

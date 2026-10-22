@@ -48,7 +48,7 @@ export function ScreenImage({ shot, scheme, size, label, ratio = DEFAULT_RATIO, 
           <div className="flex flex-col items-center gap-1.5 text-muted">
             <ImageOff aria-hidden className={size === "full" ? "size-5" : "size-4"} />
             <span className={size === "full" ? "text-body" : "text-small"}>{picked ? "Screenshot didn't load" : "No screenshot yet"}</span>
-            {size === "full" && !picked && <span className="max-w-xs text-small text-faint">Capture this route with scripts/capture-screens.ts against a demo or seeded instance, then run pnpm data.</span>}
+            {size === "full" && !picked && <span className="max-w-xs text-small text-faint">Capture it with youiyoux screens capture, from a demo or seeded copy of the app running in development.</span>}
           </div>
         </div>
       ) : (

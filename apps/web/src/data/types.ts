@@ -114,6 +114,30 @@ export interface ScreenShot {
   note?: string;
   light?: ShotFiles;
   dark?: ShotFiles;
+  /** Where each component sits on the light picture (youiyoux.places/v1), when the capture placed them. */
+  places?: string;
+}
+
+/** A component on a captured screen: its box in CSS pixels of the page, and the line that rendered it. */
+export interface PlacedComponent {
+  name: string;
+  owner: string | null;
+  file: string | null;
+  line: number | null;
+  column: number | null;
+  box: { x: number; y: number; width: number; height: number };
+  depth: number;
+}
+
+export interface PlacesFile {
+  schema: "youiyoux.places/v1";
+  route: string;
+  path: string;
+  viewport: { width: number; height: number };
+  size: { width: number; height: number };
+  dev: boolean;
+  capped: boolean;
+  places: PlacedComponent[];
 }
 
 /** A project's captured screens (`fixtures/<project>.screens.json` plus its images). */

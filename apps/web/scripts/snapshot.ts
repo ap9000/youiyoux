@@ -6,8 +6,9 @@
  * - <out>/public/data/*.json: the system catalog (tokens, contracts, rules, narrative)
  *   and the project's usage map, content-hashed so the browser can cache them forever.
  * - <out>/public/data/<project>.screen.<hash>.webp: the project's captured screens, light and
- *   dark, from `--screens` or `<project>/.youi/screens` (screens.json plus images, written by
- *   scripts/capture-screens.ts). They belong to the project, like its usage map, so they never
+ *   dark, from `--screens` or `<project>/.youi/screens` (screens.json plus images and each
+ *   screen's places, <project>.places.<hash>.json, written by
+ *   `youiyoux screens capture`). They belong to the project, like its usage map, so they never
  *   live in this repo; a route without a picture shows an empty state.
  * - <out>/public/data/inventory.<hash>.json: a `youiyoux inventory` file for the Inventory page,
  *   from `--inventory` (validated against youi.inventory/v1). The committed default carries an
@@ -313,8 +314,24 @@ function copyShot(dir: string, dataDir: string, project: string, slug: string, v
   return file;
 }
 
+/** A screen's places (`<slug>.places.json`, youiyoux.places/v1), named by content; null when the capture placed nothing. */
+function copyPlaces(dir: string, dataDir: string, project: string, slug: string): string | null {
+  const source = join(dir, `${slug}.places.json`);
+  if (!existsSync(source)) return null;
+  const bytes = readFileSync(source);
+  try {
+    if ((JSON.parse(bytes.toString("utf8")) as { schema?: unknown }).schema !== "youiyoux.places/v1") return null;
+  } catch {
+    return null;
+  }
+  const file = `${project}.places.${createHash("sha256").update(bytes).digest("hex").slice(0, HASH_LENGTH)}.json`;
+  mkdirSync(dataDir, { recursive: true });
+  writeFileSync(join(dataDir, file), bytes);
+  return file;
+}
+
 /** The project's captured screens → the manifest's screens entry. Pictures that are missing stay missing. */
-function writeScreens(dir: string, dataDir: string, project: string): ProjectShots {
+export function writeScreens(dir: string, dataDir: string, project: string): ProjectShots {
   const file = readScreensFile(dir, project);
   const screens = file.screens.map((screen) => {
     const slug = screenSlug(screen.route);
@@ -325,7 +342,8 @@ function writeScreens(dir: string, dataDir: string, project: string): ProjectSho
         return full && thumb ? [[scheme, { full, thumb }]] : [];
       }),
     );
-    return { route: screen.route, path: screen.path, ...(screen.note ? { note: screen.note } : {}), ...schemes };
+    const places = copyPlaces(dir, dataDir, project, slug);
+    return { route: screen.route, path: screen.path, ...(screen.note ? { note: screen.note } : {}), ...schemes, ...(places ? { places } : {}) };
   });
   return { source: file.source, capturedAt: file.capturedAt, viewport: file.viewport, screens };
 }

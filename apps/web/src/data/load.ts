@@ -3,7 +3,7 @@
  * names is content-hashed, so once fetched it is served from Cache Storage forever
  * (and the app keeps working offline). Stale hashed files are pruned on each load.
  */
-import type { Catalog, DetectReport, InventoryIndex, InventoryReport, Manifest, ScanReport } from "./types.ts";
+import type { Catalog, DetectReport, InventoryIndex, InventoryReport, Manifest, PlacesFile, ScanReport } from "./types.ts";
 
 const CACHE_NAME = "youiyoux-data-v1";
 const DATA_BASE = `${import.meta.env.BASE_URL}data/`;
@@ -80,6 +80,11 @@ export async function loadInventory(file: string): Promise<InventoryIndex | Inve
 /** Discover's listings for a static host (youiyoux.discover-listings/v1). */
 export async function loadDiscoverListings<T extends { schema: string }>(file: string): Promise<T> {
   return expectSchema<T>(await loadHashed(file), "youiyoux.discover-listings/v1", file);
+}
+
+/** Where each component sits on one captured screen (youiyoux.places/v1, `youiyoux screens capture`). */
+export async function loadPlaces(file: string): Promise<PlacesFile> {
+  return expectSchema<PlacesFile>(await loadHashed(file), "youiyoux.places/v1", file);
 }
 
 export async function loadDetect(file: string): Promise<DetectReport> {

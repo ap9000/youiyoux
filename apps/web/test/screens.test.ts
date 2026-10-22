@@ -4,7 +4,8 @@ import { RouteConfig, ScanReport as ScanReportSchema } from "@youiyoux/core";
 import { loadProject } from "../../../packages/scanner/src/project.ts";
 import { scanProject } from "../../../packages/scanner/src/scan.ts";
 import { buildScreens, countIssues, routeLabel, screenHref, screensOf, screensOfElement, screenSlug } from "../src/data/screens.ts";
-import type { Manifest, ScanReport, UsageSite } from "../src/data/types.ts";
+import { elementOf, hitAt, isSelected, matchPlaces } from "../src/data/places.ts";
+import type { Manifest, PlacedComponent, ScanReport, UsageSite } from "../src/data/types.ts";
 import { EVERY_SCREEN, indexUsage, UNROUTED } from "../src/data/usage.ts";
 
 const BUTTON = "youi:demo/component/button";
@@ -209,5 +210,44 @@ describe("countIssues", () => {
       [],
     );
     expect(issues).toEqual({ errors: 1, warnings: 2, lookalikes: 1, unresolved: 0, total: 4 });
+  });
+});
+
+describe("components placed on a captured screen", () => {
+  const box = (x: number, y: number, width: number, height: number) => ({ x, y, width, height });
+  const place = (name: string, file: string | null, line: number | null, b = box(0, 0, 100, 40), depth = 1): PlacedComponent => ({ name, owner: "Work", file, line, column: 5, box: b, depth });
+  const sites = report.usages.map((u) => ({ ...u, project: "demo-app", commit: null }));
+  const lookalikes = report.lookalikes.map((l) => ({ ...l, project: "demo-app" }));
+
+  test("a place is the element whose site is on its line, by the name it renders; a hand-built lookalike is that; anything else is itself", () => {
+    const placed = matchPlaces([place("Button", "src/work.tsx", 3), place("Card", "src/work.tsx", 12), place("Button", "src/work.tsx", 20), place("Card", "src/work.tsx", 3), place("Sidebar", "src/work.tsx", 30), place("Primitive", null, null)], sites, lookalikes);
+    expect(placed.map((p) => [p.element, p.lookalike, p.at])).toEqual([
+      [BUTTON, null, "src/work.tsx:3"],
+      [CARD, null, "src/work.tsx:12"],
+      [null, BUTTON, "src/work.tsx:20"],
+      // On a Button's line but named Card: not that site.
+      [null, null, "src/work.tsx:3"],
+      [null, null, "src/work.tsx:30"],
+      [null, null, null],
+    ]);
+    expect(placed.map(elementOf)).toEqual([BUTTON, CARD, BUTTON, null, null, null]);
+    // Picked out by the element (its uses and its lookalikes) or by file:line.
+    expect(placed.filter((p) => isSelected(p, BUTTON)).map((p) => p.at)).toEqual(["src/work.tsx:3", "src/work.tsx:20"]);
+    expect(placed.filter((p) => isSelected(p, "src/work.tsx:30")).map((p) => p.place.name)).toEqual(["Sidebar"]);
+    expect(placed.some((p) => isSelected(p, null))).toBe(false);
+  });
+
+  test("the component under a point is the smallest box holding it, among those that count", () => {
+    const placed = matchPlaces([place("Card", "src/work.tsx", 12, box(0, 0, 400, 300), 1), place("Button", "src/work.tsx", 3, box(20, 20, 80, 30), 2), place("Icon", "src/icon.tsx", 1, box(25, 25, 10, 10), 3)], sites);
+    expect(hitAt(placed, 30, 30)?.place.name).toBe("Icon");
+    expect(hitAt(placed, 30, 30, (p) => p.element !== null)?.place.name).toBe("Button");
+    expect(hitAt(placed, 200, 200)?.place.name).toBe("Card");
+    expect(hitAt(placed, 500, 500)).toBeNull();
+  });
+
+  test("a screen's page opens with an element or a line picked out", () => {
+    expect(screenHref("demo-app", "/work", BUTTON)).toBe("/screens/demo-app/work?select=youi%3Ademo%2Fcomponent%2Fbutton");
+    expect(screenHref("demo-app", "/work", "src/work.tsx:3")).toBe("/screens/demo-app/work?select=src%2Fwork.tsx%3A3");
+    expect(screenHref("demo-app", "/work")).toBe("/screens/demo-app/work");
   });
 });
