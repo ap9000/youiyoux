@@ -218,25 +218,55 @@ export function originalPosition(map: SourceMap, line: number, column: number): 
   return source === undefined ? null : { source, line: found[2] + 1, column: found[3] + 1 };
 }
 
-/** A served module's source map: inline, or at the URL its last comment names. */
-export async function sourceMapOf(url: string, text: string, fetchText: (url: string) => Promise<string | null>): Promise<SourceMap | null> {
+/** A served module's source map, or why there is none: no comment naming one, or one that could not be read. */
+async function findSourceMap(url: string, text: string, fetchText: (url: string) => Promise<string | null>): Promise<SourceMap | "none" | "unreadable"> {
   // The last such comment, however long: an inline map can be megabytes of base64 on one line.
   const at = text.lastIndexOf("sourceMappingURL=");
-  if (at < 0 || !/\/\/[#@]\s*$/.test(text.slice(Math.max(0, at - 8), at))) return null;
+  if (at < 0 || !/\/\/[#@]\s*$/.test(text.slice(Math.max(0, at - 8), at))) return "none";
   const target = text.slice(at + "sourceMappingURL=".length).split(/\s/, 1)[0]!;
-  if (!target) return null;
+  if (!target) return "none";
   let json: string | null;
   if (target.startsWith("data:")) {
     const at = target.indexOf(",");
     const payload = target.slice(at + 1);
     json = /;base64/.test(target.slice(0, at)) ? Buffer.from(payload, "base64").toString("utf8") : decodeURIComponent(payload);
   } else json = await fetchText(new URL(target, url).href);
-  if (!json) return null;
+  if (!json) return "unreadable";
   try {
-    return decodeMap(JSON.parse(json) as Record<string, unknown>);
+    return decodeMap(JSON.parse(json) as Record<string, unknown>) ?? "unreadable";
   } catch {
-    return null;
+    return "unreadable";
   }
+}
+
+/** A served module's source map: inline, or at the URL its last comment names. */
+export async function sourceMapOf(url: string, text: string, fetchText: (url: string) => Promise<string | null>): Promise<SourceMap | null> {
+  const found = await findSourceMap(url, text, fetchText);
+  return typeof found === "string" ? null : found;
+}
+
+/** What became of the scripts' source maps while placing components: what to say when none got a line. */
+export interface MapNotes {
+  /** Scripts with no source map comment. */
+  readonly bare: Set<string>;
+  /** Scripts whose source map could not be fetched or read. */
+  readonly unreadable: Set<string>;
+  /** Files the maps named outside the project's root (node_modules aside). */
+  readonly outside: Set<string>;
+}
+
+export const mapNotes = (): MapNotes => ({ bare: new Set(), unreadable: new Set(), outside: new Set() });
+
+/**
+ * Why a development build's components got no lines, from what its maps did, with the fix; null
+ * when its maps were read and named the project's files (the components are then a library's).
+ */
+export function whyNoLines(notes: MapNotes): string | null {
+  const one = (set: Set<string>): string => [...set][0]!;
+  if (notes.outside.size > 0) return `the source maps name files outside the product's root (such as ${one(notes.outside)}): pass --root <the product's root> so they can be matched`;
+  if (notes.unreadable.size > 0) return `the scripts name source maps that could not be read (such as the one for ${one(notes.unreadable)}): serve each map beside its script`;
+  if (notes.bare.size > 0) return `the app's scripts carry no source maps (such as ${one(notes.bare)}): build them with source maps in development (esbuild: sourcemap: "inline"; webpack: devtool: "eval-source-map"; Vite and next dev do it already) and capture again`;
+  return null;
 }
 
 /**
@@ -275,13 +305,22 @@ function realOrSelf(path: string): string {
  * Each raw place with its frame mapped back to the project's file and line. Each served module is
  * fetched once, by `fetchText` (the dev server, which served it to the page).
  */
-export async function resolvePlaces(raw: readonly RawPlace[], fetchText: (url: string) => Promise<string | null>, root: string | null = null): Promise<Place[]> {
+export async function resolvePlaces(raw: readonly RawPlace[], fetchText: (url: string) => Promise<string | null>, root: string | null = null, notes: MapNotes = mapNotes()): Promise<Place[]> {
   const maps = new Map<string, Promise<SourceMap | null>>();
   const mapFor = (url: string): Promise<SourceMap | null> => {
     const module = url.replace(/[?#].*$/, "");
     let found = maps.get(module);
     if (!found) {
-      found = fetchText(url).then((text) => (text === null ? null : sourceMapOf(url, text, fetchText)), () => null);
+      const script = module.split("/").at(-1) || module;
+      found = fetchText(url).then(
+        async (text) => {
+          const map = text === null ? "unreadable" : await findSourceMap(url, text, fetchText);
+          if (map === "none") notes.bare.add(script);
+          if (map === "unreadable") notes.unreadable.add(script);
+          return typeof map === "string" ? null : map;
+        },
+        () => null,
+      );
       maps.set(module, found);
     }
     return found;
@@ -296,6 +335,7 @@ export async function resolvePlaces(raw: readonly RawPlace[], fetchText: (url: s
         if (/(?:^|\/)node_modules\/|^webpack\/|^\(webpack\)/.test(original.source)) continue;
         const file = projectPath(original.source, frame.url, root);
         if (file) return { ...base, file, line: original.line, column: original.column };
+        notes.outside.add(original.source);
       }
       // No map: the served module's own path names the file, but not the line.
       const unmapped = place.frames[0];

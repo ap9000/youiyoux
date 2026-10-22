@@ -7,7 +7,7 @@ import { build, transform } from "esbuild";
 import type { Browser } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { launchBrowser } from "@youiyoux/detect";
-import { captureScreens, captureText, decodeMap, sourceMapOf, originalPosition, projectPath, readScreensSpec, resolvePlaces, screenSlug, type PlacesFile } from "../src/index.ts";
+import { captureScreens, captureText, decodeMap, mapNotes, sourceMapOf, originalPosition, projectPath, readScreensSpec, resolvePlaces, screenSlug, whyNoLines, type PlacesFile } from "../src/index.ts";
 
 const PACKAGE = join(import.meta.dirname, "..");
 const scratch = mkdtempSync(join(tmpdir(), "youi-screens-"));
@@ -59,6 +59,22 @@ describe("source maps", () => {
     expect(bundled).toMatchObject({ name: "Button", file: "app.tsx", line: 1, column: 1 });
     expect(plain).toMatchObject({ file: "plain.js", line: null });
     expect(none).toMatchObject({ file: null, line: null });
+  });
+
+  test("when no component gets a line, what the maps did says why: no map, a map that cannot be read, or files outside the root", async () => {
+    const box = { x: 0, y: 0, width: 10, height: 10 };
+    const place = (url: string) => ({ name: "Button", owner: null, frames: [{ url, line: 1, column: 1 }], box, depth: 0 });
+    const outsideMap = `x\n//# sourceMappingURL=data:application/json;base64,${Buffer.from(JSON.stringify({ version: 3, sources: ["/Users/someone/elsewhere/app.tsx"], mappings: "AAAA" })).toString("base64")}`;
+    const scripts: Record<string, string> = { "http://localhost/bare.js": "no map here", "http://localhost/lost.js": "x\n//# sourceMappingURL=lost.js.map", "http://localhost/out.js": outsideMap };
+    const fetchText = async (url: string) => scripts[url] ?? null;
+    const notes = (url: string) => {
+      const found = mapNotes();
+      return resolvePlaces([place(url)], fetchText, "/Users/me/app", found).then(() => whyNoLines(found));
+    };
+    expect(await notes("http://localhost/bare.js")).toMatch(/^the app's scripts carry no source maps \(such as bare\.js\): build them with source maps in development \(esbuild: sourcemap: "inline"/);
+    expect(await notes("http://localhost/lost.js")).toMatch(/^the scripts name source maps that could not be read \(such as the one for lost\.js\)/);
+    expect(await notes("http://localhost/out.js")).toMatch(/^the source maps name files outside the product's root \(such as \/Users\/someone\/elsewhere\/app\.tsx\): pass --root/);
+    expect(whyNoLines(mapNotes())).toBeNull();
   });
 });
 
@@ -112,9 +128,11 @@ describe("capturing a running app", () => {
       if (path === "/broken") return void req.socket.destroy();
       // /late mounts the app after the capture's first look, as a dev server that reloads mid-way does.
       const late = '<!doctype html><meta charset="utf-8"><body style="margin:0"><div id="root"></div><script type="module">setTimeout(() => import("/development.js"), 1500)</script>';
-      const body = path === "/" ? page("development.js") : path === "/prod" ? page("production.js") : path === "/late" ? late : files.get(path);
+      const body = path === "/" ? page("development.js") : path === "/prod" ? page("production.js") : path === "/nomaps" ? page("development.js?bare=1") : path === "/late" ? late : files.get(path);
       if (body === undefined) return void res.writeHead(404).end("not found");
-      res.writeHead(200, { "content-type": path.endsWith(".js") ? "text/javascript" : path.endsWith(".map") ? "application/json" : "text/html" }).end(path.endsWith(".js") ? `${body}\n//# sourceMappingURL=${path.slice(1)}.map` : body);
+      // ?bare serves a script without its source map comment, as a bundle built without maps is.
+      const bare = (req.url ?? "").includes("bare");
+      res.writeHead(200, { "content-type": path.endsWith(".js") ? "text/javascript" : path.endsWith(".map") ? "application/json" : "text/html" }).end(path.endsWith(".js") && !bare ? `${body}\n//# sourceMappingURL=${path.slice(1)}.map` : body);
     });
     await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
     base = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
@@ -178,6 +196,17 @@ describe("capturing a running app", () => {
     expect(report.screens[0]!.placed).toBeGreaterThan(0);
   }, 120_000);
 
+  test("a development build with no source maps is placed without lines, and says why and what to do", async () => {
+    const dir = join(scratch, "nomaps");
+    screens(dir, [{ route: "/", path: "/nomaps" }]);
+    const report = await captureScreens(dir, { base, root: app, browser });
+    expect(report.production).toBe(false);
+    expect(report.screens[0]!.placed).toBeGreaterThan(0);
+    expect(report.screens[0]!.lined).toBe(0);
+    expect(report.noLines).toMatch(/carry no source maps \(such as development\.js\)/);
+    expect(captureText(report)).toMatch(/Components are placed but none has its line: the app's scripts carry no source maps/);
+  }, 120_000);
+
   test("a production build is placed without lines, and says so", async () => {
     const dir = join(scratch, "prod");
     screens(dir, [{ route: "/", path: "/prod" }]);
@@ -187,5 +216,6 @@ describe("capturing a running app", () => {
     expect(places.dev).toBe(false);
     expect(places.places.every((p) => p.line === null)).toBe(true);
     expect(captureText(report)).toMatch(/production build: components are placed but have no lines/);
+    expect(report.noLines).toBeNull();
   }, 120_000);
 });

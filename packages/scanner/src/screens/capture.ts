@@ -19,7 +19,7 @@ import { rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Browser, Page } from "playwright-core";
 import { writeFileAtomic } from "@youiyoux/core";
-import { locateInPage, MAX_PLACES, resolvePlaces, type Place } from "./locate.ts";
+import { locateInPage, mapNotes, MAX_PLACES, resolvePlaces, whyNoLines, type Place } from "./locate.ts";
 
 export const SCREENS_SCHEMA = "youiyoux.screens/v1";
 export const PLACES_SCHEMA = "youiyoux.places/v1";
@@ -114,6 +114,8 @@ export interface CaptureReport {
   readonly production: boolean;
   /** No screen had React at all. */
   readonly noReact: boolean;
+  /** A development build whose components got no lines at all: why, and what to do; else null. */
+  readonly noLines: string | null;
 }
 
 async function writeBytes(file: string, bytes: Buffer): Promise<void> {
@@ -156,6 +158,7 @@ export async function captureScreens(dir: string, options: CaptureOptions): Prom
   const results = new Map<string, { placed: number; lined: number; error: string | null }>();
   let dev = false;
   let react = false;
+  const notes = mapNotes();
   for (const scheme of SCHEMES) {
     const context = await options.browser.newContext({ viewport: { width, height }, deviceScaleFactor: FULL_SCALE, colorScheme: scheme, reducedMotion: "reduce", ...(options.storageState ? { storageState: options.storageState } : {}) });
     try {
@@ -187,7 +190,7 @@ export async function captureScreens(dir: string, options: CaptureOptions): Prom
             const places = await resolvePlaces(located.places, async (url) => {
               const response = await fetch(url).catch(() => null);
               return response?.ok ? response.text() : null;
-            }, options.root ?? null);
+            }, options.root ?? null, notes);
             const file: PlacesFile = { schema: PLACES_SCHEMA, route: screen.route, path: screen.path, viewport: spec.viewport, size: { width, height: clip.height }, dev: located.dev, capped: located.capped, places: places.filter((p) => p.box.y < clip.height) };
             await writeFileAtomic(join(dir, `${slug}.places.json`), `${JSON.stringify(file)}\n`);
             results.set(screen.route, { placed: file.places.length, lined: file.places.filter((p) => p.line !== null).length, error: null });
@@ -206,7 +209,11 @@ export async function captureScreens(dir: string, options: CaptureOptions): Prom
   // capturedAt is the whole set's; a capture of some routes leaves it (each picture's own time is its file's).
   if (chosen === spec.screens) await writeFileAtomic(join(dir, "screens.json"), `${JSON.stringify({ ...spec, capturedAt: now }, null, 2)}\n`);
   const screens = chosen.map((s) => ({ route: s.route, path: s.path, ...(results.get(s.route) ?? { placed: 0, lined: 0, error: "not captured" }) }));
-  return { dir, project: spec.project, screens, production: react && !dev, noReact: !react && screens.some((s) => !s.error) };
+  const placed = screens.reduce((n, s) => n + s.placed, 0);
+  const lined = screens.reduce((n, s) => n + s.lined, 0);
+  // Unknown is never zero: places with no line in a development build are explained, not left as a 0.
+  const noLines = dev && placed > 0 && lined === 0 ? (whyNoLines(notes) ?? "the source maps name no file of this product: its components may all come from a library") : null;
+  return { dir, project: spec.project, screens, production: react && !dev, noReact: !react && screens.some((s) => !s.error), noLines };
 }
 
 /** The capture in a few lines, with what to do next. */
@@ -216,6 +223,7 @@ export function captureText(report: CaptureReport): string {
   for (const s of report.screens) lines.push(s.error ? `  ✖ ${s.route}: ${s.error}` : `  ✓ ${s.route}: ${s.placed} components placed, ${s.lined} with their line`);
   if (report.noReact) lines.push("No React on these pages, so nothing is placed: the pictures are kept without places.");
   else if (report.production) lines.push("These pages are a production build: components are placed but have no lines. Run the app in development (vite, next dev) and capture again.");
+  else if (report.noLines) lines.push(`Components are placed but none has its line: ${report.noLines}.`);
   lines.push(ok.length ? "Next: youiyoux ui --project <dir> shows them on the Screens page, each component selectable." : "Next: start the app, check --base, and capture again.");
   return lines.join("\n");
 }
