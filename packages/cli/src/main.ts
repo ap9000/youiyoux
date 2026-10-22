@@ -9,7 +9,7 @@ import { DefinitionError, getSystem, loadDesignRepo, loadLibrary, MigrationSpec,
 import { candidateSource, expandAll, selectSources, discoverCacheDir, discoverIndexPath, ingestCatalog, readCatalog, searchCatalog, sharedStore, showFromCatalog, syncIndex, type Fetcher } from "@youiyoux/discover";
 import { indexHome, storeLocation } from "@youiyoux/store";
 import { buildTokens, compareParity } from "@youiyoux/tokens";
-import { adoptionRequest, buildInventory, captureScreens, captureText, within, RenderUnavailableError, renderShots, shotsNext, type ShotsOptions, checkCapabilities, componentCard, describeIdentity, evaluateRule, findContract, loadProject, planChange, PROJECT_FILE, type LoadProjectOptions, ProjectWatcher, ruleCapability, runMigration, scanProject, screenBom, searchLibrary, whereUsed, type CacheStats, type PlanInput, type Project, type WatchUpdate } from "@youiyoux/scanner";
+import { adoptionRequest, buildInventory, captureScreens, captureText, chosenSession, openLoginBrowser, recordSession, sessionFile, type LoginBrowser, type LoginPage, within, RenderUnavailableError, renderShots, shotsNext, type ShotsOptions, checkCapabilities, componentCard, describeIdentity, evaluateRule, findContract, loadProject, planChange, PROJECT_FILE, type LoadProjectOptions, ProjectWatcher, ruleCapability, runMigration, scanProject, screenBom, searchLibrary, whereUsed, type CacheStats, type PlanInput, type Project, type WatchUpdate } from "@youiyoux/scanner";
 import { baselinePath, diffExitCodeOf, exitCodeOf, runCheck, writeBaseline, type CheckResult } from "./check.ts";
 import { configured, loadCheckProject, runRepoCheck } from "./check-repo.ts";
 import { workingTreeChange, type ChangeProject } from "./check-diff.ts";
@@ -71,6 +71,9 @@ ${style.bold("Anywhere")}  ${style.dim("no design system needed")}
                            photograph the routes in <project>/.youi/screens/screens.json, light and
                            dark, from the app running in development at <url>, and place each
                            component on them with the line that rendered it (for youiyoux ui)
+  screens login --base <url> [--project dir] [--storage-state file]
+                           open the app in a browser window to sign in once; capture then uses the
+                           session (kept outside the product, readable only by you)
   render [file|component…] [--base ref] [--json]
                            see a component you changed: its looks drawn with the project's own code
                            and CSS in headless Chromium, light and dark at 1280 and 390 px, axe's
@@ -801,25 +804,68 @@ async function cmdRequests(values: Values, positionals: string[]): Promise<numbe
 }
 
 /** `youiyoux screens capture`: the project's screens photographed, each component placed with its line. */
-async function cmdScreens(values: Values, positionals: string[]): Promise<number> {
-  if (positionals[0] !== "capture" || positionals.length > 1 || !values.base) throw new UsageError("youiyoux screens capture --base <url of the app in development> [--route <one route>] [--project dir] [--out <screens dir>] [--storage-state <signed-in session>] [--json]");
+async function cmdScreens(values: Values, positionals: string[], io: CliIo): Promise<number> {
+  const usage = "youiyoux screens capture --base <url of the app in development> [--route <one route>] [--project dir] [--out <screens dir>] [--storage-state <signed-in session>] [--json]   or   youiyoux screens login --base <url> [--project dir] [--storage-state <file>]";
+  if (!["capture", "login"].includes(positionals[0] ?? "") || positionals.length > 1 || !values.base) throw new UsageError(usage);
   // The product's root: the configured project's (a config may sit beside the design repo and name it), else the one named.
   const project = await loadProject(resolve(values.project ?? process.cwd()), loadOptions(values)).catch(() => null);
   const root = project?.root ?? resolve(values.root ?? values.project ?? process.cwd());
+  if (positionals[0] === "login") return screensLogin(values.base, values["storage-state"] ? resolve(values["storage-state"]) : sessionFile(root), io);
   const dir = resolve(values.out ?? join(root, ".youi/screens"));
   if (!existsSync(join(dir, "screens.json"))) {
     process.stderr.write(`${style.error("✖")} no screens.json in ${dir}: list the routes to capture there, as {"schema":"youiyoux.screens/v1","project":"<name>","source":"<what the app is>","capturedAt":"","viewport":{"width":1440,"height":900},"screens":[{"route":"/","path":"/"}]}\n`);
     return 1;
   }
+  const session = chosenSession(root, values["storage-state"] ? resolve(values["storage-state"]) : undefined);
+  if (session?.saved) process.stderr.write(`${style.dim(`signed in with the session youiyoux screens login saved (${session.file}); delete it to capture signed out`)}\n`);
   const { launchBrowser } = await import("@youiyoux/detect");
   const browser = await launchBrowser(process.env.YOUI_CHROMIUM, { purpose: { what: "youiyoux screens capture", command: "youiyoux screens capture" } });
   try {
-    const report = await captureScreens(dir, { base: values.base, root, browser, ...(values.route ? { routes: [values.route] } : {}), ...(values["storage-state"] ? { storageState: resolve(values["storage-state"]) } : {}), log: (line) => process.stderr.write(`${style.dim(line)}\n`) });
+    const report = await captureScreens(dir, { base: values.base, root, browser, ...(values.route ? { routes: [values.route] } : {}), ...(session ? { storageState: session.file } : {}), log: (line) => process.stderr.write(`${style.dim(line)}\n`) });
     if (values.json) json(report);
     else print(captureText(report));
     return report.screens.every((s) => s.error) ? 1 : 0;
   } finally {
     await browser.close();
+  }
+}
+
+/** `youiyoux screens login`: a window a person signs in with, then the session kept for capture. */
+async function screensLogin(base: string, file: string, io: CliIo): Promise<number> {
+  const login = io.login ?? {};
+  if (!login.browser && !process.stdin.isTTY) {
+    process.stderr.write(`${style.error("✖")} youiyoux screens login waits for you to sign in and press Enter: run it in a terminal\n`);
+    return 1;
+  }
+  let browser: LoginBrowser;
+  try {
+    browser = login.browser ?? (await openLoginBrowser(process.env.YOUI_CHROMIUM));
+  } catch (error: unknown) {
+    process.stderr.write(`${style.error("✖")} youiyoux screens login opens a browser window to sign in with, and could not: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}. It needs Google Chrome installed, or YOUI_CHROMIUM set to a Chromium.\n`);
+    return 1;
+  }
+  try {
+    print(`Sign in to ${base} in the window that opened, then press Enter here (or type q and Enter to give up).`);
+    const signedIn = login.signedIn ?? (async (page: LoginPage) => {
+      const { createInterface } = await import("node:readline/promises");
+      const prompt = createInterface({ input: process.stdin, output: process.stdout });
+      const closed = new Promise<string>((done) => page.once("close", () => done("closed")));
+      try {
+        return (await Promise.race([prompt.question(""), closed])).trim().toLowerCase() !== "q";
+      } finally {
+        prompt.close();
+      }
+    });
+    const result = await recordSession({ base, file, browser, signedIn });
+    if (!result.file) {
+      print("Nothing was saved: the window was closed, or you gave up. Run youiyoux screens login again to sign in.");
+      return 1;
+    }
+    print(`Saved the session (${result.cookies} cookies, storage for ${result.origins} sites) to ${result.file}, readable only by you: it holds your sign-in, so it is kept outside the product.`);
+    print("Next: youiyoux screens capture --base <url> uses it from now on; delete the file to capture signed out.");
+    return 0;
+  } finally {
+    if (!login.browser) await browser.close();
   }
 }
 
@@ -846,6 +892,8 @@ export interface CliIo {
   readonly render?: Pick<ShotsOptions, "stats" | "download" | "cache">;
   /** `youiyoux report`: tests answer the download question and stand in for the download. */
   readonly report?: ReportIo;
+  /** `youiyoux screens login`: tests hand it a browser and sign in for the person. */
+  readonly login?: { readonly browser?: LoginBrowser; readonly signedIn?: (page: LoginPage) => Promise<boolean> };
 }
 
 function positiveInt(value: string | undefined, flag: string): number | undefined {
