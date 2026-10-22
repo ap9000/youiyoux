@@ -12,7 +12,7 @@ import { Link, useLocation, useSearch } from "wouter";
 import { type Scheme, useTheme } from "../../app/theme.tsx";
 import { elementHref } from "../../data/ids.ts";
 import type { Model } from "../../data/model.ts";
-import { elementOf, isSelected, matchPlaces, usePlaces, type Placed } from "../../data/places.ts";
+import { elementOf, isSelected, matchPlaces, pickOrder, usePlaces, type Placed } from "../../data/places.ts";
 import { useRemote, workflowApi } from "../../data/workflow.ts";
 import { type Screen, type ScreenElement, type ScreenIndex, screenHref, routeLabel } from "../../data/screens.ts";
 import { EVERY_SCREEN, type ProjectViolation } from "../../data/usage.ts";
@@ -272,7 +272,7 @@ export function ScreenDetail({ model, screens, screen }: { model: Model; screens
   const outline: Outline = outlineChoice ?? (anyElement ? "elements" : "all");
   const [pointed, setPointed] = useState<string | null>(null);
   const nameOf = (p: Placed): string => (p.element ? (model.byId.get(p.element)?.name ?? p.element) : p.place.name);
-  const picked = placed.filter((p) => isSelected(p, select));
+  const picked = placed.filter((p) => isSelected(p, select)).sort(pickOrder);
   // This screen's requests: those filed on it, and those for every use of an element placed on it; numbered oldest first.
   const all = requests.state.status === "ready" ? requests.state.value.requests : [];
   const placedElements = new Set(placed.map(elementOf).filter((e): e is string => e !== null));
@@ -348,7 +348,7 @@ export function ScreenDetail({ model, screens, screen }: { model: Model; screens
           <figure className="space-y-2.5 p-6 max-sm:p-4">
             {places && (picked[0] ? (
               <>
-                <Selection placed={picked[0]} all={picked} name={nameOf(picked[0])} copies={picked[0].lookalike ? (model.byId.get(picked[0].lookalike)?.name ?? null) : null} onClear={() => setSelect(null)} onComment={() => setComposing(true)} />
+                <Selection placed={picked[0]} all={picked.filter((p) => p.place.name === picked[0]!.place.name)} name={nameOf(picked[0])} copies={picked[0].lookalike ? (model.byId.get(picked[0].lookalike)?.name ?? null) : null} onClear={() => setSelect(null)} onComment={() => setComposing(true)} />
                 {composing && (
                   <RequestComposer
                     key={picked[0].at ?? picked[0].place.name}

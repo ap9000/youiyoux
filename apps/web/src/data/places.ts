@@ -51,6 +51,9 @@ export const isSelected = (placed: Placed, select: string | null): boolean => se
 /** The System element a placed component is, or stands in for. */
 export const elementOf = (placed: Placed): ElementId | null => placed.element ?? placed.lookalike;
 
+/** Among picks that share a line (`<DropdownMenuTrigger asChild><Button>`): the System element first, then the innermost. */
+export const pickOrder = (a: Placed, b: Placed): number => Number(elementOf(b) !== null) - Number(elementOf(a) !== null) || b.place.depth - a.place.depth;
+
 /**
  * The component under a point (page pixels): the smallest box holding it, so a button inside a
  * card is the button. `among` narrows what counts (the System elements only, say).

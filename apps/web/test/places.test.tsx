@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { writeScreens } from "../scripts/snapshot.ts";
-import { matchPlaces, type Placed } from "../src/data/places.ts";
+import { isSelected, matchPlaces, pickOrder, type Placed } from "../src/data/places.ts";
 import type { PlacedComponent, PlacesFile } from "../src/data/types.ts";
 import type { Site } from "../src/data/usage.ts";
 import { PlacesOverlay, type Outline } from "../src/screens/screens/PlacesOverlay.tsx";
@@ -123,5 +123,14 @@ describe("request pins on the picture", () => {
     fireEvent.click(pins[0]!);
     expect(onPin).toHaveBeenCalledWith("r-0000000001");
     expect(onSelect).not.toHaveBeenCalled();
+  });
+});
+
+describe("picking a line several components share", () => {
+  test("the System element on it leads, then the innermost", () => {
+    const line = (name: string, depth: number): PlacedComponent => ({ name, owner: "Tasks", file: "src/tasks.tsx", line: 199, column: 5, box: { x: 0, y: 0, width: 50, height: 20 }, depth });
+    const shared = matchPlaces([line("DropdownMenuTrigger", 3), line("Primitive.button", 6), line("Button", 4)], [{ ...site, file: "src/tasks.tsx", line: 199 }]);
+    const order = shared.filter((p) => isSelected(p, "src/tasks.tsx:199")).sort(pickOrder).map((p) => p.place.name);
+    expect(order).toEqual(["Button", "Primitive.button", "DropdownMenuTrigger"]);
   });
 });
