@@ -87,6 +87,11 @@ describe("screens.json", () => {
     expect(() => readScreensSpec(dir)).toThrow(/share the file name a-b/);
     writeFileSync(join(dir, "screens.json"), JSON.stringify({ schema: "youiyoux.screens/v1", project: "x", screens: [] }));
     expect(() => readScreensSpec(dir)).toThrow(/needs project, source, viewport/);
+    // A path that would open another host is refused before anything is opened.
+    for (const path of ["https://evil.example/x", "//evil.example/x", "/\\evil.example/x", "settings", "javascript:alert(1)"]) {
+      writeFileSync(join(dir, "screens.json"), JSON.stringify({ schema: "youiyoux.screens/v1", project: "x", source: "s", capturedAt: "", viewport: { width: 800, height: 600 }, screens: [{ route: "/a", path }] }));
+      expect(() => readScreensSpec(dir), path).toThrow(/must start with a single \/ on the app's own address/);
+    }
   });
 });
 

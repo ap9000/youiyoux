@@ -76,6 +76,9 @@ export function readScreensSpec(dir: string): ScreensSpec {
   }
   const valid = value.schema === SCREENS_SCHEMA && typeof value.project === "string" && typeof value.source === "string" && typeof value.viewport?.width === "number" && typeof value.viewport.height === "number" && Array.isArray(value.screens) && value.screens.every((s) => typeof s?.route === "string" && typeof s.path === "string");
   if (!valid) throw new Error(`${file} is not a ${SCREENS_SCHEMA} document: it needs project, source, viewport { width, height } and screens [{ route, path }]`);
+  // A path is on the app's own address: `/settings`, never `https://…`, `//host/…` or a backslash a browser reads as a slash.
+  const elsewhere = value.screens!.find((s) => !/^\/(?![/\\])/.test(s.path) || s.path.includes("\\"));
+  if (elsewhere) throw new Error(`${file}: the path of ${elsewhere.route} (${elsewhere.path}) must start with a single / on the app's own address; capture opens nothing elsewhere`);
   const slugs = new Map<string, string>();
   for (const { route } of value.screens!) {
     const slug = screenSlug(route);
@@ -171,6 +174,7 @@ export async function captureScreens(dir: string, options: CaptureOptions): Prom
         if (results.get(screen.route)?.error) continue;
         try {
           const target = new URL(screen.path, options.base).href;
+          if (new URL(target).origin !== new URL(options.base).origin) throw new Error(`${screen.path} is not on ${new URL(options.base).origin}`);
           await page.goto(target, { waitUntil: "load", timeout: NAVIGATION_TIMEOUT_MS });
           await page.evaluate(() => document.fonts?.ready.then(() => undefined));
           await page.waitForTimeout(SETTLE_MS);
