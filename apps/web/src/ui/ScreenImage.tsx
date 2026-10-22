@@ -27,13 +27,20 @@ interface ScreenImageProps {
   /** What the picture shows, for the alt text and the placeholder. */
   label: string;
   ratio?: number;
+  /**
+   * With no picture at all: "placeholder" holds the picture's place (in a set where other screens have one),
+   * "none" draws nothing, so a set with no pictures is not a wall of empty boxes. A picture that fails to load
+   * always shows the placeholder.
+   */
+  whenMissing?: "placeholder" | "none";
   className?: string;
 }
 
-export function ScreenImage({ shot, scheme, size, label, ratio = DEFAULT_RATIO, className }: ScreenImageProps) {
+export function ScreenImage({ shot, scheme, size, label, ratio = DEFAULT_RATIO, whenMissing = "placeholder", className }: ScreenImageProps) {
   const picked = shotFile(shot, scheme, size);
   const [failed, setFailed] = useState<string | null>(null);
   const missing = !picked || failed === picked.file;
+  if (!picked && whenMissing === "none") return null;
   return (
     <div className={clsx("relative overflow-hidden bg-sunken", className)} style={{ aspectRatio: ratio }}>
       {missing ? (

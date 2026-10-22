@@ -143,16 +143,20 @@ const TOP_SCREENS = 4;
 
 export function TopScreens({ list, scheme }: { list: readonly ElementScreen[]; scheme: Scheme }) {
   if (list.length === 0) return null;
+  const top = list.slice(0, TOP_SCREENS);
+  const pictured = top.some(({ screen }) => screen.shot);
   return (
     <Section title="Top screens">
       <ul className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {list.slice(0, TOP_SCREENS).map(({ screen, sites }) => (
+        {top.map(({ screen, sites }) => (
           <li key={`${screen.project}:${screen.route}`}>
-            <Link href={screenHref(screen.project, screen.route)} className="group block overflow-hidden rounded-md border border-line transition-colors duration-100 hover:border-line-strong">
-              <ScreenImage shot={screen.shot} scheme={scheme} size="thumb" label={`${screen.project} ${routeLabel(screen.route)}`} className="border-b border-line" />
+            <Link href={screenHref(screen.project, screen.route)} className="group block overflow-hidden rounded-md border border-line transition-colors duration-100 hover:border-line-strong hover:bg-raised">
+              <ScreenImage shot={screen.shot} scheme={scheme} size="thumb" label={`${screen.project} ${routeLabel(screen.route)}`} whenMissing={pictured ? "placeholder" : "none"} className="border-b border-line" />
               <span className="flex items-center gap-2 px-2.5 py-1.5">
                 <span className="truncate font-mono text-mono-sm text-ink">{routeLabel(screen.route)}</span>
-                <span className="ml-auto tabular text-small text-muted">{sites}</span>
+                <span className="ml-auto tabular text-small text-muted">
+                  <span className="text-ink-2">{sites}</span> {sites === 1 ? "site" : "sites"}
+                </span>
               </span>
             </Link>
           </li>

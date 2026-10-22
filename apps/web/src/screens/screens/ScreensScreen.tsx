@@ -56,7 +56,7 @@ function Screens({ model, index }: { model: Model; index: UsageIndex }) {
 }
 
 function captureLine(shots: ProjectShots | undefined): string {
-  return shots ? `Screenshots from the ${shots.source}, ${shots.capturedAt}` : "No screenshots captured for this project yet";
+  return shots ? `Screenshots from the ${shots.source}, ${shots.capturedAt}` : "No screenshots captured for this project yet: scripts/capture-screens.ts takes them";
 }
 
 function ScreenGrid({ model, index, screens }: { model: Model; index: UsageIndex; screens: ScreenIndex }) {
@@ -74,6 +74,8 @@ function ScreenGrid({ model, index, screens }: { model: Model; index: UsageIndex
         <div className="mx-auto max-w-6xl space-y-10 px-6 py-6 animate-enter max-sm:px-4">
           {projects.map((project) => {
             const commit = index.reports.find((r) => r.project === project)?.commit;
+            const onProject = screens.screens.filter((s) => s.project === project);
+            const pictured = onProject.some((s) => s.shot);
             return (
               <section key={project} aria-labelledby={`screens-${project}`} className="space-y-4">
                 <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -84,13 +86,11 @@ function ScreenGrid({ model, index, screens }: { model: Model; index: UsageIndex
                   <span className="text-small text-muted">{captureLine(screens.shots.get(project))}</span>
                 </header>
                 <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {screens.screens
-                    .filter((s) => s.project === project)
-                    .map((screen) => (
-                      <li key={screen.route}>
-                        <ScreenCard model={model} screen={screen} scheme={scheme} />
-                      </li>
-                    ))}
+                  {onProject.map((screen) => (
+                    <li key={screen.route}>
+                      <ScreenCard model={model} screen={screen} scheme={scheme} pictured={pictured} />
+                    </li>
+                  ))}
                 </ul>
               </section>
             );
@@ -118,7 +118,8 @@ function ScreenGrid({ model, index, screens }: { model: Model; index: UsageIndex
   );
 }
 
-function ScreenCard({ model, screen, scheme }: { model: Model; screen: Screen; scheme: Scheme }) {
+/** `pictured`: whether any screen of the project has a picture; when none does, the cards are text only. */
+function ScreenCard({ model, screen, scheme, pictured }: { model: Model; screen: Screen; scheme: Scheme; pictured: boolean }) {
   const rendered = screen.elements.filter((e) => e.sites.length > 0);
   const top = rendered.slice(0, TOP_ELEMENTS);
   const more = rendered.length - top.length;
@@ -126,9 +127,9 @@ function ScreenCard({ model, screen, scheme }: { model: Model; screen: Screen; s
     <Link
       href={screenHref(screen.project, screen.route)}
       data-screen-card
-      className="group block overflow-hidden rounded-lg border border-line bg-surface shadow-raise transition-colors duration-100 hover:border-line-strong"
+      className="group block h-full overflow-hidden rounded-lg border border-line bg-surface transition-colors duration-100 hover:border-line-strong hover:bg-raised"
     >
-      <ScreenImage shot={screen.shot} scheme={scheme} size="thumb" label={`${screen.project} ${routeLabel(screen.route)}`} className="border-b border-line" />
+      <ScreenImage shot={screen.shot} scheme={scheme} size="thumb" label={`${screen.project} ${routeLabel(screen.route)}`} whenMissing={pictured ? "placeholder" : "none"} className="border-b border-line" />
       <div className="space-y-1 px-3.5 pt-2.5 pb-3">
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate font-mono text-mono text-ink">{screen.route === EVERY_SCREEN ? "every screen" : screen.route}</span>

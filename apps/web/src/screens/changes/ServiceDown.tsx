@@ -17,6 +17,31 @@ export function StartEditor() {
   );
 }
 
+/** The same notice as a panel at the top of a screen that keeps its frame, instead of centred in an empty pane. */
+export function ServiceDownPanel({ error, onRetry }: { error: WorkflowRequestError; onRetry: () => void }) {
+  return (
+    <section data-service-down aria-labelledby="service-down" className="space-y-3 rounded-md border border-line px-4 py-3.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <PlugZap aria-hidden className="size-4 shrink-0 text-muted" />
+        <h2 id="service-down" className="text-heading">
+          {error.offline ? "Start the rule editor to see changes" : "The rule editor had a problem"}
+        </h2>
+        <Button size="sm" onClick={onRetry} className="ml-auto">
+          <RotateCw /> Try again
+        </Button>
+      </div>
+      {error.offline ? (
+        <>
+          <p className="max-w-2xl text-body text-ink-2">Drafts, previews and approvals live in the local workflow service. From the YouIyouX checkout, run this and open the link it prints:</p>
+          <StartEditor />
+        </>
+      ) : (
+        <p className="text-body text-ink-2">{error.message}</p>
+      )}
+    </section>
+  );
+}
+
 export function ServiceDown({ error, onRetry }: { error: WorkflowRequestError; onRetry: () => void }) {
   return (
     <EmptyState

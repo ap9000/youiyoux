@@ -29,6 +29,21 @@ export function withLoadedFonts(css: string): string {
   return css.replace(/"?Geist Mono"?(?=\s*(,|$))/g, '"Geist Mono Variable", "Geist Mono"').replace(/(^|[\s,/])"?Geist"?(?=\s*(,|$))/g, '$1"Geist Variable", Geist');
 }
 
+export interface FontFacts {
+  readonly weight: string;
+  readonly size: string;
+  readonly lineHeight: string;
+  readonly family: string;
+}
+
+/** The parts of a CSS `font` shorthand ("500 13px/1.25 Geist, ui-sans-serif"), or null when it is not one this can read. */
+export function fontFacts(css: string): FontFacts | null {
+  const match = /^(?:(?:normal|italic|oblique)\s+)?(\d{3}|normal|bold)?\s*([\d.]+(?:px|rem|em))(?:\/([\d.]+(?:px|rem|em|%)?))?\s+(.+)$/.exec(css.trim());
+  if (!match) return null;
+  const family = match[4]!.split(",")[0]!.trim().replace(/^["']|["']$/g, "");
+  return { weight: match[1] ?? "400", size: match[2]!, lineHeight: match[3] ?? "normal", family };
+}
+
 function Curve({ value, ink }: { value: string; ink: string }) {
   const points = /cubic-bezier\(([^)]+)\)/.exec(value)?.[1]?.split(",").map(Number);
   if (!points || points.length !== 4 || points.some((n) => !Number.isFinite(n))) return <code className="font-mono text-mono">{value}</code>;
@@ -89,14 +104,27 @@ export function TokenValue({ token, scheme, stage, className }: TokenValueProps)
           )}
         </div>
       );
-    case "typography":
+    case "typography": {
+      // The token set in its own words, wrapping so its line height shows; the facts under it as mono chips.
+      const facts = fontFacts(value);
+      const chip = "rounded-xs px-1.5 py-0.5 font-mono text-mono-sm";
       return (
-        <div className={clsx(box, "place-items-start content-center")} style={surface}>
-          <p className="truncate" style={{ font: withLoadedFonts(value) }}>
-            The quick brown fox
+        <div className={clsx(box, "content-between justify-items-start gap-3")} style={surface}>
+          <p className="line-clamp-2 max-w-[28ch]" style={{ font: withLoadedFonts(value) }}>
+            {token.description || token.path}
           </p>
+          {facts && (
+            <ul aria-label="Font" className="flex flex-wrap gap-1">
+              {[facts.size, facts.weight, `/${facts.lineHeight}`, facts.family].map((fact) => (
+                <li key={fact} className={chip} style={{ background: stage.line, color: stage.ink }}>
+                  {fact}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       );
+    }
     case "fontFamily":
       return (
         <div className={box} style={surface}>

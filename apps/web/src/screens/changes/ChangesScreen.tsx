@@ -4,10 +4,10 @@
  * (token values and component states) and library drafts (Discover's Save to Library and
  * adoption requests). A rule draft opens on its rule's page; the others open here, at /changes/<id>.
  */
-import { GitPullRequestArrow, Paintbrush, ShieldCheck } from "lucide-react";
+import { ArrowRight, GitPullRequestArrow, Paintbrush, ShieldCheck } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
 import { Link, useParams } from "wouter";
-import { type DraftView, workflowApi, useRemote } from "../../data/workflow.ts";
+import { type DraftView, workflowApi, useRemote, type WorkflowRequestError } from "../../data/workflow.ts";
 import { Badge } from "../../ui/Badge.tsx";
 import { Button } from "../../ui/Button.tsx";
 import { EmptyState } from "../../ui/EmptyState.tsx";
@@ -15,7 +15,7 @@ import { PaneHeader, PaneSkeleton } from "../../ui/Pane.tsx";
 import { Segmented } from "../../ui/Segmented.tsx";
 import { DraftEditor, DraftStatusBadge, STAGE, stageOf, type Stage } from "./DraftEditor.tsx";
 import { plural } from "./ImpactPreview.tsx";
-import { ServiceDown } from "./ServiceDown.tsx";
+import { ServiceDown, ServiceDownPanel } from "./ServiceDown.tsx";
 import { describeLibraryDraft } from "./LibraryDraftReview.tsx";
 import { describeStyleDraft } from "./StyleDraftReview.tsx";
 
@@ -29,8 +29,53 @@ export function ChangesScreen() {
   const { state, reload } = useRemote(() => workflowApi.drafts(), "changes");
   if (id) return <DraftPage id={id} onChanged={reload} />;
   if (state.status === "loading") return <PaneSkeleton />;
-  if (state.status === "error") return <ServiceDown error={state.error} onRetry={reload} />;
+  if (state.status === "error") return <QueueOffline error={state.error} onRetry={reload} />;
   return <Queue drafts={state.value.drafts} />;
+}
+
+function QueueHeader({ count }: { count?: number }) {
+  return (
+    <PaneHeader title="Changes" {...(count === undefined ? {} : { count })}>
+      <Button size="sm" asChild>
+        <Link href="/style">
+          <Paintbrush /> Style
+        </Link>
+      </Button>
+      <Button size="sm" asChild>
+        <Link href="/rules">
+          <ShieldCheck /> Rules
+        </Link>
+      </Button>
+    </PaneHeader>
+  );
+}
+
+/** The queue without its service: the frame, what to run, and the path a change takes. No counts, since none are known. */
+function QueueOffline({ error, onRetry }: { error: WorkflowRequestError; onRetry: () => void }) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <QueueHeader />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-4xl space-y-8 p-6 max-sm:p-4">
+          <ServiceDownPanel error={error} onRetry={onRetry} />
+          <section aria-labelledby="change-path" className="space-y-3">
+            <h2 id="change-path" className="text-heading">
+              How a change moves
+            </h2>
+            <ol className="flex flex-wrap items-center gap-x-1.5 gap-y-2">
+              {STAGES.map((stage, i) => (
+                <li key={stage} className="flex items-center gap-1.5">
+                  {i > 0 && <ArrowRight aria-hidden className="size-3.5 text-faint" />}
+                  <Badge tone={STAGE[stage].tone}>{STAGE[stage].label}</Badge>
+                </li>
+              ))}
+            </ol>
+            <p className="max-w-2xl text-body text-muted">Start one from Rules (edit a rule, or a new rule) or from Style (tokens and component states). Style edits and previews work now; saving a draft needs the editor.</p>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export const draftHref = (draft: DraftView): string => (draft.kind === "rule" ? `/rules/draft/${draft.id}` : `/changes/${draft.id}`);
@@ -52,18 +97,7 @@ function Queue({ drafts }: { drafts: readonly DraftView[] }) {
   const options = [{ value: "all" as const, label: "All", count: queued.length }, ...STAGES.map((value) => ({ value, label: STAGE[value].label, count: queued.filter((q) => q.stage === value).length }))];
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <PaneHeader title="Changes" count={queued.length}>
-        <Button size="sm" asChild>
-          <Link href="/style">
-            <Paintbrush /> Style
-          </Link>
-        </Button>
-        <Button size="sm" asChild>
-          <Link href="/rules">
-            <ShieldCheck /> Rules
-          </Link>
-        </Button>
-      </PaneHeader>
+      <QueueHeader count={queued.length} />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-4xl space-y-4 p-6 animate-enter max-sm:p-4">
           <Segmented label="Status" value={filter} options={options} onChange={setFilter} className="max-w-full overflow-x-auto" />

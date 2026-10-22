@@ -1,4 +1,5 @@
 /** A token: light and dark values, the alias chain to its source, WCAG contrast, and who uses it. */
+import { clsx } from "clsx";
 import { ArrowRight, Link2 } from "lucide-react";
 import { Link } from "wouter";
 import { type Scheme, useTheme } from "../../app/theme.tsx";
@@ -51,8 +52,9 @@ function Ratio({ fg, bg }: { fg: string; bg: string }) {
 function ValueCard({ model, token, scheme }: { model: Model; token: TokenEntry; scheme: Scheme }) {
   return (
     <div className="overflow-hidden rounded-lg border border-line">
-      <div className="h-32 border-b border-line">
-        <TokenValue token={token} scheme={scheme} stage={stageFor(model, scheme)} />
+      {/* Type grows with its own size instead of being clipped; every other value fills a fixed box. */}
+      <div className={clsx("border-b border-line", token.type !== "typography" && "h-32")}>
+        <TokenValue token={token} scheme={scheme} stage={stageFor(model, scheme)} {...(token.type === "typography" ? { className: "min-h-32" } : {})} />
       </div>
       <div className="flex items-center gap-2 py-1.5 pr-1.5 pl-3">
         <span className="w-10 text-small text-muted capitalize">{scheme}</span>
