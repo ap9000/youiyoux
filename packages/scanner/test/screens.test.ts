@@ -184,7 +184,9 @@ describe("capturing a running app", () => {
     expect(report.screens.map((s) => s.route)).toEqual(["/"]);
     expect(existsSync(join(dir, "root.places.json"))).toBe(true);
     expect(readFileSync(join(dir, "prod.light.webp"), "utf8")).toBe("untouched");
-    expect(readFileSync(join(dir, "screens.json"), "utf8")).toBe(before);
+    // The set keeps its time; where the app ran is recorded, so the route can be captured again without asking.
+    const after = JSON.parse(readFileSync(join(dir, "screens.json"), "utf8"));
+    expect(after).toEqual({ ...JSON.parse(before), base });
     await expect(captureScreens(dir, { base, browser, routes: ["/nope"] })).rejects.toThrow(/has no route \/nope: it lists \/, \/prod/);
   }, 120_000);
 

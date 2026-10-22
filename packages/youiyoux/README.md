@@ -27,6 +27,16 @@ npx youiyoux hooks install    # check after each Claude Code edit, and at git co
 - `npx youiyoux check --diff`: after UI edits, what the change adds, each with its fix.
 - `ui_render` (MCP) or `npx youiyoux render <file>`: screenshots light and dark, accessibility issues, a diff against base.
 
+## The hub, screens and requests
+
+```sh
+npx youiyoux ui --project .                                   # the hub: your system, where it is used, your screens
+npx youiyoux screens login --base http://localhost:3000       # once, if the app needs a sign-in
+npx youiyoux screens capture --base http://localhost:3000     # photograph the routes in .youi/screens/screens.json
+```
+
+On the hub's Screens page, pick any component on a screenshot and leave a comment or a change request. Your agent reads it (`requests_list`), makes the change, captures the screen again (`screens_capture`) and marks it addressed; you compare before and after and close it.
+
 ## Privacy
 
 Runs locally; nothing is uploaded, no telemetry. The report includes relative paths, component names, class lists, counts and rendered images when available. No source lines unless `--include-code`; home paths, usernames, env values and credentials are stripped. Rendered looks need a headless Chromium (`--render` offers to download it, ~100 MB, once); specimen images are cached in `~/.cache/youiyoux/specimens`.

@@ -29,7 +29,8 @@ import { basename, isAbsolute, join, resolve, sep } from "node:path";
 import { isLibraryId, loadLibrary, MigrationSpec, normalizeRelPath, type Library, type McpTool } from "@youiyoux/core";
 import { DISCOVER_RULE, DiscoverConstraints, discoverCacheDir, discoverIndexPath, MissingIndexError, readCatalog, searchCatalog, sharedStore, showFromCatalog, type DiscoverHit } from "@youiyoux/discover";
 import { storeLocation, type Store } from "@youiyoux/store";
-import { adoptionRequest, collectComponents, findLibraryEntry, renderShots, type ShotsOptions, componentCard, describeIdentity, failedChecks, findContract, formatProps, loadProject, planChange, PROJECT_FILE, ruleRows, ScanCache, scanProject, screenBom, searchElements, searchLibrary, tokenRows, whereUsed, type PlanInput, type Project, type ProjectComponents, type ScanResult } from "@youiyoux/scanner";
+import { adoptionRequest, captureScreens, chosenSession, readScreensSpec, screenSlug, collectComponents, findLibraryEntry, renderShots, type ShotsOptions, componentCard, describeIdentity, failedChecks, findContract, formatProps, loadProject, planChange, PROJECT_FILE, ruleRows, ScanCache, scanProject, screenBom, searchElements, searchLibrary, tokenRows, whereUsed, type PlanInput, type Project, type ProjectComponents, type ScanResult } from "@youiyoux/scanner";
+import { launchBrowser } from "@youiyoux/detect";
 import { RequestStore, requestBrief } from "@youiyoux/workflow";
 import { z } from "zod";
 import { findComponents, matchesText, noneFitsText } from "./find-component.ts";
@@ -55,6 +56,8 @@ const DEFAULT_TTL = 5_000;
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 /** The request tools write one file in the product's .youi/requests, and nothing else. */
 const WRITES_REQUEST = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } as const;
+/** screens_capture writes one route's pictures and places in the product's .youi/screens, and nothing else. */
+const WRITES_SCREEN = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 const AGENT = { kind: "agent", name: "agent (MCP)" } as const;
 
 type ToolResult = { content: Array<{ type: "text"; text: string }>; isError?: boolean };
@@ -173,7 +176,7 @@ export function createServer(options: ServerOptions): McpServer {
     { name: "youiyoux", version: VERSION },
     {
       instructions:
-        "YouIyouX: the UI context and verification layer for this project. Before creating any UI component, call ui_find_component with the need in words: reuse the existing component it names, or start where it says when nothing fits. Build only with System elements: call system_get_component before using a component's props, system_get_tokens instead of writing colours or sizes, and system_check on code before finishing. system_plan shows the impact of a change to the System. The Library (library_* tools, lib: ids) holds ingested references that are not approved: browse them with library_search, never import, copy or build with them, and use library_request to draft an adoption request for a person to approve. discover_search and discover_show find outside candidates by need (shadcn registries, npm) with licence, signals and install command: they are references, never install or copy one; propose one with library_request. index_where_used, index_swap_impact and index_rule_covers answer from the local index in a few lines: where an inventory family (button-2) is used, what swapping a candidate in for it would touch, and what a rule covers. After changing a component, call ui_render with its file and look at the images it names: light and dark at desktop and phone width, accessibility issues, and a diff against the base commit. People pin comments and change requests to components on captured screens: call requests_list before UI work, ask with request_reply when one is unclear, and after making a change call request_addressed with what you changed; a person closes it. There are no tools to publish, approve, close or install anything.",
+        "YouIyouX: the UI context and verification layer for this project. Before creating any UI component, call ui_find_component with the need in words: reuse the existing component it names, or start where it says when nothing fits. Build only with System elements: call system_get_component before using a component's props, system_get_tokens instead of writing colours or sizes, and system_check on code before finishing. system_plan shows the impact of a change to the System. The Library (library_* tools, lib: ids) holds ingested references that are not approved: browse them with library_search, never import, copy or build with them, and use library_request to draft an adoption request for a person to approve. discover_search and discover_show find outside candidates by need (shadcn registries, npm) with licence, signals and install command: they are references, never install or copy one; propose one with library_request. index_where_used, index_swap_impact and index_rule_covers answer from the local index in a few lines: where an inventory family (button-2) is used, what swapping a candidate in for it would touch, and what a rule covers. After changing a component, call ui_render with its file and look at the images it names: light and dark at desktop and phone width, accessibility issues, and a diff against the base commit. People pin comments and change requests to components on captured screens: call requests_list before UI work, ask with request_reply when one is unclear, and after making a change call screens_capture with its route, then request_addressed with what you changed; a person closes it. There are no tools to publish, approve, close or install anything.",
     },
   );
 
@@ -464,9 +467,57 @@ export function createServer(options: ServerOptions): McpServer {
     }),
   );
 
+  server.registerTool(
+    "screens_capture" satisfies McpTool,
+    {
+      title: "Capture a screen again",
+      description: "Photograph one route of the app running in development on this machine, light and dark, and place its components with their lines (as youiyoux screens capture --route does), so the person sees a request's before and after. Call it after a requested change, before request_addressed. base defaults to where the last capture found the app; a session saved by youiyoux screens login is used. Writes only that route's pictures and places in .youi/screens.",
+      inputSchema: { route: z.string().min(1).max(300).describe("The route as screens.json lists it, e.g. /settings"), base: z.string().optional().describe("Where the app runs on this machine, e.g. http://localhost:3000") },
+      annotations: WRITES_SCREEN,
+    },
+    guard(async ({ route, base }) => {
+      const { root } = await requests();
+      const dir = join(root, ".youi/screens");
+      if (!existsSync(join(dir, "screens.json"))) return { error: `no screens.json in ${dir}: a person lists the routes to capture there first (youiyoux screens capture)` };
+      const where = base ?? readScreensSpec(dir).base;
+      if (!where) return { error: "no base: pass base, where the app runs in development (http://localhost:<port>); no capture has recorded one yet" };
+      if (!isLocalUrl(where)) return { error: `${where} is not on this machine: screens_capture photographs only an app running here (localhost, 127.0.0.1)` };
+      const session = chosenSession(root, undefined);
+      const browser = await launchBrowser(process.env.YOUI_CHROMIUM, { purpose: { what: "screens_capture", command: "youiyoux screens capture" }, ...(options.render?.download === false ? { download: false } : {}) });
+      try {
+        const report = await captureScreens(dir, { base: where, root, browser, routes: [route], ...(session ? { storageState: session.file } : {}) });
+        const shot = report.screens[0]!;
+        const { store } = await requests();
+        const waiting = (await store.list()).requests.filter((r) => r.target.route === route && r.status !== "closed").map((r) => requestBrief(r, root));
+        return {
+          route,
+          base: where,
+          picture: shot.error ? null : join(dir, `${screenSlug(route)}.light.webp`),
+          placed: shot.placed,
+          lined: shot.lined,
+          ...(shot.error ? { error: shot.error } : {}),
+          ...(report.noLines ? { noLines: report.noLines } : {}),
+          requests: waiting,
+          next: shot.error ? "The route could not be captured: check that the app is running at base, then call screens_capture again." : waiting.some((r) => r.status === "open") ? "Captured. Call request_addressed on each request you changed, with what you changed (file:line)." : "Captured: the person sees it on the Screens page.",
+        };
+      } finally {
+        await browser.close();
+      }
+    }),
+  );
+
   return server;
 }
 
+/** An address on this machine: what screens_capture may photograph. */
+export function isLocalUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:") && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
 
 export async function startStdioServer(options: ServerOptions): Promise<void> {
   const server = createServer(options);

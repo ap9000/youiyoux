@@ -7,7 +7,7 @@
  * as unreadable, never dropped silently, and never rewritten.
  */
 import { randomBytes } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { copyFile, mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { REQUEST_ID, RequestDoc, writeFileAtomic, type RequestAuthor, type RequestStatus, type RequestTarget } from "@youiyoux/core";
@@ -59,6 +59,9 @@ export interface RequestComparison {
 }
 
 const screensDir = (root: string): string => join(root, ".youi/screens");
+
+/** When the work a request asks for began: when it was filed, or last reopened. */
+const filedAt = (request: RequestDoc): string => request.thread.filter((e) => e.status === "open").at(-1)?.at ?? request.createdAt;
 
 export class RequestStore {
   readonly dir: string;
@@ -174,9 +177,8 @@ export class RequestStore {
     } catch {
       // No places for the new picture: the component is shown where it was.
     }
-    const since = request.thread.filter((e) => e.status === "open").at(-1)?.at ?? request.createdAt;
     const at = info.mtime.toISOString();
-    return { before, after: { file: shot, box, page, at, sinceFiled: at > since, found } };
+    return { before, after: { file: shot, box, page, at, sinceFiled: at > filedAt(request), found } };
   }
 
   /**
@@ -213,6 +215,8 @@ export interface RequestBrief {
   /** The captured screen (absolute), when it is on disk, and the component's box on it in its own pixels. */
   readonly picture: string | null;
   readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number } | null;
+  /** The screen was captured after the request was filed (or reopened); null with no picture at all. */
+  readonly recaptured: boolean | null;
   readonly thread: readonly string[];
   readonly next: string;
 }
@@ -223,11 +227,15 @@ export function requestBrief(request: RequestDoc, root: string): RequestBrief {
   const at = t.file && t.line ? `${t.file}:${t.line}` : null;
   const every = t.scope === "element" && t.element;
   const where = every ? `every use of ${t.element} (system_where_used lists them)` : at ? `${at}` : `the ${t.name} on ${t.route} (its line was not captured: find it from the picture and the route)`;
+  const shot = existsSync(picture) ? statSync(picture).mtime.toISOString() : null;
+  const recaptured = shot === null ? null : shot > filedAt(request);
+  const capture = `screens_capture with route ${t.route} (or youiyoux screens capture --base <the app in development> --route ${t.route})`;
   const next =
     request.status === "closed" ? "Closed by a person: nothing to do."
+      : request.status === "addressed" && recaptured === false ? `Marked addressed, but ${t.route} has not been captured since this was filed, so the person compares against the old picture: run ${capture}. A person then checks it and closes or reopens it.`
       : request.status === "addressed" ? "Marked addressed: a person checks it and closes or reopens it. Reply only if asked."
         : request.kind === "comment" ? `A comment on ${where}: reply with request_reply if it asks something; change code only if it asks for a change.`
-          : `Make the change at ${where}${t.lookalike && t.element ? `, using the System's ${t.element} rather than the hand-built lookalike where that is the fix` : ""}; capture the screen again (youiyoux screens capture --base <the app in development> --route ${t.route}) so the person sees it after; then call request_addressed with what you changed (file:line). Ask with request_reply first if it is unclear. A person closes it.`;
+          : `Make the change at ${where}${t.lookalike && t.element ? `, using the System's ${t.element} rather than the hand-built lookalike where that is the fix` : ""}; capture the screen again (${capture}) so the person sees it after; then call request_addressed with what you changed (file:line). Ask with request_reply first if it is unclear. A person closes it.`;
   return {
     id: request.id,
     kind: request.kind,
@@ -242,6 +250,7 @@ export function requestBrief(request: RequestDoc, root: string): RequestBrief {
     at,
     scope: every ? `everywhere ${t.element} is used` : "this one, on this screen",
     picture: existsSync(picture) ? picture : null,
+    recaptured,
     box: t.box ? { x: Math.round(t.box.x * PICTURE_SCALE), y: Math.round(t.box.y * PICTURE_SCALE), width: Math.round(t.box.width * PICTURE_SCALE), height: Math.round(t.box.height * PICTURE_SCALE) } : null,
     thread: request.thread.map((e) => `${e.author.kind} ${e.author.name}${e.status ? ` (marked ${e.status})` : ""}: ${e.body || "(no words)"}`),
     next,
