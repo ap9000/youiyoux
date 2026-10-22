@@ -9,16 +9,17 @@ import { Bot, MessageSquare, User } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import type { RequestDoc, RequestStatus, RequestTarget } from "@youiyoux/core";
 import { asRequestError, workflowApi, type WorkflowRequestError } from "../../data/workflow.ts";
+import { when } from "../../lib/when.ts";
 import { Badge } from "../../ui/Badge.tsx";
 import { Button } from "../../ui/Button.tsx";
 import { TextArea } from "../../ui/Field.tsx";
 import { Segmented } from "../../ui/Segmented.tsx";
 import { StartEditor } from "../changes/ServiceDown.tsx";
+import { BeforeAfter } from "./BeforeAfter.tsx";
 
 const STATUS_TONE: Record<RequestStatus, "warning" | "accent" | "outline"> = { open: "warning", addressed: "accent", closed: "outline" };
 const STATUS_LABEL: Record<RequestStatus, string> = { open: "Open", addressed: "Addressed", closed: "Closed" };
 
-export const when = (iso: string): string => new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
 /** What failed, in words, with the command when the service is not running. */
 function Failure({ error }: { error: WorkflowRequestError }) {
@@ -129,6 +130,7 @@ export function RequestThread({ request, number, active, onChange, onPick }: { r
           <span className="block truncate font-mono text-mono-sm text-faint">{target.file && target.line ? `${target.file}:${target.line}` : target.route}</span>
         </span>
       </button>
+      {(request.before || request.status !== "open") && <BeforeAfter key={request.updatedAt} id={request.id} route={target.route} worked={request.status !== "open"} />}
       <ol className="space-y-1.5 border-l border-line pl-3" aria-label="Thread">
         <li className="flex flex-wrap items-baseline gap-x-2 text-caption text-faint">
           <Who author={request.author} /> filed it {when(request.createdAt)}

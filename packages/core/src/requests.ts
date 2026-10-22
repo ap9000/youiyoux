@@ -65,6 +65,8 @@ export const RequestDoc = z.object({
   createdAt: IsoTime,
   updatedAt: IsoTime,
   target: RequestTarget,
+  /** The screen as it was when this was filed (`<id>.before.webp` beside it), to compare with after a change. */
+  before: z.string().regex(/^r-[0-9a-f]{10}\.before\.webp$/).optional(),
   thread: z.array(RequestEntry).max(500),
 });
 export type RequestDoc = z.infer<typeof RequestDoc>;

@@ -70,9 +70,27 @@ export const workflowApi = {
   requests: () => call<{ requests: RequestDoc[]; unreadable: Array<{ file: string; reason: string }> }>("GET", "/requests"),
   fileRequest: (kind: RequestDoc["kind"], body: string, target: RequestTarget) => call<RequestDoc>("POST", "/requests", { kind, body, target }),
   replyRequest: (id: string, body: string) => call<RequestDoc>("POST", `/requests/${id}/replies`, { body }),
+  /** The screen when it was filed, and now with the component found again by its line. */
+  compareRequest: (id: string) => call<RequestComparison>("GET", `/requests/${id}/compare`),
   /** Closing and reopening are a person's: the service refuses them from an agent. */
   moveRequest: (id: string, status: RequestStatus, body = "") => call<RequestDoc>("POST", `/requests/${id}/status`, { status, body }),
 };
+
+/** A picture of a request's screen, by the service's URL, and where its component is on it. */
+export interface RequestPictureView {
+  readonly url: string;
+  readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number } | null;
+  readonly page: { readonly width: number; readonly height: number } | null;
+  readonly at: string;
+}
+
+export interface RequestComparison {
+  readonly before: RequestPictureView | null;
+  readonly after: (RequestPictureView & { readonly sinceFiled: boolean; readonly found: boolean }) | null;
+}
+
+/** A URL the service gave (`/api/…`), under the hub's base. */
+export const serviceUrl = (url: string): string => `${import.meta.env.BASE_URL}${url.replace(/^\//, "")}`;
 
 export type Remote<T> = { status: "loading" } | { status: "ready"; value: T } | { status: "error"; error: WorkflowRequestError };
 

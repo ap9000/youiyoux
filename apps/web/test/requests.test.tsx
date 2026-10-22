@@ -3,6 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { RequestDoc } from "@youiyoux/core";
+import { cropOf } from "../src/screens/screens/BeforeAfter.tsx";
 import { RequestComposer, RequestThread } from "../src/screens/screens/Requests.tsx";
 
 const TARGET = { route: "/settings", scope: "here", name: "Button", element: "youi:demo/component/button", file: "app/settings.tsx", line: 12, box: { x: 1, y: 2, width: 3, height: 4 } } as const;
@@ -75,10 +76,42 @@ describe("a request's thread", () => {
     rerender(<ol><RequestThread request={request({ status: "closed" })} number={1} active={false} onChange={onChange} onPick={() => undefined} /></ol>);
     fireEvent.click(screen.getByRole("button", { name: "Reopen" }));
     await waitFor(() => expect(onChange).toHaveBeenCalledTimes(3));
-    expect(posts.map((p) => [p.path, p.body])).toEqual([
+    // A closed request also asks for its before and after (a read).
+    expect(posts.filter((p) => p.body !== undefined).map((p) => [p.path, p.body])).toEqual([
       ["/api/requests/r-0123456789/replies", { body: "Primary, please" }],
       ["/api/requests/r-0123456789/status", { status: "closed", body: "" }],
       ["/api/requests/r-0123456789/status", { status: "open", body: "" }],
     ]);
+  });
+});
+
+describe("before and after", () => {
+  const view = (patch: Record<string, unknown> = {}) => ({ url: "/api/requests/r-0123456789/before.webp", box: { x: 1100, y: 40, width: 160, height: 30 }, page: { width: 1440, height: 900 }, at: AT, ...patch });
+
+  test("the crop keeps room around the component and stays inside the page", () => {
+    expect(cropOf({ x: 1100, y: 40, width: 160, height: 30 }, { width: 1440, height: 900 })).toEqual({ x: 1020, y: 0, width: 320, height: 180 });
+    expect(cropOf({ x: 0, y: 0, width: 1440, height: 900 }, { width: 1440, height: 900 })).toEqual({ x: 0, y: 0, width: 1440, height: 900 });
+  });
+
+  test("an addressed request shows both pictures cropped to the component; one not captured since it was filed says how to capture it", async () => {
+    answer = () => new Response(JSON.stringify({ before: view(), after: { ...view({ url: "/api/requests/r-0123456789/after.webp" }), sinceFiled: false, found: true } }), { status: 200, headers: { "content-type": "application/json" } });
+    render(<ol><RequestThread request={request({ status: "addressed", before: "r-0123456789.before.webp" })} number={1} active onChange={() => undefined} onPick={() => undefined} /></ol>);
+    await waitFor(() => expect(document.querySelector("[data-before-after]")).not.toBeNull());
+    const figure = document.querySelector<HTMLElement>("[data-before-after]")!;
+    expect([...figure.querySelectorAll("img")].map((img) => img.getAttribute("src"))).toEqual(["/api/requests/r-0123456789/before.webp", "/api/requests/r-0123456789/after.webp"]);
+    const img = figure.querySelector<HTMLImageElement>("[data-crop] img")!;
+    expect([img.style.width, img.style.left, img.style.top]).toEqual(["450%", "-318.75%", "0%"]);
+    expect(figure.querySelector("[data-stale]")!.textContent).toContain("youiyoux screens capture --base <the app in development> --route /settings");
+  });
+
+  test("a picture taken since shows the work without a warning; an open request with no before asks for nothing", async () => {
+    answer = () => new Response(JSON.stringify({ before: view(), after: { ...view(), sinceFiled: true, found: true } }), { status: 200, headers: { "content-type": "application/json" } });
+    render(<ol><RequestThread request={request({ status: "closed", before: "r-0123456789.before.webp" })} number={1} active={false} onChange={() => undefined} onPick={() => undefined} /></ol>);
+    await waitFor(() => expect(document.querySelectorAll("[data-crop]")).toHaveLength(2));
+    expect(document.querySelector("[data-stale]")).toBeNull();
+    cleanup();
+    posts = [];
+    render(<ol><RequestThread request={request()} number={1} active={false} onChange={() => undefined} onPick={() => undefined} /></ol>);
+    expect(posts).toEqual([]);
   });
 });

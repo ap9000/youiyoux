@@ -8,7 +8,7 @@
  */
 import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { REQUEST_ID, RequestDoc, writeFileAtomic, type RequestAuthor, type RequestStatus, type RequestTarget } from "@youiyoux/core";
 import { PICTURE_SCALE, screenSlug } from "@youiyoux/scanner";
@@ -37,14 +37,39 @@ export interface RequestStoreOptions {
 
 const authorOf = (actor: Actor): RequestAuthor => ({ kind: actor.kind, name: actor.name });
 
+/** A picture of the request's screen, and where its component is on it (CSS pixels of the page). */
+export interface RequestPicture {
+  /** Absolute path of the image. */
+  readonly file: string;
+  readonly box: RequestTarget["box"] | null;
+  readonly page: RequestTarget["page"] | null;
+  /** When it was taken: the filing time for before, the picture's own time for after. */
+  readonly at: string;
+}
+
+export interface RequestComparison {
+  readonly before: RequestPicture | null;
+  /** The screen's current picture, with the component found again by its file and line. */
+  readonly after: (RequestPicture & {
+    /** Taken after the request was filed, or last reopened: it can show the work done for it. */
+    readonly sinceFiled: boolean;
+    /** The component was found on the new picture by its line (false: shown where it was). */
+    readonly found: boolean;
+  }) | null;
+}
+
+const screensDir = (root: string): string => join(root, ".youi/screens");
+
 export class RequestStore {
   readonly dir: string;
+  private readonly root: string;
   private readonly project: string;
   private readonly options: RequestStoreOptions;
 
   /** `root`: the product's root, where `.youi/` lives; `project`: its id. */
   constructor(root: string, project: string, options: RequestStoreOptions = {}) {
     this.dir = join(root, REQUESTS_DIR);
+    this.root = root;
     this.project = project;
     this.options = options;
   }
@@ -103,7 +128,15 @@ export class RequestStore {
     if (!body) throw new WorkflowError("invalid", "a request needs words: what to look at, or what to change");
     const at = this.now();
     const id = (this.options.newId ?? (() => `r-${randomBytes(5).toString("hex")}`))();
-    return this.write({ schema: "youi.request/v1", id, project: this.project, kind: input.kind, status: "open", body, author: authorOf(actor), createdAt: at, updatedAt: at, target: input.target, thread: [] });
+    // The screen as it is now, kept beside the request: what "after" is compared with.
+    const shot = join(screensDir(this.root), `${screenSlug(input.target.route)}.light.webp`);
+    let before: string | undefined;
+    if (existsSync(shot)) {
+      before = `${id}.before.webp`;
+      await mkdir(this.dir, { recursive: true });
+      await copyFile(shot, join(this.dir, before));
+    }
+    return this.write({ schema: "youi.request/v1", id, project: this.project, kind: input.kind, status: "open", body, author: authorOf(actor), createdAt: at, updatedAt: at, target: input.target, ...(before ? { before } : {}), thread: [] });
   }
 
   async reply(actor: Actor, id: string, body: string): Promise<RequestDoc> {
@@ -113,6 +146,37 @@ export class RequestStore {
     const request = await this.get(id);
     const at = this.now();
     return this.write({ ...request, updatedAt: at, thread: [...request.thread, { author: authorOf(actor), at, body: text }] });
+  }
+
+  /**
+   * Before and after for a request: the picture kept when it was filed, and the screen's picture
+   * now, with the component found again on it by its file and line (from the new capture's places).
+   */
+  async compare(id: string): Promise<RequestComparison> {
+    const request = await this.get(id);
+    const t = request.target;
+    const before = request.before === `${request.id}.before.webp` && existsSync(join(this.dir, request.before)) ? { file: join(this.dir, request.before), box: t.box ?? null, page: t.page ?? null, at: request.createdAt } : null;
+    const slug = screenSlug(t.route);
+    const shot = join(screensDir(this.root), `${slug}.light.webp`);
+    const info = await stat(shot).catch(() => null);
+    if (!info) return { before, after: null };
+    let box = t.box ?? null;
+    let page = t.page ?? null;
+    let found = false;
+    try {
+      const places = JSON.parse(await readFile(join(screensDir(this.root), `${slug}.places.json`), "utf8")) as { size?: { width: number; height: number }; places?: Array<{ name: string; file: string | null; line: number | null; box: NonNullable<RequestTarget["box"]> }> };
+      const again = t.file && t.line ? places.places?.find((p) => p.file === t.file && p.line === t.line && p.name === t.name) : undefined;
+      if (places.size) page = places.size;
+      if (again) {
+        box = again.box;
+        found = true;
+      }
+    } catch {
+      // No places for the new picture: the component is shown where it was.
+    }
+    const since = request.thread.filter((e) => e.status === "open").at(-1)?.at ?? request.createdAt;
+    const at = info.mtime.toISOString();
+    return { before, after: { file: shot, box, page, at, sinceFiled: at > since, found } };
   }
 
   /**
@@ -163,7 +227,7 @@ export function requestBrief(request: RequestDoc, root: string): RequestBrief {
     request.status === "closed" ? "Closed by a person: nothing to do."
       : request.status === "addressed" ? "Marked addressed: a person checks it and closes or reopens it. Reply only if asked."
         : request.kind === "comment" ? `A comment on ${where}: reply with request_reply if it asks something; change code only if it asks for a change.`
-          : `Make the change at ${where}${t.lookalike && t.element ? `, using the System's ${t.element} rather than the hand-built lookalike where that is the fix` : ""}; then call request_addressed with what you changed (file:line). Ask with request_reply first if it is unclear. A person closes it.`;
+          : `Make the change at ${where}${t.lookalike && t.element ? `, using the System's ${t.element} rather than the hand-built lookalike where that is the fix` : ""}; capture the screen again (youiyoux screens capture --base <the app in development> --route ${t.route}) so the person sees it after; then call request_addressed with what you changed (file:line). Ask with request_reply first if it is unclear. A person closes it.`;
   return {
     id: request.id,
     kind: request.kind,

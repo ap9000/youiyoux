@@ -156,6 +156,10 @@
         "name"
       ]
     },
+    "before": {
+      "type": "string",
+      "pattern": "^r-[0-9a-f]{10}\\.before\\.webp$"
+    },
     "thread": {
       "maxItems": 500,
       "type": "array",

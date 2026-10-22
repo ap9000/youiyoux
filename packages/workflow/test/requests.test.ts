@@ -1,6 +1,6 @@
 /** Requests on captured screens: one file each in the product, a thread, and who may move them on. */
 import { readFile, readdir, writeFile } from "node:fs/promises";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -103,5 +103,80 @@ describe("requests through the loopback service", () => {
     expect(listed.json).toMatchObject({ requests: [{ id, status: "closed" }], unreadable: [] });
     expect((await call("GET", "/api/requests/r-0000000000", undefined, null)).status).toBe(404);
     expect((await call("GET", "/api/requests/..%2Fescape", undefined, null)).status).toBe(404);
+    // Before and after by this service's URL, never a path on disk; no picture is a 404.
+    const compare = await call("GET", `/api/requests/${id}/compare`, undefined, null);
+    expect(compare.json).toEqual({ before: null, after: null });
+    expect((await call("GET", `/api/requests/${id}/after.webp`, undefined, null)).status).toBe(404);
+
+    mkdirSync(join(box.project, ".youi/screens"), { recursive: true });
+    writeFileSync(join(box.project, ".youi/screens/settings.light.webp"), "PICTURE");
+    const pictured = (await call("POST", "/api/requests", { kind: "comment", body: "Spacing", target: TARGET })).json.id as string;
+    const urls = (await call("GET", `/api/requests/${pictured}/compare`, undefined, null)).json as { before: Record<string, unknown>; after: Record<string, unknown> };
+    expect(urls.before).toMatchObject({ url: `/api/requests/${pictured}/before.webp`, box: TARGET.box });
+    expect(urls.after).toMatchObject({ url: `/api/requests/${pictured}/after.webp`, found: false });
+    expect(JSON.stringify(urls)).not.toContain(box.project);
+    const picture = await new Promise<{ status: number; type: string | undefined; body: string }>((done, fail) => {
+      request(new URL(`/api/requests/${pictured}/before.webp`, service.url), (res) => {
+        let body = "";
+        res.on("data", (c: Buffer) => (body += c.toString()));
+        res.on("end", () => done({ status: res.statusCode ?? 0, type: res.headers["content-type"], body }));
+      }).on("error", fail).end();
+    });
+    expect(picture).toEqual({ status: 200, type: "image/webp", body: "PICTURE" });
+  });
+});
+
+describe("before and after", () => {
+  const root = mkdtempSync(join(tmpdir(), "youi-requests-compare-"));
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+  const screens = join(root, ".youi/screens");
+  let clock = Date.parse("2026-10-22T12:00:00Z");
+  const store = new RequestStore(root, "acme", { now: () => new Date((clock += 60_000)) });
+  const places = (box: { x: number; y: number; width: number; height: number }) => JSON.stringify({ schema: "youiyoux.places/v1", size: { width: 1440, height: 1800 }, places: [{ name: "Button", file: "app/settings/index.tsx", line: 12, box }] });
+
+  test("filing keeps the screen as it was; after a capture the component is found again by its line, and the picture says if it came after the work", async () => {
+    mkdirSync(screens, { recursive: true });
+    writeFileSync(join(screens, "settings.light.webp"), "BEFORE");
+    writeFileSync(join(screens, "settings.places.json"), places({ x: 10, y: 20, width: 80, height: 32 }));
+    const filed = await store.create(PERSON, { kind: "change", body: "Bigger", target: TARGET });
+    expect(filed.before).toBe(`${filed.id}.before.webp`);
+    expect(readFileSync(join(root, REQUESTS_DIR, filed.before!), "utf8")).toBe("BEFORE");
+
+    // Not captured since it was filed: after is the same picture, and says it is no newer.
+    const older = new Date(Date.parse(filed.createdAt) - 5_000);
+    utimesSync(join(screens, "settings.light.webp"), older, older);
+    let compared = await store.compare(filed.id);
+    expect(compared.before).toMatchObject({ box: TARGET.box, page: TARGET.page, at: filed.createdAt });
+    expect(compared.after).toMatchObject({ found: true, sinceFiled: false });
+
+    // The agent made the change and captured the route again (before marking it addressed): a new picture, the button moved and grew.
+    writeFileSync(join(screens, "settings.light.webp"), "AFTER");
+    writeFileSync(join(screens, "settings.places.json"), places({ x: 10, y: 40, width: 120, height: 44 }));
+    const captured = new Date(Date.parse(filed.createdAt) + 30_000);
+    utimesSync(join(screens, "settings.light.webp"), captured, captured);
+    const addressed = await store.setStatus(AGENT, filed.id, "addressed", "Bigger at app/settings/index.tsx:12");
+    expect(Date.parse(addressed.updatedAt)).toBeGreaterThan(captured.getTime());
+    compared = await store.compare(filed.id);
+    expect(compared.after).toMatchObject({ file: join(screens, "settings.light.webp"), box: { x: 10, y: 40, width: 120, height: 44 }, page: { width: 1440, height: 1800 }, found: true, sinceFiled: true });
+
+    // Reopened: the same picture predates the reopening, so it no longer shows new work.
+    await store.setStatus(PERSON, filed.id, "open", "Not quite");
+    expect((await store.compare(filed.id)).after!.sinceFiled).toBe(false);
+    await store.setStatus(AGENT, filed.id, "addressed", "Again");
+    expect(readFileSync(compared.before!.file, "utf8")).toBe("BEFORE");
+
+    // Its line gone from the new places: shown where it was, and said so.
+    writeFileSync(join(screens, "settings.places.json"), places({ x: 0, y: 0, width: 1, height: 1 }).replace('"line":12', '"line":99'));
+    expect((await store.compare(filed.id)).after).toMatchObject({ box: TARGET.box, found: false });
+  });
+
+  test("with no captured screen there is nothing to compare, and a before that is not the request's own is ignored", async () => {
+    const elsewhere = await store.create(PERSON, { kind: "comment", body: "Hm", target: { ...TARGET, route: "/never" } });
+    expect(elsewhere.before).toBeUndefined();
+    expect(await store.compare(elsewhere.id)).toEqual({ before: null, after: null });
+    const file = join(root, REQUESTS_DIR, `${elsewhere.id}.json`);
+    const other = (await store.list()).requests.find((r) => r.before)!;
+    writeFileSync(file, JSON.stringify({ ...elsewhere, before: other.before }));
+    expect((await store.compare(elsewhere.id)).before).toBeNull();
   });
 });

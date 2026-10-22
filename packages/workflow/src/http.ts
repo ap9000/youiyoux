@@ -159,11 +159,24 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string, opti
   }
   if (path === "/api/requests" && method === "GET") return send(res, 200, await (await workflow.requests()).list());
   if (path === "/api/requests" && method === "POST") return send(res, 201, await (await workflow.requests()).create(actor, parse(RequestInput, await readJson(req))));
-  const request = /^\/api\/requests\/(r-[0-9a-f]{10})(?:\/(replies|status))?$/.exec(path);
+  const request = /^\/api\/requests\/(r-[0-9a-f]{10})(?:\/(replies|status|compare|before\.webp|after\.webp))?$/.exec(path);
   if (request) {
     const [, id, action] = request as unknown as [string, string, string | undefined];
     const store = await workflow.requests();
     if (!action && method === "GET") return send(res, 200, await store.get(id));
+    if (action === "compare" && method === "GET") {
+      const { before, after } = await store.compare(id);
+      // Each picture by this service's URL, never by its path on disk.
+      const view = <T extends { file: string }>(picture: T | null, which: string) => (picture ? { ...picture, file: undefined, url: `/api/requests/${id}/${which}.webp` } : null);
+      return send(res, 200, { before: view(before, "before"), after: view(after, "after") });
+    }
+    if ((action === "before.webp" || action === "after.webp") && method === "GET") {
+      const picture = (await store.compare(id))[action === "before.webp" ? "before" : "after"];
+      if (!picture) throw new WorkflowError("not-found", `${id} has no ${action.replace(".webp", "")} picture`);
+      res.writeHead(200, { ...BASE_HEADERS, "content-type": "image/webp", "cache-control": "no-store" });
+      res.end(await readFile(picture.file));
+      return;
+    }
     if (action === "replies" && method === "POST") return send(res, 200, await store.reply(actor, id, parse(ReplyInput, await readJson(req)).body));
     if (action === "status" && method === "POST") {
       const input = parse(StatusInput, await readJson(req));

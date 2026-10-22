@@ -8,7 +8,7 @@ real output from Toolroll's console. Setup is one command: `npx youiyoux agents 
 1. **Before writing a component**: call `ui_find_component` with the need in words. Reuse what it names.
 2. **After UI edits**: run `npx -y youiyoux check --diff`. Apply each fix.
 3. **After changing a component**: call `ui_render` with its file. Look at the images; fix new issues.
-4. **Requests on the screens**: call `requests_list` before UI work. After a requested change, call `request_addressed` with what you changed; a person closes it.
+4. **Requests on the screens**: call `requests_list` before UI work. After a requested change, capture its screen again (`youiyoux screens capture --base <app> --route <route>`) so the person sees before and after, then call `request_addressed` with what you changed; a person closes it.
 
 ## The rule it installs
 
