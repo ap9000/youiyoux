@@ -14,6 +14,7 @@ import { EVERY_SCREEN, type UsageIndex } from "../../data/usage.ts";
 import { useListKeys } from "../../shell/keyboard.ts";
 import { Badge } from "../../ui/Badge.tsx";
 import { Button } from "../../ui/Button.tsx";
+import { Disclosure } from "../../ui/Disclosure.tsx";
 import { EmptyState } from "../../ui/EmptyState.tsx";
 import { PaneHeader, ResourceState } from "../../ui/Pane.tsx";
 import { ScreenImage } from "../../ui/ScreenImage.tsx";
@@ -96,10 +97,11 @@ function ScreenGrid({ model, index, screens }: { model: Model; index: UsageIndex
             );
           })}
           {screens.unattributedFiles.length > 0 && (
-            <details className="max-w-2xl text-small text-muted">
-              <summary className="min-h-11 cursor-pointer content-center rounded-sm py-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent">
-                Not on any screen · {screens.unattributedFiles.length} {screens.unattributedFiles.length === 1 ? "file" : "files"}
-              </summary>
+            <Disclosure
+              className="max-w-2xl text-small text-muted"
+              summaryClassName="min-h-11 rounded-sm py-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              summary={<span>Not on any screen · {screens.unattributedFiles.length} {screens.unattributedFiles.length === 1 ? "file" : "files"}</span>}
+            >
               {screens.unattributed.total > 0 && <p className="mt-1">{issueBreakdown(screens.unattributed).join(", ")}</p>}
               <ul className="mt-3 space-y-3">
                 {screens.unattributedFiles.map(({ project, file, sites, reason }) => (
@@ -110,7 +112,7 @@ function ScreenGrid({ model, index, screens }: { model: Model; index: UsageIndex
                   </li>
                 ))}
               </ul>
-            </details>
+            </Disclosure>
           )}
         </div>
       </div>

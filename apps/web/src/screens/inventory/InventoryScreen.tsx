@@ -23,6 +23,7 @@ import { retryInventory, useDetectState, useInventoryState } from "../../data/st
 import type { DetectReport, InventoryChunk, InventoryExtras, InventoryFlag, InventoryIndex, InventoryRoleIndex } from "../../data/types.ts";
 import { Badge } from "../../ui/Badge.tsx";
 import { Button } from "../../ui/Button.tsx";
+import { Disclosure } from "../../ui/Disclosure.tsx";
 import { EmptyState } from "../../ui/EmptyState.tsx";
 import { PaneHeader, ResourceState } from "../../ui/Pane.tsx";
 import { compareAnchor, CompareCard, fixAnchor, FixCard } from "./Compare.tsx";
@@ -305,8 +306,11 @@ function Headline({ index, views: all, ready, filtered }: { index: InventoryInde
           </ol>
         </div>
       )}
-      <details className="group rounded-lg border border-line bg-surface px-4 py-3 text-small max-md:py-0">
-        <summary className="cursor-pointer font-medium text-ink max-md:min-h-11 max-md:py-3">How grouping works</summary>
+      <Disclosure
+        className="rounded-lg border border-line bg-surface px-4 py-3 text-small max-md:py-0"
+        summaryClassName="justify-between font-medium text-ink max-md:min-h-11 max-md:py-3"
+        summary="How grouping works"
+      >
         <div className="mt-2 space-y-2 text-ink-2 max-md:mt-0 max-md:pb-3">
           <p>
             Every button, input, card, badge, dialog, tab and link-as-button is grouped into families by its resolved shape: height, padding, radius, font size and weight, from Tailwind classes and CSS rules with each project&rsquo;s own theme. Colour is ignored.
@@ -326,7 +330,7 @@ function Headline({ index, views: all, ready, filtered }: { index: InventoryInde
             ))}
           </ul>
         </div>
-      </details>
+      </Disclosure>
     </section>
   );
 }

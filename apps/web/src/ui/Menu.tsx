@@ -91,7 +91,7 @@ export function MenuButton({ label, children, items, className }: MenuButtonProp
         {children}
       </Button>
       {open && (
-        <div ref={menuRef} id={menuId} role="menu" aria-label={label} onKeyDown={onMenuKey} className="absolute top-full right-0 z-20 mt-1 w-72 rounded-lg border border-line bg-surface p-1 shadow-popover animate-pop">
+        <div ref={menuRef} id={menuId} role="menu" aria-label={label} onKeyDown={onMenuKey} className="absolute top-full right-0 z-20 mt-1 w-72 rounded-lg border border-line bg-surface p-1 shadow-popover origin-top-right animate-menu">
           {items.map((item) => (
             <button
               key={item.label}

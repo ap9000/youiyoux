@@ -87,12 +87,53 @@
   }
 }
 
+/* A menu grows out of the corner it hangs from (set its transform-origin there). */
+@keyframes yx-menu {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.96);
+  }
+}
+
+@keyframes yx-unfold {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+/* Disclosures unfold: the height opens with the chevron's turn and the content slides up into
+   place, a hair ahead of the height; it folds back the same way. Older browsers just snap. */
+@supports (interpolate-size: allow-keywords) {
+  details {
+    interpolate-size: allow-keywords;
+  }
+  details::details-content {
+    block-size: 0;
+    overflow-y: clip;
+    transition:
+      block-size var(--yx-duration-base) var(--yx-easing-out),
+      content-visibility var(--yx-duration-base) allow-discrete;
+  }
+  details[open]::details-content {
+    block-size: auto;
+  }
+}
+
+details[open] > :not(summary) {
+  animation: yx-unfold var(--yx-duration-fast) var(--yx-easing-out) both;
+}
+
 @utility animate-enter {
   animation: yx-enter var(--yx-duration-base) var(--yx-easing-out) both;
 }
 
 @utility animate-pop {
   animation: yx-pop var(--yx-duration-base) var(--yx-easing-out) both;
+}
+
+@utility animate-menu {
+  animation: yx-menu var(--yx-duration-fast) var(--yx-easing-out) both;
 }
 
 @utility animate-fade {
