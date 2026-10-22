@@ -6,9 +6,11 @@
  *
  *   npm      weekly downloads (api.npmjs.org) and licence and repository (the registry's /latest)
  *            for the main package of each candidate
- *   GitHub   stars, last push, archived and SPDX licence of the candidate's repository;
- *            registries' repositories are found by a search whose result's homepage is the
- *            registry's own homepage, so a lookalike repository is never credited
+ *   GitHub   stars, last push, archived and SPDX licence of the candidate's repository.
+ *            A registry's repository needs a link both ways: its homepage links to a repository
+ *            whose own homepage is that site (coss.com/ui links cosscom/ui, whose homepage is
+ *            coss.com), or else a search finds one whose homepage is exactly the registry's.
+ *            Either way a lookalike repository is never credited
  */
 import { CONCEPTS } from "./aliases.ts";
 import { z } from "zod";
@@ -18,7 +20,8 @@ import { githubRepo, SHADCN, sourceSlug, spdxOrNull } from "./sources.ts";
 import type { GithubSignal, NpmSignal, SignalsFile } from "./store.ts";
 
 const HOUR = 3_600_000;
-export const SIGNAL_TTL = { npmMs: 24 * HOUR, githubMs: 7 * 24 * HOUR, registryRepoMs: 30 * 24 * HOUR } as const;
+/** A registry with no repository found is asked again after a day: that answer is the one most likely to change. */
+export const SIGNAL_TTL = { npmMs: 24 * HOUR, githubMs: 7 * 24 * HOUR, registryRepoMs: 30 * 24 * HOUR, registryRepoMissMs: 24 * HOUR } as const;
 
 export interface SignalBudgets {
   /** npm packages looked up per sync (two requests each). */
@@ -63,6 +66,42 @@ export function sameHomepage(a: string | null | undefined, b: string | null | un
   if (!a || !b) return false;
   const ka = key(a);
   return ka !== null && ka === key(b);
+}
+
+/**
+ * `https://coss.com` and `https://coss.com/ui` are one site: the same host (less www), with one
+ * path inside the other, segment by segment (`/ui` is not inside `/uix`).
+ */
+export function sameSite(a: string | null | undefined, b: string | null | undefined): boolean {
+  const parts = (value: string): { host: string; path: string } | null => {
+    try {
+      const url = new URL(value.includes("://") ? value : `https://${value}`);
+      return { host: url.hostname.replace(/^www\./, "").toLowerCase(), path: url.pathname.replace(/\/+$/, "").toLowerCase() };
+    } catch {
+      return null;
+    }
+  };
+  if (!a || !b) return false;
+  const pa = parts(a);
+  const pb = parts(b);
+  if (!pa || !pb || pa.host !== pb.host) return false;
+  const inside = (outer: string, inner: string): boolean => outer === "" || inner === outer || inner.startsWith(`${outer}/`);
+  return inside(pa.path, pb.path) || inside(pb.path, pa.path);
+}
+
+/** GitHub's own pages, which look like `owner/repo` links but are not repositories. */
+const NOT_OWNERS = new Set(["about", "apps", "collections", "contact", "enterprise", "explore", "features", "login", "marketplace", "orgs", "pricing", "settings", "site", "sponsors", "topics"]);
+
+/** The GitHub repositories a page links to, most-linked first. */
+export function linkedRepos(html: string): string[] {
+  const names: string[] = [];
+  for (const match of html.matchAll(/https?:\/\/(?:www\.)?github\.com\/([A-Za-z0-9-]+)\/([A-Za-z0-9_.-]+)/g)) {
+    const owner = match[1]!;
+    const repo = match[2]!.replace(/\.git$/, "").replace(/\.+$/, "");
+    if (NOT_OWNERS.has(owner.toLowerCase()) || !repo || repo.startsWith(".")) continue;
+    names.push(`${owner}/${repo}`);
+  }
+  return byUse(names);
 }
 
 const GithubRepoBody = z.object({
@@ -151,11 +190,23 @@ export async function refreshSignals(entries: readonly LibraryEntry[], registrie
     npm[name] = { weeklyDownloads: typeof count === "number" ? count : null, license: spdxOrNull(meta?.license), repo: githubRepo(typeof repository === "string" ? repository : null), fetchedAt: at };
   });
 
-  // Registries' repositories: the official one is known; the rest are searched for, most items first.
+  // Registries' repositories: the official one is known; the rest are found from their homepage's
+  // links, else searched for, most items first.
   registryRepos[SHADCN.name] = { repo: SHADCN.repo, checkedAt: at };
-  const unsearched = [...registries].filter((r) => r.name !== SHADCN.name && r.homepage && !fresh(registryRepos[r.name]?.checkedAt, SIGNAL_TTL.registryRepoMs, now)).sort((a, b) => b.items - a.items || a.name.localeCompare(b.name));
-  for (const registry of unsearched.slice(0, budgets.githubSearches)) {
-    if (!client.hasBudget("github-search")) break;
+  const known = (name: string): boolean => {
+    const prior = registryRepos[name];
+    return fresh(prior?.checkedAt, prior?.repo ? SIGNAL_TTL.registryRepoMs : SIGNAL_TTL.registryRepoMissMs, now);
+  };
+  const unsearched = [...registries].filter((r) => r.name !== SHADCN.name && r.homepage && !known(r.name)).sort((a, b) => b.items - a.items || a.name.localeCompare(b.name));
+  // Homepage lookups spend the repository budget; searches have their own.
+  const spend = { repoCalls: budgets.githubRepos };
+  for (const registry of unsearched) {
+    const linked = await homepageRepo(registry.homepage!, client, github, at, report, spend);
+    if (linked) {
+      registryRepos[registry.name] = { repo: linked, checkedAt: at };
+      continue;
+    }
+    if (report.github.searches >= budgets.githubSearches || !client.hasBudget("github-search")) continue;
     const query = `${sourceSlug(registry.name).replace(/-ui$/, "")} in:name`;
     const result = await client.json(`https://api.github.com/search/repositories?q=${encodeURIComponent(query)}&per_page=10`);
     report.github.searches++;
@@ -183,7 +234,7 @@ export async function refreshSignals(entries: readonly LibraryEntry[], registrie
     }
     return true;
   });
-  const repoTodo = repoStale.slice(0, budgets.githubRepos);
+  const repoTodo = repoStale.slice(0, spend.repoCalls);
   await pool(repoTodo, async (repo) => {
     if (!client.hasBudget("github-core")) return;
     const result = await client.json(`https://api.github.com/repos/${repo}`);
@@ -199,11 +250,43 @@ export async function refreshSignals(entries: readonly LibraryEntry[], registrie
       report.github.failed++;
       return;
     }
-    const body = parsed.data;
-    github[repo] = { found: true, repo: body.full_name, htmlUrl: body.html_url, stars: body.stargazers_count, pushedAt: body.pushed_at, archived: body.archived, spdx: spdxOrNull(body.license?.spdx_id), fetchedAt: at };
+    github[repo] = githubSignal(parsed.data, at);
   });
   report.github.leftUnknown = repos.filter((repo) => !github[repo]).length;
   return { signals: { npm, github, registryRepos }, report };
+}
+
+function githubSignal(body: z.infer<typeof GithubRepoBody>, at: string): GithubSignal {
+  return { found: true, repo: body.full_name, htmlUrl: body.html_url, stars: body.stargazers_count, pushedAt: body.pushed_at, archived: body.archived, spdx: spdxOrNull(body.license?.spdx_id), fetchedAt: at };
+}
+
+/** Repositories tried per registry homepage, most-linked first. */
+const HOMEPAGE_REPOS = 3;
+
+/**
+ * The repository a registry's homepage links to and that names that site as its own homepage,
+ * or null. The page is read once for its links and never kept; each repository looked at is
+ * cached as a GitHub signal, so the later lookup is not asked again.
+ */
+async function homepageRepo(homepage: string, client: PoliteClient, github: Record<string, GithubSignal>, at: string, report: SignalReport, spend: { repoCalls: number }): Promise<string | null> {
+  const page = await client.get(homepage, "text/html");
+  client.cache.delete(homepage);
+  if (!page.ok) return null;
+  for (const repo of linkedRepos(page.body).slice(0, HOMEPAGE_REPOS)) {
+    if (spend.repoCalls <= 0 || !client.hasBudget("github-core")) return null;
+    spend.repoCalls--;
+    const result = await client.json(`https://api.github.com/repos/${repo}`);
+    report.github.looked++;
+    if (!result.ok) {
+      if (result.reason === "rate-limited") report.github.rateLimited = true;
+      continue;
+    }
+    const parsed = GithubRepoBody.safeParse(result.value);
+    if (!parsed.success || !sameSite(parsed.data.homepage, homepage)) continue;
+    github[parsed.data.full_name] = githubSignal(parsed.data, at);
+    return parsed.data.full_name;
+  }
+  return null;
 }
 
 /** The candidate's repository: its registry's, or its package's. */

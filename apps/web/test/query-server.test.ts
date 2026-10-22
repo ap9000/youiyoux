@@ -81,13 +81,14 @@ describe("/__youi/query", () => {
 
   test("discover facets: licence known or unknown, headless or styled, on a need and when browsing", async () => {
     const licences = (body: Record<string, unknown>) => (body.hits as Array<{ license: string }>).map((h) => h.license);
-    for (const q of ["&q=command", ""]) {
-      const known = await ok(`/__youi/query?kind=discover${q}&licence=known&limit=100`);
-      const unknown = await ok(`/__youi/query?kind=discover${q}&licence=unknown&limit=100`);
-      expect(licences(known).length, q).toBeGreaterThan(0);
-      expect(licences(known).every((l) => l !== "unknown"), q).toBe(true);
-      expect(licences(unknown).length, q).toBeGreaterThan(0);
-      expect(licences(unknown).every((l) => l === "unknown"), q).toBe(true);
+    // Browsing holds both; on a need, command menus are all known (coss's is AGPL-3.0) and Aceternity's spotlight is not
+    // (no repository links both ways with its homepage).
+    for (const [q, kinds] of [["", ["known", "unknown"]], ["&q=command", ["known"]], ["&q=spotlight", ["unknown"]]] as const) {
+      for (const kind of kinds) {
+        const hits = licences(await ok(`/__youi/query?kind=discover${q}&licence=${kind}&limit=100`));
+        expect(hits.length, `${q} ${kind}`).toBeGreaterThan(0);
+        expect(hits.every((l) => (l === "unknown") === (kind === "unknown")), `${q} ${kind}`).toBe(true);
+      }
     }
     const names = (body: Record<string, unknown>) => (body.hits as Array<{ name: string }>).map((h) => h.name);
     const all = await ok("/__youi/query?kind=discover&q=toast&limit=100");

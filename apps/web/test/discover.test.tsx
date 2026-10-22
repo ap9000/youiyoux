@@ -135,8 +135,10 @@ describe("search by need (c1)", () => {
     expect(text(shadcn)).toContain("MIT");
     expect(text(shadcn)).toContain("42M/wk via cmdk");
     expect(within(shadcn).getByText("npx shadcn add command")).toBeTruthy();
+    // coss is AGPL-3.0: a known licence, marked as copyleft.
     const coss = card("lib:coss/component/command");
-    expect(within(coss).getByText("licence unknown")).toBeTruthy();
+    expect(within(coss).getByText("AGPL-3.0 · copyleft").getAttribute("title")).toMatch(/^Copyleft: /);
+    expect(within(shadcn).queryByText(/copyleft/)).toBeNull();
     expect(within(coss).getByText("npx shadcn add @coss/command")).toBeTruthy();
     expect(calls.filter((c) => c.startsWith("/__youi/query"))[0]).toMatch(/kind=discover.*q=command\+menu/);
     // Listings only: no preview asked for, and nothing written under the cache's source/ or preview/ for them.
@@ -177,7 +179,7 @@ describe("search by need (c1)", () => {
     await waitFor(() => expect(card("lib:shadcn/component/command")).not.toBeNull());
     expect(text(document.querySelector("[data-results-summary]")!)).toContain("from this snapshot's listings");
     expect(text(card("lib:shadcn/component/command"))).toContain("42M/wk via cmdk");
-    expect(text(card("lib:coss/component/command"))).toContain("licence unknown");
+    expect(text(card("lib:coss/component/command"))).toContain("AGPL-3.0 · copyleft");
     expect(calls.filter((c) => c.includes("discover-preview"))).toEqual([]);
     // The in-memory search: by need, facets counted before paging.
     const page = searchListings(listings, { ...parseQuery("?q=command"), licence: "known" }, 2);
@@ -294,8 +296,8 @@ describe("pinned comparison (c3)", () => {
 });
 
 describe("Save to Library and Add to my project (c4)", () => {
-  const open = async (id: string, name: RegExp) => {
-    show("?q=command%20menu");
+  const open = async (id: string, name: RegExp, q = "command%20menu") => {
+    show(`?q=${q}`);
     await waitFor(() => expect(card(id)).not.toBeNull());
     fireEvent.click(within(card(id)).getByRole("button", { name }));
     const drawer = await screen.findByTestId("candidate-drawer");
@@ -307,16 +309,16 @@ describe("Save to Library and Add to my project (c4)", () => {
   };
 
   test("an unknown licence: Add to my project is off with the reason in plain words; Save to Library drafts a save", async () => {
-    const actions = await open("lib:coss/component/command", /^Preview command in your theme/);
+    const actions = await open("lib:aceternity/component/spotlight", /^Preview spotlight in your theme/, "spotlight");
     const add = within(actions).getByRole("button", { name: /Add to my project/ });
     expect(add.hasAttribute("disabled")).toBe(true);
-    expect(text(actions.querySelector("[data-refusal]")!)).toBe("command's licence is unknown: nothing backs one, so it cannot be adopted. Save it to the Library as a reference instead, or find its licence first.");
+    expect(text(actions.querySelector("[data-refusal]")!)).toBe("spotlight's licence is unknown: nothing backs one, so it cannot be adopted. Save it to the Library as a reference instead, or find its licence first.");
     expect(add.getAttribute("aria-describedby")).toBe("adopt-refusal");
     // The exact install command is shown to copy; nothing runs it.
-    expect(text(actions.querySelector("[data-install]")!)).toBe("npx shadcn add @coss/command");
+    expect(text(actions.querySelector("[data-install]")!)).toBe("npx shadcn add @aceternity/spotlight");
     fireEvent.click(within(actions).getByRole("button", { name: /Save to Library/ }));
     await within(actions).findByRole("status");
-    expect(drafts).toEqual([{ kind: "library", content: { entry: expect.objectContaining({ id: "lib:coss/component/command", license: "unknown" }), request: "save", reason: "", swapsWith: [] } }]);
+    expect(drafts).toEqual([{ kind: "library", content: { entry: expect.objectContaining({ id: "lib:aceternity/component/spotlight", license: "unknown" }), request: "save", reason: "", swapsWith: [] } }]);
     expect(within(actions).getByRole("link", { name: "open it in Changes" }).getAttribute("href")).toBe("/changes/d-0123456789");
   });
 

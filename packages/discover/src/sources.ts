@@ -16,7 +16,7 @@ import { z } from "zod";
 import { LibraryEntry, sha256, type LibraryLicense } from "@youiyoux/core";
 import { hasPhrase, normalize, type Concept } from "./aliases.ts";
 
-export const CURATED = ["@coss", "@kibo-ui", "@magicui", "@origin", "@aceternity"] as const;
+export const CURATED = ["@coss", "@kibo-ui", "@magicui", "@aceternity"] as const;
 
 export const SHADCN = {
   name: "@shadcn",

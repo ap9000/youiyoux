@@ -391,6 +391,25 @@
     "content-type": "application/json"
    },
    "inline": "{\"objects\":[],\"total\":0}"
+  },
+  {
+   "url": "https://coss.com/ui",
+   "status": 200,
+   "headers": {
+    "content-type": "text/html; charset=utf-8"
+   },
+   "body": "coss-homepage.html"
+  },
+  {
+   "url": "https://api.github.com/repos/cosscom/ui",
+   "status": 200,
+   "headers": {
+    "content-type": "application/json; charset=utf-8",
+    "x-ratelimit-limit": "60",
+    "x-ratelimit-remaining": "49",
+    "etag": "\"fixture-c0551c0551c05510\""
+   },
+   "body": "github-repo-cosscom-ui.json"
   }
  ]
 }

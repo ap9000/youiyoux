@@ -4,6 +4,6 @@
   "license": "MIT",
   "private": true,
   "type": "module",
-  "exports": { ".": "./src/index.ts", "./rules": "./src/rules.ts", "./detect-draft": "./src/detect-draft.ts" },
+  "exports": { ".": "./src/index.ts", "./rules": "./src/rules.ts", "./licence": "./src/licence.ts", "./detect-draft": "./src/detect-draft.ts" },
   "dependencies": { "zod": "4.6.5", "yaml": "2.9.1" }
 }

@@ -1,5 +1,6 @@
-import { cleanData as safe } from "@youiyoux/discover";
 /** Terminal output for `youiyoux discover`: the sync summary, ranked candidates, and one candidate in full. */
+import { copyleft } from "@youiyoux/core";
+import { cleanData as safe } from "@youiyoux/discover";
 import type { DiscoverSearch, DiscoverShow, SyncSummary } from "@youiyoux/discover";
 import { ms, padEnd, plural, style, truncate } from "./ui.ts";
 
@@ -44,7 +45,7 @@ export function renderDiscoverSearch(result: DiscoverSearch): string {
   const width = Math.min(40, Math.max(...result.hits.map((h) => (h.source.ref ?? h.name).length)));
   const rows = result.hits.flatMap((h) => {
     const s = h.signals;
-    const facts = [h.license === "unknown" ? style.warn("licence unknown") : h.license, s.via ? `${compact(s.via.weeklyDownloads)}/wk via ${s.via.package}` : `${compact(s.weeklyDownloads)}/wk`, `${compact(s.stars)}★`, ...(s.archived ? [style.error("archived")] : [])].join(" · ");
+    const facts = [h.license === "unknown" ? style.warn("licence unknown") : copyleft(h.license) ? style.warn(`${h.license} (copyleft)`) : h.license, s.via ? `${compact(s.via.weeklyDownloads)}/wk via ${s.via.package}` : `${compact(s.weeklyDownloads)}/wk`, `${compact(s.stars)}★`, ...(s.archived ? [style.error("archived")] : [])].join(" · ");
     return [`  ${padEnd(truncate(h.source.ref ?? h.name, 40), width)}  ${truncate(h.summary, 72)}`, `  ${" ".repeat(width)}  ${style.dim(facts)}  ${h.install ? h.install.command : ""}`];
   });
   const from = result.offset ?? 0;

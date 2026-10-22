@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { canMove, DefinitionError, ELEMENT_STAGES, isFamilyId, isLibraryId, LibraryEntry, loadLibrary, systemStage } from "../src/index.ts";
+import { canMove, copyleft, DefinitionError, ELEMENT_STAGES, isFamilyId, isLibraryId, LibraryEntry, loadLibrary, systemStage } from "../src/index.ts";
 
 const entry = {
   schema: "youi.library/v1",
@@ -106,5 +106,17 @@ describe("loadLibrary", () => {
     expect((await loadLibrary(root)).entries.map((e) => e.id)).toEqual([entry.id]);
     await writeFile(join(root, "library/example/copy.library.json"), JSON.stringify(entry));
     await expect(loadLibrary(root)).rejects.toBeInstanceOf(DefinitionError);
+  });
+});
+
+describe("copyleft", () => {
+  test("GPL and AGPL are strong copyleft; LGPL, MPL and permissive licences are not", () => {
+    for (const spdx of ["AGPL-3.0", "AGPL-3.0-only", "GPL-3.0-or-later", "GPL-2.0", "MIT AND GPL-3.0", "(GPL-2.0 WITH Classpath-exception-2.0)"]) expect(copyleft(spdx), spdx).toBe(true);
+    for (const spdx of ["MIT", "Apache-2.0", "LGPL-3.0", "MPL-2.0", "ISC"]) expect(copyleft(spdx), spdx).toBe(false);
+  });
+
+  test("a choice that offers a permissive licence is not copyleft", () => {
+    expect(copyleft("(MIT OR GPL-3.0)")).toBe(false);
+    expect(copyleft("GPL-2.0 OR AGPL-3.0")).toBe(true);
   });
 });

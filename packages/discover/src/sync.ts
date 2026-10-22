@@ -166,6 +166,9 @@ export async function syncIndex(options: SyncOptions): Promise<SyncSummary> {
     else if (options.maxRegistries !== undefined && toFetch.length >= options.maxRegistries) sources.push({ id: registry.name, url: registryUrl(registry.template), outcome: "skipped", reason: "over --max-registries", httpStatus: null, items: 0, health: healthOf(registry) });
     else toFetch.push(registry);
   }
+  // A chosen source the directory no longer lists gives nothing; say so rather than count it as fetched.
+  const missing = directory.ok ? selected.filter((name) => !listed.some((r) => r.name === name)) : [];
+  for (const name of missing) sources.push({ id: name, url: SHADCN.directory, outcome: "skipped", reason: "not in the registry directory", httpStatus: null, items: 0, health: null });
 
   // Community registries, each on its own: a failure is recorded and the rest go on.
   const community = await Promise.all(
@@ -236,7 +239,7 @@ export async function syncIndex(options: SyncOptions): Promise<SyncSummary> {
     catalogBytes: await catalogBytes(options.cacheDir),
     selectedSources: selected.length,
     index: { bytes: Buffer.byteLength(JSON.stringify(index) + "\n"), entries: final.length, mirrorsCollapsed, iconRegistriesSkipped: sources.filter((s) => s.reason === iconReason).length },
-    warnings: client.warnings,
+    warnings: [...client.warnings, ...missing.map((name) => `${name} is chosen but the registry directory no longer lists it: \`youiyoux discover sources remove ${name}\``)],
     builtAt,
     durationMs: Math.round(performance.now() - started),
     entries: { total: final.length, official: final.filter((e) => e.source.ref?.startsWith(`${SHADCN.name}/`)).length, community: final.filter((e) => e.source.kind === "shadcn-registry" && !e.source.ref?.startsWith(`${SHADCN.name}/`)).length, npm: final.filter((e) => e.source.kind === "npm").length },

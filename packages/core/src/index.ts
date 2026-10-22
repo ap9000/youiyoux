@@ -5,6 +5,7 @@ export * from "./files.ts";
 export * from "./hash.ts";
 export * from "./hierarchy.ts";
 export * from "./ids.ts";
+export * from "./licence.ts";
 export * from "./json-schema.ts";
 export * from "./load.ts";
 export * from "./rules.ts";

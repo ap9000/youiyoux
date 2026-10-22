@@ -70,7 +70,7 @@ describe("youiyoux discover", () => {
     const result = JSON.parse(out) as { hits: Array<{ source: { ref: string }; license: string; signals: Record<string, unknown>; install: { command: string } }> };
     expect(result.hits.slice(0, 2).map((h) => h.source.ref)).toEqual(["@shadcn/command", "@coss/command"]);
     expect(result.hits[0]).toMatchObject({ license: "MIT", install: { command: "npx shadcn add command" }, signals: { weeklyDownloads: null, via: { package: "cmdk", weeklyDownloads: 41566267 }, stars: 125435 } });
-    expect(result.hits[1]).toMatchObject({ license: "unknown", install: { command: "npx shadcn add @coss/command" } });
+    expect(result.hits[1]).toMatchObject({ license: "AGPL-3.0", install: { command: "npx shadcn add @coss/command" } });
     for (const hit of result.hits) {
       expect(hit.license).toEqual(expect.any(String));
       expect(Object.keys(hit.signals).sort()).toEqual(["archived", "pushedAt", "stars", ...(hit.signals.via ? ["via"] : []), "weeklyDownloads"]);
@@ -82,7 +82,11 @@ describe("youiyoux discover", () => {
   test("the text view shows licence, signals and install command per hit; --role and --license filter", async () => {
     expect(await main(["discover", "command", "menu", "--cache", dir])).toBe(0);
     expect(out).toMatch(/@shadcn\/command[\s\S]*MIT · 42M\/wk via cmdk · 125k★[\s\S]*npx shadcn add command/);
-    expect(out).toMatch(/@coss\/command[\s\S]*licence unknown/);
+    expect(out).toMatch(/@coss\/command[\s\S]*AGPL-3\.0 \(copyleft\)/);
+    expect(out).not.toMatch(/MIT \(copyleft\)/);
+    out = "";
+    expect(await main(["discover", "spotlight", "--cache", dir])).toBe(0);
+    expect(out).toMatch(/@aceternity\/spotlight[\s\S]*licence unknown/);
     out = "";
     expect(await main(["discover", "command menu", "--license", "MIT", "--cache", dir, "--json"])).toBe(0);
     expect((JSON.parse(out) as { hits: Array<{ license: string }> }).hits.every((h) => h.license === "MIT")).toBe(true);

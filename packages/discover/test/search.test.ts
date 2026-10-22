@@ -42,7 +42,7 @@ describe("youiyoux discover \"command menu\"", () => {
   test("each hit carries its licence (or unknown), signals and the install command", () => {
     const [shadcn, coss] = searchIndex(index, "command menu").hits;
     expect(shadcn).toMatchObject({ license: "MIT", signals: { weeklyDownloads: null, via: { package: "cmdk", weeklyDownloads: 41566267 }, stars: 125435, archived: false }, install: { command: "npx shadcn add command", npm: ["cn", "cmdk"], registryDeps: ["dialog"] } });
-    expect(coss).toMatchObject({ license: "unknown", signals: { weeklyDownloads: null, stars: null }, install: { command: "npx shadcn add @coss/command" } });
+    expect(coss).toMatchObject({ license: "AGPL-3.0", signals: { weeklyDownloads: null, stars: 2210 }, install: { command: "npx shadcn add @coss/command" } });
     for (const hit of searchIndex(index, "command menu").hits) {
       expect(hit.license === "unknown" || /^[A-Za-z0-9.+()-]/.test(hit.license)).toBe(true);
       expect(hit.signals).toHaveProperty("weeklyDownloads");
@@ -76,7 +76,9 @@ describe("youiyoux discover \"command menu\"", () => {
     expect(refs("dialog", { role: "command palette" })).toEqual(["@coss/p-command-1", "@coss/p-command-2"]);
     expect(refs("dialog", { role: "dialog" })).toEqual(expect.arrayContaining(["@shadcn/dialog", "@coss/dialog"]));
     expect(refs("command menu", { constraints: { licenses: ["MIT"] } })).not.toContain("@coss/command");
-    expect(refs("command menu", { constraints: { licenses: ["MIT"], allowUnknownLicense: true } })).toContain("@coss/command");
+    expect(refs("command menu", { constraints: { licenses: ["AGPL-3.0"] } })).toContain("@coss/command");
+    expect(refs("spotlight", { constraints: { licenses: ["MIT"] } })).not.toContain("@aceternity/spotlight");
+    expect(refs("spotlight", { constraints: { licenses: ["MIT"], allowUnknownLicense: true } })).toContain("@aceternity/spotlight");
     expect(refs("command menu", { constraints: { sources: ["npm"] } }).every((r) => !r?.startsWith("@"))).toBe(true);
     expect(refs("command menu", { constraints: { registries: ["@coss"] } }).every((r) => r?.startsWith("@coss/"))).toBe(true);
     expect(refs("command menu", { constraints: { kinds: ["pattern"] } })).toEqual(["@coss/p-command-1", "@coss/p-command-2"]);

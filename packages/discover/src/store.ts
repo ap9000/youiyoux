@@ -94,7 +94,7 @@ export interface GithubSignal {
 export interface SignalsFile {
   readonly npm: Record<string, NpmSignal>;
   readonly github: Record<string, GithubSignal>;
-  /** Registry name → its GitHub repository, found by a search whose result's homepage matched (null: none matched). */
+  /** Registry name → its GitHub repository, linked both ways with the registry's homepage (null: none found). */
   readonly registryRepos: Record<string, { readonly repo: string | null; readonly checkedAt: string }>;
 }
 

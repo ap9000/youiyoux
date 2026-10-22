@@ -61,7 +61,7 @@ describe("discover MCP tools", () => {
     const hits = data.hits as Array<{ id: string; license: string; signals: Record<string, unknown>; install: { command: string } }>;
     expect(hits.slice(0, 2).map((h) => h.id)).toEqual(["lib:shadcn/component/command", "lib:coss/component/command"]);
     expect(hits[0]).toMatchObject({ license: "MIT", install: { command: "npx shadcn add command" }, signals: { weeklyDownloads: null, via: { package: "cmdk", weeklyDownloads: 41566267 } } });
-    expect(hits[1]).toMatchObject({ license: "unknown" });
+    expect(hits[1]).toMatchObject({ license: "AGPL-3.0" });
     expect(String(data.note)).toMatch(/never install.*library_request/i);
     expect(bytes).toBeLessThan(8000);
     expect(fetch).not.toHaveBeenCalled();
@@ -89,7 +89,7 @@ describe("discover MCP tools", () => {
     expect(data.entry).toMatchObject({
       id: "lib:coss/component/command",
       source: { kind: "shadcn-registry", ref: "@coss/command" },
-      license: "unknown",
+      license: { spdx: "AGPL-3.0", evidenceUrl: "https://github.com/cosscom/ui" },
       install: { command: "npx shadcn add @coss/command", registryDeps: ["@coss/autocomplete"] },
       provenance: { url: "https://coss.com/ui/r/registry.json", registryHealth: { status: "healthy" } },
     });

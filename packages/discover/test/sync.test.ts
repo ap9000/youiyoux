@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { LibraryEntry } from "@youiyoux/core";
-import { writeSources, discoverCacheDir, HEADLESS, implicitDeps, parseDirectory, readIndex, sameHomepage, spdxOrNull, syncIndex, type DiscoverIndex, type SignalsFile } from "../src/index.ts";
+import { writeSources, discoverCacheDir, HEADLESS, implicitDeps, linkedRepos, parseDirectory, readIndex, sameHomepage, sameSite, spdxOrNull, syncIndex, type DiscoverIndex, type SignalsFile } from "../src/index.ts";
 import { fixtureFetcher } from "./fixture-fetcher.ts";
 
 const NOW = new Date("2026-10-12T12:00:00Z");
@@ -83,8 +83,10 @@ describe("youiyoux discover sync", () => {
     });
     const coss = index.entries.find((e) => e.id === "lib:coss/component/command")!;
     expect(coss).toMatchObject({ install: { command: "npx shadcn add @coss/command", npm: ["@base-ui/react"], registryDeps: ["@coss/autocomplete"] }, provenance: { registryHealth: { status: "healthy" } } });
-    // No repository whose homepage is coss.com/ui was found, so its licence stays unknown rather than borrowed.
-    expect(coss.license).toBe("unknown");
+    // coss.com/ui links cosscom/ui, whose homepage is coss.com: linked both ways, so its licence is that repository's.
+    expect(coss.license).toEqual({ spdx: "AGPL-3.0", evidenceUrl: "https://github.com/cosscom/ui", verifiedAt: NOW.toISOString() });
+    // Aceternity's homepage links no repository and no search result has its homepage: unknown, never borrowed.
+    expect(index.entries.find((e) => e.source.ref === "@aceternity/spotlight")!.license).toBe("unknown");
     expect(index.entries.find((e) => e.id === "lib:magicui/component/marquee")!.license).toMatchObject({ spdx: "MIT", evidenceUrl: "https://github.com/magicuidesign/magicui" });
   });
 
@@ -166,6 +168,20 @@ describe("discover helpers", () => {
     expect(sameHomepage("https://www.kibo-ui.com/", "https://kibo-ui.com")).toBe(true);
     expect(sameHomepage("https://coss.com", "https://coss.com/ui")).toBe(false);
   });
+
+  test("a repository's site holds the registry's when the host matches and one path is inside the other", () => {
+    expect(sameSite("https://coss.com", "https://coss.com/ui")).toBe(true);
+    expect(sameSite("https://www.kibo-ui.com/", "https://kibo-ui.com/docs")).toBe(true);
+    expect(sameSite("https://coss.com/uix", "https://coss.com/ui")).toBe(false);
+    expect(sameSite("https://coss.com/blog", "https://coss.com/ui")).toBe(false);
+    expect(sameSite("https://coss.dev", "https://coss.com")).toBe(false);
+    expect(sameSite(null, "https://coss.com")).toBe(false);
+  });
+
+  test("a page's GitHub repository links, most-linked first, without GitHub's own pages", () => {
+    const html = '<a href="https://github.com/acme/ui">x</a> <a href="https://github.com/sponsors/acme">s</a> <a href="https://www.github.com/acme/ui/blob/main/LICENSE">l</a> see https://github.com/radix-ui/primitives. <a href="https://github.com/acme/ui.git">';
+    expect(linkedRepos(html)).toEqual(["acme/ui", "radix-ui/primitives"]);
+  });
 });
 
 test("unchanged second sync makes no npm requests and reports the actual index size", async () => {
@@ -236,4 +252,41 @@ test("selected unavailable responses retain their failure reasons without stoppi
   expect(index.sources.find((s) => s.id === "@fixture-timeout")?.reason).toMatch(/^timeout/);
   expect(index.sources.find((s) => s.id === "@fixture-html")?.reason).toMatch(/^not-json/);
   expect(index.entries.some((e) => e.source.ref === "@coss/command")).toBe(true);
+});
+
+test("a repository the registry's homepage links to is credited only when its own homepage is that site", async () => {
+  // The page links a lookalike first; it names another site as its homepage, so only the real one counts.
+  const page = '<a href="https://github.com/lookalike/kibo">fork</a><a href="https://github.com/lookalike/kibo">fork</a><a href="https://github.com/shadcnblocks/kibo">source</a>';
+  const fixtures = fixtureFetcher({ override: (url) => url === "https://www.kibo-ui.com/" ? { headers: { "content-type": "text/html" }, inline: page } : url === "https://api.github.com/repos/lookalike/kibo" ? { inline: JSON.stringify({ full_name: "lookalike/kibo", html_url: "https://github.com/lookalike/kibo", homepage: "https://lookalike.dev", stargazers_count: 3, pushed_at: null, archived: false, license: { spdx_id: "MIT" } }) } : undefined });
+  const { index } = await sync(fixtures);
+  const signals = JSON.parse(await readFile(join(dir, "signals.json"), "utf8")) as SignalsFile;
+  expect(signals.registryRepos["@kibo-ui"]?.repo).toBe("shadcnblocks/kibo");
+  expect(index.entries.find((e) => e.source.ref === "@kibo-ui/combobox")!.license).toMatchObject({ spdx: "MIT", evidenceUrl: "https://github.com/shadcnblocks/kibo" });
+  // Found from the page, so no search was spent on it; and the page itself is never kept.
+  expect(fixtures.requests.some((r) => r.url.includes("search/repositories?q=kibo"))).toBe(false);
+  const saved = await Promise.all((await readdir(join(dir, "listings"))).map(async (name) => JSON.parse(await readFile(join(dir, "listings", name), "utf8")) as { url: string }));
+  expect(saved.map((listing) => listing.url)).not.toContain("https://www.kibo-ui.com/");
+
+  const lookalikeOnly = fixtureFetcher({ override: (url) => url === "https://www.kibo-ui.com/" ? { headers: { "content-type": "text/html" }, inline: '<a href="https://github.com/lookalike/kibo">x</a>' } : url === "https://api.github.com/repos/lookalike/kibo" ? { inline: JSON.stringify({ full_name: "lookalike/kibo", html_url: "https://github.com/lookalike/kibo", homepage: null, stargazers_count: 3, pushed_at: null, archived: false, license: { spdx_id: "MIT" } }) } : url.includes("search/repositories?q=kibo") ? { inline: JSON.stringify({ items: [] }) } : undefined });
+  await rm(dir, { recursive: true, force: true });
+  const second = await sync(lookalikeOnly);
+  expect(second.index.entries.find((e) => e.source.ref === "@kibo-ui/combobox")!.license).toBe("unknown");
+});
+
+test("a registry with no repository found is asked again after a day, a found one after thirty", async () => {
+  await sync();
+  const signals = JSON.parse(await readFile(join(dir, "signals.json"), "utf8")) as SignalsFile;
+  expect(signals.registryRepos["@aceternity"]?.repo).toBeNull();
+  expect(signals.registryRepos["@coss"]?.repo).toBe("cosscom/ui");
+  const nextDay = await sync(fixtureFetcher(), new Date(NOW.getTime() + 25 * 3_600_000));
+  expect(nextDay.fixtures.requests.some((r) => r.url === "https://ui.aceternity.com")).toBe(true);
+  expect(nextDay.fixtures.requests.some((r) => r.url === "https://coss.com/ui")).toBe(false);
+});
+
+test("a chosen source the directory no longer lists is reported with how to drop it, not counted as fetched", async () => {
+  await writeSources(dir, ["@coss", "@origin"]);
+  const { summary, index } = await sync();
+  expect(index.sources.find((s) => s.id === "@origin")).toMatchObject({ outcome: "skipped", reason: "not in the registry directory", items: 0 });
+  expect(summary.warnings).toEqual(["@origin is chosen but the registry directory no longer lists it: `youiyoux discover sources remove @origin`"]);
+  expect(summary.registries.fetched).toBe(1);
 });
