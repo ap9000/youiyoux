@@ -9,7 +9,7 @@ import { DefinitionError, getSystem, loadDesignRepo, loadLibrary, MigrationSpec,
 import { candidateSource, expandAll, selectSources, discoverCacheDir, discoverIndexPath, ingestCatalog, readCatalog, searchCatalog, sharedStore, showFromCatalog, syncIndex, type Fetcher } from "@youiyoux/discover";
 import { indexHome, storeLocation } from "@youiyoux/store";
 import { buildTokens, compareParity } from "@youiyoux/tokens";
-import { adoptionRequest, buildInventory, within, RenderUnavailableError, renderShots, shotsNext, type ShotsOptions, checkCapabilities, componentCard, describeIdentity, evaluateRule, findContract, loadProject, planChange, PROJECT_FILE, type LoadProjectOptions, ProjectWatcher, ruleCapability, runMigration, scanProject, screenBom, searchLibrary, whereUsed, type CacheStats, type PlanInput, type Project, type WatchUpdate } from "@youiyoux/scanner";
+import { adoptionRequest, buildInventory, captureScreens, captureText, within, RenderUnavailableError, renderShots, shotsNext, type ShotsOptions, checkCapabilities, componentCard, describeIdentity, evaluateRule, findContract, loadProject, planChange, PROJECT_FILE, type LoadProjectOptions, ProjectWatcher, ruleCapability, runMigration, scanProject, screenBom, searchLibrary, whereUsed, type CacheStats, type PlanInput, type Project, type WatchUpdate } from "@youiyoux/scanner";
 import { baselinePath, diffExitCodeOf, exitCodeOf, runCheck, writeBaseline, type CheckResult } from "./check.ts";
 import { configured, loadCheckProject, runRepoCheck } from "./check-repo.ts";
 import { workingTreeChange, type ChangeProject } from "./check-diff.ts";
@@ -61,6 +61,10 @@ ${style.bold("Anywhere")}  ${style.dim("no design system needed")}
                            <first project>/.youi/inventory.json unless --out, and records the scan
                            (project, commit, time, counts, families) in the local index for trends
   inventory --history      every recorded scan per project, newest first, with what changed
+  screens capture --base <url> [--project dir] [--out dir] [--storage-state file] [--json]
+                           photograph the routes in <project>/.youi/screens/screens.json, light and
+                           dark, from the app running in development at <url>, and place each
+                           component on them with the line that rendered it (for youiyoux ui)
   render [file|component…] [--base ref] [--json]
                            see a component you changed: its looks drawn with the project's own code
                            and CSS in headless Chromium, light and dark at 1280 and 390 px, axe's
@@ -229,6 +233,7 @@ const OPTIONS = {
   icons: { type: "boolean" },
   source: { type: "boolean" },
   registry: { type: "string" },
+  "storage-state": { type: "string" },
   "max-registries": { type: "string" },
   offset: { type: "string" },
   history: { type: "boolean", default: false },
@@ -752,6 +757,27 @@ async function cmdRender(values: Values, positionals: string[], io: CliIo): Prom
   }
 }
 
+/** `youiyoux screens capture`: the project's screens photographed, each component placed with its line. */
+async function cmdScreens(values: Values, positionals: string[]): Promise<number> {
+  if (positionals[0] !== "capture" || positionals.length > 1 || !values.base) throw new UsageError("youiyoux screens capture --base <url of the app in development> [--project dir] [--out <screens dir>] [--storage-state <signed-in session>] [--json]");
+  const root = resolve(values.root ?? values.project ?? process.cwd());
+  const dir = resolve(values.out ?? join(root, ".youi/screens"));
+  if (!existsSync(join(dir, "screens.json"))) {
+    process.stderr.write(`${style.error("✖")} no screens.json in ${dir}: list the routes to capture there, as {"schema":"youiyoux.screens/v1","project":"<name>","source":"<what the app is>","capturedAt":"","viewport":{"width":1440,"height":900},"screens":[{"route":"/","path":"/"}]}\n`);
+    return 1;
+  }
+  const { launchBrowser } = await import("@youiyoux/detect");
+  const browser = await launchBrowser(process.env.YOUI_CHROMIUM, { purpose: { what: "youiyoux screens capture", command: "youiyoux screens capture" } });
+  try {
+    const report = await captureScreens(dir, { base: values.base, root, browser, ...(values["storage-state"] ? { storageState: resolve(values["storage-state"]) } : {}), log: (line) => process.stderr.write(`${style.dim(line)}\n`) });
+    if (values.json) json(report);
+    else print(captureText(report));
+    return report.screens.every((s) => s.error) ? 1 : 0;
+  } finally {
+    await browser.close();
+  }
+}
+
 /** `youiyoux report [path]`: the zero-setup report (what `npx youiyoux` runs). */
 async function cmdReport(values: Values, positionals: string[], io: CliIo): Promise<number> {
   if (positionals.length > 1) throw new UsageError("youiyoux report [path] [--out dir] [--render [--yes]] [--include-code] [--json]   (one repo)");
@@ -838,7 +864,7 @@ async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Pr
 type Command = (values: Values, positionals: string[], io: CliIo) => Promise<number>;
 
 const COMMANDS: Record<string, Command> = {
-  show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+  show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, screens: cmdScreens, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
 
 /** Every command name, for a front end that runs one by default (the youiyoux bin runs report). */
