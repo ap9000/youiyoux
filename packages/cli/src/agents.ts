@@ -111,6 +111,7 @@ export function agentsBlock(project: Project): string {
     `- Never edit files marked \`${GENERATED_MARK}\` (\`${config.outputs.dir}/*\`, ${config.agents.designMd}, the youiyoux skill). Change the design language and run \`youiyoux sync\`.`,
     `- Owned component files in \`${config.componentsDir}\` may be edited; \`youiyoux sync\` 3-way merges upstream changes into them and reports drift.`,
     "- After changing a component, call `ui_render` with its file (or run `youiyoux render <file>`) and look at the images: light and dark, desktop and phone, its accessibility issues and the diff against the base. Fix what it reports.",
+    "- People pin comments and change requests to components on captured screens. Before UI work, call `requests_list` (or run `youiyoux requests`); after making a requested change, call `request_addressed` with what you changed (file:line). Ask with `request_reply` when one is unclear. A person closes requests, never an agent.",
     "- Before you finish, run `youiyoux check`; it must report 0 errors.",
     diffInstruction(project.root),
     "- To change the System itself (a token, a prop, a rule), run `youiyoux plan` (or `system_plan`) and propose it. Agents never approve, publish or merge design changes.",

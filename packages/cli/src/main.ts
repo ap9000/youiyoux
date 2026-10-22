@@ -2,7 +2,7 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
 import { appendFile, readFile } from "node:fs/promises";
-import { join, relative, resolve } from "node:path";
+import { basename, join, relative, resolve } from "node:path";
 import { parseArgs, promisify, type ParseArgsConfig } from "node:util";
 import { parse as parseYaml } from "yaml";
 import { DefinitionError, getSystem, loadDesignRepo, loadLibrary, MigrationSpec, OutputConfig, renderJsonSchemas, safeId, writeFileAtomic, type InventoryReport, type ScanReport } from "@youiyoux/core";
@@ -21,6 +21,7 @@ import { detectTarget, renderDetect } from "./detect.ts";
 import { renderDiscoverSearch, renderDiscoverShow, renderDiscoverSync } from "./discover.ts";
 import { startRuleEditor, type RuleEditor } from "./editor.ts";
 import { DEFAULT_HUB_PORT, runHub, runPreviews } from "./hub.ts";
+import { renderBrief, renderRequests } from "./requests.ts";
 import { initProject } from "./init.ts";
 import { noteSource, rebuildIndex, recordInventory, recordProject, renderHistory, renderRebuild, SCANS_LOG, SOURCES_FILE } from "./index-store.ts";
 import { renderInventory } from "./inventory.ts";
@@ -61,6 +62,11 @@ ${style.bold("Anywhere")}  ${style.dim("no design system needed")}
                            <first project>/.youi/inventory.json unless --out, and records the scan
                            (project, commit, time, counts, families) in the local index for trends
   inventory --history      every recorded scan per project, newest first, with what changed
+  requests [--status open|addressed|closed|all] [--route r] [--json]
+                           comments and change requests people pinned to components on captured
+                           screens: what is asked, the file:line, the picture, and what to do next
+  requests show <id> | reply <id> --message <text> | addressed <id> --message <what you changed>
+                           read one, reply, or mark it done (as an agent; a person closes it in the hub)
   screens capture --base <url> [--project dir] [--out dir] [--storage-state file] [--json]
                            photograph the routes in <project>/.youi/screens/screens.json, light and
                            dark, from the app running in development at <url>, and place each
@@ -234,6 +240,8 @@ const OPTIONS = {
   source: { type: "boolean" },
   registry: { type: "string" },
   "storage-state": { type: "string" },
+  message: { type: "string" },
+  status: { type: "string" },
   "max-registries": { type: "string" },
   offset: { type: "string" },
   history: { type: "boolean", default: false },
@@ -757,6 +765,41 @@ async function cmdRender(values: Values, positionals: string[], io: CliIo): Prom
   }
 }
 
+/** `youiyoux requests`: the requests on the project's screens, as an agent reads and answers them. */
+async function cmdRequests(values: Values, positionals: string[]): Promise<number> {
+  const usage = "youiyoux requests [--status open|addressed|closed|all] [--route r]   or   youiyoux requests show <id> | reply <id> --message <text> | addressed <id> --message <what you changed>";
+  const [action, id, ...rest] = positionals;
+  if (rest.length > 0) throw new UsageError(usage);
+  const { RequestStore, requestBrief } = await import("@youiyoux/workflow");
+  const project = await loadProject(resolve(values.project ?? process.cwd()), loadOptions(values)).catch(() => null);
+  const root = project?.root ?? resolve(values.root ?? values.project ?? process.cwd());
+  const store = new RequestStore(root, project?.config.id ?? basename(root));
+  const agent = { kind: "agent", name: "youiyoux CLI" } as const;
+  const one = (request: Parameters<typeof requestBrief>[0]): number => {
+    const brief = requestBrief(request, root);
+    if (values.json) json(brief);
+    else print(renderBrief(brief, true));
+    return 0;
+  };
+  if (!action || action === "list") {
+    if (id) throw new UsageError(usage);
+    const status = values.status ?? "open";
+    if (!["open", "addressed", "closed", "all"].includes(status)) throw new UsageError("--status takes open, addressed, closed or all");
+    const { requests, unreadable } = await store.list();
+    const briefs = requests.filter((r) => (status === "all" || r.status === status) && (!values.route || r.target.route === values.route)).map((r) => requestBrief(r, root));
+    if (values.json) json({ requests: briefs, unreadable });
+    else print(renderRequests(briefs, status, unreadable));
+    return unreadable.length ? 1 : 0;
+  }
+  if (!id) throw new UsageError(usage);
+  if (action === "show") return one(await store.get(id));
+  if (action === "reply" || action === "addressed") {
+    if (!values.message?.trim()) throw new UsageError(`youiyoux requests ${action} ${id} --message <${action === "reply" ? "text" : "what you changed, with file:line"}>`);
+    return one(action === "reply" ? await store.reply(agent, id, values.message) : await store.setStatus(agent, id, "addressed", values.message));
+  }
+  throw new UsageError(usage);
+}
+
 /** `youiyoux screens capture`: the project's screens photographed, each component placed with its line. */
 async function cmdScreens(values: Values, positionals: string[]): Promise<number> {
   if (positionals[0] !== "capture" || positionals.length > 1 || !values.base) throw new UsageError("youiyoux screens capture --base <url of the app in development> [--project dir] [--out <screens dir>] [--storage-state <signed-in session>] [--json]");
@@ -864,7 +907,7 @@ async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Pr
 type Command = (values: Values, positionals: string[], io: CliIo) => Promise<number>;
 
 const COMMANDS: Record<string, Command> = {
-  show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, screens: cmdScreens, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+  show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, screens: cmdScreens, requests: cmdRequests, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
 
 /** Every command name, for a front end that runs one by default (the youiyoux bin runs report). */

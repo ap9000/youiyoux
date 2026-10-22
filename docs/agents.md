@@ -8,6 +8,7 @@ real output from Toolroll's console. Setup is one command: `npx youiyoux agents 
 1. **Before writing a component**: call `ui_find_component` with the need in words. Reuse what it names.
 2. **After UI edits**: run `npx -y youiyoux check --diff`. Apply each fix.
 3. **After changing a component**: call `ui_render` with its file. Look at the images; fix new issues.
+4. **Requests on the screens**: call `requests_list` before UI work. After a requested change, call `request_addressed` with what you changed; a person closes it.
 
 ## The rule it installs
 
@@ -27,12 +28,14 @@ It also registers the MCP server `youiyoux` in `.mcp.json` (Claude Code) and `.c
 
 ## MCP tools
 
-All tools are read-only. None publish, approve, install or change anything.
+All tools are read-only except `request_reply` and `request_addressed`, which write only that request's file in `.youi/requests`. None publish, approve, close, install or change code.
 
 | Tool | Call it | Input | Needs |
 | --- | --- | --- | --- |
 | `ui_find_component` | Before creating any UI component | `need` (words), `limit` (1-5) | Nothing |
 | `ui_render` | After changing a component | `target` (file or component name), `base` (git ref) | A headless Chromium |
+| `requests_list` | Before UI work: comments and change requests on captured screens | `status` (open, addressed, closed, all), `route` | Requests filed in the hub (`.youi/requests`) |
+| `request_reply` / `request_addressed` | Ask about a request / say it is done, with what you changed | `id`, `message` | A request |
 | `index_where_used` | Where an inventory family (`button-2`) is used | `family`, `project` | `youiyoux inventory` run once |
 | `index_swap_impact` | What swapping a candidate in for a family would touch | `candidate` (`lib:` id), `family`, `project` | The local index |
 | `index_rule_covers` | What a design rule covers | `rule`, `project` | `youiyoux scan` |

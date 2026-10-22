@@ -25,11 +25,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { existsSync, realpathSync } from "node:fs";
-import { isAbsolute, join, resolve, sep } from "node:path";
+import { basename, isAbsolute, join, resolve, sep } from "node:path";
 import { isLibraryId, loadLibrary, MigrationSpec, normalizeRelPath, type Library, type McpTool } from "@youiyoux/core";
 import { DISCOVER_RULE, DiscoverConstraints, discoverCacheDir, discoverIndexPath, MissingIndexError, readCatalog, searchCatalog, sharedStore, showFromCatalog, type DiscoverHit } from "@youiyoux/discover";
 import { storeLocation, type Store } from "@youiyoux/store";
 import { adoptionRequest, collectComponents, findLibraryEntry, renderShots, type ShotsOptions, componentCard, describeIdentity, failedChecks, findContract, formatProps, loadProject, planChange, PROJECT_FILE, ruleRows, ScanCache, scanProject, screenBom, searchElements, searchLibrary, tokenRows, whereUsed, type PlanInput, type Project, type ProjectComponents, type ScanResult } from "@youiyoux/scanner";
+import { RequestStore, requestBrief } from "@youiyoux/workflow";
 import { z } from "zod";
 import { findComponents, matchesText, noneFitsText } from "./find-component.ts";
 import { renderText, ruleCoversText, swapImpactText, whereUsedText } from "./index-tools.ts";
@@ -52,6 +53,9 @@ export interface ServerOptions {
 const VERSION = "0.1.0";
 const DEFAULT_TTL = 5_000;
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
+/** The request tools write one file in the product's .youi/requests, and nothing else. */
+const WRITES_REQUEST = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } as const;
+const AGENT = { kind: "agent", name: "agent (MCP)" } as const;
 
 type ToolResult = { content: Array<{ type: "text"; text: string }>; isError?: boolean };
 
@@ -169,7 +173,7 @@ export function createServer(options: ServerOptions): McpServer {
     { name: "youiyoux", version: VERSION },
     {
       instructions:
-        "YouIyouX: the UI context and verification layer for this project. Before creating any UI component, call ui_find_component with the need in words: reuse the existing component it names, or start where it says when nothing fits. Build only with System elements: call system_get_component before using a component's props, system_get_tokens instead of writing colours or sizes, and system_check on code before finishing. system_plan shows the impact of a change to the System. The Library (library_* tools, lib: ids) holds ingested references that are not approved: browse them with library_search, never import, copy or build with them, and use library_request to draft an adoption request for a person to approve. discover_search and discover_show find outside candidates by need (shadcn registries, npm) with licence, signals and install command: they are references, never install or copy one; propose one with library_request. index_where_used, index_swap_impact and index_rule_covers answer from the local index in a few lines: where an inventory family (button-2) is used, what swapping a candidate in for it would touch, and what a rule covers. After changing a component, call ui_render with its file and look at the images it names: light and dark at desktop and phone width, accessibility issues, and a diff against the base commit. There are no tools to publish, approve or install anything.",
+        "YouIyouX: the UI context and verification layer for this project. Before creating any UI component, call ui_find_component with the need in words: reuse the existing component it names, or start where it says when nothing fits. Build only with System elements: call system_get_component before using a component's props, system_get_tokens instead of writing colours or sizes, and system_check on code before finishing. system_plan shows the impact of a change to the System. The Library (library_* tools, lib: ids) holds ingested references that are not approved: browse them with library_search, never import, copy or build with them, and use library_request to draft an adoption request for a person to approve. discover_search and discover_show find outside candidates by need (shadcn registries, npm) with licence, signals and install command: they are references, never install or copy one; propose one with library_request. index_where_used, index_swap_impact and index_rule_covers answer from the local index in a few lines: where an inventory family (button-2) is used, what swapping a candidate in for it would touch, and what a rule covers. After changing a component, call ui_render with its file and look at the images it names: light and dark at desktop and phone width, accessibility issues, and a diff against the base commit. People pin comments and change requests to components on captured screens: call requests_list before UI work, ask with request_reply when one is unclear, and after making a change call request_addressed with what you changed; a person closes it. There are no tools to publish, approve, close or install anything.",
     },
   );
 
@@ -416,6 +420,47 @@ export function createServer(options: ServerOptions): McpServer {
       } catch (error: unknown) {
         throw new Error(`ui_render could not run: ${error instanceof Error ? error.message : String(error)}. Nothing was checked; this is not a pass.`);
       }
+    }),
+  );
+
+  /** The product's requests: its .youi/requests, under the configured project, else the root this server was started in. */
+  async function requests(): Promise<{ store: RequestStore; root: string }> {
+    const project = await state.loadProject().catch(() => null);
+    const root = project?.root ?? resolve(options.productRoot ?? options.projectRoot);
+    return { store: new RequestStore(root, project?.config.id ?? basename(root)), root };
+  }
+
+  server.registerTool(
+    "requests_list" satisfies McpTool,
+    {
+      title: "Requests on the screens",
+      description: "Comments and change requests people pinned to components on captured screens (the hub's Screens page). Each says what is asked, the route and component, the file:line that rendered it, whether it means this one or every use of the element, the screenshot (an absolute path: open it) with the component's box on it in that picture's pixels, the thread, and what to do next. Call it before UI work. Default: open requests.",
+      inputSchema: { status: z.enum(["open", "addressed", "closed", "all"]).optional(), route: z.string().min(1).optional().describe("Only this route, e.g. /settings") },
+      annotations: READ_ONLY,
+    },
+    guard(async ({ status, route }) => {
+      const { store, root } = await requests();
+      const { requests: all, unreadable } = await store.list();
+      const wanted = all.filter((r) => (status === "all" || r.status === (status ?? "open")) && (!route || r.target.route === route));
+      return { requests: wanted.map((r) => requestBrief(r, root)), ...(unreadable.length ? { unreadable } : {}), ...(wanted.length === 0 ? { next: `No ${status && status !== "all" ? status : "open"} requests${route ? ` on ${route}` : ""}.` } : {}) };
+    }),
+  );
+
+  server.registerTool(
+    "request_reply" satisfies McpTool,
+    { title: "Reply on a request", description: "Add a reply to a request's thread: a question when the ask is unclear, or an answer to a comment. Writes only that request's file in .youi/requests.", inputSchema: { id: z.string().regex(/^r-[0-9a-f]{10}$/).describe("The request id, r-<10 hex>"), message: z.string().min(1).max(4000) }, annotations: WRITES_REQUEST },
+    guard(async ({ id, message }) => {
+      const { store, root } = await requests();
+      return requestBrief(await store.reply(AGENT, id, message), root);
+    }),
+  );
+
+  server.registerTool(
+    "request_addressed" satisfies McpTool,
+    { title: "Mark a request addressed", description: "Say a change request is done, with what you changed (file:line). A person checks it on the screen and closes it, or reopens it; an agent never closes one. Writes only that request's file in .youi/requests.", inputSchema: { id: z.string().regex(/^r-[0-9a-f]{10}$/).describe("The request id, r-<10 hex>"), message: z.string().min(1).max(4000).describe("What you changed, with file:line") }, annotations: WRITES_REQUEST },
+    guard(async ({ id, message }) => {
+      const { store, root } = await requests();
+      return requestBrief(await store.setStatus(AGENT, id, "addressed", message), root);
     }),
   );
 
