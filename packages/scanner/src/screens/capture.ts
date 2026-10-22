@@ -91,6 +91,8 @@ export interface CaptureOptions {
   readonly browser: Browser;
   /** A signed-in session (Playwright's storage state file), for an app behind a sign-in. */
   readonly storageState?: string;
+  /** Only these routes (after a change, the screen it touched); the rest keep their pictures. */
+  readonly routes?: readonly string[];
   readonly now?: () => Date;
   readonly log?: (line: string) => void;
 }
@@ -146,6 +148,9 @@ const sentence = (error: unknown): string => (error instanceof Error ? error.mes
 /** Photograph every route of `dir`'s screens.json and place its components. */
 export async function captureScreens(dir: string, options: CaptureOptions): Promise<CaptureReport> {
   const spec = readScreensSpec(dir);
+  const unknown = (options.routes ?? []).filter((route) => !spec.screens.some((s) => s.route === route));
+  if (unknown.length) throw new Error(`${join(dir, "screens.json")} has no route ${unknown.join(", ")}: it lists ${spec.screens.map((s) => s.route).join(", ")}`);
+  const chosen = options.routes?.length ? spec.screens.filter((s) => options.routes!.includes(s.route)) : spec.screens;
   const log = options.log ?? (() => undefined);
   const { width, height } = spec.viewport;
   const results = new Map<string, { placed: number; lined: number; error: string | null }>();
@@ -156,7 +161,7 @@ export async function captureScreens(dir: string, options: CaptureOptions): Prom
     try {
       const page = await context.newPage();
       const encoder = await context.newPage();
-      for (const screen of spec.screens) {
+      for (const screen of chosen) {
         const slug = screenSlug(screen.route);
         if (results.get(screen.route)?.error) continue;
         try {
@@ -164,7 +169,13 @@ export async function captureScreens(dir: string, options: CaptureOptions): Prom
           await page.goto(target, { waitUntil: "load", timeout: NAVIGATION_TIMEOUT_MS });
           await page.evaluate(() => document.fonts?.ready.then(() => undefined));
           await page.waitForTimeout(SETTLE_MS);
-          const located = scheme === "light" ? await page.evaluate(locateInPage, MAX_PLACES) : null;
+          let located = scheme === "light" ? await page.evaluate(locateInPage, MAX_PLACES) : null;
+          // No React yet: a dev server still optimising reloads the page, or the app mounts late. Look once more.
+          if (located && !located.react) {
+            await page.waitForLoadState("load");
+            await page.waitForTimeout(SETTLE_MS * 2);
+            located = await page.evaluate(locateInPage, MAX_PLACES);
+          }
           const pageHeight = located?.size.height ?? (await page.evaluate(() => document.documentElement.scrollHeight));
           const clip = { x: 0, y: 0, width, height: Math.min(Math.max(pageHeight, height), height * MAX_VIEWPORTS) };
           const png = await page.screenshot({ fullPage: true, clip });
@@ -192,8 +203,9 @@ export async function captureScreens(dir: string, options: CaptureOptions): Prom
     }
   }
   const now = (options.now ?? (() => new Date()))().toISOString();
-  await writeFileAtomic(join(dir, "screens.json"), `${JSON.stringify({ ...spec, capturedAt: now }, null, 2)}\n`);
-  const screens = spec.screens.map((s) => ({ route: s.route, path: s.path, ...(results.get(s.route) ?? { placed: 0, lined: 0, error: "not captured" }) }));
+  // capturedAt is the whole set's; a capture of some routes leaves it (each picture's own time is its file's).
+  if (chosen === spec.screens) await writeFileAtomic(join(dir, "screens.json"), `${JSON.stringify({ ...spec, capturedAt: now }, null, 2)}\n`);
+  const screens = chosen.map((s) => ({ route: s.route, path: s.path, ...(results.get(s.route) ?? { placed: 0, lined: 0, error: "not captured" }) }));
   return { dir, project: spec.project, screens, production: react && !dev, noReact: !react && screens.some((s) => !s.error) };
 }
 

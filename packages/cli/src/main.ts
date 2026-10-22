@@ -67,7 +67,7 @@ ${style.bold("Anywhere")}  ${style.dim("no design system needed")}
                            screens: what is asked, the file:line, the picture, and what to do next
   requests show <id> | reply <id> --message <text> | addressed <id> --message <what you changed>
                            read one, reply, or mark it done (as an agent; a person closes it in the hub)
-  screens capture --base <url> [--project dir] [--out dir] [--storage-state file] [--json]
+  screens capture --base <url> [--route r] [--project dir] [--out dir] [--storage-state file] [--json]
                            photograph the routes in <project>/.youi/screens/screens.json, light and
                            dark, from the app running in development at <url>, and place each
                            component on them with the line that rendered it (for youiyoux ui)
@@ -802,8 +802,10 @@ async function cmdRequests(values: Values, positionals: string[]): Promise<numbe
 
 /** `youiyoux screens capture`: the project's screens photographed, each component placed with its line. */
 async function cmdScreens(values: Values, positionals: string[]): Promise<number> {
-  if (positionals[0] !== "capture" || positionals.length > 1 || !values.base) throw new UsageError("youiyoux screens capture --base <url of the app in development> [--project dir] [--out <screens dir>] [--storage-state <signed-in session>] [--json]");
-  const root = resolve(values.root ?? values.project ?? process.cwd());
+  if (positionals[0] !== "capture" || positionals.length > 1 || !values.base) throw new UsageError("youiyoux screens capture --base <url of the app in development> [--route <one route>] [--project dir] [--out <screens dir>] [--storage-state <signed-in session>] [--json]");
+  // The product's root: the configured project's (a config may sit beside the design repo and name it), else the one named.
+  const project = await loadProject(resolve(values.project ?? process.cwd()), loadOptions(values)).catch(() => null);
+  const root = project?.root ?? resolve(values.root ?? values.project ?? process.cwd());
   const dir = resolve(values.out ?? join(root, ".youi/screens"));
   if (!existsSync(join(dir, "screens.json"))) {
     process.stderr.write(`${style.error("✖")} no screens.json in ${dir}: list the routes to capture there, as {"schema":"youiyoux.screens/v1","project":"<name>","source":"<what the app is>","capturedAt":"","viewport":{"width":1440,"height":900},"screens":[{"route":"/","path":"/"}]}\n`);
@@ -812,7 +814,7 @@ async function cmdScreens(values: Values, positionals: string[]): Promise<number
   const { launchBrowser } = await import("@youiyoux/detect");
   const browser = await launchBrowser(process.env.YOUI_CHROMIUM, { purpose: { what: "youiyoux screens capture", command: "youiyoux screens capture" } });
   try {
-    const report = await captureScreens(dir, { base: values.base, root, browser, ...(values["storage-state"] ? { storageState: resolve(values["storage-state"]) } : {}), log: (line) => process.stderr.write(`${style.dim(line)}\n`) });
+    const report = await captureScreens(dir, { base: values.base, root, browser, ...(values.route ? { routes: [values.route] } : {}), ...(values["storage-state"] ? { storageState: resolve(values["storage-state"]) } : {}), log: (line) => process.stderr.write(`${style.dim(line)}\n`) });
     if (values.json) json(report);
     else print(captureText(report));
     return report.screens.every((s) => s.error) ? 1 : 0;

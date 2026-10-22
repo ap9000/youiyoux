@@ -105,7 +105,9 @@ describe("capturing a running app", () => {
     server = createServer((req, res) => {
       const path = (req.url ?? "/").split("?")[0]!;
       if (path === "/broken") return void req.socket.destroy();
-      const body = path === "/" ? page("development.js") : path === "/prod" ? page("production.js") : files.get(path);
+      // /late mounts the app after the capture's first look, as a dev server that reloads mid-way does.
+      const late = '<!doctype html><meta charset="utf-8"><body style="margin:0"><div id="root"></div><script type="module">setTimeout(() => import("/development.js"), 1500)</script>';
+      const body = path === "/" ? page("development.js") : path === "/prod" ? page("production.js") : path === "/late" ? late : files.get(path);
       if (body === undefined) return void res.writeHead(404).end("not found");
       res.writeHead(200, { "content-type": path.endsWith(".js") ? "text/javascript" : path.endsWith(".map") ? "application/json" : "text/html" }).end(path.endsWith(".js") ? `${body}\n//# sourceMappingURL=${path.slice(1)}.map` : body);
     });
@@ -148,6 +150,27 @@ describe("capturing a running app", () => {
     expect(new Set(rows.map((r) => r.box.y)).size).toBe(3);
     expect(JSON.parse(readFileSync(join(dir, "screens.json"), "utf8")).capturedAt).toBe("2026-10-22T12:00:00.000Z");
     expect(captureText(report)).toMatch(/1 of 2 screens of app captured[\s\S]*✓ \/: \d+ components placed, \d+ with their line[\s\S]*✖ \/gone/);
+  }, 120_000);
+
+  test("one route can be captured again on its own: the others keep their pictures and the set keeps its time", async () => {
+    const dir = join(scratch, "one");
+    screens(dir, [{ route: "/", path: "/" }, { route: "/prod", path: "/prod" }]);
+    writeFileSync(join(dir, "prod.light.webp"), "untouched");
+    const before = readFileSync(join(dir, "screens.json"), "utf8");
+    const report = await captureScreens(dir, { base, browser, routes: ["/"] });
+    expect(report.screens.map((s) => s.route)).toEqual(["/"]);
+    expect(existsSync(join(dir, "root.places.json"))).toBe(true);
+    expect(readFileSync(join(dir, "prod.light.webp"), "utf8")).toBe("untouched");
+    expect(readFileSync(join(dir, "screens.json"), "utf8")).toBe(before);
+    await expect(captureScreens(dir, { base, browser, routes: ["/nope"] })).rejects.toThrow(/has no route \/nope: it lists \/, \/prod/);
+  }, 120_000);
+
+  test("a page that mounts React late is looked at again, not recorded as having none", async () => {
+    const dir = join(scratch, "late");
+    screens(dir, [{ route: "/", path: "/late" }]);
+    const report = await captureScreens(dir, { base, browser });
+    expect(report.noReact).toBe(false);
+    expect(report.screens[0]!.placed).toBeGreaterThan(0);
   }, 120_000);
 
   test("a production build is placed without lines, and says so", async () => {

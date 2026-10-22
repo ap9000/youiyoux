@@ -1,5 +1,5 @@
 /** `youiyoux requests`: an agent without MCP reads the requests on the screens, replies and marks them addressed. */
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
@@ -44,4 +44,14 @@ test("marks one addressed as an agent with what changed; without a message it sa
   const file = JSON.parse(await readFile(join(dir, `.youi/requests/${id}.json`), "utf8")) as { thread: Array<{ author: { kind: string; name: string }; status?: string }> };
   expect(file.thread.at(-1)).toMatchObject({ author: { kind: "agent", name: "youiyoux CLI" }, status: "addressed" });
   expect(await main(["requests", "close", id, "--project", dir])).toBe(2);
+});
+
+test("screens capture looks in the product a config names, not beside the config", async () => {
+  const tool = join(import.meta.dirname, "../../..");
+  const pilot = await mkdtemp(join(tmpdir(), "youi-pilot-"));
+  const config = JSON.parse(await readFile(join(tool, "examples/demo-app/youi.project.json"), "utf8")) as Record<string, unknown>;
+  await writeFile(join(pilot, "youi.project.json"), JSON.stringify({ ...config, $schema: undefined, root: join(tool, "examples/demo-app"), source: { path: join(tool, "examples/demo-design") } }));
+  expect(await main(["screens", "capture", "--base", "http://127.0.0.1:5173", "--project", pilot])).toBe(1);
+  expect(err).toContain(`no screens.json in ${join(tool, "examples/demo-app/.youi/screens")}`);
+  await rm(pilot, { recursive: true, force: true });
 });
