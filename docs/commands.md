@@ -35,7 +35,9 @@ This repository is the tool. It holds no product's design data: each design syst
 | How a product uses a system (`youi.project.json`) | the product repo, or beside the system in its design repo (then `root` or `--root` names the product) |
 | Scan results, permissions and approvals | the hosted database (not built yet); never in a repo |
 
-A design repo is any directory with a `youi.config.json`. A product names it with `source.path` in its `youi.project.json` (relative to the config, or absolute), or any command takes `--design <dir>`. A design repo keeps the layout below; [`examples/demo-design`](../examples/demo-design) is a complete one.
+A design repo is any directory with a `youi.config.json`. A product names it with `source.path` in its `youi.project.json` (relative to the config, or absolute), or any command takes `--design <dir>`.
+
+Commands find their project as git finds a repository: run anywhere inside a product, they use the nearest folder upward holding `youi.project.json`, without leaving the git repository. `build` and `parity` find the nearest `youi.config.json` the same way. `--project`, `--config` or `--root` (and `--design`) still say where explicitly, and win. A design repo keeps the layout below; [`examples/demo-design`](../examples/demo-design) is a complete one.
 
 | Path in a design repo | Contents |
 | --- | --- |

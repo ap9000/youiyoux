@@ -5,7 +5,7 @@ import { appendFile, readFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { parseArgs, promisify, type ParseArgsConfig } from "node:util";
 import { parse as parseYaml } from "yaml";
-import { DefinitionError, getSystem, loadDesignRepo, loadLibrary, MigrationSpec, OutputConfig, renderJsonSchemas, safeId, writeFileAtomic, InventoryReport, type ScanReport } from "@youiyoux/core";
+import { DefinitionError, DESIGN_CONFIG_FILE, findUp, getSystem, loadDesignRepo, loadLibrary, MigrationSpec, OutputConfig, renderJsonSchemas, safeId, writeFileAtomic, InventoryReport, type ScanReport } from "@youiyoux/core";
 import { buildGaps, candidateSource, declaredPackages, expandAll, MissingIndexError, selectSources, discoverCacheDir, discoverIndexPath, ingestCatalog, readCatalog, searchCatalog, sharedStore, showFromCatalog, syncIndex, type Fetcher } from "@youiyoux/discover";
 import { indexHome, storeLocation } from "@youiyoux/store";
 import { buildTokens, compareParity } from "@youiyoux/tokens";
@@ -189,12 +189,14 @@ ${style.bold("In this tool's repo")}
   schema [--write|--check] emit JSON Schemas from the Zod definitions; --design writes or checks a design repo's schema/
 
 ${style.bold("Options")}
-  --project <dir>   project root (default: current directory)
+  --project <dir>   project root (default: the nearest folder upward, in this git repo, holding
+                    youi.project.json; else the current directory)
   --config <file>   project config (default: <project>/youi.project.json)
   --root <dir>      product root, for a config kept outside the product
                     (default: "root" in the config, relative to it; else --project)
   --design <dir>    design repo checkout, the directory holding youi.config.json
-                    (default: source.path from the project config; the current directory for build and parity)
+                    (default: source.path from the project config; for build and parity, the nearest
+                    folder upward holding youi.config.json)
   --json            machine-readable output`;
 
 const OPTIONS = {
@@ -1025,7 +1027,28 @@ export async function main(argv: string[], io: CliIo = {}): Promise<number> {
     process.stderr.write(`${style.error("✖")} unknown command "${command}"\n\n${HELP}\n`);
     return 2;
   }
-  return guarded(() => handler(parsed.values, rest, io));
+  return guarded(() => handler(located(command, parsed.values), rest, io));
+}
+
+/** Commands that work on a product, and on a design repo: each runs from anywhere inside one, as git does. */
+const IN_A_PRODUCT = new Set(["show", "where", "bom", "check", "baseline", "rules", "plan", "migrate", "sync", "scan", "watch", "hooks", "agents", "mcp", "ui", "library", "render", "screens", "requests"]);
+const IN_A_DESIGN_REPO = new Set(["build", "parity"]);
+
+/**
+ * The command's values with the project (or design repo) it runs on, when no option names one:
+ * the nearest directory from here upward, inside this git repository, that holds
+ * youi.project.json (or youi.config.json). Found nowhere, the current directory stays the default.
+ */
+export function located(command: string, values: Values, cwd = process.cwd()): Values {
+  if (IN_A_PRODUCT.has(command) && values.project === undefined && values.config === undefined && values.root === undefined) {
+    const found = findUp(cwd, PROJECT_FILE);
+    if (found !== null) return { ...values, project: found };
+  }
+  if (IN_A_DESIGN_REPO.has(command) && values.design === undefined) {
+    const found = findUp(cwd, DESIGN_CONFIG_FILE);
+    if (found !== null) return { ...values, design: found };
+  }
+  return values;
 }
 
 /** Run a command, turning its failure into a message and an exit code. */

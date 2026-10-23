@@ -1,4 +1,5 @@
 /** Filesystem helpers shared by the loader, scanner and sync. */
+import { existsSync } from "node:fs";
 import * as fsp from "node:fs/promises";
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
@@ -140,6 +141,18 @@ export async function readDefinition<T extends z.ZodType>(file: string, schema: 
     throw new DefinitionError(label, [`cannot read: ${error instanceof Error ? error.message : String(error)}`]);
   }
   return parseDefinition(label, text, schema);
+}
+
+/**
+ * The nearest directory from `start` upward that holds `file`, or null. The walk stops at the top
+ * of the git repository `start` is in (the directory holding `.git`), so a config from an
+ * enclosing repository, or from the home directory above it, is never picked up.
+ */
+export function findUp(start: string, file: string): string | null {
+  for (let dir = nodePath.resolve(start); ; dir = dirname(dir)) {
+    if (existsSync(join(dir, file))) return dir;
+    if (existsSync(join(dir, ".git")) || dirname(dir) === dir) return null;
+  }
 }
 
 /** Write via a temp file and rename, so a reader never sees a half-written file. */

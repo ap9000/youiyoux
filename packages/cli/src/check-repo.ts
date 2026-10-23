@@ -1,6 +1,7 @@
 /** Config-free drift checks reuse inventory, parsing, theme and drift analysis. */
 import { readFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { findUp } from "@youiyoux/core";
 import { parseCssColor, type ResolvedToken } from "@youiyoux/tokens";
 import { buildInventory, buildTheme, hardcodedValues, loadInventoryTarget, loadProject, nearDuplicates, offLibraryImports, parseModule, PROJECT_FILE, readStylesheet, substituteVars, type LoadProjectOptions, type InventoryTarget, type ModuleInfo, type Project, type TokenIndex } from "@youiyoux/scanner";
 import { chosenLibraries, classify, DRIFT_SEVERITY, importOf, isAdded, type ChangeProject, type ChangeSet, type DiffFinding } from "./check-diff.ts";
@@ -13,10 +14,8 @@ export async function loadCheckProject(root: string, options: LoadProjectOptions
   let dir = resolve(root);
   if (options.configPath) return loadProject(dir, options);
   if (inferTop) {
-    for (let ancestor = dir;; ancestor = dirname(ancestor)) {
-      if (await exists(join(ancestor, PROJECT_FILE))) return loadProject(ancestor, options);
-      if (dirname(ancestor) === ancestor) break;
-    }
+    const found = findUp(dir, PROJECT_FILE);
+    if (found !== null) return loadProject(found, options);
     dir = await repoRootOf(dir);
   }
   if (await exists(join(dir, PROJECT_FILE))) return loadProject(dir, options);
