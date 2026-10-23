@@ -8,7 +8,7 @@ describe("navigation hierarchy", () => {
     expect(groups).toEqual([
       { section: "system", labels: ["Overview", "Components", "Tokens", "Rules", "Screens"] },
       { section: "library", labels: ["Browse", "Inventory", "Discover", "Gaps", "Stack", "Sources"] },
-      { section: "work", labels: ["Style", "Changes"] },
+      { section: "work", labels: ["Style", "Changes", "Workspace"] },
     ]);
     expect(NAV_SECTIONS.system.hint).toMatch(/build with/);
     expect(NAV_SECTIONS.library.hint).toMatch(/never build with/);

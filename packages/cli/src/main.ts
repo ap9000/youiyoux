@@ -25,7 +25,8 @@ import { renderBrief, renderRequests } from "./requests.ts";
 import { exists, initProject } from "./init.ts";
 import { planAdoption, type AdoptPlan } from "./adopt.ts";
 import { extractSystem } from "./extract.ts";
-import { renderStatus, statusExitCode, workspaceStatus } from "./status.ts";
+import { renderStatus, statusExitCode, statusTargets, workspaceStatus } from "./status.ts";
+import { startWorkspaceHub } from "./workspace-hub.ts";
 import { noteSource, rebuildIndex, recordInventory, recordProject, renderHistory, renderRebuild, SCANS_LOG, SOURCES_FILE } from "./index-store.ts";
 import { renderGaps } from "./gaps.ts";
 import { renderInventory } from "./inventory.ts";
@@ -199,7 +200,8 @@ ${style.bold("Detect")}  ${style.dim("which UI libraries a repo or website uses 
 
 ${style.bold("The hub")}
   ui [--design dir] [--project dir] [--config file] [--root dir] [--port n] [--watch] [--state dir] [--inventory file] [--detect file]
-                           open the web hub on a design system (default: the demo system);
+                           open the web hub on a design system (default: the demo system; beside a
+                           youi.workspace.json, its products, with Work > Workspace to switch);
                            --project adds that product's usage map (read-only scan) and the
                            rule editor (System > Rules, Work > Changes): drafts, impact preview,
                            approval, a review branch in the design repo (drafts kept in --state);
@@ -921,7 +923,39 @@ async function startEditor(values: Values, port: string): Promise<RuleEditor | n
   }
 }
 
+/**
+ * `youiyoux ui` with nothing named, in a workspace (a youi.workspace.json upward): the hub on the first product that can be read, and its Workspace page, which shows
+ * every product's status and opens another in the same hub. The rule editor is per product, so
+ * Rules and Changes stay read-only here.
+ */
+async function workspaceUi(values: Values): Promise<number | null> {
+  if (values.design || values.project || values.config || values.root) return null;
+  // Only a youi.workspace.json makes one: a repo holding products below (this tool's own, say) keeps its usual hub.
+  const { roots, workspace } = await statusTargets(process.cwd());
+  if (workspace === null || roots.length === 0) return null;
+  print(style.dim(`reading the status of ${plural(roots.length, "product")}…`));
+  const report = await workspaceStatus(process.cwd());
+  const first = report.projects.findIndex((p) => !("error" in p));
+  if (first < 0) {
+    print(renderStatus(report));
+    throw new Error("no product in this workspace could be read: see each one's Next above");
+  }
+  const port = values.port ?? DEFAULT_HUB_PORT;
+  let open: ((project: string) => Promise<number>) | null = null;
+  const hub = await startWorkspaceHub({ roots, current: first, status: () => workspaceStatus(process.cwd()), open: (root) => (open ? open(root) : Promise.resolve(1)) });
+  print(`${style.ok("workspace hub")} http://localhost:${port}/workspace#key=${hub.key}`);
+  print(style.dim(`  ${plural(roots.length, "product")}; showing ${report.projects[first]!.root} first. Open the link: it carries this run's key, which switching needs`));
+  print(style.dim("  Rules and Changes are read-only here; youiyoux ui --project <dir> opens the rule editor on one product"));
+  try {
+    return await runHub(TOOL_ROOT, { project: roots[first]!, port, api: hub.url, workspace: (snapshot) => (open = snapshot), ...(values.inventory ? { inventory: values.inventory } : {}), ...(values.detect ? { detect: values.detect } : {}) });
+  } finally {
+    await hub.close();
+  }
+}
+
 async function cmdUi(values: Values): Promise<number> {
+  const workspace = await workspaceUi(values);
+  if (workspace !== null) return workspace;
   const port = values.port ?? DEFAULT_HUB_PORT;
   const editor = await startEditor(values, port);
   try {

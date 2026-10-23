@@ -736,7 +736,9 @@ export async function main(): Promise<void> {
   const dataDir = join(out, "public/data");
   const source = await readSource(values, libs.core, libs.scanner);
   const previousId = previousSystemId(dataDir);
-  rmSync(dataDir, { recursive: true, force: true });
+  // The folder is kept and its old files pruned once the new manifest is written: an open hub (youiyoux ui
+  // switching products in a workspace) watches it, and a watch on a folder that was removed sees nothing again.
+  mkdirSync(dataDir, { recursive: true });
   const system = await writeSystem(out, source.designRoot, source.systemId, source.output, values.commit, libs);
   dropPreviewsOfOtherSystem(out, previousId, system.id);
   const shotsDir = source.usage ? screensDir(values.screens, source.projectDir) : null;
@@ -750,6 +752,7 @@ export async function main(): Promise<void> {
   const discover = discoverDir ? await writeDiscover(dataDir, discoverDir, libs.discover) : null;
   const gaps = read ? await writeGaps(dataDir, read, values.inventory, system, discoverDir, values.discover, libs.discover) : null;
   writeManifest(dataDir, system, usage, undefined, inventory, detect, discover, gaps);
+  pruneData(dataDir, new Set([system.catalogFile, ...usageFiles(usage), ...(inventory ? [inventory.file, ...inventory.files] : []), ...(detect ? [detect.file, ...detect.shots] : []), ...(discover ? [discover] : []), ...(gaps ? [gaps] : [])]));
   if (out === DEFAULT_OUT) await buildHubTokens(libs.core, libs.lib);
   process.stdout.write(`snapshot of ${system.summary}; ${usage.length ? `usage map of ${usage[0]!.project}${shots ? ` with ${shots.screens.length} screens` : ""}` : "no usage map"}${inventory ? `; ${inventory.file} (+${inventory.files.length} chunks and stylesheets)` : ""}${gaps ? `; ${gaps}` : ""}${detect ? `; detect report of ${detect.name} (${detect.shots.length} screenshots)` : ""}${discover ? `; Discover listings ${discover}` : ""} → ${relative(process.cwd(), out) || "."}\n`);
 }

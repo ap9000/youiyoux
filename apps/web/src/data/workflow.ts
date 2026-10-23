@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApiError, DraftContent, DraftView, LibraryDraftContent, LibraryDraftView, PublishedRules, StyleDraftContent, StyleDraftView, WorkflowInfo } from "@youiyoux/workflow/api";
-import type { RequestDoc, RequestStatus, RequestTarget } from "@youiyoux/core";
+import type { RequestDoc, RequestStatus, RequestTarget, StatusReport } from "@youiyoux/core";
 import { sessionKey } from "./session-key.ts";
 
 export type { CheckCapability, DraftContent, DraftView, LibraryDraftContent, LibraryDraftView, Preview, PreviewFinding, PublishedRules, RuleDraftView, RuleFields, StyleContrast, StyleDraftContent, StyleDraftView, StylePreview, StyleSite, WorkflowInfo } from "@youiyoux/workflow/api";
@@ -47,6 +47,19 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
     throw new WorkflowRequestError(error.error ?? `HTTP ${response.status}`, response.status, error.problems ?? []);
   }
   return data as T;
+}
+
+/** The workspace hub's service (`youiyoux ui` in a workspace): every product's status, and opening another in this hub. */
+export const workspaceApi = {
+  get: () => call<WorkspaceView>("GET", "/workspace"),
+  open: (index: number) => call<WorkspaceView>("POST", "/workspace/open", { index }),
+  refresh: () => call<WorkspaceView>("POST", "/workspace/refresh"),
+};
+
+export interface WorkspaceView {
+  readonly report: StatusReport;
+  /** The product this hub shows: its place in report.projects. */
+  readonly current: number;
 }
 
 export const workflowApi = {

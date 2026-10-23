@@ -34,6 +34,11 @@ interface HubOptions {
   readonly inventory?: string;
   /** A `youiyoux detect` report (detect.json, screenshots beside it) for Library > Stack. */
   readonly detect?: string;
+  /**
+   * A workspace hub: the hub stays live, and this is given a way to snapshot another product of the
+   * workspace into the open hub (the Workspace page opens one through /api/workspace).
+   */
+  readonly workspace?: (open: (project: string) => Promise<number>) => void;
 }
 
 interface HubPlan {
@@ -88,7 +93,7 @@ export function builtHubPlan(toolRoot: string, options: HubOptions, out: string)
   if (options.watch && !namesSystem(options)) throw new Error("--watch keeps a system's snapshot live: name it with --design or --project (the demo system is not watched)");
   const hub = join(toolRoot, BUILT_HUB);
   const snapshot = flags.length > 0 ? [join(toolRoot, "hub-snapshot.js"), "--out", out, ...flags] : null;
-  const server = [join(toolRoot, "hub-server.js"), "--dist", hub, "--kit", join(hub, "kit"), "--snapshot", snapshot ? out : join(toolRoot, BUILT_DEMO), ...(snapshot ? ["--build-frame"] : []), ...(options.port ? ["--port", options.port] : []), ...(options.api ? ["--api", options.api] : []), ...(options.watch ? ["--live"] : [])];
+  const server = [join(toolRoot, "hub-server.js"), "--dist", hub, "--kit", join(hub, "kit"), "--snapshot", snapshot ? out : join(toolRoot, BUILT_DEMO), ...(snapshot ? ["--build-frame"] : []), ...(options.port ? ["--port", options.port] : []), ...(options.api ? ["--api", options.api] : []), ...(options.watch || options.workspace ? ["--live"] : [])];
   return { snapshot, server, watch: options.watch && snapshot ? [...snapshot, "--watch"] : null };
 }
 
@@ -117,6 +122,7 @@ async function runBuiltHub(toolRoot: string, options: HubOptions): Promise<numbe
       const code = await run(plan.snapshot, process.cwd(), {}, (child) => children.add(child));
       if (code !== 0) return code;
     }
+    options.workspace?.((project) => run(builtHubPlan(toolRoot, { ...options, project }, out).snapshot!, process.cwd(), {}, (child) => children.add(child)));
     if (plan.watch) children.add(spawn(process.execPath, plan.watch, { cwd: process.cwd(), stdio: "inherit" }));
     return await run(plan.server, process.cwd(), {}, (child) => children.add(child));
   } finally {
@@ -138,6 +144,7 @@ export async function runHub(toolRoot: string, options: HubOptions): Promise<num
     const code = await run(plan.snapshot, process.cwd(), {});
     if (code !== 0) return code;
   }
+  options.workspace?.((project) => run(hubPlan(toolRoot, { ...options, project }).snapshot!, process.cwd(), {}));
   const watcher = plan.watch ? spawn(process.execPath, plan.watch, { cwd: process.cwd(), stdio: "inherit" }) : null;
   try {
     return await run(plan.vite, plan.web, plan.env);

@@ -1,5 +1,5 @@
 /** Route table: every screen is its own chunk, preloaded on hover/focus and on idle after first paint. */
-import { Boxes, Compass, LayoutGrid, Layers, Library, type LucideIcon, Monitor, Paintbrush, Palette, PlugZap, Puzzle, Scale, ScanSearch, GitPullRequestArrow } from "lucide-react";
+import { Boxes, Compass, FolderTree, LayoutGrid, Layers, Library, type LucideIcon, Monitor, Paintbrush, Palette, PlugZap, Puzzle, Scale, ScanSearch, GitPullRequestArrow } from "lucide-react";
 import { type ComponentType, createElement } from "react";
 
 /**
@@ -48,6 +48,7 @@ const inventory = preloadable(() => import("../screens/inventory/InventoryScreen
 const discover = preloadable(() => import("../screens/discover/DiscoverScreen.tsx"), (m) => m.DiscoverScreen);
 const specimen = preloadable(() => import("../screens/discover/SpecimenCapture.tsx"), (m) => m.SpecimenCapture);
 const style = preloadable(() => import("../screens/style/StyleScreen.tsx"), (m) => m.StyleScreen);
+const workspace = preloadable(() => import("../screens/workspace/WorkspaceScreen.tsx"), (m) => m.WorkspaceScreen);
 const loadStubs = () => import("../screens/stubs/StubScreens.tsx");
 const sources = preloadable(loadStubs, (m) => m.SourcesScreen);
 const access = preloadable(loadStubs, (m) => m.AccessScreen);
@@ -67,6 +68,7 @@ export const InventoryScreen = inventory.Component;
 export const DiscoverScreen = discover.Component;
 export const SpecimenCaptureScreen = specimen.Component;
 export const StyleScreen = style.Component;
+export const WorkspaceScreen = workspace.Component;
 export const AccessScreen = access.Component;
 export const NotFoundScreen = notFound.Component;
 
@@ -83,6 +85,7 @@ const loaders = {
   inventory: inventory.preload,
   discover: discover.preload,
   style: style.preload,
+  workspace: workspace.preload,
   stubs: () => Promise.all([sources, access, notFound].map((s) => s.preload())).then(() => undefined),
 } as const;
 
@@ -96,7 +99,7 @@ export type NavSection = "system" | "library" | "work";
 export const NAV_SECTIONS: Readonly<Record<NavSection, { readonly label: string; readonly hint: string }>> = {
   system: { label: "System", hint: "Approved elements, rules and live usage: build with these" },
   library: { label: "Library", hint: "Ingested references: browse and propose, never build with" },
-  work: { label: "Work", hint: "Changes in progress and their review" },
+  work: { label: "Work", hint: "Changes in progress and their review, and the workspace's products" },
 };
 
 export interface NavItem {
@@ -123,6 +126,7 @@ export const NAV: readonly NavItem[] = [
   { href: "/library/sources", label: "Sources", icon: PlugZap, key: "i", loader: "stubs", section: "library" },
   { href: "/style", label: "Style", icon: Paintbrush, key: "e", loader: "style", section: "work" },
   { href: "/changes", label: "Changes", icon: GitPullRequestArrow, key: "w", loader: "changes", section: "work" },
+  { href: "/workspace", label: "Workspace", icon: FolderTree, key: "k", loader: "workspace", section: "work" },
 ];
 
 export interface NavGroup {

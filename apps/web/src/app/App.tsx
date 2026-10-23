@@ -7,7 +7,7 @@ import { useGlobalKeys } from "../shell/keyboard.ts";
 import { NavRail } from "../shell/NavRail.tsx";
 import { Overlays, preloadOverlays } from "../shell/Overlays.tsx";
 import { PaneSkeleton, ScreenBoundary } from "../ui/Pane.tsx";
-import { AccessScreen, CatalogScreen, ChangesScreen, DiscoverScreen, GapsScreen, HomeScreen, InventoryScreen, LibraryScreen, NotFoundScreen, preload, preloadAll, RulesScreen, ScreensScreen, SourcesScreen, SpecimenCaptureScreen, StackScreen, StyleScreen, TokensScreen } from "./routes.tsx";
+import { AccessScreen, CatalogScreen, ChangesScreen, DiscoverScreen, GapsScreen, HomeScreen, InventoryScreen, LibraryScreen, NotFoundScreen, preload, preloadAll, RulesScreen, ScreensScreen, SourcesScreen, SpecimenCaptureScreen, StackScreen, StyleScreen, TokensScreen, WorkspaceScreen } from "./routes.tsx";
 
 const IDLE_TIMEOUT_MS = 1500;
 
@@ -94,6 +94,7 @@ export function App() {
                 <Route path="/discover" component={DiscoverScreen} />
                 <Route path="/style/*?" component={StyleScreen} />
                 <Route path="/changes/*?" component={ChangesScreen} />
+                <Route path="/workspace" component={WorkspaceScreen} />
                 <Route path="/access" component={AccessScreen} />
                 <Route component={NotFoundScreen} />
               </Switch>
