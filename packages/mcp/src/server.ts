@@ -26,7 +26,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { existsSync, realpathSync } from "node:fs";
 import { basename, isAbsolute, join, resolve, sep } from "node:path";
-import { isLibraryId, loadLibrary, MigrationSpec, normalizeRelPath, type Library, type McpTool } from "@youiyoux/core";
+import { isLibraryId, loadLibrary, MigrationSpec, normalizeRelPath, ruleSlug, type Library, type McpTool } from "@youiyoux/core";
 import { DISCOVER_RULE, DiscoverConstraints, discoverCacheDir, discoverIndexPath, MissingIndexError, readCatalog, searchCatalog, sharedStore, showFromCatalog, type DiscoverHit } from "@youiyoux/discover";
 import { storeLocation, type Store } from "@youiyoux/store";
 import { adoptionRequest, captureScreens, chosenSession, readScreensSpec, screenSlug, collectComponents, findLibraryEntry, renderShots, type ShotsOptions, componentCard, describeIdentity, failedChecks, findContract, formatProps, loadProject, planChange, PROJECT_FILE, ruleRows, ScanCache, scanProject, screenBom, searchElements, searchLibrary, tokenRows, whereUsed, type PlanInput, type Project, type ProjectComponents, type ScanResult } from "@youiyoux/scanner";
@@ -34,9 +34,9 @@ import { launchBrowser } from "@youiyoux/detect";
 import { RequestStore, requestBrief } from "@youiyoux/workflow";
 import { z } from "zod";
 import { findComponents, matchesText, noneFitsText } from "./find-component.ts";
-import { renderText, ruleCoversText, swapImpactText, whereUsedText } from "./index-tools.ts";
+import { choicesText, renderText, ruleCoversText, swapImpactText, whereUsedText } from "./index-tools.ts";
 
-export interface ServerOptions {
+interface ServerOptions {
   readonly projectRoot: string;
   readonly configPath?: string;
   readonly designRoot?: string;
@@ -204,8 +204,8 @@ export function createServer(options: ServerOptions): McpServer {
     "system_get_tokens" satisfies McpTool,
     { title: "Get System tokens", description: "Tokens with their CSS variable, light and dark values, alias and Tailwind utility. Filter by group (color, typography, radius, space, shadow, font, easing) or a full id.", inputSchema: { group: z.string().optional(), limit: z.number().int().min(1).max(200).optional() }, annotations: READ_ONLY },
     guard(async ({ group, limit }) => {
-      const { project, scan } = await state.scanned();
-      return tokenRows(project, scan.tokens, group, limit ?? 40);
+      const { scan } = await state.scanned();
+      return tokenRows(scan.tokens, group, limit ?? 40);
     }),
   );
 
@@ -251,11 +251,11 @@ export function createServer(options: ServerOptions): McpServer {
       const result = await state.check(project, { ...(code !== undefined ? { overrides: { [target]: code } } : {}), focus: [...wanted] });
       const checked = new Set(result.modules.keys());
       const unchecked = [...wanted].filter((f) => !checked.has(f));
-      const violations = result.report.violations.filter((v) => wanted.has(v.file)).map(({ rule, severity, line, column, message, suggestion, file }) => ({ at: `${file}:${line}:${column}`, rule: rule.split("/rule/")[1], severity, message, ...(suggestion ? { suggestion } : {}) }));
+      const violations = result.report.violations.filter((v) => wanted.has(v.file)).map(({ rule, severity, line, column, message, suggestion, file }) => ({ at: `${file}:${line}:${column}`, rule: ruleSlug(rule), severity, message, ...(suggestion ? { suggestion } : {}) }));
       const usages = result.report.usages.filter((u) => wanted.has(u.file)).map((u) => `${u.file}:${u.line} ${u.export} ${formatProps(u.props, u.spread)}`.trim());
       const failed = result.report.coverage.failed.filter((f) => wanted.has(f.file)).map((f) => `${f.file}: ${f.reason}`);
       // A rule that should have run and did not leaves its findings unknown, never zero.
-      const notRun = failedChecks(result.report.checks).map((c) => `${c.rule.split("/rule/")[1]}: ${c.reason ?? c.state}`);
+      const notRun = failedChecks(result.report.checks).map((c) => `${ruleSlug(c.rule)}: ${c.reason ?? c.state}`);
       return {
         errors: violations.filter((v) => v.severity === "error").length,
         ...(unchecked.length || failed.length || notRun.length ? { incomplete: true, unchecked, failed, notRun } : {}),
@@ -356,7 +356,7 @@ export function createServer(options: ServerOptions): McpServer {
       const store = await graph();
       const where = await store.whereUsed(family.trim(), { project: project ?? (await defaultProject(store)) });
       if (!where) throw new Error(`no family "${family}" in the index (${await knownFamilies(store)})`);
-      if ("choices" in where) return ["Choose a project or full node id:", ...where.choices.slice(0, 8).map((n) => `${n.project ?? "unknown"} · ${n.id}`)].join("\n");
+      if ("choices" in where) return choicesText(where);
       return whereUsedText(where, (await store.latestRun(where.source))?.scannedAt ?? null);
     }),
   );
@@ -368,7 +368,7 @@ export function createServer(options: ServerOptions): McpServer {
       const store = await graph();
       const swap = await store.swapImpact(candidate.trim(), family.trim(), { project: project ?? (await defaultProject(store)) });
       if (!swap) throw new Error(`no family "${family}" in the index (${await knownFamilies(store)})`);
-      if ("choices" in swap) return ["Choose a project or full node id:", ...swap.choices.slice(0, 8).map((n) => `${n.project ?? "unknown"} · ${n.id}`)].join("\n");
+      if ("choices" in swap) return choicesText(swap);
       return swapImpactText(swap, DISCOVER_RULE);
     }),
   );
@@ -380,7 +380,7 @@ export function createServer(options: ServerOptions): McpServer {
       const store = await graph();
       const covers = await store.ruleCovers(rule.trim(), { project: project ?? (await defaultProject(store)) });
       if (!covers) throw new Error(`no rule "${rule}" in the index: youiyoux scan records the project's rules and usage`);
-      if ("choices" in covers) return ["Choose a project or full node id:", ...covers.choices.slice(0, 8).map((n) => `${n.project ?? "unknown"} · ${n.id}`)].join("\n");
+      if ("choices" in covers) return choicesText(covers);
       const spec = await state.loadProject().then((p) => p.system.rules.find((r) => r.id === covers.rule), () => undefined);
       return ruleCoversText(covers, spec ? { title: spec.title, severity: spec.severity, files: spec.files } : {});
     }),
@@ -476,7 +476,7 @@ export function createServer(options: ServerOptions): McpServer {
       annotations: WRITES_SCREEN,
     },
     guard(async ({ route, base }) => {
-      const { root } = await requests();
+      const { store, root } = await requests();
       const dir = join(root, ".youi/screens");
       if (!existsSync(join(dir, "screens.json"))) return { error: `no screens.json in ${dir}: a person lists the routes to capture there first (youiyoux screens capture)` };
       const where = base ?? readScreensSpec(dir).base;
@@ -487,7 +487,6 @@ export function createServer(options: ServerOptions): McpServer {
       try {
         const report = await captureScreens(dir, { base: where, root, browser, routes: [route], ...(session ? { storageState: session.file } : {}) });
         const shot = report.screens[0]!;
-        const { store } = await requests();
         const waiting = (await store.list()).requests.filter((r) => r.target.route === route && r.status !== "closed").map((r) => requestBrief(r, root));
         return {
           route,
@@ -510,7 +509,7 @@ export function createServer(options: ServerOptions): McpServer {
 }
 
 /** An address on this machine: what screens_capture may photograph. */
-export function isLocalUrl(value: string): boolean {
+function isLocalUrl(value: string): boolean {
   try {
     const url = new URL(value);
     return (url.protocol === "http:" || url.protocol === "https:") && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);

@@ -6,8 +6,6 @@ export type WorkerRequest = { readonly type: "index"; readonly docs: readonly Se
 export interface WorkerResponse {
   readonly id: number;
   readonly ids: readonly string[];
-  /** Time spent searching inside the worker. */
-  readonly ms: number;
 }
 
 const scope = self as unknown as {
@@ -22,7 +20,5 @@ scope.onmessage = ({ data }) => {
     index = createIndex(data.docs);
     return;
   }
-  const started = performance.now();
-  const ids = searchIndex(index, data.query);
-  scope.postMessage({ id: data.id, ids, ms: performance.now() - started });
+  scope.postMessage({ id: data.id, ids: searchIndex(index, data.query) });
 };

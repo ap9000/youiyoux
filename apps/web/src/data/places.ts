@@ -7,6 +7,7 @@
  */
 import { useEffect, useState } from "react";
 import type { ElementId } from "@youiyoux/core";
+import { append } from "../lib/append.ts";
 import { loadPlaces } from "./load.ts";
 import type { PlacedComponent, PlacesFile } from "./types.ts";
 import type { ProjectLookalike, Site } from "./usage.ts";
@@ -22,7 +23,7 @@ export interface Placed {
   readonly at: string | null;
 }
 
-export const atOf = (place: Pick<PlacedComponent, "file" | "line">): string | null => (place.file && place.line ? `${place.file}:${place.line}` : null);
+const atOf = (place: Pick<PlacedComponent, "file" | "line">): string | null => (place.file && place.line ? `${place.file}:${place.line}` : null);
 
 /**
  * Each place with the site it renders, if any. A site matches on its file and line and the name it
@@ -32,8 +33,7 @@ export function matchPlaces(places: readonly PlacedComponent[], sites: readonly 
   const byLine = new Map<string, Site[]>();
   for (const site of sites) {
     if (site.kind !== "render") continue;
-    const key = `${site.file}:${site.line}`;
-    byLine.set(key, [...(byLine.get(key) ?? []), site]);
+    append(byLine, `${site.file}:${site.line}`, site);
   }
   const lookalikeAt = new Map(lookalikes.map((l) => [`${l.file}:${l.line}:${l.local}`, l.resembles]));
   return places.map((place) => {

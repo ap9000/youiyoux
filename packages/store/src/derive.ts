@@ -4,14 +4,11 @@
  * `used-in` edges. Pure functions: the same input always gives the same rows, so a rebuild
  * from the same files answers exactly as before.
  */
-import { createHash } from "node:crypto";
-import { SHAPE_DIMENSIONS, type InventoryFamily, type InventoryReport, type RuleSpec, type ScanReport } from "@youiyoux/core";
+import { shortHash, SHAPE_DIMENSIONS, type InventoryFamily, type InventoryReport, type RuleSpec, type ScanReport } from "@youiyoux/core";
 import type { Graph, GraphEdge, GraphNode, InventoryRun } from "./types.ts";
 
-const short = (text: string): string => createHash("sha256").update(text).digest("hex").slice(0, 12);
-
 export const nodeId = {
-  family: (inventory: string, id: string, project = "") => `family:${short(inventory)}/${encodeURIComponent(project)}/${id}`,
+  family: (inventory: string, id: string, project = "") => `family:${shortHash(inventory)}/${encodeURIComponent(project)}/${id}`,
   file: (project: string, file: string) => `file:${project}:${file}`,
   route: (project: string, route: string) => `route:${project}:${route}`,
   project: (id: string) => `project:${id}`,
@@ -68,7 +65,7 @@ export function nearDuplicatePairs(families: readonly InventoryFamily[], toleran
 
 /** An inventory report as one run. `source` names where it came from (the inventory file). */
 export function inventoryRun(report: InventoryReport, source: string): InventoryRun {
-  const run = `${report.generatedAt}#${short(`${source}\0${report.generatedAt}`).slice(0, 8)}`;
+  const run = `${report.generatedAt}#${shortHash(`${source}\0${report.generatedAt}`).slice(0, 8)}`;
   const g = new GraphBuilder();
   const familyNode = (id: string, project: string) => g.node({ id: nodeId.family(source, id, project), kind: "family", ref: id, project });
   for (const family of report.families) for (const project of family.projects) familyNode(family.id, project);

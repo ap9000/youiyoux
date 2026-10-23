@@ -223,10 +223,9 @@ export interface SystemPairsOptions {
  * and in every state that changes either (as large text when every typography the contract binds
  * is large). A focus ring drawn over its element (offset 0 or less, or unknown) is also checked
  * against each fill of the contracts it can focus: their `bg` roles at rest and in every state.
- * A third argument that is a Map is read as `focusRings`.
  */
-export function systemPairs(tokens: readonly ContrastToken[], contracts: readonly ContrastContract[] = [], options: SystemPairsOptions | ReadonlyMap<string, string | ContrastRing> = {}): ContrastPair[] {
-  const { focusRings = new Map(), typography = [] } = options instanceof Map ? { focusRings: options } : (options as SystemPairsOptions);
+export function systemPairs(tokens: readonly ContrastToken[], contracts: readonly ContrastContract[] = [], options: SystemPairsOptions = {}): ContrastPair[] {
+  const { focusRings = new Map(), typography = [] } = options;
   const rings = new Map([...focusRings].map(([ring, value]) => [ring, typeof value === "string" ? { color: value, offset: null } : value]));
   const byPath = colors(tokens);
   const surfaces = surfacesOf(byPath);

@@ -4,4 +4,3 @@ import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
 
 export const TOOL_ROOT = join(dirname(createRequire(import.meta.url).resolve("youiyoux/package.json")), "dist");
-export const CLI_BIN = join(TOOL_ROOT, "packages/cli/bin/youi.js");

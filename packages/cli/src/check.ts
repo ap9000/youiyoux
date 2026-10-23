@@ -4,13 +4,13 @@
  * baseline if there is one, verify the lockfile, and decide pass, fail or incomplete.
  * Every result carries the identity it was computed against.
  */
-import { dirname, join, relative, resolve, sep } from "node:path";
-import { Baseline, readDefinition, readTextOrNull, writeFileAtomic, type CheckIdentity, type RuleRun, type Violation } from "@youiyoux/core";
+import { dirname, join, resolve } from "node:path";
+import { Baseline, readDefinition, readTextOrNull, relPath, ruleSlug, writeFileAtomic, type CheckIdentity, type RuleRun, type Violation } from "@youiyoux/core";
 import { BASELINE_FILE, compareToBaseline, createBaseline, failedChecks, PROJECT_FILE, ratchetBaseline, scanProject, type BaselineComparison, type Project, type ScanCache, type ScanResult } from "@youiyoux/scanner";
 import { analyseChange, type ChangeSet, type DiffReport } from "./check-diff.ts";
 import { verifyLock, verifyWiring, type LockIssue } from "./sync.ts";
 
-export interface CheckOptions {
+interface CheckOptions {
   /** Check only these files (absolute, or relative to the current directory); default: the whole project. */
   readonly files?: readonly string[];
   /** Contents to check instead of the files on disk (staged blobs, unsaved edits), by project-relative path. */
@@ -21,7 +21,7 @@ export interface CheckOptions {
   readonly quiet?: boolean;
   /** Compare against this baseline file; null: no baseline. */
   readonly baseline?: string | null;
-  /** Verify the lockfile and generated-file wiring (default true; hooks skip it). */
+  /** Verify the lockfile and generated-file wiring (default: yes, except for a diff; hooks skip it). */
   readonly lock?: boolean;
   readonly cache?: ScanCache;
   /** Also report what this change adds (`youiyoux check --diff`): its files are the scope unless `files` is given, its staged sources the content. */
@@ -52,14 +52,14 @@ export interface CheckResult {
 /** Common diff output for configured projects and inferred repositories. */
 export type DiffCheckResult = Pick<CheckResult, "diff" | "incomplete" | "unmatched" | "failed" | "notRun"> & { readonly identity: CheckIdentity | null };
 
-export const toProjectPath = (project: Project, file: string): string => relative(project.root, resolve(file)).split(sep).join("/");
+const toProjectPath = (project: Project, file: string): string => relPath(project.root, resolve(file));
 
 /** The baseline file for a project: next to its config (which may live outside the project). */
 export function baselinePath(project: Project, configPath?: string): string {
   return join(dirname(resolve(configPath ?? project.configFile ?? join(project.root, PROJECT_FILE))), BASELINE_FILE);
 }
 
-export async function readBaseline(file: string): Promise<Baseline | null> {
+async function readBaseline(file: string): Promise<Baseline | null> {
   if ((await readTextOrNull(file)) === null) return null;
   return readDefinition(file, Baseline);
 }
@@ -76,7 +76,7 @@ export async function runCheck(project: Project, options: CheckOptions = {}): Pr
   const wantedRule = (id: string): boolean => !options.rule || id.endsWith(`/rule/${options.rule}`);
   const violations = report.violations.filter((v) => wantedRule(v.rule) && (!options.quiet || v.severity === "error"));
   const notRun = failedChecks(report.checks).filter((c) => wantedRule(c.rule));
-  const lock = options.lock === false || (diff && options.lock !== true) ? null : await lockIssues(project);
+  const lock = options.lock === false || diff ? null : await lockIssues(project);
   const recorded = options.baseline ? await readBaseline(options.baseline) : null;
   if (options.baseline && !recorded) throw new Error(`no baseline at ${options.baseline}; record one with \`youiyoux baseline\``);
   const baseline = recorded && options.baseline ? { file: options.baseline, recorded: recorded.identity, comparison: compareToBaseline(recorded, violations, scope ?? undefined) } : null;
@@ -98,7 +98,7 @@ export const exitCodeOf = (result: CheckResult): number => (result.errors > 0 ||
 /** `youiyoux check --diff`: advisory (0) unless `strict`, which fails on any finding or an incomplete result. */
 export const diffExitCodeOf = (result: DiffCheckResult, strict: boolean): number => (strict && ((result.diff?.findings.length ?? 0) > 0 || result.incomplete) ? 1 : 0);
 
-export interface BaselineWrite {
+interface BaselineWrite {
   readonly file: string;
   readonly action: "created" | "ratcheted" | "rewritten";
   readonly baseline: Baseline;
@@ -114,7 +114,7 @@ export interface BaselineWrite {
 export async function writeBaseline(project: Project, file: string, options: { force?: boolean; cache?: ScanCache } = {}): Promise<BaselineWrite> {
   const scan = await scanProject(project, options.cache ? { cache: options.cache } : {});
   if (scan.report.status !== "complete" && !options.force) {
-    const gaps = [...scan.report.coverage.failed.map((f) => f.file), ...failedChecks(scan.report.checks).map((c) => `rule ${c.rule.split("/rule/")[1]}`)];
+    const gaps = [...scan.report.coverage.failed.map((f) => f.file), ...failedChecks(scan.report.checks).map((c) => `rule ${ruleSlug(c.rule)}`)];
     throw new Error(`the scan is partial (${gaps.join(", ")}): findings there would later look new. Fix what could not be analysed or run, or record anyway with --force`);
   }
   const existing = await readBaseline(file);

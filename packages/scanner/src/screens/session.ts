@@ -6,12 +6,13 @@
  * could pick it up): it goes under `$XDG_CACHE_HOME/youiyoux/sessions` (`~/.cache`), named by the
  * product's root, readable by its owner only. Deleting the file signs capture out.
  */
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { existsSync, realpathSync } from "node:fs";
 import { chmod, mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { chromium, type Browser, type Page } from "playwright-core";
+import { sha256 } from "@youiyoux/core";
 
 export type { Browser as LoginBrowser, Page as LoginPage };
 
@@ -22,7 +23,7 @@ export function sessionFile(root: string, env: NodeJS.ProcessEnv = process.env):
     real = realpathSync(root);
   } catch {}
   const name = basename(real).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "product";
-  const hash = createHash("sha256").update(real).digest("hex").slice(0, 12);
+  const hash = sha256(real).slice(0, 12);
   return join(env.XDG_CACHE_HOME || join(homedir(), ".cache"), "youiyoux", "sessions", `${name}-${hash}.json`);
 }
 

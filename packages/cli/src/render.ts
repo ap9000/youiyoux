@@ -1,5 +1,5 @@
 /** Human output for each command. Every command also has --json for scripts and agents. */
-import { executionLabel, type RuleExecution, type RuleSpec, type ScanReport, type Violation } from "@youiyoux/core";
+import { executionLabel, ruleSlug, type RuleExecution, type RuleSpec, type ScanReport, type Violation } from "@youiyoux/core";
 import { failedChecks, shotsText, type ChangePlan, type MigrationResult, type RuleEvaluation, type ScreenBom, type ShotsReport, type WhereResult } from "@youiyoux/scanner";
 import type { LockIssue, SyncAction, SyncResult } from "./sync.ts";
 import { bar, ms, padEnd, padStart, plural, rule, style, truncate } from "./ui.ts";
@@ -21,7 +21,7 @@ function ruleProblemLines(report: Pick<ScanReport, "checks">): string[] {
   return failedChecks(report.checks).map((c) => style.warn(`  ! rule ${ruleSlug(c.rule)} did not run: ${c.reason ?? c.state}`));
 }
 
-export function renderScan(report: ScanReport, outFile: string | null): string {
+export function renderScan(report: ScanReport, outFile: string): string {
   const byElement = Map.groupBy(report.usages, (u) => u.element);
   const width = Math.max(...[...byElement.keys()].map((id) => id.split("/").at(-1)!.length), 8);
   const max = Math.max(...[...byElement.values()].map((v) => v.length), 1);
@@ -37,12 +37,13 @@ export function renderScan(report: ScanReport, outFile: string | null): string {
     coverageLine(report),
     ...report.coverage.failed.map((f) => style.warn(`  ! ${f.file}: ${f.reason}`)),
     ...ruleProblemLines(report),
-    ...(outFile ? [style.dim(`usage map → ${outFile}`)] : []),
+    style.dim(`usage map → ${outFile}`),
   ];
   return lines.join("\n");
 }
 
-export function renderWhere(where: WhereResult, report: ScanReport, all: readonly WhereResult["sites"][number][]): string {
+export function renderWhere(where: WhereResult, report: ScanReport): string {
+  const all = where.sites;
   const max = Math.max(...where.byRoute.map((r) => r.sites), 1);
   const routeWidth = Math.max(...where.byRoute.map((r) => r.route.length), 6);
   const unknown = where.unknown.length > 0 ? style.warn(plural(where.unknown.length, "unknown")) : style.dim("0 unknown");
@@ -71,11 +72,8 @@ export function renderWhere(where: WhereResult, report: ScanReport, all: readonl
   return lines.join("\n");
 }
 
-function ruleSlug(id: string): string {
-  return id.slice(id.indexOf("/rule/") + 6);
-}
-
-export function renderCheck(violations: readonly Violation[], lockIssues: readonly LockIssue[] | null, report: ScanReport, suppressed: number): string {
+export function renderCheck(violations: readonly Violation[], lockIssues: readonly LockIssue[] | null, report: ScanReport): string {
+  const { suppressed } = report;
   const lines: string[] = [];
   for (const [file, list] of Map.groupBy(violations, (v) => v.file)) {
     lines.push(style.bold(file));

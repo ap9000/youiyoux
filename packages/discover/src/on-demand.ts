@@ -48,7 +48,7 @@ export async function expandAll(cacheDir: string, options: PoliteOptions & { ico
     const entries = parseRegistryItems(response.value).items.filter(isCandidate).map((item) => registryEntry({ name: r.name, homepage: r.homepage, url, fetchedAt: response.result.fetchedAt, official: false, health: r.health }, item, categories));
     return !options.icons && entries.length && entries.filter(isIconEntry).length / entries.length >= 0.8 ? [] : entries.map((entry) => applySignals(entry, signals));
   }));
-  await writeHttpCache(cacheDir, cache, new Map());
+  await writeHttpCache(cacheDir, cache);
   // Deduplicated against the index (official and selected listings win), then only what is new.
   const chosen = new Set(index.entries.map((e) => e.id));
   const entries = dedupe([...index.entries, ...extra.flat()]).entries.filter((e) => !chosen.has(e.id));

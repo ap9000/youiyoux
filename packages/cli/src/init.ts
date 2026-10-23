@@ -6,7 +6,7 @@ import { PROJECT_FILE } from "@youiyoux/scanner";
 import { buildTokens } from "@youiyoux/tokens";
 import { GENERATED_MARK } from "./agents.ts";
 
-export interface InitOptions {
+interface InitOptions {
   readonly root: string;
   /** The design repo checkout (the directory holding youi.config.json). */
   readonly design: string;
@@ -18,16 +18,18 @@ export interface InitOptions {
   readonly force?: boolean;
 }
 
-export interface InitResult {
+interface InitResult {
   readonly file: string;
   readonly config: ProjectConfig;
   /** What was detected and why, for the person reading the output. */
   readonly notes: readonly string[];
 }
 
-const exists = (path: string): Promise<boolean> => access(path).then(() => true, () => false);
+/** Whether a path exists (any kind of file). */
+export const exists = (path: string): Promise<boolean> => access(path).then(() => true, () => false);
 
-async function readJson(path: string): Promise<Record<string, unknown> | null> {
+/** A JSON file as an object, or null when it is missing or not JSON. */
+export async function readJson(path: string): Promise<Record<string, unknown> | null> {
   try {
     return JSON.parse(await readFile(path, "utf8")) as Record<string, unknown>;
   } catch {
@@ -85,8 +87,7 @@ export async function initProject(options: InitOptions): Promise<InitResult> {
   }
   notes.push(`owned components: ${componentsDir}`);
 
-  const tsconfig = (await exists(join(root, "tsconfig.json"))) ? "tsconfig.json" : "tsconfig.json";
-  const alias = await aliasRoot(root, tsconfig);
+  const alias = await aliasRoot(root);
   const importFrom = alias !== undefined && componentsDir.startsWith(alias) ? `@/${componentsDir.slice(alias.length)}` : undefined;
   if (importFrom) notes.push(`imports use the @/ alias: ${importFrom}`);
 

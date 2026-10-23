@@ -12,6 +12,7 @@ import { screenHref, screensOf, screensOfElement } from "../../data/screens.ts";
 import { retryUsage, type Resource } from "../../data/store.ts";
 import type { ComponentContract } from "../../data/types.ts";
 import { elementIssues, enumDefault, EVERY_SCREEN, filterSites, groupByScreen, propDistribution, type PropFilters, type Site, summarize, UNROUTED, type UsageIndex, valueLabel } from "../../data/usage.ts";
+import { shortSha } from "../../lib/format.ts";
 import { Badge } from "../../ui/Badge.tsx";
 import { EmptyState } from "../../ui/EmptyState.tsx";
 import { ResourceState } from "../../ui/Pane.tsx";
@@ -21,7 +22,6 @@ import { Distribution, IssueList, type ShowRequest, TopScreens, type UsageView }
 
 /** Lists this short open every screen group; longer ones start collapsed. */
 const AUTO_OPEN_SITES = 24;
-const SHORT_SHA = 7;
 
 const ROUTE_SOURCE: Record<Site["routeSource"], string> = {
   "route-file": "screen file",
@@ -43,7 +43,7 @@ function ScreenGroups({ sites, contract, showAll }: { sites: readonly Site[]; co
           {groups.length > 1 && (
             <h4 className="flex items-baseline gap-2 text-small text-muted">
               <span className="font-medium text-ink">{project.project}</span>
-              {project.commit && <span className="font-mono text-mono-sm">@{project.commit.slice(0, SHORT_SHA)}</span>}
+              {project.commit && <span className="font-mono text-mono-sm">@{shortSha(project.commit)}</span>}
             </h4>
           )}
           <div className="rounded-md border border-line">

@@ -18,7 +18,6 @@ export interface ReportInput {
   readonly unused?: readonly DetectUnused[];
   readonly fonts?: readonly DetectFont[];
   readonly notes?: readonly string[];
-  readonly now?: Date;
 }
 
 export function buildReport(input: ReportInput): DetectReport {
@@ -26,7 +25,7 @@ export function buildReport(input: ReportInput): DetectReport {
   const libraries = scoreLibraries(input.signals, pagesOf);
   return DetectReport.parse({
     schema: "youi.detect/v1",
-    generatedAt: (input.now ?? new Date()).toISOString(),
+    generatedAt: new Date().toISOString(),
     detector: DETECTOR,
     target: { kind: input.kind, inputs: [...input.inputs], name: input.name },
     pages: [...(input.pages ?? [])],
@@ -39,9 +38,9 @@ export function buildReport(input: ReportInput): DetectReport {
   });
 }
 
-export async function repoReport(root: string, now?: Date): Promise<DetectReport> {
+export async function repoReport(root: string): Promise<DetectReport> {
   const scan = await detectRepo(root);
-  return buildReport({ kind: "repo", inputs: [root], name: scan.name, coverage: scan.coverage, signals: scan.signals, hits: scan.hits, unused: scan.unused, fonts: scan.fonts, notes: scan.notes, ...(now ? { now } : {}) });
+  return buildReport({ kind: "repo", inputs: [root], name: scan.name, coverage: scan.coverage, signals: scan.signals, hits: scan.hits, unused: scan.unused, fonts: scan.fonts, notes: scan.notes });
 }
 
 /** `<out>/detect.json`; screenshots already sit in `<out>/screenshots/`. */

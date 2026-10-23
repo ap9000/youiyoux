@@ -19,7 +19,7 @@ export function formatId(system: string, kind: ElementKind, name: string): Eleme
   return `youi:${system}/${kind}/${name}`;
 }
 
-export const ELEMENT_TABS = ["overview", "usage", "contract", "rules"] as const;
+const ELEMENT_TABS = ["overview", "usage", "contract", "rules"] as const;
 export type ElementTab = (typeof ELEMENT_TABS)[number];
 
 /** Tab names from before the tabs were merged, so old links still land on the right content. */

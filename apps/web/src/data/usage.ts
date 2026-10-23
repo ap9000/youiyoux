@@ -1,4 +1,5 @@
 /** Usage-map aggregation: where an element lives, grouped project → screen → site. */
+import { append } from "../lib/append.ts";
 import type { ComponentContract, ElementId, Lookalike, PropValue, ScanReport, UnknownSite, UsageSite, Violation } from "./types.ts";
 
 export interface Site extends UsageSite {
@@ -28,10 +29,6 @@ export interface UsageIndex {
   readonly unknownsByCandidate: ReadonlyMap<ElementId, readonly ProjectUnknown[]>;
 }
 
-function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
-  map.set(key, [...(map.get(key) ?? []), value]);
-}
-
 export const EVERY_SCREEN = "*";
 export const UNROUTED = "(no screen)";
 
@@ -42,10 +39,10 @@ export function indexUsage(reports: readonly ScanReport[]): UsageIndex {
   const unknownsByCandidate = new Map<ElementId, ProjectUnknown[]>();
   for (const report of reports) {
     const { project } = report;
-    for (const usage of report.usages) push(sitesByElement, usage.element, { ...usage, project, commit: report.commit });
-    for (const violation of report.violations) push(violationsByRule, violation.rule, { ...violation, project });
-    for (const lookalike of report.lookalikes) push(lookalikesByElement, lookalike.resembles, { ...lookalike, project });
-    for (const unknown of report.unknowns) if (unknown.candidate) push(unknownsByCandidate, unknown.candidate, { ...unknown, project });
+    for (const usage of report.usages) append(sitesByElement, usage.element, { ...usage, project, commit: report.commit });
+    for (const violation of report.violations) append(violationsByRule, violation.rule, { ...violation, project });
+    for (const lookalike of report.lookalikes) append(lookalikesByElement, lookalike.resembles, { ...lookalike, project });
+    for (const unknown of report.unknowns) if (unknown.candidate) append(unknownsByCandidate, unknown.candidate, { ...unknown, project });
   }
   return { reports, sitesByElement, violationsByRule, lookalikesByElement, unknownsByCandidate };
 }
@@ -120,7 +117,7 @@ export function filterSites(sites: readonly Site[], filters: PropFilters): Site[
   return sites.filter((site) => active.every(([prop, value]) => propLabel(site.props[prop]) === value));
 }
 
-export interface ScreenGroup {
+interface ScreenGroup {
   readonly route: string;
   readonly sites: readonly Site[];
 }
@@ -140,7 +137,7 @@ export function groupByScreen(sites: readonly Site[]): ProjectGroup[] {
   for (const site of sites) {
     const project = projects.get(site.project) ?? { commit: site.commit, count: 0, routes: new Map<string, Site[]>() };
     project.count++;
-    for (const route of site.routes.length > 0 ? site.routes : [UNROUTED]) project.routes.set(route, [...(project.routes.get(route) ?? []), site]);
+    for (const route of site.routes.length > 0 ? site.routes : [UNROUTED]) append(project.routes, route, site);
     projects.set(site.project, project);
   }
   return [...projects]

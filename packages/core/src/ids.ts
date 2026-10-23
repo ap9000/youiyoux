@@ -21,6 +21,9 @@ export function parseId(id: string): ParsedId | null {
   return { system: match[1]!, kind: match[2] as ElementKind, name: match[3]! };
 }
 
+/** A rule id's name, as people and agents write it: `youi:acme/rule/color.no-raw` → `color.no-raw`. */
+export const ruleSlug = (id: string): string => id.slice(id.indexOf("/rule/") + 6);
+
 export function formatId(system: string, kind: ElementKind, name: string): ElementId {
   return `youi:${system}/${kind}/${name}`;
 }

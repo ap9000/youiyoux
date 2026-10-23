@@ -167,7 +167,7 @@ export function importedPackages(source: string): string[] {
   const found = new Set<string>();
   for (const match of source.matchAll(IMPORT)) {
     const spec = match[1]!;
-    if (/^(\.|\/|@\/|~\/|#|node:)/.test(spec) || spec.startsWith("@/")) continue;
+    if (/^(\.|\/|@\/|~\/|#|node:)/.test(spec)) continue;
     const parts = spec.split("/");
     const name = spec.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0]!;
     if (name && !AMBIENT.has(name)) found.add(name);

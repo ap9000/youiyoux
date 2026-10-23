@@ -15,19 +15,20 @@ import { InventoryReport, ScanReport, writeFileAtomic } from "@youiyoux/core";
 import { ingestCatalog, linkCandidates, sharedStore } from "@youiyoux/discover";
 import { loadProject, type LoadProjectOptions, type Project } from "@youiyoux/scanner";
 import { checkpointSqlite, openSqlite, indexHome, inventoryRun, projectGraph, type InventoryRun, type ScanRecord, type Store } from "@youiyoux/store";
+import { readJson } from "./init.ts";
 import { padEnd, padStart, plural, style } from "./ui.ts";
 
 export const SOURCES_FILE = "index-sources.json";
 export const SCANS_LOG = "scans.jsonl";
 
-export interface ProjectSource {
+interface ProjectSource {
   readonly root: string;
   readonly options: LoadProjectOptions;
   /** The usage map youiyoux scan wrote (default <root>/.youi/usage.json). */
   readonly usage?: string;
 }
 
-export interface IndexSources {
+interface IndexSources {
   /** The Discover cache whose catalog the store holds (the last one synced or searched). */
   readonly discover: string | null;
   readonly inventories: readonly string[];
@@ -36,7 +37,7 @@ export interface IndexSources {
 
 const EMPTY: IndexSources = { discover: null, inventories: [], projects: [] };
 
-export async function readIndexSources(home: string): Promise<IndexSources> {
+async function readIndexSources(home: string): Promise<IndexSources> {
   try {
     const raw = JSON.parse(await readFile(join(home, SOURCES_FILE), "utf8")) as Partial<IndexSources>;
     return { discover: raw.discover ?? null, inventories: raw.inventories ?? [], projects: raw.projects ?? [] };
@@ -75,14 +76,6 @@ export async function recordProject(store: Store, project: Project, usage: ScanR
   await store.replaceGraph(`project:${project.root}`, projectGraph({ project: project.config.id, rules: project.system.rules, components: project.system.components.map((c) => ({ id: c.contract.id, name: c.contract.name })), usage }));
 }
 
-async function readJsonFile(file: string): Promise<unknown> {
-  try {
-    return JSON.parse(await readFile(file, "utf8"));
-  } catch {
-    return null;
-  }
-}
-
 async function readLog(home: string): Promise<LoggedRun[]> {
   const text = await readFile(join(home, SCANS_LOG), "utf8").catch(() => "");
   return text.split("\n").flatMap((line) => {
@@ -96,7 +89,7 @@ async function readLog(home: string): Promise<LoggedRun[]> {
   }).sort((a, b) => a.scannedAt.localeCompare(b.scannedAt));
 }
 
-export interface RebuildSummary {
+interface RebuildSummary {
   readonly location: string;
   readonly discover: { readonly cache: string | null; readonly chosen: number; readonly all: number };
   readonly scans: number;
@@ -137,7 +130,7 @@ export async function rebuildIndex(path: string, options: { discoverCache?: stri
     const missing: string[] = [];
     let replayed = 0;
     for (const file of sources.inventories) {
-      const parsed = InventoryReport.safeParse(await readJsonFile(file));
+      const parsed = InventoryReport.safeParse(await readJson(file));
       if (!parsed.success) {
         missing.push(file);
         continue;
@@ -158,7 +151,7 @@ export async function rebuildIndex(path: string, options: { discoverCache?: stri
       }
       try {
         const project = await loadProject(source.root, source.options);
-        const usage = ScanReport.safeParse(await readJsonFile(source.usage ?? join(project.root, ".youi/usage.json")));
+        const usage = ScanReport.safeParse(await readJson(source.usage ?? join(project.root, ".youi/usage.json")));
         await recordProject(store, project, usage.success ? usage.data : null);
         projects++;
       } catch (error: unknown) {

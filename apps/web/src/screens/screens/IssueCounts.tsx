@@ -1,16 +1,15 @@
 /** Issue counts for a screen: one badge on a card, the full breakdown on the screen page. */
 import { AlertTriangle, CheckCircle2 } from "lucide-react";
 import type { IssueCounts } from "../../data/screens.ts";
+import { plural } from "../../lib/plural.ts";
 import { Badge } from "../../ui/Badge.tsx";
-
-const plural = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
 
 export function issueBreakdown(issues: IssueCounts): string[] {
   return [
     issues.errors > 0 && plural(issues.errors, "error"),
     issues.warnings > 0 && plural(issues.warnings, "warning"),
     issues.lookalikes > 0 && plural(issues.lookalikes, "lookalike"),
-    issues.unresolved > 0 && plural(issues.unresolved, "unresolved site", "unresolved sites"),
+    issues.unresolved > 0 && plural(issues.unresolved, "unresolved site"),
   ].filter((part): part is string => Boolean(part));
 }
 

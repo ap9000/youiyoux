@@ -18,7 +18,7 @@ import { readRules, type ResolvedToken } from "@youiyoux/tokens";
 import { ARBITRARY, arbitraryTokens, COLOR_FN, colorTokens, dimensionTokens, HEX, offsetToPosition, rawColorsInCss, rawColorsInScript, stringNodes, tokenUtilities, type DimensionKind, type TokenIndex } from "./checks.ts";
 import { clusterShapeOf, compatible, shapeDistance } from "./inventory/cluster.ts";
 import { hasShape } from "./inventory/style.ts";
-import { unquote, type ModuleInfo } from "./parse.ts";
+import { byPosition, unquote, type ModuleInfo } from "./parse.ts";
 
 export type DriftKind = "near-duplicate" | "hardcoded-value" | "off-library";
 
@@ -35,8 +35,6 @@ export interface DriftFinding {
 }
 
 export type IsAdded = (file: string, line: number) => boolean;
-
-const byPosition = (a: DriftFinding, b: DriftFinding): number => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column;
 
 /* ------------------------------------------------------------ hardcoded values */
 
@@ -64,8 +62,6 @@ function colorFindings(module: ModuleInfo, index: TokenIndex, isTokenSource: boo
   }
   return findings;
 }
-
-const KIND_WORD: Record<DimensionKind, string> = { radius: "radius", spacing: "spacing" };
 
 function arbitraryFindings(module: ModuleInfo, index: TokenIndex, added: IsAdded): DriftFinding[] {
   const findings: DriftFinding[] = [];
@@ -112,7 +108,7 @@ function cssDimensionFindings(module: ModuleInfo, index: TokenIndex, isTokenSour
       if (matched.length === 0) continue;
       const column = Math.max(1, (lines[declaration.line - 1] ?? "").indexOf(declaration.property) + 1);
       const ids = [...new Set(matched.map((t) => t.id))];
-      findings.push({ kind: "hardcoded-value", file: module.file, line: declaration.line, column, text: `${declaration.property}: ${declaration.value}`, message: `Hardcoded ${KIND_WORD[kind]} in ${declaration.property}: ${ids.join(", ")} ${ids.length === 1 ? "has" : "have"} this value.`, fix: `use ${declaration.property}: ${value} (${ids.join(", ")})` });
+      findings.push({ kind: "hardcoded-value", file: module.file, line: declaration.line, column, text: `${declaration.property}: ${declaration.value}`, message: `Hardcoded ${kind} in ${declaration.property}: ${ids.join(", ")} ${ids.length === 1 ? "has" : "have"} this value.`, fix: `use ${declaration.property}: ${value} (${ids.join(", ")})` });
     }
   }
   return findings;

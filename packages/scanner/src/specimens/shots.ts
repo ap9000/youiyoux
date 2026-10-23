@@ -19,17 +19,17 @@
  */
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, extname, isAbsolute, join, relative } from "node:path";
 import { promisify } from "node:util";
 import type { Browser, Page } from "playwright-core";
-import type { InventoryRecipe, InventoryRole } from "@youiyoux/core";
+import { sha256, type InventoryRecipe, type InventoryRole } from "@youiyoux/core";
 import { buildInventory } from "../inventory/inventory.ts";
 import { roleOfName } from "../inventory/roles.ts";
 import { loadInventoryTarget } from "../inventory/target.ts";
-import { browserLookOf, markupOf } from "./build.ts";
-import { newStats, SpecimenCache, versions, type SpecimenStats } from "./cache.ts";
+import { browserLookOf, escapeHtml, markupOf } from "./build.ts";
+import { newStats, SpecimenCache, versions, writeJsonAtomic, type SpecimenStats } from "./cache.ts";
 import { realOf, relativeInside } from "./contain.ts";
 import { buildProjectCss, SCHEMES, type Scheme } from "./css.ts";
 import { renderComponents, withNamePlaceholders, type ComponentRecipe, type RenderJob } from "./render.ts";
@@ -162,9 +162,7 @@ interface Manifest {
 }
 
 const exec = promisify(execFile);
-const sha = (text: string | Buffer): string => createHash("sha256").update(text).digest("hex");
-const escapeHtml = (text: string): string => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-const slug = (text: string): string => `${text.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").slice(-48) || "component"}-${sha(text).slice(0, 8)}`;
+const slug = (text: string): string => `${text.replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").slice(-48) || "component"}-${sha256(text).slice(0, 8)}`;
 const SOURCE = /\.(?:tsx|ts|jsx|js|mjs|cjs|mts|cts)$/;
 /** The scheme's canvas, set before the project's CSS so its own page background wins: axe reads an unset one as white, even in dark. */
 const PAGE_BACKGROUND = "html{background-color:Canvas;color:CanvasText}";
@@ -174,7 +172,7 @@ async function git(root: string, args: readonly string[]): Promise<string> {
   return (await exec("git", [...args], { cwd: root, maxBuffer: 64 * 1024 * 1024, encoding: "utf8" })).stdout;
 }
 
-const gitOr = (root: string, args: readonly string[]): Promise<string | null> => git(root, args).then((out) => out, () => null);
+const gitOr = (root: string, args: readonly string[]): Promise<string | null> => git(root, args).catch(() => null);
 
 /** The base commit to compare with, or why there is none. */
 async function resolveBase(root: string, asked: string | undefined): Promise<{ ref: string; commit: string } | { none: string }> {
@@ -213,7 +211,7 @@ const NAME_RULES = new Set(["button-name", "link-name", "label", "input-button-n
 const lookKey = (recipe: InventoryRecipe, role: InventoryRole | null): string => {
   // Component identity uses its inputs; implementation classes must not invalidate a cached base audit.
   const visual = recipe.kind === "component" ? { ...recipe, parent: undefined, tag: undefined, classes: undefined, wrappers: recipe.wrappers } : recipe;
-  return sha(`${role}\0${JSON.stringify(visual)}`).slice(0, 12);
+  return sha256(`${role}\0${JSON.stringify(visual)}`).slice(0, 12);
 };
 
 /** Distinct looks, most used first, at most MAX_LOOKS. */
@@ -470,12 +468,6 @@ function readManifest(file: string): Manifest | null {
   }
 }
 
-function writeJson(file: string, value: unknown): void {
-  mkdirSync(dirname(file), { recursive: true });
-  writeFileSync(`${file}.${process.pid}.tmp`, JSON.stringify(value));
-  renameSync(`${file}.${process.pid}.tmp`, file);
-}
-
 /** Leave only `keep` among a component's saved renders. */
 function prune(dir: string, prefix: string, keep: string): void {
   for (const name of existsSync(dir) ? readdirSync(dir) : []) if (name.startsWith(prefix) && name !== keep) rmSync(join(dir, name), { recursive: true, force: true });
@@ -496,7 +488,7 @@ export async function renderShots(rootDir: string, targets: readonly string[], o
   const report = await buildInventory([root], { cwd: root });
   const project = report.projects[0]?.id ?? target.id;
   // slug(): the id can come from a cloned repo's youi.project.json, so it never becomes a path as written.
-  const dir = join(cache.dir, "shots", `${slug(project)}-${sha(root).slice(0, 8)}`);
+  const dir = join(cache.dir, "shots", `${slug(project)}-${sha256(root).slice(0, 8)}`);
   const notes: string[] = [];
 
   const base = await resolveBase(root, options.base);
@@ -535,9 +527,9 @@ export async function renderShots(rootDir: string, targets: readonly string[], o
 
   // Keys: everything a component's images depend on, read without bundling or compiling anything.
   const sheets = target.files.filter((f) => f.endsWith(".css"));
-  const common = sha(JSON.stringify([SHOTS_FORMAT, versions(root), SHOT_WIDTHS, PIXEL_THRESHOLD, "commit" in base ? base.commit : baseNote, contentHash(root, sheets), target.specimenCss, target.tsconfig]));
+  const common = sha256(JSON.stringify([SHOTS_FORMAT, versions(root), SHOT_WIDTHS, PIXEL_THRESHOLD, "commit" in base ? base.commit : baseNote, contentHash(root, sheets), target.specimenCss, target.tsconfig]));
   const changedSheets = sheets.filter((f) => changed.has(f));
-  const keyOf = (group: Group, inputs: readonly string[]): string => sha(`${common}\0${JSON.stringify(group.looks.map((l) => [l.key, l.recipe, l.role, l.dynamic, l.namedAtEverySite]))}\0${contentHash(root, [...inputs, ...(group.file ? [group.file] : [])])}`).slice(0, 24);
+  const keyOf = (group: Group, inputs: readonly string[]): string => sha256(`${common}\0${JSON.stringify(group.looks.map((l) => [l.key, l.recipe, l.role, l.dynamic, l.namedAtEverySite]))}\0${contentHash(root, [...inputs, ...(group.file ? [group.file] : [])])}`).slice(0, 24);
 
   const components: ComponentShots[] = [];
   const pending: Array<{ group: Group; groupDir: string; index: number }> = [];
@@ -632,7 +624,7 @@ export async function renderShots(rootDir: string, targets: readonly string[], o
         } else {
           // A recipe's tag and classes are read from today's source; the base side depends only on what it renders and with which props.
           const identity = group.looks.map((l) => (l.recipe.kind === "component" ? [l.key, l.dynamic, l.namedAtEverySite, l.recipe.file, l.recipe.export, l.recipe.props, l.recipe.label, l.recipe.wrappers, l.role] : [l.recipe, l.role]));
-          const beforeKey = sha(`${common}\0${JSON.stringify(identity)}\0${JSON.stringify(inputs)}`).slice(0, 24);
+          const beforeKey = sha256(`${common}\0${JSON.stringify(identity)}\0${JSON.stringify(inputs)}`).slice(0, 24);
           const beforeDir = join(groupDir, `before-${beforeKey}`);
           let beforeShots = SCHEMES.flatMap((scheme) => SHOT_WIDTHS.map((width) => ({ scheme, width, path: join(beforeDir, `${scheme}-${width}.png`) })));
           const issuesFile = join(beforeDir, "issues.json");
@@ -641,7 +633,7 @@ export async function renderShots(rootDir: string, targets: readonly string[], o
             for (const look of before.looks) if (look.failed && look.recipe.kind === "component") groupNotes.push(`before (${base.ref}): ${look.recipe.file}#${look.recipe.export} did not render (${look.failed})`);
             const beforeShot = await eyes.shoot(beforeDir, pages(before.looks), true);
             beforeShots = beforeShot.shots;
-            writeJson(issuesFile, issuesOf(beforeShot.violations, before.auditLooks));
+            writeJsonAtomic(issuesFile, issuesOf(beforeShot.violations, before.auditLooks));
             stats.baseRenders++;
             prune(groupDir, "before-", `before-${beforeKey}`);
           }
@@ -658,7 +650,7 @@ export async function renderShots(rootDir: string, targets: readonly string[], o
         }
         if (changedSheets.length > 0 && "shots" in diff) groupNotes.push(`stylesheets changed since ${"commit" in base ? base.ref : "the base"} (${changedSheets.join(", ")}): both sides use today's CSS, so the diff shows component changes only`);
         const result: ComponentShots = { component: group.name, file: group.file, looks: after.looks.map((l) => l.caption), shots: shot.shots, a11y, diff, cached: false, notes: groupNotes };
-        writeJson(join(groupDir, "manifest.json"), { format: SHOTS_FORMAT, name: group.name, file: group.file, key, inputs, result } satisfies Manifest);
+        writeJsonAtomic(join(groupDir, "manifest.json"), { format: SHOTS_FORMAT, name: group.name, file: group.file, key, inputs, result } satisfies Manifest);
         components[index] = result;
       }
     } finally {

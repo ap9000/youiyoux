@@ -24,7 +24,7 @@ import { Sheet, useWide } from "./Sheet.tsx";
 import { ScrollRoot, StateStrip, StoryCaption, storyLabel, TileGrid, type Tile } from "./Specimens.tsx";
 
 /** Discover with this family pinned and its role chosen: outside candidates to compare beside it. */
-export const alternativesHref = (family: { id: string; role: string }): string => `/discover${queryToSearch({ ...EMPTY_QUERY, family: family.id, role: discoverRole(family.role) })}`;
+const alternativesHref = (family: { id: string; role: string }): string => `/discover${queryToSearch({ ...EMPTY_QUERY, family: family.id, role: discoverRole(family.role) })}`;
 
 /** Code shows this many specimens' HTML; the rest are counted. */
 const CODE_LIMIT = 12;

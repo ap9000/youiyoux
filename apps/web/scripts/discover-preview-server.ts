@@ -35,25 +35,25 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createHash } from "node:crypto";
 import { join, resolve } from "node:path";
 import { loadPackage } from "./packages.ts";
-import { isLocalHost } from "./query-server.ts";
-import { TRY_INDEX, type TryIndex } from "./try-server.ts";
+import { isLocalHost, send } from "./query-server.ts";
+import { readTryIndex } from "./try-server.ts";
 
-export const PREVIEW_PATH = "/__youi/discover-preview";
+const PREVIEW_PATH = "/__youi/discover-preview";
 /** The whole preview: fetch, bundle, CSS and theme fit. */
-export const PREVIEW_TIMEOUT_MS = 60_000;
+const PREVIEW_TIMEOUT_MS = 60_000;
 /** One registry request. */
-export const FETCH_TIMEOUT_MS = 15_000;
+const FETCH_TIMEOUT_MS = 15_000;
 const MAX_CSS = 32;
 /** Builds running at once, across candidates and projects. */
-export const MAX_BUILDS = 2;
+const MAX_BUILDS = 2;
 /** Builds waiting for a slot; past that a request is answered 503. */
-export const MAX_QUEUED = 4;
+const MAX_QUEUED = 4;
 /** How long a stopped build may take to wind down before its 504 is sent anyway. */
 const STOP_GRACE_MS = 2_000;
 const LOOPBACK_ORIGIN = /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/;
 
 /** The hub's own packages: what draws a candidate whose packages the project does not have. */
-export const HUB_ROOT = resolve(import.meta.dirname, "..");
+const HUB_ROOT = resolve(import.meta.dirname, "..");
 
 type Discover = typeof import("../../../packages/discover/src/index.ts");
 
@@ -122,13 +122,6 @@ export interface PreviewOptions {
   readonly fallback?: string | null;
 }
 
-const send = (res: ServerResponse, status: number, body: unknown): void => {
-  res.statusCode = status;
-  res.setHeader("Content-Type", "application/json");
-  res.setHeader("Cache-Control", "no-store");
-  res.end(JSON.stringify(body));
-};
-
 /** A lib: id or a registry ref; never a path. */
 const ID = /^(?:lib:[a-z0-9-]+\/(?:component|pattern|token)\/[a-z0-9][a-z0-9.-]*|@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*)$/i;
 
@@ -176,16 +169,6 @@ export function discoverPreviewMiddleware(snapshot: string, base = "/", options:
     return `${base}${PREVIEW_PATH.slice(1)}/${hash}.css`;
   };
 
-  const tryIndex = (): TryIndex | null => {
-    const file = join(snapshot, TRY_INDEX);
-    if (!existsSync(file)) return null;
-    try {
-      return JSON.parse(readFileSync(file, "utf8")) as TryIndex;
-    } catch {
-      return null;
-    }
-  };
-
   async function preview(id: string, projectId: string, root: string, tsconfig: string, signal: AbortSignal): Promise<PreviewAnswer> {
     const started = performance.now();
     const { discover, scanner, bundles } = await loaded();
@@ -194,7 +177,7 @@ export function discoverPreviewMiddleware(snapshot: string, base = "/", options:
     const { entry } = await discover.findListing(cache, id).catch((error: unknown) => {
       throw new Refusal(404, sentence(error));
     });
-    const license = entry.license && entry.license !== "unknown" ? entry.license.spdx : "unknown";
+    const license = discover.licenceOf(entry);
     const install = entry.install ? { command: entry.install.command, npm: entry.install.npm } : null;
     const target = await scanner.loadInventoryTarget(root);
     const { theme, sources } = await scanner.projectTheme(root);
@@ -306,7 +289,7 @@ export function discoverPreviewMiddleware(snapshot: string, base = "/", options:
       if (crossSite) return send(res, 403, { error: "Previews are built for the hub's own page only; a request from another site is refused." });
       const id = url.searchParams.get("id") ?? "";
       if (!ID.test(id) || id.length > 200) return send(res, 400, { error: "Name a candidate by its lib: id or registry ref." });
-      const projects = tryIndex()?.projects ?? {};
+      const projects = readTryIndex(snapshot)?.projects ?? {};
       const wanted = url.searchParams.get("project");
       const projectId = wanted && Object.hasOwn(projects, wanted) ? wanted : wanted ? null : (Object.keys(projects)[0] ?? null);
       if (projectId === null) return send(res, 404, { error: wanted ? `The hub has no project "${wanted.slice(0, 60)}".` : "Previews draw in your project's theme, and the hub has no project: open it with youiyoux ui --project." });

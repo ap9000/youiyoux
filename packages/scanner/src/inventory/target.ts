@@ -42,7 +42,8 @@ function idOf(name: string): string {
   return name.toLowerCase().replace(/^@[^/]+\//, "").replace(/[^a-z0-9-]+/g, "-").replace(/^[^a-z]+|-+$/g, "") || "project";
 }
 
-async function readJson(file: string): Promise<Record<string, unknown> | null> {
+/** A JSON object file, or null when it is missing or does not parse. */
+export async function readJson(file: string): Promise<Record<string, unknown> | null> {
   try {
     return JSON.parse(await readFile(file, "utf8")) as Record<string, unknown>;
   } catch {

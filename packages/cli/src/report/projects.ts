@@ -9,6 +9,7 @@ import { basename, join, resolve } from "node:path";
 import { parse as parseYaml } from "yaml";
 import { findFiles } from "@youiyoux/core";
 import { DEFAULT_EXCLUDE } from "@youiyoux/scanner";
+import { readJson } from "../init.ts";
 
 export interface ReportProject {
   /** Repo-relative POSIX directory: `apps/web`, or `.` for the repo itself. */
@@ -19,7 +20,7 @@ export interface ReportProject {
   readonly name: string | null;
 }
 
-export interface RepoProjects {
+interface RepoProjects {
   /** Absolute. */
   readonly root: string;
   readonly name: string;
@@ -31,14 +32,6 @@ export interface RepoProjects {
 }
 
 const UI_FILES = ["**/*.{tsx,jsx,astro,vue,svelte}"];
-
-async function readJson(file: string): Promise<Record<string, unknown> | null> {
-  try {
-    return JSON.parse(await readFile(file, "utf8")) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-}
 
 const strings = (value: unknown): string[] => (Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : []);
 

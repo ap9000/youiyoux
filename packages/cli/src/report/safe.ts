@@ -19,7 +19,7 @@ import { findFiles } from "@youiyoux/core";
 
 import { publicLook } from "./filters.ts";
 
-export const REDACTED = "[redacted]";
+const REDACTED = "[redacted]";
 const OUTSIDE = "[path outside the repo]";
 const MIN_VALUE = 6;
 
@@ -28,7 +28,7 @@ const BENIGN_ENV = /^(?:npm_|NPM_|PNPM_|NODE_|NVM_|TERM|COLORTERM|LANG$|LANGUAGE
 const PLAIN_WORD = /^[A-Za-z]+$/;
 const PLAIN = /^(?:true|false|yes|no|on|off|null|undefined|\d+(?:\.\d+)?)$/i;
 
-export interface SafetyOptions {
+interface SafetyOptions {
   /** The repo root: paths inside it become relative. */
   readonly root: string;
   readonly includeCode?: boolean;
@@ -42,7 +42,7 @@ export interface SafetyOptions {
 const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** Values in the repo's `.env`, `.env.local`, `apps/web/.env.production` … (never node_modules). */
-export async function dotenvValues(root: string): Promise<string[]> {
+async function dotenvValues(root: string): Promise<string[]> {
   const files = await findFiles(root, [".env", ".env.*", "**/.env", "**/.env.*"]).catch(() => []);
   const values: string[] = [];
   for (const file of files) {
@@ -58,7 +58,7 @@ export async function dotenvValues(root: string): Promise<string[]> {
 }
 
 /** A string that looks like a key or token: a known prefix, or long and random. */
-export function looksSecret(text: string): boolean {
+function looksSecret(text: string): boolean {
   if (/^(?:sk|pk|rk)_(?:live|test)_|^sk-[A-Za-z0-9]|^gh[pousr]_|^github_pat_|^xox[abposr]-|^AKIA[0-9A-Z]{12}|^AIza[0-9A-Za-z_-]{20}|^glpat-|^eyJ[A-Za-z0-9_-]{10,}\./.test(text)) return true;
   if (text.length < 20 || /[\s:[\]]/.test(text)) return false;
   const classes = [/[a-z]/, /[A-Z]/, /\d/].filter((c) => c.test(text)).length;

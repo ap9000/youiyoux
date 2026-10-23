@@ -4,6 +4,7 @@
  * name per family, counts, the consolidation estimate and the top fixes. The inventory data and
  * its clustering are read, never changed.
  */
+import { append } from "../lib/append.ts";
 import { familyName, ROLE_LABEL, ROLES } from "./inventory.ts";
 import type { ChunkLook, DetectReport, InventoryChunk, InventoryExtras, InventoryFamily, InventoryIndex, InventoryRole, InventoryShape } from "./types.ts";
 
@@ -74,7 +75,7 @@ export interface LibraryGroup {
   readonly short: string;
 }
 
-export const PLAIN: LibraryGroup = { id: "plain", label: "Plain elements", short: "plain" };
+const PLAIN: LibraryGroup = { id: "plain", label: "Plain elements", short: "plain" };
 const RADIX_ID = "radix";
 /** Radix packages that draw nothing of their own (Slot passes props through): not counted as Radix. */
 const RADIX_UTILITIES = new Set(["@radix-ui/react-slot", "@radix-ui/react-compose-refs", "@radix-ui/react-primitive"]);
@@ -226,7 +227,7 @@ export function uniqueNames(items: ReadonlyArray<{ id: string; family: Pick<Inve
   const names = new Map(items.map((item) => [item.id, `${familyName(item.family)} · ${item.kit.short}`]));
   const collisions = (): Array<(typeof items)[number][]> => {
     const byName = new Map<string, Array<(typeof items)[number]>>();
-    for (const item of items) byName.set(names.get(item.id)!, [...(byName.get(names.get(item.id)!) ?? []), item]);
+    for (const item of items) append(byName, names.get(item.id)!, item);
     return [...byName.values()].filter((group) => group.length > 1);
   };
   for (const group of collisions()) {
@@ -242,7 +243,7 @@ export function uniqueNames(items: ReadonlyArray<{ id: string; family: Pick<Inve
 }
 
 /** Filters a family list; the role and project filters also apply to what was loaded for them. */
-export function matches(view: FamilyView, filters: Filters): boolean {
+function matches(view: FamilyView, filters: Filters): boolean {
   if (filters.type && view.family.role !== filters.type) return false;
   if (filters.project && !view.family.projects.includes(filters.project)) return false;
   if (filters.lib && !view.libs.some((g) => g.id === filters.lib)) return false;
@@ -278,18 +279,11 @@ const narrows = (filters: Filters): boolean => filters.lib !== null || filters.n
 export function filterCounts(index: InventoryIndex, views: readonly FamilyView[], filters: Filters, loaded: (file: string) => boolean, libraries: Libraries) {
   const covered = (f: Pick<Filters, "type" | "project">): boolean => neededChunks(index, f).every(loaded);
   const count = (f: Filters): number => filterFamilies(views, f).length;
-  const indexCount = (role: InventoryRole | null, project: string | null): number => {
-    if (!project) return index.roles.filter((r) => !role || r.role === role).reduce((n, r) => n + r.families, 0);
-    return index.roles.filter((r) => !role || r.role === role).reduce((n, r) => n + (r.cells[project]?.families ?? 0), 0);
-  };
-  const types: Array<FilterOption<InventoryRole>> = index.roles.map((r) => {
-    const f = { ...filters, type: r.role };
-    return { value: r.role, label: ROLE_LABEL[r.role], count: !narrows(filters) ? indexCount(r.role, filters.project) : covered(f) ? count(f) : null };
-  });
-  const projects: Array<FilterOption<string>> = index.projects.map((p) => {
-    const f = { ...filters, project: p.id };
-    return { value: p.id, label: p.id, count: !narrows(filters) ? indexCount(filters.type, p.id) : covered(f) ? count(f) : null };
-  });
+  const indexCount = (role: InventoryRole | null, project: string | null): number => index.roles.filter((r) => !role || r.role === role).reduce((n, r) => n + (project ? (r.cells[project]?.families ?? 0) : r.families), 0);
+  /** A type or project option's count: from the index unless a filter needs the looks (narrows reads neither type nor project). */
+  const option = (f: Filters): number | null => (!narrows(filters) ? indexCount(f.type, f.project) : covered(f) ? count(f) : null);
+  const types: Array<FilterOption<InventoryRole>> = index.roles.map((r) => ({ value: r.role, label: ROLE_LABEL[r.role], count: option({ ...filters, type: r.role }) }));
+  const projects: Array<FilterOption<string>> = index.projects.map((p) => ({ value: p.id, label: p.id, count: option({ ...filters, project: p.id }) }));
   // Libraries, near-duplicates and search need the looks of every role and project in scope.
   const ready = covered(filters);
   const groups = new Map<string, LibraryGroup>();
@@ -304,8 +298,8 @@ export function filterCounts(index: InventoryIndex, views: readonly FamilyView[]
     near: ready ? count({ ...filters, near: true }) : null,
     /** The "All" option of each filter: that filter off, the others on. */
     all: {
-      type: !narrows(filters) ? indexCount(null, filters.project) : covered({ ...filters, type: null }) ? count({ ...filters, type: null }) : null,
-      project: !narrows(filters) ? indexCount(filters.type, null) : covered({ ...filters, project: null }) ? count({ ...filters, project: null }) : null,
+      type: option({ ...filters, type: null }),
+      project: option({ ...filters, project: null }),
       lib: ready ? count({ ...filters, lib: null }) : null,
     },
   };
@@ -325,7 +319,7 @@ export function kitCells(views: readonly FamilyView[]): Array<{ group: LibraryGr
     cell.families.push(v);
     cells.set(v.primary.id, cell);
   }
-  return [...cells.values()].filter((c) => c.families.length > 0).sort((a, b) => groupOrder(a.group, b.group));
+  return [...cells.values()].sort((a, b) => groupOrder(a.group, b.group));
 }
 
 /* ---------------------------------------------------------- consolidation and fixes */
@@ -437,9 +431,9 @@ export function storyRows(view: Pick<FamilyView, "looks">): Array<{ key: string;
 /* --------------------------------------------------------------------- the sheet */
 
 /** Pixels per millisecond: a quick downward flick past this closes the sheet wherever it is. */
-export const FLICK_VELOCITY = 0.11;
+const FLICK_VELOCITY = 0.11;
 /** Or dragged down past this share of its height. */
-export const DISMISS_SHARE = 1 / 3;
+const DISMISS_SHARE = 1 / 3;
 
 /** Whether a bottom sheet dragged `distance` px down (of `height`) at `velocity` px/ms on release should close. */
 export function shouldDismiss({ distance, height, velocity }: { distance: number; height: number; velocity: number }): boolean {

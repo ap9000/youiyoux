@@ -8,8 +8,6 @@ import { matchesAny, type RouteAttribution, type RouteConfig } from "@youiyoux/c
 import type { ModuleGraph } from "./graph.ts";
 import type { ModuleInfo } from "./parse.ts";
 
-export type { RouteAttribution } from "@youiyoux/core";
-
 const SHELL_ROUTE = "*";
 
 /** `app/(tabs)/index.tsx` → `/`, `app/user/[id].tsx` → `/user/[id]`; null for layouts and specials. */
@@ -74,9 +72,8 @@ export class RouteIndex {
   }
 
   static build(graph: ModuleGraph, modules: ReadonlyMap<string, ModuleInfo | null>, config: RouteConfig): RouteIndex {
-    const disabled = config.strategy === "none" && config.shell.length === 0;
-    const index = disabled ? new RouteIndex("Route mapping is disabled in the project config.") : new RouteIndex();
-    if (disabled) return index;
+    if (config.strategy === "none" && config.shell.length === 0) return new RouteIndex("Route mapping is disabled in the project config.");
+    const index = new RouteIndex();
     // Sorted: the map fills in parse-completion order, and route lists must not depend on it.
     const files = [...modules.keys()].sort();
     const scanned = new Set(files);

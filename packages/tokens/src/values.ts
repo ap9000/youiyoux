@@ -66,8 +66,10 @@ function part<T>(value: T | string, format: (v: T) => string, ref: AliasRef | un
   return format(value as T);
 }
 
+/** A dimension or a duration: its number and unit. */
 const dim = (d: Dimension): string => `${d.value}${d.unit}`;
-const duration = (d: Dimension): string => `${d.value}${d.unit}`;
+/** A line height: a unitless number, or a dimension. */
+const lineHeight = (v: number | Dimension): string => (typeof v === "number" ? String(v) : dim(v));
 /**
  * A CSS string literal. Quotes and backslashes are escaped, and control characters and angle
  * brackets written as hex escapes, so no text can close the string and start a declaration.
@@ -150,7 +152,7 @@ export function cssValue(type: string, value: unknown, ref?: AliasRef): string {
     case "dimension":
       return dim(value as Dimension);
     case "duration":
-      return duration(value as Dimension);
+      return dim(value as Dimension);
     case "fontFamily":
       return family(value as string[] | string);
     case "cubicBezier":
@@ -161,8 +163,7 @@ export function cssValue(type: string, value: unknown, ref?: AliasRef): string {
         .join(", ");
     case "typography": {
       const t = value as Typography;
-      const lh = part(t.lineHeight, (v: number | Dimension) => (typeof v === "number" ? String(v) : dim(v)), ref);
-      return `${part(t.fontWeight, String, ref)} ${part(t.fontSize, dim, ref)}/${lh} ${part(t.fontFamily, family, ref)}`;
+      return `${part(t.fontWeight, String, ref)} ${part(t.fontSize, dim, ref)}/${part(t.lineHeight, lineHeight, ref)} ${part(t.fontFamily, family, ref)}`;
     }
     case "border": {
       const b = value as { color: DtcgColor | string; width: Dimension | string; style: unknown };
@@ -172,7 +173,7 @@ export function cssValue(type: string, value: unknown, ref?: AliasRef): string {
       return stroke(value);
     case "transition": {
       const t = value as { duration: Dimension | string; delay: Dimension | string; timingFunction: number[] | string };
-      return `${part(t.duration, duration, ref)} ${part(t.delay, duration, ref)} ${part(t.timingFunction, bezier, ref)}`;
+      return `${part(t.duration, dim, ref)} ${part(t.delay, dim, ref)} ${part(t.timingFunction, bezier, ref)}`;
     }
     case "spring":
       return springEasing(value as Spring);
@@ -230,7 +231,7 @@ export function tokenVariables(type: string, value: unknown, ref?: AliasRef): Ar
   for (const [suffix, key, partType] of PARTS[type] ?? []) {
     const raw = (value as Record<string, unknown>)[key];
     if (raw === undefined) continue;
-    const css = partType === "lineHeight" ? part(raw as number | Dimension, (v) => (typeof v === "number" ? String(v) : dim(v)), ref) : partType === "fontWeight" ? part(raw, String, ref) : cssValue(partType, raw, ref);
+    const css = partType === "lineHeight" ? part(raw as number | Dimension, lineHeight, ref) : partType === "fontWeight" ? part(raw, String, ref) : cssValue(partType, raw, ref);
     vars.push([suffix, css]);
   }
   return vars;

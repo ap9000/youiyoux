@@ -21,7 +21,7 @@ import { effectiveStateEdits, tokenPathOf } from "./style-drafts.ts";
 /** Lists stop here so a preview stays loadable; totals always count everything. */
 export const MAX_LISTED = 5000;
 
-export type StyleImpact = Omit<StylePreview, "id" | "at" | "draftRevision" | "draftDigest" | "snapshot" | "durationMs" | "scan">;
+type StyleImpact = Omit<StylePreview, "id" | "at" | "draftRevision" | "draftDigest" | "snapshot" | "durationMs" | "scan">;
 
 /** Build the system's tokens from file texts in a throwaway directory. */
 async function buildFrom(project: Project, tree: ReadonlyMap<string, string>): Promise<readonly ResolvedToken[]> {

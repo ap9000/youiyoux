@@ -41,7 +41,7 @@ export function packageDeps(files: ComponentEntry["files"]): string[] {
   return [...deps].sort();
 }
 
-export function importLine(entry: ComponentEntry): string {
+function importLine(entry: ComponentEntry): string {
   const { source } = entry.contract;
   return `import { ${[source.export, ...source.also].join(", ")} } from "${DEFAULT_IMPORT_FROM}";`;
 }

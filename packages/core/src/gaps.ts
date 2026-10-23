@@ -10,7 +10,6 @@ import { z } from "zod";
 const IsoTime = z.string().datetime({ offset: true });
 
 export const GAP_STATUSES = ["system", "library", "hand-built", "missing"] as const;
-export type GapStatus = (typeof GAP_STATUSES)[number];
 
 export const GapCandidate = z.object({
   /** The Discover id (`lib:shadcn/component/calendar`). */

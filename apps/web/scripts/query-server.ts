@@ -23,13 +23,14 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { join, resolve } from "node:path";
 import { loadPackage } from "./packages.ts";
 
-export const QUERY_PATH = "/__youi/query";
+const QUERY_PATH = "/__youi/query";
 const MAX_LIMIT = 100;
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 type Discover = typeof import("../../../packages/discover/src/index.ts");
 
-const send = (res: ServerResponse, status: number, body: unknown): void => {
+/** A JSON answer the browser never caches: what every hub endpoint sends. */
+export const send = (res: ServerResponse, status: number, body: unknown): void => {
   res.statusCode = status;
   res.setHeader("Content-Type", "application/json");
   res.setHeader("Cache-Control", "no-store");
@@ -37,7 +38,7 @@ const send = (res: ServerResponse, status: number, body: unknown): void => {
 };
 
 /** The Host header's name without its port: `localhost:5173` → `localhost`, `[::1]:5173` → `[::1]`. */
-export function hostName(host: string | undefined): string | null {
+function hostName(host: string | undefined): string | null {
   if (!host) return null;
   const match = /^(\[[^\]]*\]|[^:]+)(?::\d+)?$/.exec(host.trim().toLowerCase());
   return match ? match[1]! : null;

@@ -9,7 +9,7 @@ import type { StateEdit, StyleDraftContent, TokenEdit } from "./api.ts";
 import { deleteJsonPath, readJsonPath, setJsonPath } from "./json-edit.ts";
 
 /** A published token as a style draft sees it: its type and its values as written. */
-export interface StyleToken {
+interface StyleToken {
   readonly path: string;
   readonly type: string;
   readonly source: { readonly light: unknown; readonly dark: unknown };
@@ -23,7 +23,7 @@ export interface StyleContext {
   readonly hasDark: boolean;
 }
 
-export const MAX_TITLE = 120;
+const MAX_TITLE = 120;
 
 export function emptyStyleContent(): StyleDraftContent {
   return { title: "", tokens: [], states: [] };
@@ -52,7 +52,7 @@ export function tokenPathOf(id: string, system: string): string | null {
 const same = (a: unknown, b: unknown): boolean => stableStringify(a) === stableStringify(b);
 
 /** Edits that would change nothing (the value is already the published one) are not changes. */
-export function effectiveTokenEdits(content: StyleDraftContent, tokens: readonly StyleToken[]): TokenEdit[] {
+function effectiveTokenEdits(content: StyleDraftContent, tokens: readonly StyleToken[]): TokenEdit[] {
   const byPath = new Map(tokens.map((t) => [t.path, t]));
   return content.tokens.flatMap((edit) => {
     const token = byPath.get(edit.path);

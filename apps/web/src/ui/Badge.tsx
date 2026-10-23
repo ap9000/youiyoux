@@ -2,6 +2,7 @@
 import { cva, type VariantProps } from "class-variance-authority";
 import { clsx } from "clsx";
 import type { ComponentProps } from "react";
+import type { ContrastGrade } from "../data/contrast.ts";
 import type { ComponentStatus, RuleSeverity } from "../data/types.ts";
 
 export const badgeVariants = cva(
@@ -29,6 +30,8 @@ export function Badge({ className, tone, ...props }: ComponentProps<"span"> & Va
 
 const STATUS_TONE: Record<ComponentStatus, BadgeTone> = { stable: "success", beta: "warning", draft: "neutral", deprecated: "danger" };
 const SEVERITY_TONE: Record<RuleSeverity, BadgeTone> = { error: "danger", warn: "warning", off: "neutral" };
+/** A WCAG grade's tone: AA and up pass, large text only warns, a fail is danger. */
+export const GRADE_TONE: Record<ContrastGrade, BadgeTone> = { AAA: "success", AA: "success", "AA large": "warning", Fail: "danger" };
 
 export function StatusBadge({ status }: { status: ComponentStatus }) {
   return <Badge tone={STATUS_TONE[status]}>{status[0]!.toUpperCase() + status.slice(1)}</Badge>;

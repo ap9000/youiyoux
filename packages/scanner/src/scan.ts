@@ -9,7 +9,7 @@ import { buildTokenIndex, failedChecks, runChecks, type TokenIndex } from "./che
 import { buildElementIndex, type ElementIndex } from "./elements.ts";
 import { ModuleGraph, type ModuleParser } from "./graph.ts";
 import { changedFiles, checkIdentity, definitionsDigest, gitState, SCANNER_VERSION } from "./identity.ts";
-import { langOf, parseModule, type ModuleInfo } from "./parse.ts";
+import { byPosition, langOf, parseModule, type ModuleInfo } from "./parse.ts";
 import { emptyRootProblem, ProjectRootError, type Project } from "./project.ts";
 import { ModuleResolver } from "./resolve.ts";
 import { RouteIndex } from "./routes.ts";
@@ -60,8 +60,6 @@ function contentIdentity(files: readonly string[], digest: string, overrides: Re
   const dirty = commit && changed ? [...new Set([...files.filter((f) => changed.has(f)), ...overridden])].sort() : overridden;
   return { digest, dirty: dirty.slice(0, MAX_DIRTY_LISTED), dirtyCount: commit && changed ? dirty.length : null, overrides: overridden };
 }
-
-const byPosition = <T extends { file: string; line: number; column: number }>(a: T, b: T): number => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column;
 
 async function parseAll(project: Project, files: readonly string[], overrides: Readonly<Record<string, string>>, parse: ModuleParser): Promise<{ modules: Map<string, ModuleInfo | null>; sources: Map<string, string>; failed: Array<{ file: string; reason: string }> }> {
   const modules = new Map<string, ModuleInfo | null>();

@@ -15,10 +15,10 @@ import { Button } from "../../ui/Button.tsx";
 import { CopyButton } from "../../ui/CopyButton.tsx";
 import { TextArea } from "../../ui/Field.tsx";
 
-export const NEEDS_SERVICE = "Saving and adopting are drafts for approval: they need the workflow service (open the hub with youiyoux ui --project).";
+const NEEDS_SERVICE = "Saving and adopting are drafts for approval: they need the workflow service (open the hub with youiyoux ui --project).";
 
 /** Why this item cannot be adopted, or null when it can. */
-export function adoptRefusal(licence: string, name: string): string | null {
+function adoptRefusal(licence: string, name: string): string | null {
   return licence === "unknown" ? `${name}'s licence is unknown: nothing backs one, so it cannot be adopted. Save it to the Library as a reference instead, or find its licence first.` : null;
 }
 

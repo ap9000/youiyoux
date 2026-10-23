@@ -11,6 +11,7 @@ import { type ReactNode, useMemo, useState } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import { type Scheme, useTheme } from "../../app/theme.tsx";
 import { elementHref } from "../../data/ids.ts";
+import { dataUrl } from "../../data/load.ts";
 import type { Model } from "../../data/model.ts";
 import { elementOf, isSelected, matchPlaces, pickOrder, usePlaces, type Placed } from "../../data/places.ts";
 import { useRemote, workflowApi } from "../../data/workflow.ts";
@@ -23,7 +24,7 @@ import { Button } from "../../ui/Button.tsx";
 import { CopyButton } from "../../ui/CopyButton.tsx";
 import { KindIcon } from "../../ui/KindIcon.tsx";
 import { PaneHeader } from "../../ui/Pane.tsx";
-import { ScreenImage, shotFile, shotUrl } from "../../ui/ScreenImage.tsx";
+import { ScreenImage, shotFile } from "../../ui/ScreenImage.tsx";
 import { Section } from "../../ui/Section.tsx";
 import { Segmented } from "../../ui/Segmented.tsx";
 import { Capped, choiceProps, SiteLocation, SiteRow } from "../element/sites.tsx";
@@ -32,9 +33,9 @@ import { type Outline, type Pin, PlacesOverlay } from "./PlacesOverlay.tsx";
 import { RequestComposer, RequestThread } from "./Requests.tsx";
 
 /** A collapsible group: native details/summary, so it is keyboard- and reader-friendly for free. */
-function Group({ summary, children, open, onPoint }: { summary: ReactNode; children: ReactNode; open?: boolean; onPoint?: (pointed: boolean) => void }) {
+function Group({ summary, children, onPoint }: { summary: ReactNode; children: ReactNode; onPoint?: (pointed: boolean) => void }) {
   return (
-    <details open={open} className="group/details border-b border-line last:border-b-0" onPointerEnter={onPoint && (() => onPoint(true))} onPointerLeave={onPoint && (() => onPoint(false))}>
+    <details className="group/details border-b border-line last:border-b-0" onPointerEnter={onPoint && (() => onPoint(true))} onPointerLeave={onPoint && (() => onPoint(false))}>
       <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 hover:bg-raised [&::-webkit-details-marker]:hidden">
         <ChevronRight aria-hidden className="size-3.5 shrink-0 text-faint transition-transform duration-100 group-open/details:rotate-90" />
         {summary}
@@ -58,7 +59,7 @@ function ElementGroup({ model, element, scheme, picture }: { model: Model; eleme
   const name = summary?.name ?? element.id;
   return (
     <Group
-      {...(picture ? { onPoint: picture.point } : {})}
+      onPoint={picture?.point}
       summary={
         <>
           {summary && <KindIcon element={summary} scheme={scheme} />}
@@ -371,7 +372,7 @@ export function ScreenDetail({ model, screens, screen }: { model: Model; screens
             ))}
             <div className={clsx("overflow-hidden rounded-lg border border-line shadow-raise", !full && "border-dashed shadow-none")}>
               {full && !places ? (
-                <a href={shotUrl(full.file)} target="_blank" rel="noreferrer" title="Open full size" className="block">
+                <a href={dataUrl(full.file)} target="_blank" rel="noreferrer" title="Open full size" className="block">
                   {image}
                 </a>
               ) : (
@@ -391,7 +392,7 @@ export function ScreenDetail({ model, screens, screen }: { model: Model; screens
                 </span>
               )}
               {full && places && (
-                <a href={shotUrl(full.file)} target="_blank" rel="noreferrer" className="text-accent hover:underline">
+                <a href={dataUrl(full.file)} target="_blank" rel="noreferrer" className="text-accent hover:underline">
                   Open full size
                 </a>
               )}

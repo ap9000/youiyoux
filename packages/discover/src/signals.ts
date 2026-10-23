@@ -53,19 +53,22 @@ export function registryOf(entry: LibraryEntry): string | null {
 
 const fresh = (at: string | undefined, ttl: number, now: Date): boolean => Boolean(at) && now.getTime() - Date.parse(at!) < ttl;
 
+/** A homepage's host (less www) and path (less trailing slashes), lowercase; null when it is not a URL. */
+function homeParts(value: string): { host: string; path: string } | null {
+  try {
+    const url = new URL(value.includes("://") ? value : `https://${value}`);
+    return { host: url.hostname.replace(/^www\./, "").toLowerCase(), path: url.pathname.replace(/\/+$/, "").toLowerCase() };
+  } catch {
+    return null;
+  }
+}
+
 /** `https://www.kibo-ui.com/` and `https://kibo-ui.com` are one homepage. */
 export function sameHomepage(a: string | null | undefined, b: string | null | undefined): boolean {
-  const key = (value: string): string | null => {
-    try {
-      const url = new URL(value.includes("://") ? value : `https://${value}`);
-      return `${url.hostname.replace(/^www\./, "")}${url.pathname.replace(/\/+$/, "")}`.toLowerCase();
-    } catch {
-      return null;
-    }
-  };
   if (!a || !b) return false;
-  const ka = key(a);
-  return ka !== null && ka === key(b);
+  const pa = homeParts(a);
+  const pb = homeParts(b);
+  return pa !== null && pb !== null && `${pa.host}${pa.path}` === `${pb.host}${pb.path}`;
 }
 
 /** Hosts whose tenants are paths, not subdomains: one account's page there says nothing of another's. */
@@ -79,17 +82,9 @@ const PATH_TENANTS = new Set(["github.com", "gitlab.com", "bitbucket.org", "code
  * homepage counts, so no account there can claim another's repository.
  */
 export function sameSite(repository: string | null | undefined, registry: string | null | undefined): boolean {
-  const parts = (value: string): { host: string; path: string } | null => {
-    try {
-      const url = new URL(value.includes("://") ? value : `https://${value}`);
-      return { host: url.hostname.replace(/^www\./, "").toLowerCase(), path: url.pathname.replace(/\/+$/, "").toLowerCase() };
-    } catch {
-      return null;
-    }
-  };
   if (!repository || !registry) return false;
-  const repo = parts(repository);
-  const home = parts(registry);
+  const repo = homeParts(repository);
+  const home = homeParts(registry);
   if (!repo || !home || repo.host !== home.host) return false;
   if (PATH_TENANTS.has(repo.host)) return repo.path === home.path && repo.path !== "";
   return repo.path === "" || home.path === repo.path || home.path.startsWith(`${repo.path}/`);

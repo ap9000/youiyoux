@@ -183,10 +183,6 @@ export function tokenUtilities(utility: string, tokens: readonly ResolvedToken[]
   return [...new Set(tokens.flatMap((t) => (index.themeKeys.get(t.id) ?? []).map((key) => themeKeyToUtility(utility, key)).filter((u): u is string => u !== null)))];
 }
 
-function suggestUtility(utility: string, value: string, index: TokenIndex): string[] {
-  return tokenUtilities(utility, arbitraryTokens(utility, value, index), index);
-}
-
 function arbitraryValues(module: ModuleInfo, index: TokenIndex): Finding[] {
   const findings: Finding[] = [];
   for (const node of stringNodes(module)) {
@@ -195,7 +191,7 @@ function arbitraryValues(module: ModuleInfo, index: TokenIndex): Finding[] {
     for (const match of text.matchAll(ARBITRARY)) {
       const [whole, utility, value] = match as unknown as [string, string, string];
       if (value.startsWith("#")) continue;
-      const suggestions = suggestUtility(utility, value, index);
+      const suggestions = tokenUtilities(utility, arbitraryTokens(utility, value, index), index);
       if (suggestions.length === 0) continue;
       const offset = match.index! + whole.indexOf(`${utility}-[`);
       findings.push({ file: module.file, ...offsetToPosition(text, offset, start), text: `${utility}-[${value}]`, message: `Arbitrary value ${utility}-[${value}] copies a token.`, suggestion: suggestions.slice(0, 3).join(" or ") });

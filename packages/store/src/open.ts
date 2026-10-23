@@ -1,5 +1,4 @@
 /** Where the store lives, and opening it: Postgres when DATABASE_URL is set, else a local SQLite file. */
-import { rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { openPostgres, redactUrl } from "./postgres.ts";
@@ -36,10 +35,4 @@ export async function openStore(options: OpenOptions = {}): Promise<Store> {
   const env = options.env ?? process.env;
   if (env.DATABASE_URL) return openPostgres(env.DATABASE_URL, options);
   return openSqlite(options.path ?? defaultIndexPath(env), options);
-}
-
-/** Delete a SQLite store and its WAL files (the start of `youiyoux index rebuild`). */
-export async function removeSqlite(path: string): Promise<void> {
-  if (path === ":memory:") return;
-  for (const suffix of ["", "-wal", "-shm"]) await rm(`${path}${suffix}`, { force: true });
 }

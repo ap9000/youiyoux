@@ -3,13 +3,11 @@ import { clsx } from "clsx";
 import { ImageOff } from "lucide-react";
 import { useState } from "react";
 import type { Scheme } from "../app/theme.tsx";
+import { dataUrl } from "../data/load.ts";
 import type { ScreenShot } from "../data/types.ts";
 
-const DATA_BASE = `${import.meta.env.BASE_URL}data/`;
 /** Desktop capture proportions, used until a project records its own viewport. */
 const DEFAULT_RATIO = 16 / 10;
-
-export const shotUrl = (file: string): string => `${DATA_BASE}${file}`;
 
 /** The image file for a scheme, falling back to the other scheme rather than to nothing. */
 export function shotFile(shot: ScreenShot | null, scheme: Scheme, size: "thumb" | "full"): { file: string; scheme: Scheme } | null {
@@ -54,7 +52,7 @@ export function ScreenImage({ shot, scheme, size, label, ratio = DEFAULT_RATIO, 
       ) : (
         <img
           key={picked.file}
-          src={shotUrl(picked.file)}
+          src={dataUrl(picked.file)}
           alt={`${label}${picked.scheme === scheme ? "" : ` (${picked.scheme} only)`}`}
           loading={size === "thumb" ? "lazy" : "eager"}
           decoding="async"

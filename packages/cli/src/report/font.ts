@@ -102,7 +102,6 @@ z ..... ..... ##### ...#. ..#.. .#... #####
 `;
 
 export const GLYPH_WIDTH = 5;
-export const GLYPH_HEIGHT = 7;
 /** Letters drawn two rows down: their seven rows are x-height plus the tail. */
 export const DESCENDERS: ReadonlySet<string> = new Set(["g", "p", "q", "y"]);
 

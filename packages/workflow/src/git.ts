@@ -15,7 +15,7 @@ import { sha256 } from "@youiyoux/core";
 const run = promisify(execFile);
 const MAX_BUFFER = 64 * 1024 * 1024;
 
-export class GitError extends Error {
+class GitError extends Error {
   override name = "GitError";
 }
 
@@ -111,15 +111,9 @@ export async function isAncestor(top: string, commit: string, tip: string): Prom
   }
 }
 
-/** File names directly under `dir` at a commit. */
-export async function listAt(top: string, commit: string, dir: string): Promise<string[]> {
-  const out = await gitOrNull(top, ["ls-tree", "--name-only", `${commit}:${dir}`]);
-  return out ? out.split("\n").filter(Boolean) : [];
-}
-
-/** Every file under `dir` at a commit (recursively), relative to `dir`. */
-export async function listTreeAt(top: string, commit: string, dir: string): Promise<string[]> {
-  const out = await gitOrNull(top, ["ls-tree", "-r", "--name-only", `${commit}:${dir}`]);
+/** File names directly under `dir` at a commit; with `recursive`, every file under it, relative to `dir`. */
+export async function listAt(top: string, commit: string, dir: string, options: { recursive?: boolean } = {}): Promise<string[]> {
+  const out = await gitOrNull(top, ["ls-tree", ...(options.recursive ? ["-r"] : []), "--name-only", `${commit}:${dir}`]);
   return out ? out.split("\n").filter(Boolean) : [];
 }
 
@@ -166,7 +160,7 @@ function streamDigest(cwd: string, args: readonly string[]): Promise<string> {
   });
 }
 
-export interface ReviewBranch {
+interface ReviewBranch {
   readonly branch: string;
   readonly commit: string;
   readonly diff: string;

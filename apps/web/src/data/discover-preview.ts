@@ -12,15 +12,15 @@
  */
 import { useSyncExternalStore } from "react";
 
-export const PREVIEW_ENDPOINT = "__youi/discover-preview";
+const PREVIEW_ENDPOINT = "__youi/discover-preview";
 
-export interface ComposeNode {
+interface ComposeNode {
   readonly export: string;
   readonly props: Readonly<Record<string, unknown>>;
   readonly children: ReadonlyArray<ComposeNode | string>;
 }
 
-export interface ThemeFit {
+interface ThemeFit {
   readonly themed: readonly string[];
   readonly unthemed: readonly string[];
   readonly type: { readonly item: number | null; readonly project: number | null };
@@ -56,12 +56,12 @@ const asked = new Map<string, Promise<PreviewState>>();
 export const previewRequests: string[] = [];
 
 /** Ask for one candidate's preview (once per candidate and project). */
-export function requestPreview(id: string, project: string | null, base: string = import.meta.env.BASE_URL): Promise<PreviewState> {
-  const key = `${base}\0${id}\0${project ?? ""}`;
+export function requestPreview(id: string, project: string | null): Promise<PreviewState> {
+  const key = `${id}\0${project ?? ""}`;
   let request = asked.get(key);
   if (!request) {
     previewRequests.push(id);
-    request = ask(id, project, base);
+    request = ask(id, project);
     asked.set(key, request);
     // A failure is not kept: opening it again asks again.
     void request.then((state) => state.status === "error" && asked.delete(key));
@@ -69,11 +69,11 @@ export function requestPreview(id: string, project: string | null, base: string 
   return request;
 }
 
-async function ask(id: string, project: string | null, base: string): Promise<PreviewState> {
+async function ask(id: string, project: string | null): Promise<PreviewState> {
   const params = new URLSearchParams({ id, ...(project ? { project } : {}) });
   let response: Response;
   try {
-    response = await fetch(`${base}${PREVIEW_ENDPOINT}?${params}`, { cache: "no-store" });
+    response = await fetch(`${import.meta.env.BASE_URL}${PREVIEW_ENDPOINT}?${params}`, { cache: "no-store" });
   } catch {
     return { status: "error", message: "Previews need the hub's own server (youiyoux ui or pnpm dev), which did not answer; the listing stands.", offline: true };
   }

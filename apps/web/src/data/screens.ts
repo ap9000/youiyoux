@@ -84,7 +84,7 @@ export interface ScreenIndex {
   readonly shots: ReadonlyMap<string, ProjectShots>;
 }
 
-export interface UnattributedFile {
+interface UnattributedFile {
   readonly project: string;
   readonly file: string;
   readonly sites: number;
@@ -93,7 +93,7 @@ export interface UnattributedFile {
 
 const routeRank = (route: string): number => (route === EVERY_SCREEN ? 0 : 1);
 
-export function projectShots(manifest: Manifest): Map<string, ProjectShots> {
+function projectShots(manifest: Manifest): Map<string, ProjectShots> {
   const shots = new Map<string, ProjectShots>();
   for (const system of manifest.systems) for (const usage of system.usage) if (usage.screens) shots.set(usage.project, usage.screens);
   return shots;

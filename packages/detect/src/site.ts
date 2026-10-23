@@ -20,6 +20,8 @@ import { siteSignals, type PageFacts } from "./site-signals.ts";
 export const DOWNLOAD_NOTICE = "youiyoux detect: downloading Chromium headless shell (~100 MB, once)";
 export const SCREENSHOT_DIR = "screenshots";
 const TRIGGER_ATTR = "data-youi-trigger";
+/** At most this many triggers are opened per page. */
+const MAX_TRIGGERS = 8;
 
 export class BrowserMissingError extends Error {
   override name = "BrowserMissingError";
@@ -32,11 +34,7 @@ export interface SiteOptions {
   readonly expose?: boolean;
   /** A Chromium to use instead of the installed headless shell. */
   readonly executablePath?: string;
-  readonly viewport?: { readonly width: number; readonly height: number };
   readonly timeoutMs?: number;
-  /** At most this many triggers are opened per page. */
-  readonly maxTriggers?: number;
-  readonly now?: Date;
 }
 
 /** What the browser is for, in launchBrowser's messages: `no Chromium for <what>`, `<command>: downloading…`. */
@@ -156,7 +154,7 @@ async function crawl(page: Page, url: string, n: number, options: SiteOptions): 
     let exposed = 0;
     if (options.expose) {
       const loaded = page.url();
-      const triggers = (await page.evaluate(`(${TRIGGERS_SOURCE})(${JSON.stringify({ attr: TRIGGER_ATTR, limit: options.maxTriggers ?? 8 })})`)) as string[];
+      const triggers = (await page.evaluate(`(${TRIGGERS_SOURCE})(${JSON.stringify({ attr: TRIGGER_ATTR, limit: MAX_TRIGGERS })})`)) as string[];
       for (const [i] of triggers.entries()) {
         try {
           await page.locator(`[${TRIGGER_ATTR}="${i}"]`).first().click({ timeout: 2_000 });
@@ -197,7 +195,7 @@ export async function siteReport(urls: readonly string[], options: SiteOptions):
   const browser = await launchBrowser(options.executablePath);
   const runs: PageRun[] = [];
   try {
-    const context = await browser.newContext({ viewport: options.viewport ?? { width: 1280, height: 800 }, deviceScaleFactor: 1, colorScheme: "light", reducedMotion: "reduce" });
+    const context = await browser.newContext({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 1, colorScheme: "light", reducedMotion: "reduce" });
     for (const [i, url] of urls.entries()) {
       const page = await context.newPage();
       runs.push(await crawl(page, url, i + 1, options));
@@ -234,7 +232,6 @@ export async function siteReport(urls: readonly string[], options: SiteOptions):
     hits,
     fonts: [...fonts].map(([family, usedBy]): DetectFont => ({ family, usedBy: [...usedBy] })),
     notes,
-    ...(options.now ? { now: options.now } : {}),
   });
   // One screenshot per element type: drop the pictures of matches that lost to another library.
   const kept = new Set(report.elements.flatMap((e) => (e.screenshot ? [e.screenshot.split("/").at(-1)!] : [])));

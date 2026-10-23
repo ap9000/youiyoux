@@ -13,6 +13,7 @@ import { retryModel, retryUsage, useModelState, useUsageState } from "../../data
 import type { ProjectShots } from "../../data/types.ts";
 import { EVERY_SCREEN, type UsageIndex } from "../../data/usage.ts";
 import { useRemote, workflowApi } from "../../data/workflow.ts";
+import { shortSha } from "../../lib/format.ts";
 import { useListKeys } from "../../shell/keyboard.ts";
 import { Badge } from "../../ui/Badge.tsx";
 import { Button } from "../../ui/Button.tsx";
@@ -26,7 +27,6 @@ import { ScreenDetail } from "./ScreenDetail.tsx";
 import { ScreensCanvas } from "./ScreensCanvas.tsx";
 
 const TOP_ELEMENTS = 3;
-const SHORT_SHA = 7;
 
 export function ScreensScreen() {
   const model = useModelState();
@@ -102,7 +102,7 @@ function ScreenGrid({ model, index, screens }: { model: Model; index: UsageIndex
                   <h2 id={`screens-${project}`} className="text-heading">
                     {project}
                   </h2>
-                  {commit && <span className="font-mono text-mono-sm text-muted">@{commit.slice(0, SHORT_SHA)}</span>}
+                  {commit && <span className="font-mono text-mono-sm text-muted">@{shortSha(commit)}</span>}
                   <span className="text-small text-muted">{captureLine(screens.shots.get(project))}</span>
                 </header>
                 <ul className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

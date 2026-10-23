@@ -9,6 +9,7 @@
  *   fixed debt cannot silently come back.
  */
 import type { Baseline, BaselineEntry, CheckIdentity, Violation } from "@youiyoux/core";
+import { byPosition } from "./parse.ts";
 
 export const BASELINE_FILE = "youi.baseline.json";
 
@@ -24,7 +25,6 @@ export interface BaselineComparison {
 }
 
 const keyOf = (v: Pick<Violation, "rule" | "file" | "text">): string => `${v.rule}\0${v.file}\0${v.text}`;
-const byPosition = (a: Violation, b: Violation): number => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column;
 
 function groupBy<T>(items: readonly T[], key: (item: T) => string): Map<string, T[]> {
   const groups = new Map<string, T[]>();

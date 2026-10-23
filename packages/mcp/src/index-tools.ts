@@ -4,7 +4,7 @@
  * same text `youiyoux render` prints, with the next step said as a tool call.
  */
 import { shotsText, type ShotsReport } from "@youiyoux/scanner";
-import type { RuleCovers, SwapImpact, WhereUsed } from "@youiyoux/store";
+import type { Ambiguous, RuleCovers, SwapImpact, WhereUsed } from "@youiyoux/store";
 
 const SHOWN = 6;
 
@@ -14,7 +14,12 @@ function list(label: string, items: readonly string[]): string {
   return `${label}: ${items.slice(0, SHOWN).join(", ")}${more > 0 ? `, … (+${more} more)` : ""}`;
 }
 
-const plural = (n: number, word: string, many = `${word}s`): string => `${n} ${n === 1 ? word : many}`;
+export const plural = (n: number, word: string, many = `${word}s`): string => `${n} ${n === 1 ? word : many}`;
+
+/** An ambiguous family or rule: the first few nodes it could mean, to name one with `project`. */
+export function choicesText(ambiguous: Ambiguous): string {
+  return ["Choose a project or full node id:", ...ambiguous.choices.slice(0, 8).map((n) => `${n.project ?? "unknown"} · ${n.id}`)].join("\n");
+}
 
 export function whereUsedText(where: WhereUsed, scannedAt: string | null): string {
   return [

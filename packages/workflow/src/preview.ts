@@ -9,9 +9,9 @@ import type { PreviewFinding } from "./api.ts";
 import type { RuleExecution } from "./execution.ts";
 import { WorkflowError } from "./policy.ts";
 
-export const MAX_FINDINGS = 400;
+const MAX_FINDINGS = 400;
 
-export interface Comparison {
+interface Comparison {
   readonly enforced: boolean;
   readonly flagged: number;
   readonly counts: { readonly new: number; readonly kept: number; readonly resolved: number; readonly suppressed: number };
@@ -30,7 +30,7 @@ function finding(v: Violation, change: PreviewFinding["change"]): PreviewFinding
 }
 
 /** Why a check that should have run did not (unsupported, or it failed on this snapshot), or null. */
-const notRun = (run: RuleRun | undefined): string | null => (run && (run.state === "unsupported" || run.state === "error") ? (run.reason ?? run.state) : null);
+export const notRunReason = (run: RuleRun | undefined): string | null => (run && (run.state === "unsupported" || run.state === "error") ? (run.reason ?? run.state) : null);
 
 function limitsOf(rule: RuleSpec, baseline: RuleSpec | null, scan: ScanResult, flagged: number, kept: number, baselineNotRun: string | null): string[] {
   const limits: string[] = [];
@@ -51,10 +51,10 @@ export function comparePreview(input: { project: Project; scan: ScanResult; exec
   const { project, scan, execution, draft, baseline } = input;
   const next = execution.evaluate(project, scan, [draft]);
   // A draft whose check did not run has no findings to show: an empty preview would read as "flags nothing".
-  const draftNotRun = notRun(next.checks[0]);
+  const draftNotRun = notRunReason(next.checks[0]);
   if (draftNotRun) throw new WorkflowError("invalid", `the draft's check did not run: ${draftNotRun}`, [`check: ${draftNotRun}`]);
   const published = baseline ? execution.evaluate(project, scan, [baseline]) : null;
-  const baselineNotRun = notRun(published?.checks[0]);
+  const baselineNotRun = notRunReason(published?.checks[0]);
   const before = published && !baselineNotRun ? published.violations : [];
   const beforeKeys = new Set(before.map(keyOf));
   const nextKeys = new Set(next.violations.map(keyOf));

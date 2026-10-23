@@ -2,14 +2,13 @@
  * How a check result reads: in a terminal, as GitHub Actions annotations on the
  * PR's lines, and as the job summary that states which rules version decided it.
  */
-import type { Violation } from "@youiyoux/core";
+import { ruleSlug, type Violation } from "@youiyoux/core";
 import { describeIdentity } from "@youiyoux/scanner";
 import type { CheckResult, DiffCheckResult } from "./check.ts";
 import type { DiffFinding } from "./check-diff.ts";
 import { renderCheck } from "./render.ts";
 import { plural, style } from "./ui.ts";
 
-const slug = (rule: string): string => rule.slice(rule.indexOf("/rule/") + 6);
 
 /** The findings a reader must act on: everything, or only what the baseline does not accept. */
 export function actionable(result: CheckResult): readonly Violation[] {
@@ -19,7 +18,7 @@ export function actionable(result: CheckResult): readonly Violation[] {
 }
 
 export function renderCheckText(result: CheckResult): string {
-  const lines = [renderCheck(actionable(result), result.lock, result.scan.report, result.scan.report.suppressed)];
+  const lines = [renderCheck(actionable(result), result.lock, result.scan.report)];
   if (result.baseline) {
     const { comparison, file, recorded } = result.baseline;
     const gone = comparison.fixed.reduce((n, f) => n + f.gone, 0);
@@ -57,13 +56,13 @@ export function githubAnnotations(result: CheckResult, prefix: string): string[]
       file: `${prefix}${v.file}`,
       line: v.line,
       col: v.column,
-      title: `youi ${slug(v.rule)}`,
+      title: `youi ${ruleSlug(v.rule)}`,
     }),
   );
   for (const issue of result.lock ?? []) lines.push(command(issue.severity === "error" ? "error" : "warning", issue.message, { file: `${prefix}${issue.file}`, title: "youi setup" }));
   for (const file of result.unmatched) lines.push(command("error", `${file} was not checked: not in this project's include globs`, { title: "youi incomplete" }));
   for (const failure of result.failed) lines.push(command("error", `could not be fully analysed (${failure.reason}); a clean result here is not a pass`, { file: `${prefix}${failure.file}`, title: "youi incomplete" }));
-  for (const run of result.notRun) lines.push(command("error", `rule ${slug(run.rule)} did not run (${run.reason ?? run.state}); its findings are unknown`, { title: "youi incomplete" }));
+  for (const run of result.notRun) lines.push(command("error", `rule ${ruleSlug(run.rule)} did not run (${run.reason ?? run.state}); its findings are unknown`, { title: "youi incomplete" }));
   return lines;
 }
 
@@ -95,7 +94,7 @@ export function diffGaps(result: DiffCheckResult): string[] {
   return [
     ...result.unmatched.map((f) => `${f} was not checked: it is not in this project's include globs`),
     ...result.failed.map((f) => `${f.file} could not be fully analysed (${f.reason})`),
-    ...result.notRun.map((r) => `rule ${slug(r.rule)} did not run (${r.reason ?? r.state})`),
+    ...result.notRun.map((r) => `rule ${ruleSlug(r.rule)} did not run (${r.reason ?? r.state})`),
     ...(result.diff?.incomplete ?? []),
   ];
 }

@@ -14,7 +14,7 @@ import { join } from "node:path";
 import type { LibraryEntry } from "@youiyoux/core";
 import { nodeId, openStore, pageInteger, searchTerms, type DiscoverFilter, type DiscoverItem, type DiscoverScope, type GraphEdge, type GraphNode, type Signal, type SourceClass, type Store } from "@youiyoux/store";
 import { CONCEPTS, conceptForRole, normalize, readNeed } from "./aliases.ts";
-import { conceptScore, DISCOVER_RULE, fieldsOf, hitOf, rankEntries, registryName, styleOf, type DiscoverFacets, type DiscoverSearch, type DiscoverShow, type SearchOptions } from "./search.ts";
+import { conceptScore, DISCOVER_RULE, fieldsOf, hitOf, licenceOf, rankEntries, registryName, styleOf, type DiscoverFacets, type DiscoverSearch, type DiscoverShow, type SearchOptions } from "./search.ts";
 import { SHADCN } from "./sources.ts";
 import { ALL_INDEX_FILE, INDEX_FILE, MissingIndexError, readAllIndex, readIndex, readSignals } from "./store.ts";
 import { cleanText } from "./text.ts";
@@ -38,10 +38,6 @@ export function sourceClassOf(entry: LibraryEntry): SourceClass {
 export function rolesOf(entry: LibraryEntry): string[] {
   const f = fieldsOf(entry);
   return CONCEPTS.filter((concept) => conceptScore(concept, f, []) > 0).map((c) => c.id);
-}
-
-export function licenceOf(entry: LibraryEntry): string {
-  return entry.license && entry.license !== "unknown" ? entry.license.spdx : "unknown";
 }
 
 /** The words the full-text index reads: the scorer's fields, normalized as it reads them; the name weighs most. */
@@ -168,8 +164,6 @@ export interface CatalogSearchOptions extends SearchOptions {
   readonly all?: boolean;
   readonly offset?: number;
   readonly facets?: boolean;
-  /** Override CANDIDATES_PER_CLASS (measurement). */
-  readonly perClass?: number;
 }
 
 function scopesOf(all: boolean | undefined): DiscoverScope[] {
@@ -218,7 +212,7 @@ export function needTerms(need: string): string[] {
 /** Search the store by need: the same answer shape as searchIndex, paged, with facets when asked. */
 export async function searchCatalog(store: Store, need: string, options: CatalogSearchOptions = {}): Promise<DiscoverSearch> {
   const filter = filterOf(options);
-  const rows = await store.matchDiscover({ ...filter, terms: needTerms(need), perClass: options.perClass ?? CANDIDATES_PER_CLASS });
+  const rows = await store.matchDiscover({ ...filter, terms: needTerms(need), perClass: CANDIDATES_PER_CLASS });
   const ranked = rankEntries(rows.map((r) => r.entry as LibraryEntry), need, options);
   const offset = pageInteger(options.offset, 0, 2_147_483_647);
   const page = ranked.scored.slice(offset, offset + pageInteger(options.limit, 10));

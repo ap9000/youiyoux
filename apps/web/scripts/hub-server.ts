@@ -53,7 +53,7 @@ export interface HubServerOptions {
 type Middleware = (req: IncomingMessage, res: ServerResponse, next: () => void) => void | Promise<void>;
 
 /** Each demo the frame could not build, in words, for the terminal. */
-export function frameNotes(build: FrameBuild): string[] {
+function frameNotes(build: FrameBuild): string[] {
   return Object.entries(build.errors).map(([name, why]) => `preview frame: ${name} has no live preview: ${why}`);
 }
 

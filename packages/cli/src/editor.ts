@@ -12,7 +12,7 @@ import { shortHash, type LibraryEntry } from "@youiyoux/core";
 import { loadProject } from "@youiyoux/scanner";
 import type { WorkflowInfo } from "@youiyoux/workflow";
 
-export interface RuleEditorOptions {
+interface RuleEditorOptions {
   readonly project: string;
   readonly config?: string;
   readonly design?: string;

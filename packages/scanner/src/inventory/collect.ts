@@ -11,7 +11,7 @@ import { matchesAny, type InventoryDefinition, type InventoryKit, type Inventory
 import { readRules, splitTopLevel } from "@youiyoux/tokens";
 import { ModuleGraph, type ResolvedSymbol } from "../graph.ts";
 import { gitState } from "../identity.ts";
-import { parseModule, unquote, type ModuleInfo } from "../parse.ts";
+import { byPosition, parseModule, unquote, type ModuleInfo } from "../parse.ts";
 import { ModuleResolver } from "../resolve.ts";
 import { RouteIndex } from "../routes.ts";
 import { propsOf, resolveTag } from "../usage.ts";
@@ -865,6 +865,6 @@ export async function collectProject(target: InventoryTarget, options: CollectOp
   const git = await gitState(target.root);
   const definitions = [...pass.definitions.values()].map((d) => d.entry).sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.name.localeCompare(b.name));
   const primitives = [...pass.primitives].map(([pkg, p]) => ({ package: pkg, project: target.id, exports: [...p.exports].sort(), count: p.count, sites: p.sites.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column) })).sort((a, b) => a.package.localeCompare(b.package));
-  const looks = pass.looks.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column);
+  const looks = pass.looks.sort(byPosition);
   return { id: target.id, target, commit: git.commit, failed: pass.failed.sort((a, b) => a.file.localeCompare(b.file)), warnings: pass.theme.warnings, definitions, kits: pass.kits.sort((a, b) => a.id.localeCompare(b.id)), primitives, looks, kitImports: pass.kitImports, stories: pass.stories };
 }

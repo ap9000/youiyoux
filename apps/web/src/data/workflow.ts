@@ -8,7 +8,7 @@ import type { ApiError, DraftContent, DraftView, LibraryDraftContent, LibraryDra
 import type { RequestDoc, RequestStatus, RequestTarget } from "@youiyoux/core";
 import { sessionKey } from "./session-key.ts";
 
-export type { CheckCapability, DraftContent, DraftView, LibraryDraftContent, LibraryDraftView, LibraryPreview, Preview, PreviewFinding, PublishedRule, PublishedRules, RuleDraftView, RuleFields, RulePlace, StyleContrast, StyleDraftContent, StyleDraftView, StylePreview, StyleSite, WorkflowInfo } from "@youiyoux/workflow/api";
+export type { CheckCapability, DraftContent, DraftView, LibraryDraftContent, LibraryDraftView, Preview, PreviewFinding, PublishedRules, RuleDraftView, RuleFields, StyleContrast, StyleDraftContent, StyleDraftView, StylePreview, StyleSite, WorkflowInfo } from "@youiyoux/workflow/api";
 
 const API = `${import.meta.env.BASE_URL}api`;
 

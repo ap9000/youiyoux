@@ -19,7 +19,7 @@ interface Member {
 
 type Node = (Span & { readonly kind: "object"; readonly members: readonly Member[] }) | (Span & { readonly kind: "array"; readonly items: readonly Node[] }) | (Span & { readonly kind: "scalar" });
 
-export class JsonEditError extends Error {
+class JsonEditError extends Error {
   override name = "JsonEditError";
 }
 

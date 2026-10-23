@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { githubBucketFor, githubBuckets, PoliteClient, type Fetcher } from "../src/index.ts";
+import { githubBuckets, PoliteClient, type Fetcher } from "../src/index.ts";
 
 const TOKEN = "ghp_fixtureTOKEN0123456789abcdefABCDEF";
 
@@ -65,7 +65,7 @@ describe("PoliteClient", () => {
   test("GitHub budgets: 10 searches and 60 calls without a token; a spent bucket refuses without asking", async () => {
     expect(githubBuckets(undefined)).toEqual({ "github-search": { limit: 10, windowMs: 60_000 }, "github-core": { limit: 60, windowMs: 3_600_000 } });
     const r = recorder(() => new Response("{}"));
-    const client = new PoliteClient({ fetcher: r.fetcher, buckets: githubBuckets(undefined), bucketFor: githubBucketFor, concurrency: 1 });
+    const client = new PoliteClient({ fetcher: r.fetcher, buckets: githubBuckets(undefined), concurrency: 1 });
     const results = [];
     for (let i = 0; i < 12; i++) results.push(await client.get(`https://api.github.com/search/repositories?q=r${i}`));
     expect(results.filter((x) => x.ok)).toHaveLength(10);
@@ -76,7 +76,7 @@ describe("PoliteClient", () => {
 
   test("the server's own word spends a bucket: no calls remaining stops further calls this run", async () => {
     const r = recorder(() => new Response("{}", { headers: { "x-ratelimit-limit": "60", "x-ratelimit-remaining": "0" } }));
-    const client = new PoliteClient({ fetcher: r.fetcher, buckets: githubBuckets(undefined), bucketFor: githubBucketFor });
+    const client = new PoliteClient({ fetcher: r.fetcher, buckets: githubBuckets(undefined) });
     await client.get("https://api.github.com/repos/a/b");
     expect(await client.get("https://api.github.com/repos/c/d")).toMatchObject({ ok: false, reason: "rate-limited" });
     expect(r.seen).toHaveLength(1);

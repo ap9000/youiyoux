@@ -3,8 +3,6 @@ import type { ComponentContract, OutputConfig } from "@youiyoux/core";
 import type { ResolvedToken } from "./build.ts";
 import { cssValue, springCurve, tokenVariables, variableSuffixes, type Dimension, type FocusRing, type Spring, type Typography } from "./values.ts";
 
-const dim = (d: Dimension): string => `${d.value}${d.unit}`;
-
 const NAMESPACE: Record<string, string> = { color: "color", radius: "radius", space: "spacing", font: "font", shadow: "shadow", easing: "ease" };
 
 /** Tailwind theme variable names (without `--`) for a token, with the CSS each one should read. */

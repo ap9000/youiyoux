@@ -10,19 +10,18 @@
  * nothing outside its root is read or run (contain.ts): a source file or recipe that leads out of
  * it is refused with a note, and that look is drawn from its tag and classes.
  */
-import { createHash } from "node:crypto";
 import { rmSync } from "node:fs";
-import type { InventoryLook, InventoryRecipe, InventoryRole } from "@youiyoux/core";
+import { sha256, type InventoryLook, type InventoryRecipe, type InventoryRole } from "@youiyoux/core";
 import { loadInventoryTarget } from "../inventory/target.ts";
 import { newStats, SPECIMEN_FORMAT, SpecimenCache, specimenKey, type SpecimenStats } from "./cache.ts";
 import { relativeInside } from "./contain.ts";
 import { buildProjectCss, describeSkipped, describeSources, type Scheme, type SheetSource } from "./css.ts";
 import { forcedStates } from "./states.ts";
-import { ICON_HTML, renderComponents, type ComponentRecipe, type RenderJob, type RenderOptions } from "./render.ts";
+import { ICON_HTML, renderComponents, type ComponentRecipe, type RenderJob } from "./render.ts";
 
 export { SpecimenCache, defaultCacheDir, newStats, type SpecimenStats } from "./cache.ts";
-export { buildProjectCss, describeSkipped, describeSources, findStylesheets, forScheme, pageStylesheets, projectTailwind, SCHEMES, stylesheetLinks, tailwindCliBuilds, type Scheme, type SheetSource } from "./css.ts";
-export { escapingLinks, isBarePackageUnderRoot, relativeInside, within } from "./contain.ts";
+export { buildProjectCss, findStylesheets, forScheme, pageStylesheets, projectTailwind, SCHEMES, stylesheetLinks, tailwindCliBuilds, type Scheme, type SheetSource } from "./css.ts";
+export { escapingLinks, relativeInside, within } from "./contain.ts";
 export { BrowserBundleCache, BUNDLE_BUSY, BUNDLE_CACHE_LIMITS, bundleForBrowser, MAX_SIBLINGS, type BrowserBundle, type BrowserLook, type BrowserResult, type BundleCacheLimits, type TryMessage } from "./client.ts";
 export { forcedStates, STATE_CLASSES, STATES_MARKER, type ForcedState } from "./states.ts";
 export { classWords, projectTheme, themeFit, type FitInput, type ThemeFit } from "./theme-fit.ts";
@@ -68,8 +67,6 @@ export interface SpecimenProject {
 export interface SpecimenOptions {
   readonly cache?: SpecimenCache;
   readonly stats?: SpecimenStats;
-  /** Time limits for Tailwind and rendering (defaults in css.ts and render.ts). */
-  readonly timeouts?: RenderOptions & { readonly tailwindMs?: number };
   /**
    * `specimens.css` from a project config kept outside the product (`--config <file>` with its
    * `root`): exactly these sheets, project-relative, in this order, instead of the product's own
@@ -83,8 +80,8 @@ const PLACEHOLDER: Readonly<Record<InventoryRole, string>> = { button: "Button",
 const MAX_NOTES = 10;
 const VOID = /^(?:input|img|hr|br|area|col|embed|source|track|wbr)$/;
 
-const escape = (text: string): string => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-const idOf = (recipe: InventoryRecipe, role: InventoryRole): string => createHash("sha256").update(`${role}\0${JSON.stringify(recipe)}`).digest("hex").slice(0, 12);
+export const escapeHtml = (text: string): string => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const idOf = (recipe: InventoryRecipe, role: InventoryRole): string => sha256(`${role}\0${JSON.stringify(recipe)}`).slice(0, 12);
 
 /** A component look sized as an icon (shadcn's `size="icon"`, `icon-sm`, …) with no text of its own: it shows an icon, not a word. */
 const iconSized = (recipe: InventoryRecipe): boolean => recipe.kind === "component" && recipe.label === null && typeof recipe.props.size === "string" && /^icon(?:$|-)/.test(recipe.props.size);
@@ -97,9 +94,9 @@ export function browserLookOf(recipe: ComponentRecipe, role: InventoryRole): { r
 /** The static fallback: the recipe's tag and classes around its label (an icon for an icon size). */
 export function markupOf(recipe: InventoryRecipe, role: InventoryRole): string {
   const tag = /^[a-z][a-z0-9-]*$/.test(recipe.tag) ? recipe.tag : "div";
-  const attributes = `${recipe.classes.length > 0 ? ` class="${escape(recipe.classes.join(" "))}"` : ""}${tag === "a" ? ' href="#"' : ""}${tag === "button" ? ' type="button"' : ""}`;
+  const attributes = `${recipe.classes.length > 0 ? ` class="${escapeHtml(recipe.classes.join(" "))}"` : ""}${tag === "a" ? ' href="#"' : ""}${tag === "button" ? ' type="button"' : ""}`;
   if (VOID.test(tag)) return `<${tag}${attributes}${tag === "input" ? ' value=""' : ""}>`;
-  return `<${tag}${attributes}>${iconSized(recipe) ? ICON_HTML : escape(recipe.label ?? PLACEHOLDER[role])}</${tag}>`;
+  return `<${tag}${attributes}>${iconSized(recipe) ? ICON_HTML : escapeHtml(recipe.label ?? PLACEHOLDER[role])}</${tag}>`;
 }
 
 /** One project's specimens: from the cache when its inputs are unchanged, else built. */
@@ -128,7 +125,7 @@ export async function projectSpecimens(project: SpecimenProject, options: Specim
     return { ...hit, looks, cached: true };
   }
   stats.misses++;
-  const css = await buildProjectCss(project.root, files, stats, { tsconfig: target.tsconfig, ...override, templates, ...(options.timeouts?.tailwindMs ? { tailwindTimeoutMs: options.timeouts.tailwindMs } : {}) });
+  const css = await buildProjectCss(project.root, files, stats, { tsconfig: target.tsconfig, ...override, templates });
   const warnings = [...outside.map((f) => `refused ${f}: a symlink that leads outside the project root`), ...css.warnings];
   // A recipe that names a file outside the root is never bundled: its look is drawn from its classes.
   const jobs: RenderJob[] = [];
@@ -139,7 +136,7 @@ export async function projectSpecimens(project: SpecimenProject, options: Specim
     else jobs.push({ key: id, ...browserLookOf(recipe as ComponentRecipe, role) });
   }
   const scratch = cache.scratch(project.id, key);
-  const rendered = await renderComponents(project.root, target.tsconfig, jobs, scratch, stats, options.timeouts);
+  const rendered = await renderComponents(project.root, target.tsconfig, jobs, scratch, stats);
   rmSync(scratch, { recursive: true, force: true });
   const specimens: Record<string, Specimen> = {};
   warnings.push(...rendered.warnings);

@@ -3,6 +3,7 @@ import { clsx } from "clsx";
 import { TriangleAlert } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { Preview, PreviewFinding } from "../../data/workflow.ts";
+import { plural } from "../../lib/plural.ts";
 import { Badge, type BadgeTone } from "../../ui/Badge.tsx";
 import { Segmented } from "../../ui/Segmented.tsx";
 
@@ -15,10 +16,6 @@ const CHANGE: Record<PreviewFinding["change"], { label: string; tone: BadgeTone 
 };
 
 type Filter = "all" | PreviewFinding["change"];
-
-export function plural(count: number, word: string, many = `${word}s`): string {
-  return `${count} ${count === 1 ? word : many}`;
-}
 
 export function ImpactPreview({ preview, project, stale }: { preview: Preview; project: string; stale: boolean }) {
   const [chosen, setFilter] = useState<Filter>("all");

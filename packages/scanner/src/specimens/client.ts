@@ -18,9 +18,9 @@
  * recipe holds `open: true` (a dialog drawn open) is controlled by the bootstrap: it closes as the
  * site's would, and an "Open again" button brings it back.
  */
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { sha256 } from "@youiyoux/core";
 import { limitOf } from "./css.ts";
 import { packageUnderRoot, realOf, relativeInside } from "./contain.ts";
 import { ASSET_LOADERS, BUNDLE_TIMEOUT_MS, bundleError, bundleWithin, checkedTsconfig, containment, ICON_PATH, stubs, type ComponentRecipe } from "./render.ts";
@@ -60,7 +60,7 @@ export const MAX_SIBLINGS = 6;
 
 const digestOf = (path: string): string | null => {
   try {
-    return createHash("sha256").update(readFileSync(path)).digest("hex");
+    return sha256(readFileSync(path));
   } catch {
     return null;
   }
@@ -203,7 +203,7 @@ export async function bundleForBrowser(root: string, tsconfig: string, job: Brow
       const path = resolve(base, input);
       inputs.push({ path, digest: digestOf(path) ?? "missing" });
     }
-    return { hash: createHash("sha256").update(built.text).digest("hex").slice(0, 16), code: built.text, inputs };
+    return { hash: sha256(built.text).slice(0, 16), code: built.text, inputs };
   } catch (error: unknown) {
     return { error: `it did not bundle: ${error instanceof Error ? error.message.split("\n")[0] : String(error)}` };
   }

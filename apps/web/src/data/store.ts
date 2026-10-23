@@ -209,33 +209,23 @@ export function useModelState(): Resource<Model> {
 }
 
 export const retryInventory = (): void => inventoryLoader.retry();
-
-/** The inventory's index and parts (null when the snapshot has none); reading it starts the load. */
-export function useInventoryState(): Resource<InventorySource | null> {
-  const state = useSyncExternalStore(inventoryLoader.subscribe, inventoryLoader.get);
-  if (state.status === "idle") queueMicrotask(() => inventoryLoader.start());
-  return state;
-}
-
-/** The detect report; reading it starts the load. Ready with null when the snapshot has none. */
-export function useDetectState(): Resource<DetectReport | null> {
-  const state = useSyncExternalStore(detectLoader.subscribe, detectLoader.get);
-  if (state.status === "idle") queueMicrotask(() => detectLoader.start());
-  return state;
-}
-
 export const retryGaps = (): void => gapsLoader.retry();
 
-/** The gaps report; reading it starts the load. Ready with null when the snapshot has none. */
-export function useGapsState(): Resource<GapsReport | null> {
-  const state = useSyncExternalStore(gapsLoader.subscribe, gapsLoader.get);
-  if (state.status === "idle") queueMicrotask(() => gapsLoader.start());
+/** A loader's state; reading it starts the load. */
+function useLazy<T>(loader: Loader<T>): Resource<T> {
+  const state = useSyncExternalStore(loader.subscribe, loader.get);
+  if (state.status === "idle") queueMicrotask(() => loader.start());
   return state;
 }
 
-/** The usage index; reading it starts the (small, cached) load. */
-export function useUsageState(): Resource<UsageIndex> {
-  const state = useSyncExternalStore(usageLoader.subscribe, usageLoader.get);
-  if (state.status === "idle") queueMicrotask(startUsage);
-  return state;
-}
+/** The inventory's index and parts (null when the snapshot has none). */
+export const useInventoryState = (): Resource<InventorySource | null> => useLazy(inventoryLoader);
+
+/** The detect report. Ready with null when the snapshot has none. */
+export const useDetectState = (): Resource<DetectReport | null> => useLazy(detectLoader);
+
+/** The gaps report. Ready with null when the snapshot has none. */
+export const useGapsState = (): Resource<GapsReport | null> => useLazy(gapsLoader);
+
+/** The usage index (a small, cached load). */
+export const useUsageState = (): Resource<UsageIndex> => useLazy(usageLoader);

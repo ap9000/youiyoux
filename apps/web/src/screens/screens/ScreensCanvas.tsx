@@ -10,17 +10,19 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type Pointer
 import { Link, useLocation } from "wouter";
 import type { RequestDoc } from "@youiyoux/core";
 import type { Scheme } from "../../app/theme.tsx";
+import { dataUrl } from "../../data/load.ts";
 import { routeLabel, screenHref, type Screen, type ScreenIndex } from "../../data/screens.ts";
 import { EVERY_SCREEN } from "../../data/usage.ts";
 import { Button } from "../../ui/Button.tsx";
-import { shotFile, shotUrl } from "../../ui/ScreenImage.tsx";
+import { shotFile } from "../../ui/ScreenImage.tsx";
 import { IssueBadge } from "./IssueCounts.tsx";
+import { pct } from "../../lib/format.ts";
 
 /** A screen's width on the board, in board pixels. */
-export const CARD_WIDTH = 360;
+const CARD_WIDTH = 360;
 const GAP = 48;
 /** Screens per row before a project's wrap, so a project with many fits at a readable zoom. */
-export const PER_ROW = 4;
+const PER_ROW = 4;
 export const MIN_SCALE = 0.1;
 export const MAX_SCALE = 3;
 /** Past this zoom the thumbnails are too soft: the full pictures are drawn. */
@@ -50,8 +52,6 @@ export function fitView(board: { width: number; height: number }, frame: { width
   return { scale, x: (frame.width - board.width * scale) / 2, y: Math.max(pad, (frame.height - board.height * scale) / 2) };
 }
 
-const pct = (value: number, of: number): string => `${(value / of) * 100}%`;
-
 function Card({ screen, scheme, full, requests, onPin, onLoad }: { screen: Screen; scheme: Scheme; full: boolean; requests: readonly RequestDoc[]; onPin: (request: RequestDoc) => void; onLoad: () => void }) {
   const picked = shotFile(screen.shot, scheme, full ? "full" : "thumb");
   const open = requests.filter((r) => r.status !== "closed");
@@ -68,7 +68,7 @@ function Card({ screen, scheme, full, requests, onPin, onLoad }: { screen: Scree
       </header>
       <Link href={screenHref(screen.project, screen.route)} className="relative block overflow-hidden rounded-md border border-line bg-surface shadow-raise" draggable={false} aria-label={`Open ${screen.project} ${routeLabel(screen.route)}`}>
         {picked ? (
-          <img src={shotUrl(picked.file)} alt="" draggable={false} onLoad={onLoad} className="block w-full select-none" />
+          <img src={dataUrl(picked.file)} alt="" draggable={false} onLoad={onLoad} className="block w-full select-none" />
         ) : (
           <span className="grid h-[200px] place-items-center p-4 text-center text-small text-faint">No screenshot yet</span>
         )}

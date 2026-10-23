@@ -18,7 +18,8 @@ const json = (value: unknown): string => JSON.stringify(value);
 const parse = <T>(value: unknown): T => (typeof value === "string" ? JSON.parse(value) : value) as T;
 const int = (value: unknown): number => Number(value ?? 0);
 const marks = (n: number): string => Array.from({ length: n }, () => "?").join(", ");
-const clampLimit = pageInteger;
+/** Ids in slices small enough for one `IN (…)` each. */
+const batches = <T>(items: readonly T[]): T[][] => Array.from({ length: Math.ceil(items.length / MAX_PARAMS) }, (_, i) => items.slice(i * MAX_PARAMS, (i + 1) * MAX_PARAMS));
 
 export class SqlStore implements Store {
   private readonly db: Adapter;
@@ -125,10 +126,7 @@ export class SqlStore implements Store {
     const update = columns.slice(1).map((c) => `${c} = excluded.${c}`).join(", ");
     await this.insert("discover_items", columns, items.map((i) => [i.id, i.scope, i.ref, i.name, i.title, i.summary, i.kind, i.sourceKind, i.sourceClass, i.registry, i.licence, i.style, i.downloads, i.stars, i.archived ? 1 : 0, i.searchText, json(i.entry), i.builtAt]), `ON CONFLICT (id) DO UPDATE SET ${update}`);
     const ids = items.map((i) => i.id);
-    for (let i = 0; i < ids.length; i += MAX_PARAMS) {
-      const batch = ids.slice(i, i + MAX_PARAMS);
-      await this.db.run(`DELETE FROM discover_roles WHERE item_id IN (${marks(batch.length)})`, batch);
-    }
+    for (const batch of batches(ids)) await this.db.run(`DELETE FROM discover_roles WHERE item_id IN (${marks(batch.length)})`, batch);
     await this.insert("discover_roles", ["item_id", "role"], items.flatMap((i) => [...new Set(i.roles)].map((role) => [i.id, role])), "ON CONFLICT (item_id, role) DO NOTHING");
   }
 
@@ -186,8 +184,7 @@ export class SqlStore implements Store {
     );
     const entries = new Map<string, unknown>();
     const ids = ranked.map((r) => r.id);
-    for (let i = 0; i < ids.length; i += MAX_PARAMS) {
-      const batch = ids.slice(i, i + MAX_PARAMS);
+    for (const batch of batches(ids)) {
       for (const row of await this.db.all<{ id: string; entry: unknown }>(`SELECT id, entry FROM discover_items WHERE id IN (${marks(batch.length)})`, batch)) entries.set(row.id, row.entry);
     }
     return ranked.map((r) => ({ id: r.id, sourceClass: r.source_class, entry: parse(entries.get(r.id)) }));
@@ -195,7 +192,7 @@ export class SqlStore implements Store {
 
   async listDiscover(filter: DiscoverFilter, page: Page = {}): Promise<DiscoverPage> {
     const where = this.filterSql(filter);
-    const limit = clampLimit(page.limit, 20);
+    const limit = pageInteger(page.limit, 20);
     const offset = pageInteger(page.offset, 0, 2_147_483_647);
     const rows = await this.db.all<{ id: string; source_class: SourceClass; entry: unknown }>(
       `SELECT d.id, d.source_class, d.entry FROM discover_items d WHERE ${where.sql} ORDER BY CASE d.source_class WHEN 'official' THEN 0 ELSE 1 END, COALESCE(d.downloads, -1) DESC, d.id LIMIT ? OFFSET ?`,
@@ -230,8 +227,7 @@ export class SqlStore implements Store {
 
   async discoverRoles(itemIds: readonly string[]): Promise<Record<string, string[]>> {
     const out: Record<string, string[]> = {};
-    for (let i = 0; i < itemIds.length; i += MAX_PARAMS) {
-      const batch = itemIds.slice(i, i + MAX_PARAMS);
+    for (const batch of batches(itemIds)) {
       for (const row of await this.db.all<{ item_id: string; role: string }>(`SELECT item_id, role FROM discover_roles WHERE item_id IN (${marks(batch.length)}) ORDER BY item_id, role`, batch)) (out[row.item_id] ??= []).push(row.role);
     }
     return out;
@@ -286,7 +282,7 @@ export class SqlStore implements Store {
 
   async history(filter: { readonly project?: string } & Page = {}): Promise<ScanRecord[]> {
     const where = filter.project ? `WHERE project = ?` : "";
-    const rows = await this.db.all<Row>(`SELECT * FROM scans ${where} ORDER BY scanned_at DESC, project LIMIT ? OFFSET ?`, [...(filter.project ? [filter.project] : []), clampLimit(filter.limit, 20), pageInteger(filter.offset, 0, 2_147_483_647)]);
+    const rows = await this.db.all<Row>(`SELECT * FROM scans ${where} ORDER BY scanned_at DESC, project LIMIT ? OFFSET ?`, [...(filter.project ? [filter.project] : []), pageInteger(filter.limit, 20), pageInteger(filter.offset, 0, 2_147_483_647)]);
     return rows.map((r) => ({ id: String(r.id), run: String(r.run), source: String(r.source), project: String(r.project), root: String(r.root), commit: (r.commit_sha as string | null) ?? null, scannedAt: String(r.scanned_at), status: String(r.status), files: int(r.files), looks: int(r.looks), families: int(r.families), nearDuplicates: int(r.near_duplicates), roles: parse(r.roles) }));
   }
 
@@ -301,7 +297,7 @@ export class SqlStore implements Store {
     const where = `run = ?${filter.role ? " AND role = ?" : ""}`;
     const params = [run, ...(filter.role ? [filter.role] : [])];
     const total = int((await this.db.all<{ n: unknown }>(`SELECT CAST(COUNT(*) AS INTEGER) AS n FROM families WHERE ${where}`, params))[0]?.n);
-    const rows = await this.db.all<Row>(`SELECT * FROM families WHERE ${where} ORDER BY role, looks DESC, id LIMIT ? OFFSET ?`, [...params, clampLimit(filter.limit, 50), pageInteger(filter.offset, 0, 2_147_483_647)]);
+    const rows = await this.db.all<Row>(`SELECT * FROM families WHERE ${where} ORDER BY role, looks DESC, id LIMIT ? OFFSET ?`, [...params, pageInteger(filter.limit, 50), pageInteger(filter.offset, 0, 2_147_483_647)]);
     return { run, total, rows: rows.map((r) => ({ id: String(r.id), role: String(r.role), looks: int(r.looks), nearDuplicate: int(r.near_duplicate) === 1, projects: parse(r.projects), kits: parse(r.kits), shape: parse(r.shape) })) };
   }
 
@@ -311,7 +307,7 @@ export class SqlStore implements Store {
     const where = `run = ?${filter.family ? " AND family = ?" : ""}${filter.role ? " AND role = ?" : ""}`;
     const params = [run, ...(filter.family ? [filter.family] : []), ...(filter.role ? [filter.role] : [])];
     const total = int((await this.db.all<{ n: unknown }>(`SELECT CAST(COUNT(*) AS INTEGER) AS n FROM looks WHERE ${where}`, params))[0]?.n);
-    const rows = await this.db.all<Row>(`SELECT * FROM looks WHERE ${where} ORDER BY project, file, line, col, id LIMIT ? OFFSET ?`, [...params, clampLimit(filter.limit, 50), pageInteger(filter.offset, 0, 2_147_483_647)]);
+    const rows = await this.db.all<Row>(`SELECT * FROM looks WHERE ${where} ORDER BY project, file, line, col, id LIMIT ? OFFSET ?`, [...params, pageInteger(filter.limit, 50), pageInteger(filter.offset, 0, 2_147_483_647)]);
     return { run, total, rows: rows.map((r) => ({ id: String(r.id), project: String(r.project), role: String(r.role), file: String(r.file), line: int(r.line), column: int(r.col), tag: String(r.tag), kit: (r.kit as string | null) ?? null, family: (r.family as string | null) ?? null, routes: parse(r.routes), shape: parse(r.shape) })) };
   }
 

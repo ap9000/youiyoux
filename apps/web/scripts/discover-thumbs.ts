@@ -22,20 +22,20 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { join, resolve } from "node:path";
 import { writeFileAtomic } from "@youiyoux/core";
 import { loadPackage } from "./packages.ts";
-import { isLocalHost } from "./query-server.ts";
-import { TRY_INDEX, type TryIndex } from "./try-server.ts";
+import { isLocalHost, send } from "./query-server.ts";
+import { readTryIndex } from "./try-server.ts";
 
 export const THUMBS_PATH = "/__youi/discover-thumbs";
-export const THUMBS_DIR = "thumbs";
-export const THUMBS_INDEX = "index.json";
-export const THUMBS_SCHEMA = "youiyoux.discover-thumbs/v1";
+const THUMBS_DIR = "thumbs";
+const THUMBS_INDEX = "index.json";
+const THUMBS_SCHEMA = "youiyoux.discover-thumbs/v1";
 export const THUMB_SCHEMES = ["light", "dark"] as const;
 
 /** A project id as try.json names it; anything else never reaches a path. */
 const PROJECT = /^[a-z0-9][a-z0-9._-]{0,80}$/i;
 const PICTURE = /^([0-9a-f]{16})\.(light|dark)\.webp$/;
 
-export interface Thumb {
+interface Thumb {
   /** The listing's provenance digest when the picture was taken. */
   readonly sha: string;
   readonly key: string;
@@ -44,7 +44,7 @@ export interface Thumb {
   readonly capturedAt: string;
 }
 
-export interface ThumbFailure {
+interface ThumbFailure {
   readonly sha: string;
   /** Why it could not be drawn on its own, in a sentence. */
   readonly reason: string;
@@ -65,7 +65,7 @@ export interface ThumbAnswer {
   readonly failed: Readonly<Record<string, string>>;
 }
 
-export const safeProject = (project: string): string | null => (PROJECT.test(project) && project !== "." && project !== ".." ? project : null);
+const safeProject = (project: string): string | null => (PROJECT.test(project) && project !== "." && project !== ".." ? project : null);
 
 export function thumbsDir(cache: string, project: string): string {
   const safe = safeProject(project);
@@ -140,13 +140,6 @@ export function selectCandidates<T extends { id: string; source: { kind?: string
 
 /* ------------------------------------------------------------------ the server */
 
-const send = (res: ServerResponse, status: number, body: unknown): void => {
-  res.statusCode = status;
-  res.setHeader("Content-Type", "application/json");
-  res.setHeader("Cache-Control", "no-store");
-  res.end(JSON.stringify(body));
-};
-
 export interface ThumbsOptions {
   /** The Discover cache directory (default: as the CLI). */
   readonly cache?: string;
@@ -171,15 +164,7 @@ function listingDigests(cache: string): Map<string, string> {
 
 /** The thumbnail endpoints for a snapshot directory, as connect middleware under the hub's `base`. */
 export function discoverThumbsMiddleware(snapshot: string, base = "/", options: ThumbsOptions = {}, cacheDir: () => Promise<string> = async () => (await loadPackage<typeof import("../../../packages/discover/src/index.ts")>("discover")).discoverCacheDir(undefined, options.env ?? process.env)) {
-  const projects = (): string[] => {
-    const file = join(snapshot, TRY_INDEX);
-    if (!existsSync(file)) return [];
-    try {
-      return Object.keys((JSON.parse(readFileSync(file, "utf8")) as TryIndex).projects ?? {});
-    } catch {
-      return [];
-    }
-  };
+  const projects = (): string[] => Object.keys(readTryIndex(snapshot)?.projects ?? {});
   return async (req: IncomingMessage, res: ServerResponse, next: () => void): Promise<void> => {
     const url = new URL((req.url ?? "/").replace(base, "/"), "http://hub.local");
     if (!url.pathname.startsWith(THUMBS_PATH) || req.method !== "GET") return next();

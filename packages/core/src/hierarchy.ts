@@ -62,7 +62,6 @@ export type McpTool = (typeof MCP_TOOLS)[number];
 /* -------------------------------------------------------------- youi.library/v1 */
 
 export const LIBRARY_KINDS = ["component", "token", "pattern"] as const;
-export type LibraryKind = (typeof LIBRARY_KINDS)[number];
 
 const LIBRARY_ID_PATTERN = /^lib:([a-z][a-z0-9-]*)\/(component|token|pattern)\/([a-z0-9][a-z0-9.\-]*)$/;
 

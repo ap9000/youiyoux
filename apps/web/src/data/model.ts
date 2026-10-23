@@ -1,4 +1,5 @@
 /** The in-memory catalog model: one ordered element list plus the lookups every screen needs. */
+import { append } from "../lib/append.ts";
 import { parseId } from "./ids.ts";
 import type { Catalog, CatalogRule, ComponentEntry, ComponentStatus, ElementId, ElementKind, Manifest, RuleSeverity, RuleSpec, TokenEntry } from "./types.ts";
 
@@ -18,7 +19,7 @@ export interface ElementSummary {
   readonly swatch?: { light: string; dark: string };
 }
 
-export interface TokenConsumer {
+interface TokenConsumer {
   readonly component: ElementId;
   readonly role: string;
 }
@@ -38,8 +39,7 @@ export interface Model {
   readonly ruleComponents: ReadonlyMap<ElementId, readonly ElementId[]>;
 }
 
-export const KIND_ORDER: readonly ElementKind[] = ["component", "token", "rule", "migration"];
-export const TOKEN_GROUP_ORDER = ["color", "typography", "space", "radius", "shadow", "font", "easing"];
+const TOKEN_GROUP_ORDER = ["color", "typography", "space", "radius", "shadow", "font", "easing"];
 
 const groupRank = (group: string): number => {
   const index = TOKEN_GROUP_ORDER.indexOf(group);
@@ -65,12 +65,6 @@ function tokenSummary(token: TokenEntry): ElementSummary {
 
 function ruleSummary(rule: RuleSpec): ElementSummary {
   return { id: rule.id, kind: "rule", name: rule.title, key: parseId(rule.id)?.name ?? rule.id, summary: rule.statement, group: "rule", severity: rule.severity };
-}
-
-function append<K, V>(map: Map<K, V[]>, key: K, value: V): void {
-  const list = map.get(key);
-  if (list) list.push(value);
-  else map.set(key, [value]);
 }
 
 export function buildModel(catalog: Catalog, manifest: Manifest): Model {

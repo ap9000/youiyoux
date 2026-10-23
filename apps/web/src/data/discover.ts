@@ -22,7 +22,7 @@ export interface DiscoverHit {
   readonly install: { readonly command: string; readonly npm: readonly string[]; readonly registryDeps: readonly string[]; readonly implicitDeps: readonly string[] } | null;
 }
 
-export interface DiscoverFacets {
+interface DiscoverFacets {
   readonly role: Readonly<Record<string, number>>;
   readonly source: Readonly<Record<string, number>>;
   readonly licence: Readonly<Record<string, number>>;
@@ -182,7 +182,7 @@ export function searchListings(file: ListingsFile, query: DiscoverQuery, limit =
 /* ------------------------------------------------------------------------ search */
 
 /** Why there are no listings to show at all. */
-export class NoListings extends Error {
+class NoListings extends Error {
   override name = "NoListings";
 }
 
@@ -190,25 +190,23 @@ let listings: Promise<ListingsFile | null> | null = null;
 /** The endpoint answered once with something other than its JSON: this host only serves files. */
 let staticHost = false;
 
-function endpointUrl(query: DiscoverQuery, base: string, limit: number): string {
-  const params = new URLSearchParams({ kind: "discover", limit: String(limit) });
+function endpointUrl(query: DiscoverQuery): string {
+  const params = new URLSearchParams({ kind: "discover", limit: String(PAGE_SIZE) });
   if (query.q.trim()) params.set("q", query.q.trim());
   if (query.role) params.set("role", discoverRole(query.role));
   if (query.source) params.set("source", query.source);
   if (query.licence) params.set("licence", query.licence);
   if (query.style) params.set("style", query.style);
   if (query.offset) params.set("offset", String(query.offset));
-  return `${base}__youi/query?${params}`;
+  return `${import.meta.env.BASE_URL}__youi/query?${params}`;
 }
 
 /** One page of listings: from the hub's server when it answers, else from the snapshot's listings. */
-export async function searchDiscover(query: DiscoverQuery, options: { base?: string; limit?: number; signal?: AbortSignal } = {}): Promise<DiscoverPage> {
-  const base = options.base ?? import.meta.env.BASE_URL;
-  const limit = options.limit ?? PAGE_SIZE;
+export async function searchDiscover(query: DiscoverQuery, options: { signal?: AbortSignal } = {}): Promise<DiscoverPage> {
   if (!staticHost) {
     let response: Response | null = null;
     try {
-      response = await fetch(endpointUrl(query, base, limit), { cache: "no-store", ...(options.signal ? { signal: options.signal } : {}) });
+      response = await fetch(endpointUrl(query), { cache: "no-store", ...(options.signal ? { signal: options.signal } : {}) });
     } catch (error: unknown) {
       if ((error as { name?: string }).name === "AbortError") throw error;
       response = null;
@@ -222,7 +220,7 @@ export async function searchDiscover(query: DiscoverQuery, options: { base?: str
   listings ??= discoverListingsFile().then((file) => (file ? loadDiscoverListings<ListingsFile>(file) : null));
   const file = await listings.catch(() => null);
   if (!file) throw new NoListings("No Discover listings here: run youiyoux discover sync, then open the hub with youiyoux ui (its own server reads the local index).");
-  return searchListings(file, query, limit);
+  return searchListings(file, query);
 }
 
 /** Tests: forget what was learnt about the host. */

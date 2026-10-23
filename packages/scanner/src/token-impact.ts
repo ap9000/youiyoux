@@ -10,6 +10,7 @@
 import { matchesAny } from "@youiyoux/core";
 import type { ResolvedToken } from "@youiyoux/tokens";
 import { vendoredPath } from "./elements.ts";
+import { escapeRegExp } from "./parse.ts";
 import type { Project } from "./project.ts";
 import type { ScanResult } from "./scan.ts";
 
@@ -35,7 +36,6 @@ const UTILITIES: ReadonlyArray<readonly [string, readonly string[]]> = [
 ];
 
 const MAX_SITES = 10;
-const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** Every token whose value changes with `tokenId`, itself included: dependencies followed backwards to a fixed point. */
 export function tokenClosure(tokens: readonly ResolvedToken[], tokenId: string): Set<string> {
@@ -115,7 +115,7 @@ export function tokenImpact(project: Project, scan: ScanResult, tokenId: string 
   if (affected.size === 0) return { dependents: [], contracts: [], direct: { uses: 0, files: 0, sites: [] }, everyScreen: false, directRoutes: new Map() };
   const names = scan.tokens.tokens.filter((t) => affected.has(t.id)).flatMap((t) => useNames(t, scan.tokens.prefix, scan.tokens.themeKeys.get(t.id) ?? []));
   // `-?` admits negative utilities (-mt-4); `.` after a name means a different scale step (p-1 vs p-1.5).
-  const pattern = new RegExp(`(?<![\\w-])-?(?:${[...new Set(names)].map(escape).join("|")})(?![\\w.-])`, "g");
+  const pattern = new RegExp(`(?<![\\w-])-?(?:${[...new Set(names)].map(escapeRegExp).join("|")})(?![\\w.-])`, "g");
   const implementedBy = new Map<string, string[]>();
   for (const { contract } of project.system.components) {
     const file = vendoredPath(project, contract.source.file);

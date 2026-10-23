@@ -34,7 +34,7 @@ export function plural(count: number, word: string, many = `${word}s`): string {
 
 const ANSI = /\u001b\[[0-9;]*m/g;
 
-export function visibleLength(text: string): number {
+function visibleLength(text: string): number {
   return text.replace(ANSI, "").length;
 }
 

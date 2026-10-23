@@ -15,7 +15,7 @@ const HASHED = /^\/assets\/|^\/data\/.+\.[0-9a-f]{10}\.json$/;
 /** The build's directories of files; anything missing there is a 404, never the hub. */
 const STATIC_DIRS = /^\/(?:assets|data|previews)\//;
 
-export const TYPES: Readonly<Record<string, string>> = {
+const TYPES: Readonly<Record<string, string>> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -64,7 +64,7 @@ export function fileFor(root: string, pathname: string): string | null {
   return existsSync(file) && statSync(file).isFile() ? file : null;
 }
 
-export function handle(root: string, req: IncomingMessage, res: ServerResponse): void {
+function handle(root: string, req: IncomingMessage, res: ServerResponse): void {
   if (req.method !== "GET" && req.method !== "HEAD") {
     res.setHeader("Allow", "GET, HEAD");
     return send(res, 405, "method not allowed");

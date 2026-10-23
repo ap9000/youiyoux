@@ -5,7 +5,7 @@ import { padEnd, padStart, plural, rule, style } from "./ui.ts";
 const FAMILIES_PER_ROLE = 6;
 
 /** `h32 px12 py0 r8 14px 500`; unknown dimensions show as `?`. */
-export function shapeLabel(shape: InventoryShape): string {
+function shapeLabel(shape: InventoryShape): string {
   const v = (n: number | null): string => (n === null ? "?" : String(n));
   const radius = shape.radius === 9999 ? "pill" : v(shape.radius);
   return `h${v(shape.height)} px${v(shape.paddingX)} py${v(shape.paddingY)} r${radius} ${v(shape.fontSize)}px ${v(shape.fontWeight)}`;
@@ -31,7 +31,7 @@ function familyLines(family: InventoryFamily): string[] {
  * Per project with Storybook: how many stories were read and drawn, each one skipped with
  * file:line and why, and what drawn stories were drawn without. Nothing when no project has stories.
  */
-export function storyLines(report: InventoryReport): string[] {
+function storyLines(report: InventoryReport): string[] {
   const lines: string[] = [];
   for (const project of report.projects) {
     const stories = project.stories;
@@ -45,16 +45,16 @@ export function storyLines(report: InventoryReport): string[] {
 }
 
 /** What to do next with the stories: fix the skipped ones, or see the drawn ones beside the real uses. */
-export function storyNext(report: InventoryReport, outFile: string | null): string | null {
+function storyNext(report: InventoryReport, outFile: string): string | null {
   const stories = report.projects.flatMap((p) => (p.stories ? [p.stories] : []));
   if (stories.length === 0) return null;
-  const open = `youiyoux ui --inventory ${outFile ?? ".youi/inventory.json"}`;
+  const open = `youiyoux ui --inventory ${outFile}`;
   const skipped = stories.reduce((n, s) => n + s.skipped.length, 0);
   if (skipped > 0) return `Next: rewrite the skipped stories as CSF 3 args stories of a component in this project (or fix the file), run youiyoux inventory again, then see them beside their real uses with ${open}`;
   return `Next: see the stories beside their real uses with ${open}`;
 }
 
-export function renderInventory(report: InventoryReport, outFile: string | null): string {
+export function renderInventory(report: InventoryReport, outFile: string): string {
   const projects = report.projects.map((p) => p.id);
   // Stories are authored states, not uses: the counts are of real looks.
   const uses = report.looks.filter((l) => !l.story);
@@ -98,7 +98,7 @@ export function renderInventory(report: InventoryReport, outFile: string | null)
   }
   const stories = storyLines(report);
   if (stories.length > 0) lines.push("", ...stories);
-  if (outFile) lines.push(style.dim(`inventory → ${outFile}`));
+  lines.push(style.dim(`inventory → ${outFile}`));
   const next = storyNext(report, outFile);
   if (next) lines.push(next);
   return lines.join("\n");

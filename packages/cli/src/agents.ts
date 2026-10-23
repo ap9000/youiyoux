@@ -11,7 +11,7 @@ import { COMMAND, SUBCOMMANDS } from "./command.ts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { stringify } from "yaml";
-import { executionLabel, MCP_TOOLS, type ComponentContract, type RuleSpec } from "@youiyoux/core";
+import { executionLabel, MCP_TOOLS, ruleSlug, type ComponentContract, type RuleSpec } from "@youiyoux/core";
 import { cssValue, type ResolvedToken, type TokenBuild } from "@youiyoux/tokens";
 import { importLine, ruleCapability, type Project } from "@youiyoux/scanner";
 
@@ -50,8 +50,6 @@ export function diffInstruction(root?: string): string {
   const { run, setup } = portableYoui(root);
   return `- ${setup} After UI edits, run \`${run} check --diff\` (\`--json\` for data): it lists what your change adds that near-duplicates an existing component, hardcodes a value a token holds, or imports an element from a library other than the project's choice, each with its fix. Apply each fix.`;
 }
-export const DIFF_INSTRUCTION = diffInstruction();
-
 export function repoAgentsBlock(root?: string): string {
   return viaNpx([BLOCK_BEGIN, REPO_BLOCK_HEADING, "", diffInstruction(root), "- Run `youiyoux init --design <dir>` to connect design-system rules; repository inference works without it.", BLOCK_END].join("\n"), root);
 }
@@ -181,7 +179,7 @@ function frontmatter(project: Project, build: TokenBuild): Record<string, unknow
     colors,
     typography,
     rounded: dims("radius"),
-    spacing: Object.fromEntries(Object.entries(dims("space"))),
+    spacing: dims("space"),
     components,
   };
 }
@@ -217,7 +215,7 @@ export function skillMd(project: Project, uncontracted: readonly string[] = []):
   const from = importHint(config);
   const description = `Build and fix UI with the ${system.config.name} design language (YouIyouX): System components, tokens, rules, where-used lookups, change proposals and Library adoption requests. Use for any UI, styling, colour or component work in this project.`;
   const components = system.components.map(({ contract }) => `- **${contract.name}**: ${contract.summary}${enumSummary(contract) ? ` (${enumSummary(contract)})` : ""}`);
-  const fixes = enforced(system.rules).map((r) => `| \`${r.id.split("/rule/")[1]}\` | ${r.severity} | ${r.agent} |`);
+  const fixes = enforced(system.rules).map((r) => `| \`${ruleSlug(r.id)}\` | ${r.severity} | ${r.agent} |`);
   return viaNpx([
     "---",
     "name: youiyoux",
@@ -288,22 +286,16 @@ export function astGrepRules(project: Project): Array<{ file: string; content: s
   const header = `# ${generatedNote(project)}\n# Portable subset: youiyoux check also resolves imports; these run with plain \`ast-grep scan -r <file>\`.\n`;
   // Only rules youiyoux check runs: an off or uncompilable rule must not keep running under plain ast-grep.
   for (const rule of enforced(project.system.rules)) {
-    if (rule.check.engine === "ast-grep") {
-      out.push({ file: `${rule.id.split("/rule/")[1]}.yml`, content: header + stringify({ id: rule.id, language: rule.check.language, severity: rule.severity === "error" ? "error" : "warning", message: rule.title, note: rule.agent, rule: rule.check.rule }) });
-    }
+    // Every file opens with the same keys, in this order; `rest` follows them.
+    const entry = (language: string, rest: Record<string, unknown>) => ({ file: `${ruleSlug(rule.id)}.yml`, content: header + stringify({ id: rule.id, language, severity: rule.severity === "error" ? "error" : "warning", message: rule.title, note: rule.agent, ...rest }) });
+    if (rule.check.engine === "ast-grep") out.push(entry(rule.check.language, { rule: rule.check.rule }));
     if (rule.check.engine === "youi" && rule.check.id === "native-element") {
       const tags = Object.keys((rule.check.options as { elements?: Record<string, string> }).elements ?? {});
       const regex = `^(${tags.join("|")})$`;
-      out.push({
-        file: `${rule.id.split("/rule/")[1]}.yml`,
-        content: header + stringify({ id: rule.id, language: "tsx", severity: rule.severity === "error" ? "error" : "warning", message: rule.title, note: rule.agent, ignores: [`${project.config.componentsDir}/**`], rule: { any: [{ kind: "jsx_opening_element", has: { field: "name", regex } }, { kind: "jsx_self_closing_element", has: { field: "name", regex } }] } }),
-      });
+      out.push(entry("tsx", { ignores: [`${project.config.componentsDir}/**`], rule: { any: [{ kind: "jsx_opening_element", has: { field: "name", regex } }, { kind: "jsx_self_closing_element", has: { field: "name", regex } }] } }));
     }
     if (rule.check.engine === "youi" && rule.check.id === "raw-color") {
-      out.push({
-        file: `${rule.id.split("/rule/")[1]}.yml`,
-        content: header + stringify({ id: rule.id, language: "tsx", severity: rule.severity === "error" ? "error" : "warning", message: rule.title, note: rule.agent, rule: { kind: "string_fragment", regex: "(\\[#[0-9a-fA-F]{3,8}\\]|^#[0-9a-fA-F]{3,8}$|rgba?\\()", inside: { kind: "jsx_attribute", stopBy: "end" } } }),
-      });
+      out.push(entry("tsx", { rule: { kind: "string_fragment", regex: "(\\[#[0-9a-fA-F]{3,8}\\]|^#[0-9a-fA-F]{3,8}$|rgba?\\()", inside: { kind: "jsx_attribute", stopBy: "end" } } }));
     }
   }
   return out;

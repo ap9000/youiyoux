@@ -9,7 +9,7 @@ import type { Project } from "@youiyoux/scanner";
 import { resolverLayout } from "@youiyoux/tokens";
 import type { DraftContent, StyleDraftContent } from "./api.ts";
 import { componentChanges, renderContract, renderRuleYaml } from "./drafts.ts";
-import { listAt, listTreeAt, readAt, type RepoLocation } from "./git.ts";
+import { listAt, readAt, type RepoLocation } from "./git.ts";
 import { effectiveStateEdits, renderContractStates, renderTokenEdits, type TokenFiles } from "./style-drafts.ts";
 
 const DEFAULT_SCHEMA_REF = "../schema/youi.rule.schema.json";
@@ -60,8 +60,11 @@ export class DesignFiles {
 
   /** The path a rule lives at, or would be created at. */
   async rulePath(commit: string, ruleId: string): Promise<string> {
-    const existing = (await this.ruleFiles(commit)).get(ruleId);
-    if (existing) return existing.path;
+    return (await this.ruleFiles(commit)).get(ruleId)?.path ?? this.newRulePath(ruleId);
+  }
+
+  /** Where a rule not in the design repository yet is created. */
+  private newRulePath(ruleId: string): string {
     return `${this.rulesDir}/${parseId(ruleId)?.name ?? "new-rule"}.rule.yaml`;
   }
 
@@ -90,7 +93,7 @@ export class DesignFiles {
     const existing = rules.get(rule.id);
     const sibling = [...rules.values()][0]?.text;
     const schemaRef = (sibling ? (parseYaml(sibling) as { $schema?: string } | null)?.$schema : undefined) ?? DEFAULT_SCHEMA_REF;
-    const path = existing?.path ?? (await this.rulePath(commit, rule.id));
+    const path = existing?.path ?? this.newRulePath(rule.id);
     const files: Record<string, string> = {};
     const ruleText = renderRuleYaml(rule, existing?.text ?? null, schemaRef);
     if (ruleText !== existing?.text) files[path] = ruleText;
@@ -116,7 +119,7 @@ export class DesignFiles {
   /** Every file in the tokens directory at `commit` (design-root-relative path → text): what a token build reads. */
   async tokenTree(commit: string): Promise<Map<string, string>> {
     const dir = this.tokensDir;
-    const names = await listTreeAt(this.repo.top, commit, this.top(dir));
+    const names = await listAt(this.repo.top, commit, this.top(dir), { recursive: true });
     const entries = await Promise.all(names.map(async (name) => [`${dir}/${name}`, (await this.read(commit, `${dir}/${name}`)) ?? ""] as const));
     return new Map(entries);
   }

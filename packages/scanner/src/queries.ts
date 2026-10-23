@@ -225,7 +225,7 @@ function utilityExample(key: string): string {
 }
 
 /** Tokens as a compact table (column names once, then rows); `dark` is empty when it equals `light`. */
-export function tokenRows(project: Project, tokens: TokenIndex, group?: string, limit = 60): { columns: string[]; rows: string[][]; total: number; truncated: boolean } {
+export function tokenRows(tokens: TokenIndex, group?: string, limit = 60): { columns: string[]; rows: string[][]; total: number; truncated: boolean } {
   const rows = tokens.tokens
     .filter((t) => !group || t.id === group || t.id.startsWith(`${group}.`))
     .map((t) => {

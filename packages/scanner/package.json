@@ -15,8 +15,7 @@
     "axe-core": "4.14.0",
     "esbuild": "0.28.2",
     "playwright-core": "1.63.0",
-    "typescript": "6.0.3",
-    "yaml": "2.9.1"
+    "typescript": "6.0.3"
   },
   "devDependencies": {
     "@radix-ui/react-dialog": "1.1.23",

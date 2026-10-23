@@ -5,7 +5,7 @@ import { Button } from "../../ui/Button.tsx";
 import { CopyButton } from "../../ui/CopyButton.tsx";
 import { EmptyState } from "../../ui/EmptyState.tsx";
 
-export const START_EDITOR = "pnpm youiyoux ui --project <project> [--design <design repo>] [--config <youi.project.json>]";
+const START_EDITOR = "pnpm youiyoux ui --project <project> [--design <design repo>] [--config <youi.project.json>]";
 
 /** The start command, wrapping inside its box (at spaces, else anywhere) so a phone row never scrolls sideways. */
 export function StartEditor() {

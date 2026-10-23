@@ -19,8 +19,9 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { join, resolve } from "node:path";
 import { loadPackage } from "./packages.ts";
+import { send } from "./query-server.ts";
 
-export const TRY_PATH = "/__youi/try";
+const TRY_PATH = "/__youi/try";
 export const TRY_INDEX = "try.json";
 
 /** Vite 8's default `server.fs.deny`, which a config that sets the option replaces, so it is kept here. */
@@ -108,6 +109,17 @@ interface Scanner {
   BrowserBundleCache: new () => { get(key: string, build: () => Promise<Built>): Promise<Built>; code(hash: string): string | null };
 }
 
+/** A snapshot's try.json; null when there is none or it is not JSON. */
+export function readTryIndex(snapshot: string): TryIndex | null {
+  const file = join(snapshot, TRY_INDEX);
+  if (!existsSync(file)) return null;
+  try {
+    return JSON.parse(readFileSync(file, "utf8")) as TryIndex;
+  } catch {
+    return null;
+  }
+}
+
 /** The try.json of a snapshot, re-read when it changes; null when there is none. */
 function reader(snapshot: string): () => TryIndex | null {
   const file = join(snapshot, TRY_INDEX);
@@ -115,23 +127,10 @@ function reader(snapshot: string): () => TryIndex | null {
   return () => {
     if (!existsSync(file)) return null;
     const mtime = statSync(file).mtimeMs;
-    if (cached?.mtime !== mtime) {
-      try {
-        cached = { mtime, index: JSON.parse(readFileSync(file, "utf8")) as TryIndex };
-      } catch {
-        cached = { mtime, index: null };
-      }
-    }
+    if (cached?.mtime !== mtime) cached = { mtime, index: readTryIndex(snapshot) };
     return cached.index;
   };
 }
-
-const send = (res: ServerResponse, status: number, body: unknown): void => {
-  res.statusCode = status;
-  res.setHeader("Content-Type", "application/json");
-  res.setHeader("Cache-Control", "no-store");
-  res.end(JSON.stringify(body));
-};
 
 /**
  * The Try it endpoint for a snapshot directory, as connect middleware under the hub's `base`:

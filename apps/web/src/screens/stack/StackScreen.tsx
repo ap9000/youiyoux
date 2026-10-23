@@ -255,7 +255,7 @@ export function StackScreen() {
   const report = state.status === "ready" ? state.value : null;
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <PaneHeader title="Stack" {...(report ? { count: report.libraries.length } : {})}>
+      <PaneHeader title="Stack" count={report?.libraries.length}>
         <Badge tone="outline">
           <Layers /> Detected, not adopted
         </Badge>

@@ -62,13 +62,14 @@ export function compareParity(
   let matched = 0;
   const builtLight = prefixed(customProperties(builtCss, builtBlocks.light.selector, builtBlocks.light.outer), prefix);
   const builtDark = builtBlocks.dark ? prefixed(customProperties(builtCss, builtBlocks.dark.selector, builtBlocks.dark.outer), prefix) : new Map<string, string>();
-  const modes: Array<["light" | "dark", BlockRef | undefined, Map<string, string>]> = [
-    ["light", expectedBlocks.light, builtLight],
-    ["dark", expectedBlocks.dark, new Map([...builtLight, ...builtDark])],
+  const expectedOf = (block: BlockRef): Map<string, string> => prefixed(customProperties(expectedCss, block.selector, block.outer), prefix);
+  const declared = expectedOf(expectedBlocks.light);
+  const modes: Array<["light" | "dark", Map<string, string> | null, Map<string, string>]> = [
+    ["light", declared, builtLight],
+    ["dark", expectedBlocks.dark ? expectedOf(expectedBlocks.dark) : null, new Map([...builtLight, ...builtDark])],
   ];
-  for (const [mode, block, built] of modes) {
-    if (!block) continue;
-    const expected = prefixed(customProperties(expectedCss, block.selector, block.outer), prefix);
+  for (const [mode, expected, built] of modes) {
+    if (!expected) continue;
     for (const [variable, value] of expected) {
       const actual = built.get(variable);
       if (actual === undefined) missing.push({ variable, mode });
@@ -76,7 +77,6 @@ export function compareParity(
       else different.push({ variable, mode, expected: value, actual });
     }
   }
-  const declared = prefixed(customProperties(expectedCss, expectedBlocks.light.selector, expectedBlocks.light.outer), prefix);
   const added = [...builtLight.keys()].filter((name) => !declared.has(name)).sort();
   return { matched, different, missing, added };
 }

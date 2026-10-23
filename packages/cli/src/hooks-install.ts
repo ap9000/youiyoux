@@ -18,9 +18,9 @@
  */
 import { execFile } from "node:child_process";
 import { chmod, mkdir, realpath } from "node:fs/promises";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
-import { readTextOrNull, writeFileAtomic } from "@youiyoux/core";
+import { readTextOrNull, toPosix, writeFileAtomic } from "@youiyoux/core";
 import { PROJECT_FILE, type Project } from "@youiyoux/scanner";
 import { repoAgentsBlock, RULE_BEGIN, RULE_END, upsertBlock } from "./agents.ts";
 import { ephemeralTool, toolCommand } from "./tool-command.ts";
@@ -41,7 +41,7 @@ const CLAUDE_TIMEOUT_S = 60;
 /** POSIX single-quoting: safe for spaces, quotes and $ in paths. */
 export const shellQuote = (arg: string): string => (/^[\w@%+=:,./-]+$/.test(arg) ? arg : `'${arg.replace(/'/g, `'\\''`)}'`);
 
-export interface InstallResult {
+interface InstallResult {
   readonly file: string;
   /** skipped: nothing to install (Codex), with what covers it instead. */
   readonly action: "created" | "updated" | "unchanged" | "skipped";
@@ -167,10 +167,10 @@ async function repoAt(root: string): Promise<{ slug: string; commit: string }> {
   return { slug, commit: await gitOut(root, ["rev-parse", "HEAD"]) };
 }
 
-const posix = (path: string): string => path.split(sep).join("/") || ".";
+const posix = (path: string): string => toPosix(path) || ".";
 const inside = (root: string, path: string): boolean => !relative(root, path).startsWith("..");
 
-export interface WorkflowInput {
+interface WorkflowInput {
   readonly tool: { readonly slug: string; readonly commit: string };
   readonly design: { readonly slug: string; readonly commit: string };
   /** The project's directory inside its repository ("." at the root). */
@@ -244,7 +244,9 @@ ${diffStep}`;
 
 export async function installWorkflow(project: Project, toolRoot: string, target: HookTarget, force: boolean, options: { diff?: boolean } = {}): Promise<InstallResult> {
   const top = await gitOut(project.root, ["rev-parse", "--show-toplevel"]);
-  const [tool, design] = await Promise.all([ephemeralTool(toolRoot) ? Promise.resolve({ slug: "npm/youiyoux", commit: "published" }) : repoAt(toolRoot), repoAt(project.repo.root)]);
+  // From a package-runner cache (npx), CI runs the published package instead of checking this tool out.
+  const published = ephemeralTool(toolRoot);
+  const [tool, design] = await Promise.all([published ? Promise.resolve({ slug: "npm/youiyoux", commit: "published" }) : repoAt(toolRoot), repoAt(project.repo.root)]);
   const configFile = resolve(target.config ?? project.configFile ?? join(project.root, PROJECT_FILE));
   const configPath = !target.config ? null : inside(project.repo.root, configFile) ? `.youi-ci/design/${posix(relative(project.repo.root, configFile))}` : inside(top, configFile) ? posix(relative(top, configFile)) : null;
   if (target.config && !configPath) throw new Error(`${configFile} is in neither this repo nor the design repo, so CI cannot read it`);
@@ -256,8 +258,8 @@ export async function installWorkflow(project: Project, toolRoot: string, target
   // git reports the top level with symlinks resolved (/private/var for /var): compare real paths.
   const projectDir = posix(relative(top, await realpath(project.root).catch(() => project.root)));
   let text = workflowText({ tool, design, projectDir, configPath, diff });
-  if (ephemeralTool(toolRoot)) {
+  if (published) {
     text = text.replace(/      - name: Check out youi\n[\s\S]*?(?=      - name: Check out the design)/, "").replace(/      - run: pnpm install --frozen-lockfile --ignore-scripts\n        working-directory: .youi-ci\/tool\n/, "").replaceAll("node .youi-ci/tool/packages/cli/bin/youi.js", "npx -y youiyoux");
   }
-  return write(file, text, before, `authoritative: ${ephemeralTool(toolRoot) ? "runs the published youiyoux package; pinned to" : `pinned to ${tool.slug}@${tool.commit.slice(0, 7)} and`} rules ${design.slug}@${design.commit.slice(0, 7)}${diff ? "; pull requests also fail on drift they add (youiyoux check --diff --strict)" : ""}`);
+  return write(file, text, before, `authoritative: ${published ? "runs the published youiyoux package; pinned to" : `pinned to ${tool.slug}@${tool.commit.slice(0, 7)} and`} rules ${design.slug}@${design.commit.slice(0, 7)}${diff ? "; pull requests also fail on drift they add (youiyoux check --diff --strict)" : ""}`);
 }

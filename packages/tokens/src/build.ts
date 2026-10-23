@@ -47,8 +47,6 @@ export interface TokenBuild {
   readonly files: readonly OutputFile[];
 }
 
-const QUIET_LOGGER_LEVEL = "error";
-
 export function cssNameOf(token: Pick<TokenNormalized, "id" | "$extensions">): string {
   const ext = token.$extensions?.[DL_EXT] as { css?: string } | undefined;
   return ext?.css ?? token.id.replace(/\./g, "-");
@@ -211,7 +209,7 @@ export async function buildTokens(repoRoot: string, system: SystemConfig, output
   const header = generatedHeader(system, "css");
   const files: OutputFile[] = [];
   if (output.targets.includes("css-vars")) files.push({ path: "tokens.css", content: `${header}\n/* Built with Terrazzo (DTCG 2025.10 resolver). */\n${css.replace(/^\/\*[\s\S]*?\*\/\s*/, "")}` });
-  if (output.targets.includes("tailwind-v4")) files.push({ path: "theme.css", content: renderTailwind(tokens, output, generatedHeader(system, "css")) });
+  if (output.targets.includes("tailwind-v4")) files.push({ path: "theme.css", content: renderTailwind(tokens, output, header) });
   if (output.targets.includes("ts")) files.push({ path: "tokens.ts", content: renderTs(tokens, prefix, generatedHeader(system, "ts")) });
   if (output.targets.includes("react-native")) files.push({ path: "tokens.native.ts", content: renderNative(tokens, generatedHeader(system, "ts")) });
   return { system: system.id, version: system.version, prefix, tokens, files };

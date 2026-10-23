@@ -25,11 +25,11 @@ export const DESK_WIDTH = 1280;
 export const FRAME_HEIGHT = 480;
 /** The specimen's offset inside the frame, so a shadow or ring is not cut off. */
 export const MARGIN = 32;
-export const TILE_HEIGHT = 88;
+const TILE_HEIGHT = 88;
 /** A wall tile's specimen, drawn larger. */
 export const LARGE_TILE_HEIGHT = 136;
 /** A Discover thumbnail's stage: one look, photographed for the gallery (small, so a small look fills it). */
-export const STAGE_TILE_HEIGHT = 150;
+const STAGE_TILE_HEIGHT = 150;
 const TILE_PAD = 10;
 export const MAX_RENDERING = 6;
 /** Frames mounted at once, loading or drawn (FrameBudget). */
@@ -120,7 +120,7 @@ export class FrameQueue {
   }
 }
 
-export const frameQueue = new FrameQueue();
+const frameQueue = new FrameQueue();
 
 /**
  * A frame's turn: granted once a slot is free; `done` frees it (the frame stays mounted). Each
@@ -128,28 +128,28 @@ export const frameQueue = new FrameQueue();
  * back to waiting, so a grant for an earlier run (StrictMode mounts, unmounts and mounts again)
  * is never taken for a later one, and no frame renders without a slot.
  */
-function useFrameSlot(wanted: boolean, queue: FrameQueue = frameQueue): { granted: boolean; rendering: boolean; done: () => void } {
+function useFrameSlot(wanted: boolean): { granted: boolean; rendering: boolean; done: () => void } {
   const [state, setState] = useState<"waiting" | "rendering" | "done">("waiting");
   const token = useRef<object | null>(null);
   useEffect(() => {
     if (!wanted) return;
     const mine = {};
     token.current = mine;
-    queue.request(mine, () => {
+    frameQueue.request(mine, () => {
       if (token.current === mine) setState((s) => (s === "waiting" ? "rendering" : s));
     });
     return () => {
       if (token.current === mine) token.current = null;
-      queue.release(mine);
+      frameQueue.release(mine);
       setState("waiting");
     };
-  }, [wanted, queue]);
+  }, [wanted]);
   const done = useCallback(() => {
     const mine = token.current;
     if (mine === null) return;
-    queue.release(mine);
+    frameQueue.release(mine);
     setState((s) => (s === "rendering" ? "done" : s));
-  }, [queue]);
+  }, []);
   return { granted: wanted && state !== "waiting", rendering: wanted && state === "rendering", done };
 }
 
@@ -210,28 +210,28 @@ export class FrameBudget {
   }
 }
 
-export const frameBudget = new FrameBudget();
+const frameBudget = new FrameBudget();
 
 /** Whether this near tile may mount its frame now (see FrameBudget); StrictMode-safe like useFrameSlot. */
-function useFrameBudget(near: boolean, visible: boolean, budget: FrameBudget = frameBudget): boolean {
+function useFrameBudget(near: boolean, visible: boolean): boolean {
   const [mounted, setMounted] = useState(false);
   const token = useRef<object | null>(null);
   useEffect(() => {
     if (!near) return;
     const mine = {};
     token.current = mine;
-    budget.join(mine, false, (value) => {
+    frameBudget.join(mine, false, (value) => {
       if (token.current === mine) setMounted(value);
     });
     return () => {
       if (token.current === mine) token.current = null;
-      budget.leave(mine);
+      frameBudget.leave(mine);
       setMounted(false);
     };
-  }, [near, budget]);
+  }, [near]);
   useEffect(() => {
-    if (token.current) budget.see(token.current, visible);
-  }, [visible, near, budget]);
+    if (token.current) frameBudget.see(token.current, visible);
+  }, [visible, near]);
   return near && mounted;
 }
 
@@ -254,6 +254,9 @@ export interface Tile {
   readonly story?: { readonly title: string; readonly name: string; readonly id: string } | null;
 }
 
+/** A tile whose look is drawn for real: it has a specimen and a stylesheet to draw it with. */
+export const isDrawn = (tile: Pick<Tile, "specimen" | "css">): boolean => tile.specimen !== null && tile.css !== null;
+
 /** `Storybook · UI/Button / Primary`. */
 export const storyLabel = (story: NonNullable<Tile["story"]>): string => `Storybook · ${story.title} / ${story.name}`;
 
@@ -273,7 +276,7 @@ function hubSource(css: string): string {
  * so outside code drawn in a frame (a Discover candidate) cannot send anything anywhere, and a
  * `url()` in a sheet or style attribute fetches nothing.
  */
-export function framePolicy(css: string): string {
+function framePolicy(css: string): string {
   const hub = hubSource(css);
   return `default-src 'none'; script-src ${hub}; style-src ${hub} 'unsafe-inline'; font-src ${hub} data:; img-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'`;
 }
@@ -444,7 +447,7 @@ function SpecimenFrame({ srcDoc, scheme, near, height, onBlank, strip, onBackgro
 }
 
 /** The look's measured shape, drawn as a box: what is left when nothing renders it (or, `waiting`, until its frame may mount). */
-export function ShapeBox({ shape, caption = "shape only", tileHeight = TILE_HEIGHT }: { shape: InventoryShape; caption?: string; tileHeight?: number }) {
+function ShapeBox({ shape, caption = "shape only", tileHeight = TILE_HEIGHT }: { shape: InventoryShape; caption?: string; tileHeight?: number }) {
   const height = shape.height ?? (shape.fontSize !== null ? Math.round(shape.fontSize * 1.5 + 2 * (shape.paddingY ?? 0)) : 32);
   const scale = Math.min(1, (tileHeight - 2 * TILE_PAD - 14) / height);
   return (
@@ -468,13 +471,13 @@ const LiveFrame = lazy(() => import("./try-live.tsx").then((m) => ({ default: m.
 /** The one live tile on the page: starting another ends it. */
 let live: { id: object; end: () => void } | null = null;
 
-export function startLive(id: object, end: () => void): void {
+function startLive(id: object, end: () => void): void {
   const previous = live;
   live = { id, end };
   if (previous && previous.id !== id) previous.end();
 }
 
-export function stopLive(id: object): void {
+function stopLive(id: object): void {
   if (live?.id === id) live = null;
 }
 
@@ -530,7 +533,6 @@ interface SpecimenTileProps {
   as?: "li" | "div";
   /** The project and file:line under the specimen. */
   caption?: boolean;
-  className?: string;
   /** Called when the specimen's frame loads and nothing in it has a box at the desk width. */
   onBlank?: () => void;
   /** Offer Try it on a component look: its own code, live, in a sandboxed frame. */
@@ -545,11 +547,11 @@ interface SpecimenTileProps {
  * look can offer Try it: on click (and only then) its code is bundled by the hub's server and
  * the tile swaps to a live frame (try-live.tsx) until Done, Escape or scrolling away.
  */
-export function SpecimenTile({ tile, scheme, size = "small", as: Tag = "li", caption = true, className, onBlank, tryIt = false, backdrop }: SpecimenTileProps) {
+export function SpecimenTile({ tile, scheme, size = "small", as: Tag = "li", caption = true, onBlank, tryIt = false, backdrop }: SpecimenTileProps) {
   const ref = useRef<HTMLElement>(null);
   const near = useNearViewport(ref);
   const visible = useInView(ref);
-  const drawn = tile.specimen !== null && tile.css !== null;
+  const drawn = isDrawn(tile);
   const mounted = useFrameBudget(drawn && near, visible);
   const height = size === "stage" ? STAGE_TILE_HEIGHT : size === "large" ? LARGE_TILE_HEIGHT : TILE_HEIGHT;
   const tryable = tryIt && drawn && tile.specimen!.kind === "component" && (!!tile.specimenId || !!tile.script);
@@ -558,7 +560,7 @@ export function SpecimenTile({ tile, scheme, size = "small", as: Tag = "li", cap
   const staticFrame: ReactNode = !drawn ? <ShapeBox shape={tile.shape} tileHeight={height} /> : mounted ? <SpecimenFrame srcDoc={frameDocument(tile.specimen!.html, tile.css!, scheme)} scheme={scheme} near={near} height={height} onBlank={onBlank} onBackground={tryable ? setBackground : undefined} /> : near ? <ShapeBox shape={tile.shape} caption="waiting" tileHeight={height} /> : null;
   const label = tile.story ? `${tile.project} ${storyLabel(tile.story)}` : `${tile.project} ${tile.place}`;
   return (
-    <Tag ref={ref as RefObject<never>} className={clsx("min-w-0 space-y-1", className)} data-tile={tile.key} data-story={tile.story?.id} data-kind={drawn ? tile.specimen!.kind : "shape"} data-frame={drawn && near ? (mounted ? "mounted" : "waiting") : undefined} data-live={state.status !== "static" ? state.status : undefined}>
+    <Tag ref={ref as RefObject<never>} className="min-w-0 space-y-1" data-tile={tile.key} data-story={tile.story?.id} data-kind={drawn ? tile.specimen!.kind : "shape"} data-frame={drawn && near ? (mounted ? "mounted" : "waiting") : undefined} data-live={state.status !== "static" ? state.status : undefined}>
       {/* Try it and Done sit over the box's corner on a desk; on a phone, where a 44px button would cover the look, below it. */}
       <div className="relative">
         <div className="relative overflow-hidden rounded-md border border-line bg-sunken" style={{ height, background: backdrop }}>
@@ -620,7 +622,7 @@ export function LeadTile({ tiles, ...props }: Omit<SpecimenTileProps, "tile" | "
 }
 
 /** A state strip's height: five cells of one look, scaled to fit. */
-export const STRIP_HEIGHT = 112;
+const STRIP_HEIGHT = 112;
 
 /**
  * One look in its five states side by side (stateStripDocument): one frame, mounted like a tile
@@ -631,7 +633,7 @@ export function StateStrip({ tile, scheme, label }: { tile: Tile; scheme: Scheme
   const ref = useRef<HTMLDivElement>(null);
   const near = useNearViewport(ref);
   const visible = useInView(ref);
-  const drawn = tile.specimen !== null && tile.css !== null;
+  const drawn = isDrawn(tile);
   const mounted = useFrameBudget(drawn && near, visible);
   const [columns, setColumns] = useState<{ x: number; width: number } | null>(null);
   const srcDoc = drawn && mounted ? stateStripDocument(tile.specimen!.html, tile.css!, scheme) : null;

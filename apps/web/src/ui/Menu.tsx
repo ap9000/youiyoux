@@ -7,7 +7,7 @@ import type { LucideIcon } from "lucide-react";
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { Button } from "./Button.tsx";
 
-export interface MenuItem {
+interface MenuItem {
   readonly label: string;
   /** A second line, e.g. the exact text an item copies. */
   readonly detail?: string;
@@ -20,10 +20,9 @@ interface MenuButtonProps {
   label: string;
   children: ReactNode;
   items: readonly MenuItem[];
-  className?: string;
 }
 
-export function MenuButton({ label, children, items, className }: MenuButtonProps) {
+export function MenuButton({ label, children, items }: MenuButtonProps) {
   const [open, setOpen] = useState(false);
   const [start, setStart] = useState<"first" | "last">("first");
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -38,7 +37,7 @@ export function MenuButton({ label, children, items, className }: MenuButtonProp
 
   useEffect(() => {
     if (!open) return;
-    const list = [...(menuRef.current?.querySelectorAll<HTMLButtonElement>("[role=menuitem]") ?? [])];
+    const list = entries();
     (start === "first" ? list[0] : list.at(-1))?.focus();
     const onPointer = (event: PointerEvent): void => {
       const target = event.target as Node;
@@ -86,7 +85,6 @@ export function MenuButton({ label, children, items, className }: MenuButtonProp
           setOpen((value) => !value);
         }}
         onKeyDown={onButtonKey}
-        className={className}
       >
         {children}
       </Button>

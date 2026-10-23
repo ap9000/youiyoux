@@ -21,6 +21,7 @@ import { useParts, type InventorySource } from "../../data/inventory-source.ts";
 import { activeFilters, consolidation, familyViews, filterCounts, filterFamilies, filtersToSearch, kitCells, Libraries, neededChunks, topFixes, usesLabel, type FamilyView, type Filters } from "../../data/inventory-view.ts";
 import { retryInventory, useDetectState, useInventoryState } from "../../data/store.ts";
 import type { DetectReport, InventoryChunk, InventoryExtras, InventoryFlag, InventoryIndex, InventoryRoleIndex } from "../../data/types.ts";
+import { shortSha } from "../../lib/format.ts";
 import { Badge } from "../../ui/Badge.tsx";
 import { Button } from "../../ui/Button.tsx";
 import { Disclosure } from "../../ui/Disclosure.tsx";
@@ -32,7 +33,6 @@ import { familyTiles, leadTiles } from "./family-tiles.ts";
 import { FilterBar, TOUCH, useFilters } from "./FilterBar.tsx";
 import { LARGE_TILE_HEIGHT, LeadTile, ScrollRoot, useNearViewport } from "./Specimens.tsx";
 
-const SHORT_SHA = 7;
 /** Height a role row keeps per family before its chunks arrive, so the page does not jump. */
 const TILE_PLACEHOLDER = LARGE_TILE_HEIGHT + 96;
 /** Tiles per row a placeholder assumes. */
@@ -145,8 +145,9 @@ function Inventory({ source, detect }: { source: InventorySource; detect: Detect
                 </ul>
               </section>
             )}
-            <Extras extras={extras}>{(value) => value.flags.length > 0 && <Flags flags={value.flags} />}</Extras>
-            <Extras extras={extras}>{(value) => <Kits extras={value} />}</Extras>
+            {/* Kits, primitives and flags: fetched right after the first paint, then shown. */}
+            {extras && extras.flags.length > 0 && <Flags flags={extras.flags} />}
+            {extras && <Kits extras={extras} />}
             <p className="text-small text-muted">
               {index.summary.notClustered} breakpoint and state classes recorded, not clustered: a family is decided by the resting shape.
               {index.summary.unshaped > 0 && ` ${index.summary.unshaped} ${index.summary.unshaped === 1 ? "look has" : "looks have"} no resolved shape and ${index.summary.unshaped === 1 ? "is" : "are"} not grouped.`}
@@ -243,11 +244,6 @@ function SectionTitle({ id, title, count, children }: { id: string; title: strin
   );
 }
 
-/** Kits, primitives and flags: fetched right after the first paint, then shown. */
-function Extras({ extras, children }: { extras: InventoryExtras | null; children: (extras: InventoryExtras) => ReactNode }) {
-  return extras ? children(extras) : null;
-}
-
 /* ------------------------------------------------------------------------ headline */
 
 function Headline({ index, views: all, ready, filtered }: { index: InventoryIndex; views: readonly FamilyView[]; ready: boolean; filtered: boolean }) {
@@ -324,7 +320,7 @@ function Headline({ index, views: all, ready, filtered }: { index: InventoryInde
           <ul className="space-y-0.5 text-muted">
             {index.projects.map((p) => (
               <li key={p.id}>
-                <span className="font-medium text-ink">{p.id}</span> · {p.files} files{p.commit ? ` @${p.commit.slice(0, SHORT_SHA)}` : ""} · routes: {p.routes}
+                <span className="font-medium text-ink">{p.id}</span> · {p.files} files{p.commit ? ` @${shortSha(p.commit)}` : ""} · routes: {p.routes}
                 {p.status === "partial" && <span className="text-warning"> · partial ({p.failed} not fully read)</span>}
               </li>
             ))}

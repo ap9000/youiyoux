@@ -71,7 +71,7 @@ export interface CssOptions {
   readonly signal?: AbortSignal;
 }
 
-export const TAILWIND_TIMEOUT_MS = 30_000;
+const TAILWIND_TIMEOUT_MS = 30_000;
 
 /** A time limit for a reader: `30s`, or `250 ms` when it is not whole seconds. */
 export const limitOf = (ms: number): string => (ms >= 1000 && ms % 1000 === 0 ? `${ms / 1000}s` : `${ms} ms`);
@@ -155,12 +155,17 @@ function resolveSheet(root: string, from: string, specifier: string, aliases: Re
   }
 }
 
+/** A tsconfig's JSON, read leniently: comments and trailing commas dropped. Throws when it still does not parse. */
+export function parseTsconfigJson(text: string): unknown {
+  return JSON.parse(text.replace(/\/\*[\s\S]*?\*\/|(^|[^:"])\/\/.*$/gm, "$1").replace(/,(\s*[}\]])/g, "$1"));
+}
+
 /** `paths` aliases from a tsconfig, read leniently; aliases that point outside the root are dropped. */
 export function tsconfigAliases(root: string, tsconfig = "tsconfig.json"): Array<[string, string]> {
   const text = readInside(root, tsconfig);
   if (text === null) return [];
   try {
-    const json = JSON.parse(text.replace(/\/\*[\s\S]*?\*\/|(^|[^:"])\/\/.*$/gm, "$1").replace(/,(\s*[}\]])/g, "$1")) as { compilerOptions?: { baseUrl?: string; paths?: Record<string, string[]> } };
+    const json = parseTsconfigJson(text) as { compilerOptions?: { baseUrl?: string; paths?: Record<string, string[]> } };
     const base = json.compilerOptions?.baseUrl ?? ".";
     return Object.entries(json.compilerOptions?.paths ?? {}).flatMap(([key, [target]]) => {
       if (!target) return [];
@@ -478,7 +483,7 @@ function inlineImports(root: string, file: string, seen: Set<string>, warnings: 
 }
 
 /** `url(/fonts/x.woff2)` → a data URI of the project's public file; other urls stay. Paths that leave public/ are refused. */
-export function inlineFonts(root: string, css: string, warnings: string[]): { css: string; fonts: string[] } {
+function inlineFonts(root: string, css: string, warnings: string[]): { css: string; fonts: string[] } {
   const fonts: string[] = [];
   const out = css.replace(/url\(\s*(["']?)(\/[^"')]+?\.(?:woff2|woff|ttf|otf))(?:[?#][^"')]*)?\1\s*\)/g, (whole, _quote: string, path: string) => {
     if (path.split("/").includes("..")) {
@@ -520,7 +525,7 @@ interface TailwindResult {
 }
 
 /** One Tailwind entry compiled, scanned and optimised in a worker (tailwind-worker.ts), stopped after `timeoutMs`. */
-export function compileTailwind(input: { root: string; from: string; node: string; oxide: string; exclude: readonly string[]; files?: readonly string[]; extraSources?: readonly string[] }, timeoutMs: number, signal?: AbortSignal): Promise<TailwindResult> {
+function compileTailwind(input: { root: string; from: string; node: string; oxide: string; exclude: readonly string[]; files?: readonly string[]; extraSources?: readonly string[] }, timeoutMs: number, signal?: AbortSignal): Promise<TailwindResult> {
   return new Promise((done) => {
     if (signal?.aborted) return done({ error: "stopped", dependencies: [], warnings: [] });
     const worker = new Worker(new URL("./tailwind-worker.ts", import.meta.url), { workerData: input, stdout: true, stderr: true });

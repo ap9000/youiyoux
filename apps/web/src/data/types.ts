@@ -4,7 +4,7 @@
  * browser: `pnpm data` validates every snapshot with core's schemas when it writes them.
  * The hub's snapshot shapes follow.
  */
-import type { ComponentContract, ElementId, InventoryFamily, InventoryFlag, InventoryKit, InventoryReport, InventoryRole, InventoryShape, RuleSpec, UsageSite } from "@youiyoux/core";
+import type { ComponentContract, ElementId, InventoryFamily, InventoryFlag, InventoryKit, InventoryReport, InventoryRole, InventoryShape, RuleSpec } from "@youiyoux/core";
 import type { RuleExecution } from "@youiyoux/core/rules";
 
 export type {
@@ -17,8 +17,6 @@ export type {
   ElementKind,
   InventoryFamily,
   InventoryFlag,
-  InventoryKit,
-  InventoryLook,
   InventoryReport,
   InventoryRole,
   InventoryShape,
@@ -34,8 +32,6 @@ export type {
 
 export type ComponentStatus = ComponentContract["status"];
 export type RuleSeverity = RuleSpec["severity"];
-export type RuleCheck = RuleSpec["check"];
-export type RouteSource = UsageSite["routeSource"];
 
 /* ------------------------------------------------- hub snapshots (scripts/snapshot.ts) */
 
@@ -66,7 +62,7 @@ export interface ComponentEntry {
   files: Array<{ path: string; code: string }>;
 }
 
-export interface SystemInfo {
+interface SystemInfo {
   id: string;
   name: string;
   version: string;
@@ -88,7 +84,7 @@ export interface Catalog {
 export type CatalogRule = RuleSpec & { execution?: RuleExecution };
 
 /** How a live snapshot (`youiyoux ui --watch`) was produced; absent from one-off snapshots. */
-export interface LiveInfo {
+interface LiveInfo {
   /** Increases with every re-scan. */
   generation: number;
   /** `partial`: some files could not be analysed; `failed`: the latest run failed and older data is shown. */
@@ -100,7 +96,7 @@ export interface LiveInfo {
 }
 
 /** A route's screenshot in one scheme: a 2x image for the screen page and a small one for thumbnails. */
-export interface ShotFiles {
+interface ShotFiles {
   full: string;
   thumb: string;
 }
@@ -178,7 +174,7 @@ export interface Specimen {
   html: string;
 }
 
-export interface InventoryIndexProject {
+interface InventoryIndexProject {
   id: string;
   root: string;
   commit: string | null;

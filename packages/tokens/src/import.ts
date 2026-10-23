@@ -7,7 +7,7 @@
  * reported, never silently resolved.
  */
 import { parse as parseYaml } from "yaml";
-import { formatCssColor, parseCssColor, sameColor, type DtcgColor } from "./color.ts";
+import { parseCssColor, sameColor, type DtcgColor } from "./color.ts";
 import { customProperties, parseCubicBezier, parseDimension, parseFontFamily, parseShadow, type DtcgDimension } from "./css.ts";
 
 /** `$extensions` namespace for design-language metadata on tokens. */
@@ -269,9 +269,4 @@ export function importTokens(options: ImportOptions): ImportResult {
     dark,
     report: { tokenCount: fromCss.length + shapePaths.length + typePaths.length + (options.css ? 0 : mdColorNames.size), fromCss, mismatches, documentedOnly, undocumented, unparsed },
   };
-}
-
-/** Human-readable CSS for a DTCG colour, for reports. */
-export function describeColor(value: unknown): string {
-  return typeof value === "object" && value !== null && "colorSpace" in value ? formatCssColor(value as DtcgColor) : String(value);
 }

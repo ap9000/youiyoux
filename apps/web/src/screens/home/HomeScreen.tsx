@@ -9,6 +9,8 @@ import type { CatalogRule } from "../../data/types.ts";
 import { retryModel, useModelState, useUsageState } from "../../data/store.ts";
 import { summarize, type UsageIndex } from "../../data/usage.ts";
 import { BUDGETS, percentile, useSamples } from "../../lib/perf.ts";
+import { shortSha } from "../../lib/format.ts";
+import { noun } from "../../lib/plural.ts";
 import { Badge, SeverityBadge } from "../../ui/Badge.tsx";
 import { Button } from "../../ui/Button.tsx";
 import { Disclosure } from "../../ui/Disclosure.tsx";
@@ -17,21 +19,18 @@ import { ResourceState } from "../../ui/Pane.tsx";
 import { Section, Table } from "../../ui/Section.tsx";
 import { MostUsed } from "./MostUsed.tsx";
 
-const SHORT_SHA = 7;
-
 /** The headline (rule data.headline): one sentence that carries the numbers, never a row of equal boxes. */
 function Headline({ counts, projects, sites, violations }: { counts: ReturnType<typeof countByKind>; projects: number | null; sites: number | null; violations: number | null }) {
-  const plural = (n: number, one: string, many = `${one}s`): string => (n === 1 ? one : many);
   return (
     <p data-headline className="max-w-3xl text-title text-ink-2">
-      <Num value={counts.component} href="/elements" /> {plural(counts.component, "component")}, <Num value={counts.token} href="/tokens" /> {plural(counts.token, "token")} and <Num value={counts.rule} href="/elements" /> {plural(counts.rule, "rule")}
+      <Num value={counts.component} href="/elements" /> {noun(counts.component, "component")}, <Num value={counts.token} href="/tokens" /> {noun(counts.token, "token")} and <Num value={counts.rule} href="/elements" /> {noun(counts.rule, "rule")}
       {projects !== null && sites !== null && violations !== null ? (
         <>
-          , used at <Num value={sites} href="/screens" /> {plural(sites, "site")} in <Num value={projects} href="/screens" /> {plural(projects, "project")}
+          , used at <Num value={sites} href="/screens" /> {noun(sites, "site")} in <Num value={projects} href="/screens" /> {noun(projects, "project")}
           {violations > 0 ? (
             <>
               {" "}
-              with <Num value={violations} /> {plural(violations, "violation")}.
+              with <Num value={violations} /> {noun(violations, "violation")}.
             </>
           ) : (
             <>
@@ -127,7 +126,7 @@ export function Usage({ model, index, scheme }: { model: Model; index: UsageInde
             return (
               <tr key={report.project}>
                 <td className="font-medium text-ink">{report.project}</td>
-                <td className="font-mono text-mono-sm text-muted">{report.commit?.slice(0, SHORT_SHA) ?? "–"}</td>
+                <td className="font-mono text-mono-sm text-muted">{report.commit != null ? shortSha(report.commit) : "–"}</td>
                 <td>
                   <Badge tone={report.status === "complete" ? "success" : "warning"} title={report.scanner}>
                     {report.status}
@@ -186,7 +185,7 @@ function Home({ model }: { model: Model }) {
             </Badge>
             {commit && (
               <span className="font-mono text-mono-sm text-muted" title="The commit that last changed these definitions">
-                @{commit.slice(0, SHORT_SHA)}
+                @{shortSha(commit)}
               </span>
             )}
             {violations !== null && violations > 0 && (

@@ -3,18 +3,17 @@ import { clsx } from "clsx";
 import { ArrowRight, Link2 } from "lucide-react";
 import { Link } from "wouter";
 import { type Scheme, useTheme } from "../../app/theme.tsx";
-import { type ContrastGrade, contrastRatio, grade, pairsFor } from "../../data/contrast.ts";
+import { contrastRatio, grade, pairsFor } from "../../data/contrast.ts";
 import { elementHref, shortName, tokenHref } from "../../data/ids.ts";
 import type { Model } from "../../data/model.ts";
 import type { TokenEntry } from "../../data/types.ts";
-import { Badge, type BadgeTone } from "../../ui/Badge.tsx";
+import { Badge, GRADE_TONE } from "../../ui/Badge.tsx";
 import { CopyButton } from "../../ui/CopyButton.tsx";
 import { KindIcon } from "../../ui/KindIcon.tsx";
 import { Section, Table } from "../../ui/Section.tsx";
 import { stageFor, TokenValue } from "./TokenValue.tsx";
 
 const SCHEMES: readonly Scheme[] = ["light", "dark"];
-const GRADE_TONE: Record<ContrastGrade, BadgeTone> = { AAA: "success", AA: "success", "AA large": "warning", Fail: "danger" };
 
 export interface ContrastPair {
   readonly label: string;
@@ -54,7 +53,7 @@ function ValueCard({ model, token, scheme }: { model: Model; token: TokenEntry; 
     <div className="overflow-hidden rounded-lg border border-line">
       {/* Type grows with its own size instead of being clipped; every other value fills a fixed box. */}
       <div className={clsx("border-b border-line", token.type !== "typography" && "h-32")}>
-        <TokenValue token={token} scheme={scheme} stage={stageFor(model, scheme)} {...(token.type === "typography" ? { className: "min-h-32" } : {})} />
+        <TokenValue token={token} scheme={scheme} stage={stageFor(model, scheme)} className={token.type === "typography" ? "min-h-32" : undefined} />
       </div>
       <div className="flex items-center gap-2 py-1.5 pr-1.5 pl-3">
         <span className="w-10 text-small text-muted capitalize">{scheme}</span>

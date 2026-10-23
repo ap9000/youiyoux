@@ -58,7 +58,7 @@ function Choice<T extends string>({ label, value, all, options, onChange }: { la
   );
 }
 
-export function FilterControls({ filters, onChange, counts }: { filters: Filters; onChange: (next: Filters) => void; counts: Counts }) {
+function FilterControls({ filters, onChange, counts }: { filters: Filters; onChange: (next: Filters) => void; counts: Counts }) {
   return (
     <div className="space-y-2.5" data-testid="filter-controls">
       <Choice label="Type" value={filters.type} all={counts.all.type} options={counts.types} onChange={(type) => onChange({ ...filters, type })} />

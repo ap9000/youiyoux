@@ -125,8 +125,6 @@ export const TOKEN_VALUE_SCHEMAS = {
 
 export type TokenType = keyof typeof TOKEN_VALUE_SCHEMAS;
 export const TOKEN_TYPES = Object.keys(TOKEN_VALUE_SCHEMAS) as TokenType[];
-/** The types youi adds to DTCG 2025.10. */
-export const YOUI_TOKEN_TYPES: readonly TokenType[] = ["spring", "focusRing"];
 
 export type ColorValue = z.infer<typeof ColorValue>;
 export type DimensionValue = z.infer<typeof DimensionValue>;
@@ -250,11 +248,9 @@ function describeIssues(error: z.ZodError): string[] {
 export function tokenValueProblems(type: string | undefined, value: unknown): string[] {
   if (type === undefined) return ["no $type (on the token or an enclosing group)"];
   if (!isTokenType(type)) return [`unknown $type "${type}"; expected one of ${TOKEN_TYPES.join(", ")}`];
-  const result = tokenValueSchema(type).safeParse(value);
-  if (result.success) return [];
-  // A union of value-or-alias reports both branches; the value branch says what is wrong.
-  const valueResult = TOKEN_VALUE_SCHEMAS[type].safeParse(value);
-  return valueResult.success ? [] : describeIssues(valueResult.error);
+  if (tokenValueSchema(type).safeParse(value).success) return [];
+  // A union of value-or-alias reports both branches; the value branch (which fails too) says what is wrong.
+  return describeIssues(TOKEN_VALUE_SCHEMAS[type].safeParse(value).error!);
 }
 
 /**

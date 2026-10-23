@@ -5,6 +5,7 @@ import { routeLabel, screensOf, screensOfElement } from "../../data/screens.ts";
 import type { Resource } from "../../data/store.ts";
 import type { ComponentContract } from "../../data/types.ts";
 import { elementIssues, summarize, type UsageIndex } from "../../data/usage.ts";
+import { noun } from "../../lib/plural.ts";
 import { CodeBlock } from "../../ui/CodeBlock.tsx";
 import { Num } from "../../ui/Num.tsx";
 import { Section } from "../../ui/Section.tsx";
@@ -26,10 +27,9 @@ export function UsageGlance({ model, contract, index }: { model: Model; contract
     issues.unresolved > 0 && `${issues.unresolved} unresolved`,
   ].filter(Boolean);
   const top = onScreens[0];
-  const plural = (n: number, one: string): string => `${one}${n === 1 ? "" : "s"}`;
   return (
     <p data-headline className="text-title text-ink-2">
-      <Num value={summary.sites} href={usage} /> {plural(summary.sites, "use")} in {summary.files} {plural(summary.files, "file")} across {summary.projects} {plural(summary.projects, "project")}, on <Num value={summary.screens} href={usage} /> {plural(summary.screens, "screen")}
+      <Num value={summary.sites} href={usage} /> {noun(summary.sites, "use")} in {summary.files} {noun(summary.files, "file")} across {summary.projects} {noun(summary.projects, "project")}, on <Num value={summary.screens} href={usage} /> {noun(summary.screens, "screen")}
       {top && (
         <>
           {" "}

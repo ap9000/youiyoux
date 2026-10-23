@@ -98,8 +98,6 @@ export interface SignalsFile {
   readonly registryRepos: Record<string, { readonly repo: string | null; readonly checkedAt: string }>;
 }
 
-export const EMPTY_SIGNALS: SignalsFile = { npm: {}, github: {}, registryRepos: {} };
-
 async function readJson(file: string): Promise<unknown> {
   try {
     return JSON.parse(await readFile(file, "utf8")) as unknown;
@@ -205,7 +203,7 @@ export function slimResponse(url: string, body: string): unknown {
   })) };
 }
 
-export async function writeHttpCache(cacheDir: string, cache: ReadonlyMap<string, CachedResponse>, _previous: ReadonlyMap<string, string>): Promise<void> {
+export async function writeHttpCache(cacheDir: string, cache: ReadonlyMap<string, CachedResponse>): Promise<void> {
   const keep = new Set<string>();
   for (const [url, entry] of cache) {
     let data: unknown;

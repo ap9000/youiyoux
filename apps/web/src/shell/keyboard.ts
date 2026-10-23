@@ -28,7 +28,7 @@ export function useOverlay(): Overlay {
 
 const CHORD_WINDOW_MS = 900;
 
-export function isTyping(target: EventTarget | null): boolean {
+function isTyping(target: EventTarget | null): boolean {
   return target instanceof Element && target.closest("input, textarea, select, [contenteditable='true']") !== null;
 }
 

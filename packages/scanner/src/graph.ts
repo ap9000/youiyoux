@@ -116,9 +116,9 @@ export class ModuleGraph {
   }
 
   /** What a name used in `module` refers to. */
-  async resolveLocal(module: ModuleInfo, local: string, seen: ReadonlySet<string> = new Set()): Promise<ResolvedSymbol> {
+  async resolveLocal(module: ModuleInfo, local: string): Promise<ResolvedSymbol> {
     const binding = module.imports.find((i) => i.local === local && !i.typeOnly);
-    if (binding) return this.follow(binding.specifier, binding.imported, module.file, seen);
+    if (binding) return this.follow(binding.specifier, binding.imported, module.file, new Set());
     if (module.declarations.has(local)) return { kind: "symbol", file: module.file, name: local };
     return { kind: "unknown", reason: "dynamic-component", detail: `${local} is a parameter, prop or computed value, not an import` };
   }

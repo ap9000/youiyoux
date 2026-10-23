@@ -14,7 +14,7 @@ import { EmptyState } from "../../ui/EmptyState.tsx";
 import { PaneHeader, PaneSkeleton } from "../../ui/Pane.tsx";
 import { Segmented } from "../../ui/Segmented.tsx";
 import { DraftEditor, DraftStatusBadge, STAGE, stageOf, type Stage } from "./DraftEditor.tsx";
-import { plural } from "./ImpactPreview.tsx";
+import { plural } from "../../lib/plural.ts";
 import { ServiceDown, ServiceDownPanel } from "./ServiceDown.tsx";
 import { describeLibraryDraft } from "./LibraryDraftReview.tsx";
 import { describeStyleDraft } from "./StyleDraftReview.tsx";

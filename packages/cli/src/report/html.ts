@@ -12,9 +12,10 @@
  */
 import type { Finding, ProjectSection, RenderedLook, ReportModel } from "./model.ts";
 import { NPX } from "./model.ts";
+import { STEPS_SHOWN } from "./groups.ts";
+import { plural } from "../ui.ts";
 
 const escape = (text: string | number): string => String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
-const plural = (count: number, word: string, many = `${word}s`): string => `${count} ${count === 1 ? word : many}`;
 const anchor = (dir: string): string => `p-${dir === "." ? "root" : dir.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
 
 // The hub's tokens (apps/web/design/youiyoux*.tokens.json), light then dark.
@@ -198,9 +199,6 @@ function next(text: string): string {
   return `<p class="next"><strong>Next:</strong> ${rich(text.replace(/\.$/, ""))}.</p>`;
 }
 
-/** Steps a near-duplicate fix lists before the rest fold away under "and N more". */
-const STEPS_SHOWN = 5;
-
 const KIND: Record<Finding["kind"], string> = { "near-duplicate": "Duplicate", "hardcoded-value": "Hardcoded", "off-library": "Off-library" };
 
 /** A finding title's measurements, "(32px high, 12px side padding, …)", split off as chips. */
@@ -234,7 +232,7 @@ function shots(f: Finding, looks: Looks): string {
 function finding(f: Finding, showProject: boolean, looks: Looks): string {
   const { text, measures } = f.kind === "near-duplicate" ? splitMeasures(f.title) : { text: f.title, measures: [] };
   const where = showProject && f.project !== "." ? `<p class="muted">in <span class="mono">${escape(f.project)}</span></p>` : "";
-  const head = `<div class="head"><span class="count">${f.count}<small>${f.count === 1 ? "place" : "places"}</small></span><div class="what"><p class="title">${rich(text)}</p>${f.detail ? `<p class="muted">${escape(f.detail)}</p>` : ""}${where}</div><span class="chip">${f.kind === "hardcoded-value" ? swatch(f.title) : ""}${KIND[f.kind]}</span></div>`;
+  const head = `<div class="head"><span class="count">${f.count}<small>${f.count === 1 ? "place" : "places"}</small></span><div class="what"><p class="title">${rich(text)}</p>${where}</div><span class="chip">${f.kind === "hardcoded-value" ? swatch(f.title) : ""}${KIND[f.kind]}</span></div>`;
   const specs = measures.length > 0 ? `<ul class="specs">${measures.map((m) => `<li>${escape(m)}</li>`).join("")}</ul>` : "";
   if (f.lead && f.steps && f.steps.length > 0) {
     // What to keep beside the files to change: the first few, the rest folded (no script needed).
@@ -303,12 +301,9 @@ export function placesByKind(model: ReportModel): ReadonlyArray<{ readonly label
 
 function headline(model: ReportModel): string {
   const t = model.totals;
-  const [near, hard, off] = placesByKind(model);
-  const parts = [
-    { label: "Near-duplicates", places: near!.places, href: model.projects.length > 1 ? "top-fixes" : `${anchor(model.projects[0]?.dir ?? ".")}-near` },
-    { label: "Hardcoded values", places: hard!.places, href: model.projects.length > 1 ? "top-fixes" : `${anchor(model.projects[0]?.dir ?? ".")}-hardcoded` },
-    { label: "Off-library imports", places: off!.places, href: model.projects.length > 1 ? "top-fixes" : `${anchor(model.projects[0]?.dir ?? ".")}-off` },
-  ];
+  // Each kind links to its panel in a one-project report, to the top fixes otherwise.
+  const panels = ["near", "hardcoded", "off"];
+  const parts = placesByKind(model).map((part, i) => ({ ...part, href: model.projects.length > 1 ? "top-fixes" : `${anchor(model.projects[0]?.dir ?? ".")}-${panels[i]}` }));
   const total = parts.reduce((n, part) => n + part.places, 0);
   const n = (value: number): string => `<b class="${value > 0 ? "warn" : "ok"}">${value}</b>`;
   const unknown = model.projects.some((p) => p.incomplete.length > 0 || p.failed.length > 0);

@@ -63,11 +63,10 @@ export function collectPinned(rules: ArrayLike<RuleLike>, state: PinnedState, pa
   return out;
 }
 
-/** Inject the stylesheet that pins `state` (once; it applies only under `[data-pin-state]`). Returns how many rules it pins. */
-export function ensurePinned(state: PinnedState): number {
+/** Inject the stylesheet that pins `state` (once; it applies only under `[data-pin-state]`). */
+export function ensurePinned(state: PinnedState): void {
   const id = `yx-pin-${state}`;
-  const existing = document.getElementById(id);
-  if (existing) return Number(existing.dataset.rules ?? 0);
+  if (document.getElementById(id)) return;
   const out: string[] = [];
   for (const sheet of Array.from(document.styleSheets)) {
     if ((sheet.ownerNode as HTMLElement | null)?.id?.startsWith("yx-pin-")) continue;
@@ -79,10 +78,8 @@ export function ensurePinned(state: PinnedState): number {
   }
   const style = document.createElement("style");
   style.id = id;
-  style.dataset.rules = String(out.length);
   style.textContent = out.join("\n");
   document.head.append(style);
-  return out.length;
 }
 
 /** Pin `state` on everything inside `root`, or clear it with null. */

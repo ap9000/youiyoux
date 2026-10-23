@@ -7,7 +7,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 
 /** The only system a preview may show: the made-up one committed in snapshot/. */
-export const PREVIEW_SYSTEM = "demo";
+const PREVIEW_SYSTEM = "demo";
 /** The build output directories that carry design data (everything else is the hub's own code). */
 const DATA_DIRS = ["data", "previews"] as const;
 

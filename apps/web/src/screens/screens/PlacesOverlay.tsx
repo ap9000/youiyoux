@@ -12,6 +12,7 @@ import type { Scheme } from "../../app/theme.tsx";
 import { elementOf, hitAt, isSelected, type Placed } from "../../data/places.ts";
 import type { PlacesFile, ScreenShot } from "../../data/types.ts";
 import { ScreenImage } from "../../ui/ScreenImage.tsx";
+import { pct } from "../../lib/format.ts";
 
 export type Outline = "elements" | "all" | "off";
 
@@ -39,8 +40,6 @@ interface Props {
   activePin?: string | null;
   onPin?: (id: string) => void;
 }
-
-const pct = (value: number, of: number): string => `${(value / of) * 100}%`;
 
 export function PlacesOverlay({ shot, scheme, label, places, placed, outline, select, pointed, nameOf, onSelect, pins = [], activePin = null, onPin }: Props) {
   const layer = useRef<HTMLDivElement>(null);

@@ -131,9 +131,9 @@ export interface NavGroup {
 }
 
 /** NAV split into runs of the same section, in order, for the rail to label and divide. */
-export function navGroups(items: readonly NavItem[] = NAV): NavGroup[] {
+export function navGroups(): NavGroup[] {
   const groups: NavGroup[] = [];
-  for (const item of items) {
+  for (const item of NAV) {
     const section = item.section;
     const last = groups.at(-1);
     if (last && last.section === section) groups[groups.length - 1] = { section, items: [...last.items, item] };
@@ -147,14 +147,15 @@ function matches(href: string, path: string): boolean {
 }
 
 /** The most specific nav item for a path, so /library/sources lights Sources, not Browse. */
+const bestMatch = (path: string): NavItem | undefined => NAV.filter((n) => matches(n.href, path)).sort((a, b) => b.href.length - a.href.length)[0];
+
 export function isActive(item: NavItem, path: string): boolean {
-  const best = NAV.filter((n) => matches(n.href, path)).sort((a, b) => b.href.length - a.href.length)[0];
-  return best?.href === item.href;
+  return bestMatch(path)?.href === item.href;
 }
 
 /** Start loading the chunk behind `href` (safe to call repeatedly; imports are cached). */
 export function preload(href: string): void {
-  const item = [...NAV].reverse().find((n) => isActive(n, href));
+  const item = bestMatch(href);
   if (item) void loaders[item.loader]();
 }
 

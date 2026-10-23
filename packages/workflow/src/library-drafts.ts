@@ -32,7 +32,8 @@ export function librarySlug(content: LibraryDraftContent): string {
   return (content.entry.id.replace(/^lib:/, "").replace(/\/(?:component|token|pattern)\//, "-").replace(/[^a-z0-9.-]+/g, "-").replace(/\.+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/, "") || "item");
 }
 
-const licenceOf = (content: LibraryDraftContent): string => (content.entry.license && content.entry.license !== "unknown" ? content.entry.license.spdx : "unknown");
+/** The licence a draft carries, as an SPDX id, or "unknown". */
+export const licenceOf = (content: Pick<LibraryDraftContent, "entry">): string => (content.entry.license && content.entry.license !== "unknown" ? content.entry.license.spdx : "unknown");
 
 /** Why an adoption request cannot be filed for this item, or null when it can. */
 export function adoptionRefusal(content: Pick<LibraryDraftContent, "entry" | "request">): string | null {
@@ -41,7 +42,7 @@ export function adoptionRefusal(content: Pick<LibraryDraftContent, "entry" | "re
   return null;
 }
 
-export interface LibraryContext {
+interface LibraryContext {
   readonly componentIds: ReadonlySet<string>;
 }
 

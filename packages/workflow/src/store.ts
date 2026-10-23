@@ -10,9 +10,9 @@ import { join } from "node:path";
 import { writeFileAtomic } from "@youiyoux/core";
 import type { Draft } from "./api.ts";
 
-export const DRAFT_ID = /^d-[0-9a-f]{10}$/;
+const DRAFT_ID = /^d-[0-9a-f]{10}$/;
 
-export interface StoredDrafts {
+interface StoredDrafts {
   readonly drafts: readonly Draft[];
   /** Files that could not be read back, with why: shown, never silently dropped. */
   readonly unreadable: ReadonlyArray<{ file: string; reason: string }>;

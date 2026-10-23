@@ -6,7 +6,7 @@
  */
 import { parseModule, type ModuleInfo } from "../parse.ts";
 
-export interface TemplateAttribute {
+interface TemplateAttribute {
   readonly name: string;
   /** A quoted value, `true` for a bare attribute, or the source of a `{…}` expression. */
   readonly value: { readonly literal: string | true } | { readonly expression: string };

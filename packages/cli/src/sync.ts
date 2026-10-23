@@ -20,12 +20,12 @@ import { TOOL_ROOT } from "./tool.ts";
 import { toolCommand } from "./tool-command.ts";
 import { agentsBlock, astGrepRules, designMd, GENERATED_MARK, skillMd, unknownToolMentions, upsertBlock, type UnknownToolMention } from "./agents.ts";
 
-export const LOCK_FILE = "youi.lock.json";
+const LOCK_FILE = "youi.lock.json";
 const BASE_DIR = ".youi/base";
 const INCOMING_DIR = ".youi/incoming";
 const CONFLICT_DIR = ".youi/conflicts";
 
-export type SyncActionKind = "created" | "updated" | "unchanged" | "adopted" | "merged" | "kept-local" | "conflict" | "skipped" | "removed";
+type SyncActionKind = "created" | "updated" | "unchanged" | "adopted" | "merged" | "kept-local" | "conflict" | "skipped" | "removed";
 
 export interface SyncAction {
   readonly file: string;

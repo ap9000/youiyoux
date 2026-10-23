@@ -49,8 +49,6 @@ export function packageUnderRoot(root: string, specifier: string): string | null
   return realOf(entry);
 }
 
-export const isBarePackageUnderRoot = (root: string, specifier: string): boolean => packageUnderRoot(root, specifier) !== null;
-
 /** True for a path inside some installed package (a node_modules directory), wherever its store is. */
 export const inPackage = (path: string): boolean => realOf(path).split(sep).includes("node_modules");
 

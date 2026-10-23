@@ -245,7 +245,7 @@ export async function preparePreview(cacheDir: string, id: string, options: Prev
     await writeFileAtomic(join(dir, file), text);
   }
 
-  const packages = [...new Set([...rewritten.values()].flatMap((t) => importedPackages(t)))].filter((p) => !p.startsWith("/")).sort();
+  const packages = [...new Set([...rewritten.values()].flatMap((t) => importedPackages(t)))].sort();
   const declared = [...new Set([...(source.dependencies ?? entry.install?.npm ?? []), ...partDeps].map(packageName))].sort();
   const sources = [...rewritten.entries()].filter(([f]) => /\.(?:tsx|jsx|ts|js)$/.test(f)).map(([, t]) => t);
   return {

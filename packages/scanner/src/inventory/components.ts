@@ -10,11 +10,11 @@ import { join, posix } from "node:path";
 import type { SgNode } from "@ast-grep/napi";
 import type { ResolvedSymbol } from "../graph.ts";
 import type { InventoryDefinition, InventoryPrimitive, PropValue } from "@youiyoux/core";
-import { unquote, type ModuleInfo } from "../parse.ts";
+import { byPosition, escapeRegExp, unquote, type ModuleInfo } from "../parse.ts";
 import { propsOf, resolveTag } from "../usage.ts";
 import { packageOf, pathAliases, readProject, type ProjectPass } from "./collect.ts";
 import { classValueOf, jsxClassAttribute, parseExpression } from "./classes.ts";
-import { loadInventoryTarget, type TargetGlobs } from "./target.ts";
+import { loadInventoryTarget, readJson, type TargetGlobs } from "./target.ts";
 
 /** Lines of a site's JSX kept as its snippet. */
 const SNIPPET_LINES = 6;
@@ -244,10 +244,8 @@ async function classSites(pass: ProjectPass, block: string): Promise<ComponentSi
       if (classValueOf(jsxClassAttribute(element.node)).certain.includes(block)) sites.push({ file: module.file, line: element.line, column: element.column, routes, props: literalProps(propsOf(element.node).props), snippet: snippetOf(element.node, element.column) });
     }
   }
-  return sites.sort(bySite);
+  return sites.sort(byPosition);
 }
-
-const bySite = (a: ComponentSite, b: ComponentSite): number => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column;
 
 /** Packages whose functions are never a component's call API: the framework and class helpers. */
 const NOT_CALL_APIS = /^(?:react|react-dom|preact|vue|solid-js|astro|next|clsx|classnames|class-variance-authority|tailwind-merge|lucide-react|@heroicons\/react|@radix-ui\/react-icons|react-icons|@phosphor-icons\/react|@tabler\/icons-react)$/;
@@ -278,8 +276,6 @@ async function callIndex(pass: ProjectPass): Promise<CallIndex> {
   }
   return { bindings, calls };
 }
-
-const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
  * Public call APIs of a component module, with their real call sites: its exported functions and
@@ -319,17 +315,9 @@ async function callsOf(pass: ProjectPass, owner: ModuleInfo, index: CallIndex): 
         sites.push({ file: binding.module.file, line: at.line + 1, column: at.column + 1, routes: pass.routes.of(binding.module.file).routes, props: {}, snippet: snippetOf(node, at.column + 1) });
       }
     }
-    result.push({ name, ...(api.from ? { from: api.from } : {}), sites: sites.sort(bySite) });
+    result.push({ name, ...(api.from ? { from: api.from } : {}), sites: sites.sort(byPosition) });
   }
   return result;
-}
-
-async function readJson(file: string): Promise<Record<string, unknown> | null> {
-  try {
-    return JSON.parse(await readFile(file, "utf8")) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
 }
 
 /** The project's React and Astro components with their import, props, packages and sites. Class-kit members carry stylesheet paths and class usages. */

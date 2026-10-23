@@ -3,10 +3,12 @@ import { useMemo, useState } from "react";
 import { Link, useParams } from "wouter";
 import { type Scheme, useTheme } from "../../app/theme.tsx";
 import { type ElementTab, elementHref, formatId, tabOf } from "../../data/ids.ts";
-import { countByKind, type ElementSummary, type Model, TOKEN_GROUP_ORDER } from "../../data/model.ts";
+import { countByKind, type ElementSummary, type Model } from "../../data/model.ts";
 import { retryModel, useModelState, useUsageState } from "../../data/store.ts";
 import type { ElementKind } from "../../data/types.ts";
 import type { UsageIndex } from "../../data/usage.ts";
+import { append } from "../../lib/append.ts";
+import { noun } from "../../lib/plural.ts";
 import { useSearch } from "../../search/client.ts";
 import { Badge, SeverityBadge, StatusBadge } from "../../ui/Badge.tsx";
 import { Keys } from "../../ui/Kbd.tsx";
@@ -105,10 +107,9 @@ export function SystemOverview({ model, index, scheme }: { model: Model; index: 
   const components = model.elements.filter((e) => e.kind === "component");
   const rules = model.elements.filter((e) => e.kind === "rule");
   const groups = new Map<string, ElementSummary[]>();
-  for (const token of model.elements) if (token.kind === "token") groups.set(token.group, [...(groups.get(token.group) ?? []), token]);
-  const rank = (group: string): number => (TOKEN_GROUP_ORDER.indexOf(group) + 1 || TOKEN_GROUP_ORDER.length + 1);
-  const tokenGroups = [...groups].sort(([a], [b]) => rank(a) - rank(b));
-  const plural = (n: number, one: string): string => `${one}${n === 1 ? "" : "s"}`;
+  for (const token of model.elements) if (token.kind === "token") append(groups, token.group, token);
+  // The model's tokens are in group order already, so the groups come out in it.
+  const tokenGroups = [...groups];
 
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
@@ -121,7 +122,7 @@ export function SystemOverview({ model, index, scheme }: { model: Model; index: 
             </Badge>
           </div>
           <p className="text-reading text-muted">
-            {counts.component} {plural(counts.component, "component")}, {counts.token} {plural(counts.token, "token")} and {counts.rule} {plural(counts.rule, "rule")}. Pick one to see its contract, tokens, rules and where it lives.
+            {counts.component} {noun(counts.component, "component")}, {counts.token} {noun(counts.token, "token")} and {counts.rule} {noun(counts.rule, "rule")}. Pick one to see its contract, tokens, rules and where it lives.
           </p>
           <p className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-small text-muted">
             <span className="flex items-center gap-1.5">

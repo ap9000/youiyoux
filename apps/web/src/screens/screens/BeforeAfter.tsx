@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { asRequestError, serviceUrl, workflowApi, type RequestComparison, type RequestPictureView, type WorkflowRequestError } from "../../data/workflow.ts";
 import { CopyButton } from "../../ui/CopyButton.tsx";
 import { when } from "../../lib/when.ts";
+import { pct } from "../../lib/format.ts";
 
 /** Room around the component, and the smallest crop, in page pixels. */
 const MARGIN = 56;
@@ -25,8 +26,6 @@ export function cropOf(box: Box, page: Page): Box {
   const y = Math.min(Math.max(0, box.y + box.height / 2 - height / 2), page.height - height);
   return { x, y, width, height };
 }
-
-const pct = (value: number, of: number): string => `${(value / of) * 100}%`;
 
 function Crop({ picture, label }: { picture: RequestPictureView; label: string }) {
   const src = serviceUrl(picture.url);

@@ -21,16 +21,18 @@ import type { ModuleInfo } from "@youiyoux/scanner";
 import { isShowcase, ROUTE_EXPORT, ROUTE_FILE } from "./filters.ts";
 import { verifiedImport } from "./imports.ts";
 import type { ReportProject } from "./projects.ts";
+import { plural } from "../ui.ts";
 
-/** Steps written out in a fix's text; the HTML lists the rest behind "and N more". */
+/** Steps written out in a fix's text; the HTML and the summary list the rest behind "and N more". */
 export const STEPS_SHOWN = 5;
-const SITES_PER_FINDING = 6;
+/** Places listed per finding; the count says how many there are. */
+export const SITES_PER_FINDING = 6;
 
-export interface GroupFinding {
+interface GroupFinding {
   readonly kind: "near-duplicate";
   readonly project: string;
   readonly title: string;
-  readonly detail: string | null;
+  readonly detail: null;
   readonly count: number;
   readonly sites: ReadonlyArray<{ readonly at: string; readonly file: string; readonly line: number }>;
   /** What to keep (or create), one sentence. */
@@ -64,7 +66,7 @@ export interface ProjectFacts {
 
 type SgNode = ReturnType<ModuleInfo["root"]["root"]>;
 
-export const packageOf = (specifier: string): string => (specifier.startsWith("@") ? specifier.split("/").slice(0, 2).join("/") : specifier.split("/")[0]!);
+const packageOf = (specifier: string): string => (specifier.startsWith("@") ? specifier.split("/").slice(0, 2).join("/") : specifier.split("/")[0]!);
 
 /* ------------------------------------------------------------------ facts */
 
@@ -108,7 +110,7 @@ function declarationOf(module: ModuleInfo, name: string): SgNode | null {
 }
 
 /** A definition's structure as a token list: tags, attribute names, calls and control flow, no literals. */
-export function structureOf(module: ModuleInfo, name: string): string[] | null {
+function structureOf(module: ModuleInfo, name: string): string[] | null {
   const declaration = declarationOf(module, name);
   if (!declaration) return null;
   const tokens: string[] = [];
@@ -122,7 +124,7 @@ export function structureOf(module: ModuleInfo, name: string): string[] | null {
 }
 
 /** Dice coefficient over token trigrams: 1 for the same structure, 0 for nothing in common. */
-export function similarity(a: readonly string[], b: readonly string[]): number {
+function similarity(a: readonly string[], b: readonly string[]): number {
   const grams = (tokens: readonly string[]): Map<string, number> => {
     const found = new Map<string, number>();
     for (let i = 0; i + 2 < tokens.length || (i === 0 && tokens.length > 0); i++) {
@@ -193,14 +195,14 @@ interface Version {
   readonly def: Def | null;
 }
 
-export interface GroupInput {
+interface GroupInput {
   readonly inventory: InventoryReport;
   readonly facts: readonly ProjectFacts[];
   readonly lines: { site(at: string, file: string, line: number): Promise<{ at: string; code?: string }> };
 }
 
-const plural = (count: number, word: string, many = `${word}s`): string => `${count} ${count === 1 ? word : many}`;
-const repoPath = (dir: string, file: string): string => (dir === "." ? file : `${dir}/${file}`);
+/** A project-relative path, repo-relative. */
+export const repoPath = (dir: string, file: string): string => (dir === "." ? file : `${dir}/${file}`);
 const kebab = (name: string): string => name.replace(/[a-z0-9](?=[A-Z])/g, "$&-").toLowerCase();
 
 function shapeWords(shape: InventoryReport["families"][number]["shape"]): string {

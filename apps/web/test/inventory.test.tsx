@@ -5,7 +5,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { InventoryReport as InventorySchema } from "@youiyoux/core";
 import { buildInventory } from "../../../packages/scanner/src/inventory/inventory.ts";
-import { familyName, shapeChips, uniqueExamples } from "../src/data/inventory.ts";
+import { familyName } from "../src/data/inventory.ts";
 import { createSource, memorySource, type InventorySource } from "../src/data/inventory-source.ts";
 import type { InventoryChunk, InventoryFamily, InventoryIndex, InventoryReport, Manifest } from "../src/data/types.ts";
 import { InventoryView } from "../src/screens/inventory/InventoryScreen.tsx";
@@ -355,8 +355,6 @@ describe("inventory data", () => {
     const rows = memorySource(inventory).index.roles;
     expect(rows.map((r) => r.role)).toEqual(["button", "link-as-button", "input", "card", "badge", "dialog", "tabs"]);
     expect(rows.find((r) => r.role === "dialog")).toMatchObject({ looks: 2, unshaped: 1 });
-    expect(shapeChips({ height: null, paddingX: 1, paddingY: 0, radius: 9999, fontSize: 12, fontWeight: 500 }).map((c) => `${c.label} ${c.value}`)).toEqual(["height ?", "padding 0 1px", "radius pill", "size 12px", "weight 500"]);
-    expect(shapeChips({ height: 32, paddingX: 12, paddingY: 6, radius: null, fontSize: null, fontWeight: null }).map((c) => `${c.label} ${c.value}`)).toEqual(["height 32px", "padding 6px 12px", "radius ?", "size ?", "weight ?"]);
   });
 
   test("families are named by role and shape; unknown parts are left out", () => {
@@ -364,11 +362,6 @@ describe("inventory data", () => {
     expect(familyName({ role: "badge", shape: { height: 20, paddingX: 8, paddingY: 0, radius: 9999, fontSize: 12, fontWeight: 500 } })).toBe("Badge · 20px · pill");
     expect(familyName({ role: "card", shape: { height: null, paddingX: 24, paddingY: 24, radius: 12, fontSize: null, fontWeight: null } })).toBe("Card · radius 12");
     expect(familyName({ role: "link-as-button", shape: { height: null, paddingX: null, paddingY: null, radius: null, fontSize: null, fontWeight: null } })).toBe("Link as button");
-  });
-
-  test("examples list each file:line once, even with two looks on one line", () => {
-    const example = (column: number) => ({ project: "p", file: "a.tsx", line: 3, column, tag: "Button", routes: [] });
-    expect(uniqueExamples([example(5), example(20), { ...example(1), line: 4 }]).map((e) => `${e.line}:${e.column}`)).toEqual(["3:5", "4:1"]);
   });
 
   test("the committed snapshot names an inventory index of both fixtures, its chunks and specimen stylesheets", () => {

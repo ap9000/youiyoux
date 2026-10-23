@@ -12,9 +12,6 @@ import { hasShape } from "./style.ts";
 import { loadInventoryTarget, type TargetGlobs } from "./target.ts";
 
 export interface InventoryOptions extends TargetGlobs {
-  readonly tolerance?: Tolerance;
-  /** Examples kept per family and per side. */
-  readonly examples?: number;
   /** Where relative project roots are reported from (default: the current directory). */
   readonly cwd?: string;
   /** Also record each role-bearing definition's own root as a look, rendered or not (off for `youiyoux inventory`). */
@@ -39,7 +36,7 @@ function roundRobin<T>(lists: readonly (readonly T[])[], count: number): T[] {
 }
 
 /** Families for one role across every project: complete-link over distinct shapes. */
-export function familiesOf(role: InventoryLook["role"], looks: readonly Look[], tolerance: Tolerance = DEFAULT_TOLERANCE, projectOrder: readonly string[] = [], examples = EXAMPLES): Array<{ family: InventoryFamily; members: Look[] }> {
+export function familiesOf(role: InventoryLook["role"], looks: readonly Look[], tolerance: Tolerance = DEFAULT_TOLERANCE, projectOrder: readonly string[] = []): Array<{ family: InventoryFamily; members: Look[] }> {
   const byShape = new Map<string, { shape: ClusterShape; looks: Look[] }>();
   for (const look of looks) {
     const shape = clusterShapeOf(look);
@@ -77,7 +74,7 @@ export function familiesOf(role: InventoryLook["role"], looks: readonly Look[], 
       shapes: new Set(group.map((g) => shapeKey(plainShape(g.shape)))).size,
       projects,
       kits,
-      examples: roundRobin(sideLists, examples).map(example),
+      examples: roundRobin(sideLists, EXAMPLES).map(example),
       nearDuplicate: projects.length > 1 || kitValues.size > 1,
       sides,
     };
@@ -95,7 +92,7 @@ export function familiesOf(role: InventoryLook["role"], looks: readonly Look[], 
  * after the real ones. Families keep their looks, sides and near-duplicate verdict: a story is
  * never a use.
  */
-export function attachStories(role: InventoryLook["role"], families: ReadonlyArray<{ family: InventoryFamily; members: readonly Look[] }>, stories: readonly Look[], tolerance: Tolerance = DEFAULT_TOLERANCE, projectOrder: readonly string[] = [], examples = EXAMPLES): Array<{ family: InventoryFamily; members: Look[] }> {
+export function attachStories(role: InventoryLook["role"], families: ReadonlyArray<{ family: InventoryFamily; members: readonly Look[] }>, stories: readonly Look[], tolerance: Tolerance = DEFAULT_TOLERANCE, projectOrder: readonly string[] = []): Array<{ family: InventoryFamily; members: Look[] }> {
   const shapes = families.map(({ members }) => [...new Map(members.map((m) => [shapeKey(clusterShapeOf(m)), clusterShapeOf(m)])).values()]);
   const attached = families.map(() => [] as Look[]);
   const rest: Look[] = [];
@@ -113,7 +110,7 @@ export function attachStories(role: InventoryLook["role"], families: ReadonlyArr
   attached.forEach((list, i) => {
     if (list.length > 0) families[i]!.family.stories = list.length;
   });
-  const authored = familiesOf(role, rest, tolerance, projectOrder, examples).map(({ family, members }, i) => ({ family: { ...family, id: `${role}-${families.length + i + 1}`, looks: 0, nearDuplicate: false, sides: [], stories: members.length, authored: true }, members }));
+  const authored = familiesOf(role, rest, tolerance, projectOrder).map(({ family, members }, i) => ({ family: { ...family, id: `${role}-${families.length + i + 1}`, looks: 0, nearDuplicate: false, sides: [], stories: members.length, authored: true }, members }));
   return [...families.map(({ family }, i) => ({ family, members: attached[i]! })), ...authored];
 }
 
@@ -154,12 +151,12 @@ function flagsOf(projects: readonly ProjectInventory[]): InventoryFlag[] {
 /** Inventory every directory in `dirs` (one project each) and group their looks together. */
 export async function buildInventory(dirs: readonly string[], options: InventoryOptions = {}): Promise<InventoryReport> {
   const started = performance.now();
-  const tolerance = options.tolerance ?? DEFAULT_TOLERANCE;
+  const tolerance = DEFAULT_TOLERANCE;
   const cwd = options.cwd ?? process.cwd();
   const targets = [];
   const ids = new Set<string>();
   for (const dir of dirs) {
-    const target = await loadInventoryTarget(dir, { ...(options.include ? { include: options.include } : {}), ...(options.exclude ? { exclude: options.exclude } : {}) });
+    const target = await loadInventoryTarget(dir, options);
     let id = target.id;
     for (let n = 2; ids.has(id); n++) id = `${target.id}-${n}`;
     ids.add(id);
@@ -173,9 +170,9 @@ export async function buildInventory(dirs: readonly string[], options: Inventory
   for (const role of INVENTORY_ROLES) {
     // Real looks make the families; stories are placed beside them afterwards.
     const shaped = looks.filter((l) => l.role === role && hasShape(l.shape));
-    const real = familiesOf(role, shaped.filter((l) => !l.story), tolerance, order, options.examples);
+    const real = familiesOf(role, shaped.filter((l) => !l.story), tolerance, order);
     for (const { family, members } of real) for (const member of members) familyOf.set(member.id, family.id);
-    for (const { family, members } of attachStories(role, real, shaped.filter((l) => l.story), tolerance, order, options.examples)) {
+    for (const { family, members } of attachStories(role, real, shaped.filter((l) => l.story), tolerance, order)) {
       families.push(family);
       for (const member of members) familyOf.set(member.id, family.id);
     }

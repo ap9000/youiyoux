@@ -17,9 +17,9 @@ import { renderMarkdown } from "./markdown.ts";
 import { buildReportModel, NPX, type ReportModel } from "./model.ts";
 import { Redactor } from "./safe.ts";
 
-export const REPORT_FILE = "youiyoux-report.html";
-export const CARD_FILE = "youiyoux-card.png";
-export const SUMMARY_FILE = "youiyoux-summary.md";
+const REPORT_FILE = "youiyoux-report.html";
+const CARD_FILE = "youiyoux-card.png";
+const SUMMARY_FILE = "youiyoux-summary.md";
 
 export interface ReportOptions {
   /** The repo (default: the current directory). */
@@ -45,7 +45,7 @@ export interface ReportIo {
   readonly error?: (text: string) => void;
 }
 
-export interface ReportResult {
+interface ReportResult {
   readonly code: number;
   readonly files: { readonly report: string; readonly card: string; readonly summary: string } | null;
   readonly model: ReportModel | null;
@@ -130,8 +130,9 @@ export async function runReport(options: ReportOptions = {}, io: ReportIo = {}):
     print(JSON.stringify({ ...clean, projects: clean.projects.map((p) => ({ ...p, rendered: p.rendered.map(({ light: _l, dark: _d, ...r }) => r) })), files }, null, 2));
     return { code: 0, files, model: clean };
   }
-  const width = Math.max(...["Report", "Card", "Summary"].map((w) => w.length)) + 2;
-  const looks = clean.render.state === "drawn" ? "" : clean.render.state === "off" && !renderNote ? `; to add rendered looks, run ${NPX} --render` : "";
+  // The longest label ("Summary") and two spaces.
+  const width = 9;
+  const looks = clean.render.state === "off" && !renderNote ? `; to add rendered looks, run ${NPX} --render` : "";
   print([
     ...clean.summary,
     "",

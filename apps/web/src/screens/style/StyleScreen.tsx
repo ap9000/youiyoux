@@ -13,6 +13,7 @@ import { Link, useLocation, useParams } from "wouter";
 import type { Model } from "../../data/model.ts";
 import { retryModel, useModelState } from "../../data/store.ts";
 import { asRequestError, type StyleDraftContent, type StyleDraftView, workflowApi, type WorkflowRequestError } from "../../data/workflow.ts";
+import { same } from "../../lib/same.ts";
 import type { PinnedState } from "../../preview/pin.ts";
 import type { PreviewScreen, PreviewToken } from "../../preview/protocol.ts";
 import { Badge } from "../../ui/Badge.tsx";
@@ -73,8 +74,6 @@ function readStored(key: string): StyleDraftContent | null {
     return null;
   }
 }
-
-const same = (a: StyleDraftContent, b: StyleDraftContent): boolean => JSON.stringify(a) === JSON.stringify(b);
 
 export function StyleScreen() {
   const state = useModelState();

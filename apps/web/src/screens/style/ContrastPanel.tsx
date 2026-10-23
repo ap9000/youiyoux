@@ -1,10 +1,7 @@
 /** Colour pairs below WCAG AA with the edits applied: new ones first, each with its ratio and what it needs. */
 import { CircleCheck, TriangleAlert } from "lucide-react";
-import type { ContrastGrade } from "../../data/contrast.ts";
-import { Badge, type BadgeTone } from "../../ui/Badge.tsx";
+import { Badge, GRADE_TONE } from "../../ui/Badge.tsx";
 import type { ContrastWarning } from "./model.ts";
-
-const GRADE_TONE: Record<ContrastGrade, BadgeTone> = { AAA: "success", AA: "success", "AA large": "warning", Fail: "danger" };
 
 export function ContrastPanel({ warnings }: { warnings: readonly ContrastWarning[] }) {
   const fresh = warnings.filter((w) => w.isNew).length;

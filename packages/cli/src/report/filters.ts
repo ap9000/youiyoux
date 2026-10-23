@@ -1,6 +1,6 @@
 /** Report-only noise filters. The diff checker and inventory keep their own policies. */
 import type { InventoryDefinition } from "@youiyoux/core";
-import { hardcodedValues, type ModuleInfo, type TokenIndex } from "@youiyoux/scanner";
+import { hardcodedValues, parseModule, type ModuleInfo, type TokenIndex } from "@youiyoux/scanner";
 import type { ResolvedToken } from "@youiyoux/tokens";
 
 export const SHOWCASE_GLOBS = ["**/{__stories__,.storybook,storybook,storybook-static,example,examples,demo,demos,playground,showcase,showcases}/**", "**/*.stories.*", "**/*.story.*"];
@@ -43,7 +43,7 @@ function maskFunctions(source: string, pattern: RegExp): string {
   return chars.join("");
 }
 
-export const withoutVariables = (source: string): string => maskFunctions(source, /\bvar\s*\(/g);
+const withoutVariables = (source: string): string => maskFunctions(source, /\bvar\s*\(/g);
 
 /** A token named for one component (`--button-gap`, `--card-radius`), as opposed to the general scale (`--spacing-2`, `--radius-md`). */
 const COMPONENT_WORDS = /^(?:button|btn|input|field|card|badge|chip|pill|tag|dialog|modal|popover|tooltip|toast|tabs?|nav|navbar|sidebar|header|footer|menu|dropdown|select|checkbox|radio|switch|toggle|slider|avatar|table|panel|sheet|drawer|banner|alert|hero|form|icon|kbd|callout|accordion|toolbar)$/;
@@ -52,14 +52,14 @@ const CONTEXT_WORDS = /^(?:phone|mobile|tablet|desktop|wide|narrow|compact|print
 /** Steps of a scale: `sm`, `2xl`, `4`, `0.5`, `full`, or the bare group (`--radius`). */
 const SCALE_STEP = /^(?:\d+(?:\.\d+)?|\d*x*[sl]|\dx[sl]|sm|md|lg|base|full|none|default|px|half)$/i;
 const GROUP_WORDS = new Set(["space", "spacing", "radius", "radii", "rounded", "color", "colour", "colors", "size", "gap"]);
-export const componentOf = (token: ResolvedToken): string | null => token.cssName.split("-").find((part) => COMPONENT_WORDS.test(part)) ?? null;
+const componentOf = (token: ResolvedToken): string | null => token.cssName.split("-").find((part) => COMPONENT_WORDS.test(part)) ?? null;
 
 /** How often each custom property is read (`var(--x)` outside another token's definition), and which files define or read it. */
-export interface TokenUsage {
+interface TokenUsage {
   readonly count: ReadonlyMap<string, number>;
   readonly byFile: ReadonlyMap<string, ReadonlySet<string>>;
   /** Properties defined as another one (`--radius-md: var(--so-radius-md)`): the source is the token, these point at it. */
-  readonly aliases?: ReadonlySet<string>;
+  readonly aliases: ReadonlySet<string>;
 }
 
 export function tokenUsage(modules: readonly ModuleInfo[]): TokenUsage {
@@ -86,7 +86,7 @@ export function tokenUsage(modules: readonly ModuleInfo[]): TokenUsage {
 }
 
 /** 2: the general scale (`--so-space-sm`, `--radius`); 1: a role (`--color-primary`); 0: one component's or one screen's (`--so-phone-row`, `--radius-card`). */
-export function genericity(token: ResolvedToken, prefix: string | null): number {
+function genericity(token: ResolvedToken, prefix: string | null): number {
   const parts = token.cssName.split("-").filter(Boolean);
   const rest = parts.filter((part, i) => !(i === 0 && part === prefix) && !GROUP_WORDS.has(part));
   if (rest.some((part) => COMPONENT_WORDS.test(part) || CONTEXT_WORDS.test(part))) return 0;
@@ -111,7 +111,7 @@ function prefixOf(tokens: readonly ResolvedToken[]): string | null {
  * `--radius-card`) only when no general token of its group has that value and the file is that
  * component's (gap 8px in a list suggests --so-space-sm, never --so-phone-row).
  */
-export function scaleTokens(index: TokenIndex, file: string, usage: TokenUsage = { count: new Map(), byFile: new Map() }): TokenIndex {
+function scaleTokens(index: TokenIndex, file: string, usage: TokenUsage): TokenIndex {
   const value = (t: ResolvedToken): string => `${t.id.split(".")[0]}\0${JSON.stringify(t.light)}`;
   const prefix = prefixOf(index.tokens);
   const rank = new Map(index.tokens.map((t) => [t, genericity(t, prefix)]));
@@ -125,7 +125,7 @@ export function scaleTokens(index: TokenIndex, file: string, usage: TokenUsage =
     const component = componentOf(t);
     return component !== null && !general.has(value(t)) && new RegExp(`(?:^|[/._-])${component}s?(?:[/._-]|$)`).test(path);
   });
-  const score = (t: ResolvedToken): number[] => [rank.get(t)!, Number(local.has(cssName(t))), Number(!usage.aliases?.has(cssName(t))), usage.count.get(cssName(t)) ?? 0, -t.cssName.length];
+  const score = (t: ResolvedToken): number[] => [rank.get(t)!, Number(local.has(cssName(t))), Number(!usage.aliases.has(cssName(t))), usage.count.get(cssName(t)) ?? 0, -t.cssName.length];
   const higher = (a: number[], b: number[]): number => {
     for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return b[i]! - a[i]!;
     return 0;
@@ -136,10 +136,9 @@ export function scaleTokens(index: TokenIndex, file: string, usage: TokenUsage =
 
 const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-export async function reportTokens(module: ModuleInfo, tokens: TokenIndex, usage?: TokenUsage) {
+export async function reportTokens(module: ModuleInfo, tokens: TokenIndex, usage: TokenUsage) {
   if (isShowcase(module.file) || (module.lang !== "css" && module.jsx.length === 0)) return [];
   // Reparse a masked copy, so fallback colours never enter hardcodedValues in the first place.
-  const { parseModule } = await import("@youiyoux/scanner");
   let source = withoutVariables(module.source);
   if (module.lang !== "css") {
     // Colours code computes or picks from are not styling: gradients in scripts (a colour picker's

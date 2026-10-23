@@ -6,9 +6,9 @@
  */
 import { useEffect, useState } from "react";
 
-export const THUMBS_ENDPOINT = "__youi/discover-thumbs";
+const THUMBS_ENDPOINT = "__youi/discover-thumbs";
 
-export interface Thumb {
+interface Thumb {
   readonly light: string;
   readonly dark: string;
   readonly width: number;
@@ -31,8 +31,8 @@ const isThumbs = (value: unknown): value is Thumbs => {
 let asked: Promise<Thumbs | null> | null = null;
 
 /** The pictures there are, or null when this hub has none to give. */
-export function loadThumbs(base: string = import.meta.env.BASE_URL): Promise<Thumbs | null> {
-  asked ??= fetch(`${base}${THUMBS_ENDPOINT}`, { headers: { Accept: "application/json" } }).then(
+function loadThumbs(): Promise<Thumbs | null> {
+  asked ??= fetch(`${import.meta.env.BASE_URL}${THUMBS_ENDPOINT}`, { headers: { Accept: "application/json" } }).then(
     async (res) => {
       if (!res.ok || !res.headers.get("Content-Type")?.includes("application/json")) return null;
       const body: unknown = await res.json().catch(() => null);

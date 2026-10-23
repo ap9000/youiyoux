@@ -304,9 +304,18 @@ async function recordUsage(values: Values, p: Project, report: ScanReport, usage
     await noteSource(home, { project: { root: resolve(values.project ?? process.cwd()), options: Object.fromEntries(Object.entries(loadOptions(values)).map(([key, value]) => [key, resolve(value)])), usage } });
     return null;
   } catch (error: unknown) {
-    return style.warn(`! not recorded in the local index: ${error instanceof Error ? error.message : String(error)}`);
+    return notRecorded(error);
   }
 }
+
+/** Why a run could not record into the local index: a warning, since the command itself still did its work. */
+const notRecorded = (error: unknown): string => style.warn(`! not recorded in the local index: ${error instanceof Error ? error.message : String(error)}`);
+
+/** The projects `inventory` and `gaps` read: --project repeats; default: the current directory. */
+const inventoryDirs = (values: InventoryValues): string[] => (values.project?.length ? values.project : [process.cwd()]);
+
+/** Those projects' inventory, with --include and --exclude. */
+const scanInventory = (values: InventoryValues, dirs: readonly string[]): Promise<InventoryReport> => buildInventory(dirs, { ...(values.include ? { include: values.include } : {}), ...(values.exclude ? { exclude: values.exclude } : {}) });
 
 /** The store this run reads and records into (DATABASE_URL, else a SQLite file), and the directory its sources are noted in. */
 function indexOf(values: Pick<Values, "cache">): { path: string; home: string } {
@@ -316,8 +325,8 @@ function indexOf(values: Pick<Values, "cache">): { path: string; home: string } 
 
 /** `youiyoux gaps`: per project, each kind of element in the System, from a library, built by hand or missing, with candidates. */
 async function cmdGaps(values: InventoryValues): Promise<number> {
-  const dirs = values.project?.length ? values.project : [process.cwd()];
-  const inventory = values.inventory ? InventoryReport.parse(JSON.parse(await readFile(resolve(values.inventory), "utf8"))) : await buildInventory(dirs, { ...(values.include ? { include: values.include } : {}), ...(values.exclude ? { exclude: values.exclude } : {}) });
+  const dirs = inventoryDirs(values);
+  const inventory = values.inventory ? InventoryReport.parse(JSON.parse(await readFile(resolve(values.inventory), "utf8"))) : await scanInventory(values, dirs);
   // Paths in an inventory file are from where it was made: the file's own directory, else here.
   const cwd = values.inventory ? dirname(resolve(values.inventory)) : process.cwd();
   const project = await loadProject(resolve(dirs[0]!), loadOptions(values)).catch(() => null);
@@ -336,8 +345,8 @@ async function cmdGaps(values: InventoryValues): Promise<number> {
 
 async function cmdInventory(values: InventoryValues): Promise<number> {
   if (values.history) return cmdHistory(values, []);
-  const dirs = values.project?.length ? values.project : [process.cwd()];
-  const report = await buildInventory(dirs, { ...(values.include ? { include: values.include } : {}), ...(values.exclude ? { exclude: values.exclude } : {}) });
+  const dirs = inventoryDirs(values);
+  const report = await scanInventory(values, dirs);
   const out = resolve(values.out ?? join(dirs[0]!, ".youi/inventory.json"));
   await writeFileAtomic(out, `${JSON.stringify(report, null, 2)}\n`);
   const recorded = await recordScan(values, report, out);
@@ -355,7 +364,7 @@ async function recordScan(values: Pick<Values, "cache">, report: InventoryReport
     const scans = (await store.history({ limit: 500 })).filter((s) => report.projects.some((p) => p.id === s.project)).length;
     return style.dim(`history → ${store.location} (${plural(scans, "scan")} of these projects; youiyoux inventory --history)`);
   } catch (error: unknown) {
-    return style.warn(`! not recorded in the local index: ${error instanceof Error ? error.message : String(error)}`);
+    return notRecorded(error);
   }
 }
 
@@ -399,7 +408,7 @@ async function cmdWhere(values: Values, positionals: string[]): Promise<number> 
   const limit = values.all ? Number.MAX_SAFE_INTEGER : Number(values.limit ?? (values.json ? 20 : 24));
   const where = whereUsed(p, report, query, { ...(values.route ? { route: values.route } : {}), limit });
   if (values.json) json(where);
-  else print(renderWhere(where, report, where.sites));
+  else print(renderWhere(where, report));
   return 0;
 }
 
@@ -430,6 +439,9 @@ function baselineFile(values: Values, p: Project): string | null {
   return values.baseline ? baselinePath(p, values.config) : null;
 }
 
+/** `check [files…] [--rule id] [--quiet]` as check options. */
+const checkScope = (values: Values, positionals: readonly string[]): { files?: readonly string[]; rule?: string; quiet: boolean } => ({ ...(positionals.length > 0 ? { files: positionals } : {}), ...(values.rule ? { rule: values.rule } : {}), quiet: values.quiet });
+
 /** The project's path inside its repository (`apps/web/`), so annotations land on the right file. */
 async function repoPrefix(root: string): Promise<string> {
   try {
@@ -444,7 +456,7 @@ async function cmdCheck(values: Values, positionals: string[]): Promise<number> 
   if (!["text", "json", "github"].includes(format)) throw new UsageError("youiyoux check --format text|json|github");
   if (values.diff || values.base !== undefined) return cmdCheckDiff(values, positionals, await loadCheckProject(values.project ?? process.cwd(), loadOptions(values), !values.project), format);
   const p = await project(values);
-  const result = await runCheck(p, { ...(positionals.length > 0 ? { files: positionals } : {}), ...(values.rule ? { rule: values.rule } : {}), quiet: values.quiet, baseline: baselineFile(values, p) });
+  const result = await runCheck(p, { ...checkScope(values, positionals), baseline: baselineFile(values, p) });
   if (format === "json") {
     const { report } = result.scan;
     json({ errors: result.errors, incomplete: result.incomplete, identity: result.identity, unmatched: result.unmatched, notRun: result.notRun, violations: result.violations, baseline: result.baseline, lock: result.lock, suppressed: report.suppressed, coverage: report.coverage, status: report.status, checks: report.checks });
@@ -460,7 +472,7 @@ async function cmdCheck(values: Values, positionals: string[]): Promise<number> 
 async function cmdCheckDiff(values: Values, positionals: string[], p: ChangeProject, format: string): Promise<number> {
   if (values.baseline) throw new UsageError("youiyoux check --diff looks only at added lines, so a baseline does not apply; drop --baseline");
   const change = await workingTreeChange(p, values.base);
-  const result = configured(p) ? await runCheck(p, { ...(positionals.length > 0 ? { files: positionals } : {}), ...(values.rule ? { rule: values.rule } : {}), quiet: values.quiet, diff: change }) : await runRepoCheck(p, change);
+  const result = configured(p) ? await runCheck(p, { ...checkScope(values, positionals), diff: change }) : await runRepoCheck(p, change);
   if (format === "json") json(diffJson(result));
   else if (format === "github") {
     for (const line of githubDiffAnnotations(result, await repoPrefix(p.root))) print(line);
@@ -793,14 +805,19 @@ async function cmdRender(values: Values, positionals: string[], io: CliIo): Prom
   }
 }
 
+/** The configured project, if any, and the product's root: the project's (a config may sit beside the design repo and name it), else the one named. */
+async function product(values: Values): Promise<{ project: Project | null; root: string }> {
+  const project = await loadProject(resolve(values.project ?? process.cwd()), loadOptions(values)).catch(() => null);
+  return { project, root: project?.root ?? resolve(values.root ?? values.project ?? process.cwd()) };
+}
+
 /** `youiyoux requests`: the requests on the project's screens, as an agent reads and answers them. */
 async function cmdRequests(values: Values, positionals: string[]): Promise<number> {
   const usage = "youiyoux requests [--status open|addressed|closed|all] [--route r]   or   youiyoux requests show <id> | reply <id> --message <text> | addressed <id> --message <what you changed>";
   const [action, id, ...rest] = positionals;
   if (rest.length > 0) throw new UsageError(usage);
   const { RequestStore, requestBrief } = await import("@youiyoux/workflow");
-  const project = await loadProject(resolve(values.project ?? process.cwd()), loadOptions(values)).catch(() => null);
-  const root = project?.root ?? resolve(values.root ?? values.project ?? process.cwd());
+  const { project, root } = await product(values);
   const store = new RequestStore(root, project?.config.id ?? basename(root));
   const agent = { kind: "agent", name: "youiyoux CLI" } as const;
   const one = (request: Parameters<typeof requestBrief>[0]): number => {
@@ -832,9 +849,7 @@ async function cmdRequests(values: Values, positionals: string[]): Promise<numbe
 async function cmdScreens(values: Values, positionals: string[], io: CliIo): Promise<number> {
   const usage = "youiyoux screens capture --base <url of the app in development> [--route <one route>] [--project dir] [--out <screens dir>] [--storage-state <signed-in session>] [--json]   or   youiyoux screens login --base <url> [--project dir] [--storage-state <file>]";
   if (!["capture", "login"].includes(positionals[0] ?? "") || positionals.length > 1 || !values.base) throw new UsageError(usage);
-  // The product's root: the configured project's (a config may sit beside the design repo and name it), else the one named.
-  const project = await loadProject(resolve(values.project ?? process.cwd()), loadOptions(values)).catch(() => null);
-  const root = project?.root ?? resolve(values.root ?? values.project ?? process.cwd());
+  const { root } = await product(values);
   if (positionals[0] === "login") return screensLogin(values.base, values["storage-state"] ? resolve(values["storage-state"]) : sessionFile(root), io);
   const dir = resolve(values.out ?? join(root, ".youi/screens"));
   if (!existsSync(join(dir, "screens.json"))) {
@@ -908,7 +923,7 @@ async function cmdMcp(values: Values): Promise<number> {
 }
 
 /** What a command may be handed instead of the real thing: tests pass recorded network answers. */
-export interface CliIo {
+interface CliIo {
   readonly sleep?: (ms: number) => Promise<void>;
   readonly fetcher?: Fetcher;
   /** Per-request timeout for `discover sync` (default 15 s). */

@@ -26,7 +26,6 @@ export const PLACES_SCHEMA = "youiyoux.places/v1";
 const SCHEMES = ["light", "dark"] as const;
 /** Pictures are taken at twice the page's pixels: a box in CSS pixels is this many times larger on one. */
 export const PICTURE_SCALE = 2;
-const FULL_SCALE = PICTURE_SCALE;
 const THUMB_SCALE = 0.5;
 /** After load, for fonts, data and animations to settle. */
 const SETTLE_MS = 1200;
@@ -165,7 +164,7 @@ export async function captureScreens(dir: string, options: CaptureOptions): Prom
   let react = false;
   const notes = mapNotes();
   for (const scheme of SCHEMES) {
-    const context = await options.browser.newContext({ viewport: { width, height }, deviceScaleFactor: FULL_SCALE, colorScheme: scheme, reducedMotion: "reduce", ...(options.storageState ? { storageState: options.storageState } : {}) });
+    const context = await options.browser.newContext({ viewport: { width, height }, deviceScaleFactor: PICTURE_SCALE, colorScheme: scheme, reducedMotion: "reduce", ...(options.storageState ? { storageState: options.storageState } : {}) });
     try {
       const page = await context.newPage();
       const encoder = await context.newPage();
@@ -189,7 +188,7 @@ export async function captureScreens(dir: string, options: CaptureOptions): Prom
           const clip = { x: 0, y: 0, width, height: Math.min(Math.max(pageHeight, height), height * MAX_VIEWPORTS) };
           const png = await page.screenshot({ fullPage: true, clip });
           await writeBytes(join(dir, `${slug}.${scheme}.webp`), await encode(encoder, png, 1));
-          await writeBytes(join(dir, `${slug}.${scheme}.thumb.webp`), await encode(encoder, png, THUMB_SCALE / FULL_SCALE));
+          await writeBytes(join(dir, `${slug}.${scheme}.thumb.webp`), await encode(encoder, png, THUMB_SCALE / PICTURE_SCALE));
           if (located) {
             react ||= located.react;
             dev ||= located.dev;

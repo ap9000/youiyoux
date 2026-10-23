@@ -10,7 +10,7 @@ import { Lang, parseAsync, type SgNode } from "@ast-grep/napi";
 import { readRules, splitTopLevel, type CssRule } from "@youiyoux/tokens";
 import { unquote } from "../parse.ts";
 
-export const ROOT_FONT_SIZE = 16;
+const ROOT_FONT_SIZE = 16;
 /** Pill radii (9999px, 999px, or anything at least half the height) are all this. */
 export const PILL = 9999;
 
@@ -199,7 +199,7 @@ function pairsOf(object: SgNode): Array<{ key: string | null; value: SgNode | nu
 }
 
 /** Read `theme` and `theme.extend` from a Tailwind config without running it. */
-export async function readTailwindConfig(root: string): Promise<{ file: string | null; vars: Map<string, string>; warnings: string[] }> {
+async function readTailwindConfig(root: string): Promise<{ file: string | null; vars: Map<string, string>; warnings: string[] }> {
   const vars = new Map<string, string>();
   const warnings: string[] = [];
   for (const name of CONFIG_FILES) {

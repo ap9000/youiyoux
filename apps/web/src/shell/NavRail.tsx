@@ -41,9 +41,9 @@ function Tip({ label, keys, inlineKeys = false }: { label: string; keys?: readon
   );
 }
 
-export function Logo({ className }: { className?: string }) {
+function Logo() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden className={clsx("size-7", className)}>
+    <svg viewBox="0 0 24 24" aria-hidden className="size-7">
       <rect width="24" height="24" rx="7" className="fill-accent" />
       <path d="M7.5 7.5 12 12l4.5-4.5M12 12v4.5" fill="none" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="stroke-on-accent" />
     </svg>

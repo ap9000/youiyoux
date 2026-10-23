@@ -3,9 +3,8 @@
  * summary lines, the headline numbers, the top fixes with their next steps and the agent setup
  * line. Like the HTML, it is written from the cleaned model and holds no code by default.
  */
+import { STEPS_SHOWN } from "./groups.ts";
 import { DUPLICATE_RULE, NPX, type ReportModel } from "./model.ts";
-
-const STEPS_SHOWN = 5;
 
 /** Text that stays text in Markdown: no stray emphasis, links, HTML or table breaks. */
 const md = (text: string): string => text.replace(/([\\`*_[\]<>|#])/g, "\\$1");

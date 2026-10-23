@@ -1,15 +1,12 @@
 /** Config-free drift checks reuse inventory, parsing, theme and drift analysis. */
-import { execFile } from "node:child_process";
-import { access, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
-import { promisify } from "node:util";
 import { parseCssColor, type ResolvedToken } from "@youiyoux/tokens";
 import { buildInventory, buildTheme, hardcodedValues, loadInventoryTarget, loadProject, nearDuplicates, offLibraryImports, parseModule, PROJECT_FILE, readStylesheet, substituteVars, type LoadProjectOptions, type InventoryTarget, type ModuleInfo, type Project, type TokenIndex } from "@youiyoux/scanner";
-import { chosenLibraries, classify, importOf, isAdded, type ChangeProject, type ChangeSet, type DiffFinding } from "./check-diff.ts";
+import { chosenLibraries, classify, DRIFT_SEVERITY, importOf, isAdded, type ChangeProject, type ChangeSet, type DiffFinding } from "./check-diff.ts";
 import type { DiffCheckResult } from "./check.ts";
-
-const run = promisify(execFile);
-const exists = (file: string) => access(file).then(() => true, () => false);
+import { repoRootOf } from "./hooks-install.ts";
+import { exists } from "./init.ts";
 
 /** Explicit configs must load successfully; only absent configs trigger inference. */
 export async function loadCheckProject(root: string, options: LoadProjectOptions = {}, inferTop = false): Promise<Project | ChangeProject> {
@@ -20,7 +17,7 @@ export async function loadCheckProject(root: string, options: LoadProjectOptions
       if (await exists(join(ancestor, PROJECT_FILE))) return loadProject(ancestor, options);
       if (dirname(ancestor) === ancestor) break;
     }
-    dir = await run("git", ["rev-parse", "--show-toplevel"], { cwd: dir }).then((r) => r.stdout.trim(), () => dir);
+    dir = await repoRootOf(dir);
   }
   if (await exists(join(dir, PROJECT_FILE))) return loadProject(dir, options);
   return inferProject(options.productRoot ?? dir);
@@ -85,7 +82,7 @@ export async function runRepoCheck(project: ChangeProject, change: ChangeSet): P
     for (const failure of inventory.projects.flatMap((p) => p.failed)) if (changedUi(failure.file)) incomplete.push(`${failure.file}: ${failure.reason}; fix this file and rerun youiyoux check --diff`);
     drift.push(...nearDuplicates({ inventory, added, importOf: await importOf(project) }));
   } catch (error) { incomplete.push(`Components could not be compared (${String(error)}); run youiyoux inventory --project ${project.root} to diagnose`); }
-  const findings: DiffFinding[] = drift.map((d) => ({ ...d, severity: d.kind === "near-duplicate" ? "warn" : "error" }));
+  const findings: DiffFinding[] = drift.map((d) => ({ ...d, severity: DRIFT_SEVERITY[d.kind] }));
   findings.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column);
   return { identity: null, unmatched: [], failed: [], notRun: [], incomplete: incomplete.length > 0, diff: { base: change.base, commit: change.commit, files: [...change.added.keys()].sort(), findings, notes, incomplete } };
 }

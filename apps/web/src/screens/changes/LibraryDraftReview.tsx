@@ -9,7 +9,7 @@ import { Badge } from "../../ui/Badge.tsx";
 import { CopyButton } from "../../ui/CopyButton.tsx";
 import { Section } from "../../ui/Section.tsx";
 import { DraftBanners, DraftHeader, ReviewSteps, useRun } from "./DraftEditor.tsx";
-import { plural } from "./ImpactPreview.tsx";
+import { plural } from "../../lib/plural.ts";
 
 const licenceOf = (draft: LibraryDraftView): string => (draft.content.entry.license && draft.content.entry.license !== "unknown" ? draft.content.entry.license.spdx : "unknown");
 

@@ -117,7 +117,6 @@ describe("planChange", () => {
   test("an optional prop is additive and a guidance edit is docs", async () => {
     const project = await load(FIXTURE);
     const scan = await scanProject(project);
-    const button = project.system.components.find((c) => c.contract.name === "Button")!.contract;
     const additive = await planChange(project, scan, { element: "button", patch: { props: { loading: { type: "boolean" } } } });
     expect(additive).toMatchObject({ class: "api-additive", semver: "minor" });
     const docs = await planChange(project, scan, { element: "button", patch: { summary: "Every act a person can take." } });

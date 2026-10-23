@@ -9,7 +9,7 @@ import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join, posix } from "node:path";
 import { promisify } from "node:util";
-import { matchesAny, type RuleSpec, type Violation } from "@youiyoux/core";
+import { matchesAny, ruleSlug, type RuleSpec, type Violation } from "@youiyoux/core";
 import { detectRepo, elementTypes, EXPORT_TYPES, LIBRARY_BY_ID, libraryOfPackage, packageOf } from "@youiyoux/detect";
 import { buildInventory, loadInventoryTarget, parseModule, hardcodedValues, importSpecifier, langOf, nearDuplicates, offLibraryImports, type ChosenLibrary, type DriftFinding, type DriftKind, type ImportClass, type Project, type ScanResult, type ModuleInfo } from "@youiyoux/scanner";
 
@@ -32,7 +32,7 @@ export function isChecked(project: ChangeProject, file: string): boolean {
 }
 
 /** Added lines per project-relative file: "all" for a new or untracked file. */
-export type AddedLines = ReadonlyMap<string, ReadonlySet<number> | "all">;
+type AddedLines = ReadonlyMap<string, ReadonlySet<number> | "all">;
 
 export interface ChangeSet {
   /** What the change is compared with, as a person reads it: `HEAD`, `main (merge-base 1a2b3c4)`, `the index (staged)`. */
@@ -51,7 +51,7 @@ export const isAdded = (added: AddedLines, file: string, line: number): boolean 
   return lines === "all" || (lines !== undefined && lines.has(line));
 };
 
-export class DiffError extends Error {}
+class DiffError extends Error {}
 
 async function git(cwd: string, args: readonly string[]): Promise<string> {
   try {
@@ -206,8 +206,7 @@ export interface DiffReport {
   readonly incomplete: readonly string[];
 }
 
-const slugOf = (rule: string): string => rule.slice(rule.indexOf("/rule/") + 6);
-const DRIFT_SEVERITY: Record<DriftKind, DiffFinding["severity"]> = { "near-duplicate": "warn", "hardcoded-value": "error", "off-library": "error" };
+export const DRIFT_SEVERITY: Record<DriftKind, DiffFinding["severity"]> = { "near-duplicate": "warn", "hardcoded-value": "error", "off-library": "error" };
 
 /** Where a project file is imported from, by another: the owned kit by its configured specifier, anything else by a relative path. */
 export async function importOf(project: ChangeProject): Promise<(file: string, fromFile: string) => string> {
@@ -287,7 +286,7 @@ export async function chosenLibraries(project: ChangeProject, added: AddedLines,
   return chosen;
 }
 
-export interface AnalyseOptions {
+interface AnalyseOptions {
   /** Rule violations to report on added lines (already filtered by --rule and --quiet). */
   readonly violations: readonly Violation[];
 }
@@ -324,11 +323,11 @@ export async function analyseChange(project: Project, scan: ScanResult, change: 
     const merged = findings.findIndex((f, i) => f.kind !== "rule" && samePlace(f, violation) && sameText(drift[i]?.text ?? "", violation.text));
     if (merged >= 0) {
       const into = findings[merged]!;
-      findings[merged] = { ...into, rule: slugOf(violation.rule), severity: violation.severity === "error" ? "error" : into.severity };
+      findings[merged] = { ...into, rule: ruleSlug(violation.rule), severity: violation.severity === "error" ? "error" : into.severity };
       continue;
     }
-    const fix = violation.suggestion ?? rules.get(violation.rule)?.agent ?? `see \`youiyoux rules\` for ${slugOf(violation.rule)}`;
-    findings.push({ kind: "rule", file: violation.file, line: violation.line, column: violation.column, message: violation.message, fix, severity: violation.severity, rule: slugOf(violation.rule) });
+    const fix = violation.suggestion ?? rules.get(violation.rule)?.agent ?? `see \`youiyoux rules\` for ${ruleSlug(violation.rule)}`;
+    findings.push({ kind: "rule", file: violation.file, line: violation.line, column: violation.column, message: violation.message, fix, severity: violation.severity, rule: ruleSlug(violation.rule) });
   }
   findings.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column);
   return { base: change.base, commit: change.commit, files, findings, notes, incomplete };

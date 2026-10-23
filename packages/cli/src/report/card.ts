@@ -8,14 +8,14 @@ import { deflateSync } from "node:zlib";
 import { DESCENDERS, GLYPH_WIDTH, GLYPHS, plainAscii } from "./font.ts";
 
 export const CARD_WIDTH = 1200;
-export const CARD_HEIGHT = 630;
+const CARD_HEIGHT = 630;
 
 type Rgb = readonly [number, number, number];
 
 /** The hub's dark tokens (apps/web/design/youiyoux.dark.tokens.json): canvas, neutral-soft, accent (and its 55%/25% steps toward surface, as in the report), ink, muted, success. */
 const INK = { background: [8, 9, 10], track: [25, 26, 29], accent: [113, 112, 255], accent2: [69, 69, 147], accent3: [40, 40, 76], text: [247, 248, 248], muted: [138, 143, 152], ok: [143, 181, 164] } satisfies Record<string, Rgb>;
 
-export interface CardInput {
+interface CardInput {
   readonly repo: string;
   /** Places to fix by kind, as the report's headline counts them. */
   readonly parts: ReadonlyArray<{ readonly label: string; readonly places: number }>;

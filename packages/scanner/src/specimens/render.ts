@@ -23,7 +23,7 @@ import { Worker } from "node:worker_threads";
 import type { BuildOptions, Plugin } from "esbuild";
 import type { InventoryRecipe } from "@youiyoux/core";
 import type { SpecimenStats } from "./cache.ts";
-import { limitOf } from "./css.ts";
+import { limitOf, parseTsconfigJson } from "./css.ts";
 import { displayPath, inPackage, packageName, packageUnderRoot, relativeInside, within } from "./contain.ts";
 
 export type ComponentRecipe = Extract<InventoryRecipe, { kind: "component" }>;
@@ -74,8 +74,6 @@ export interface RenderOptions {
   readonly bundleTimeoutMs?: number;
   /** One look's render, its modules' first load included. */
   readonly renderTimeoutMs?: number;
-  /** Every look of the project together. */
-  readonly totalTimeoutMs?: number;
   /**
    * Contents to bundle instead of what is on disk, by absolute path: a file as it was at a base
    * commit (`youiyoux render`'s before side). null: the file did not exist then, so a module that
@@ -85,8 +83,8 @@ export interface RenderOptions {
 }
 
 export const BUNDLE_TIMEOUT_MS = 30_000;
-export const RENDER_TIMEOUT_MS = 5_000;
-export const TOTAL_TIMEOUT_MS = 60_000;
+const RENDER_TIMEOUT_MS = 5_000;
+const TOTAL_TIMEOUT_MS = 60_000;
 
 const NAMESPACE = "youi-specimen-stub";
 const GUARDED = "youiSpecimenGuarded";
@@ -170,7 +168,7 @@ export function stubs(root: string, { portal }: { portal: boolean }): Plugin {
 const SOURCE_LOADERS: Readonly<Record<string, "tsx" | "ts" | "jsx" | "js">> = { ".tsx": "tsx", ".ts": "ts", ".mts": "ts", ".cts": "ts", ".jsx": "jsx", ".js": "js", ".mjs": "js", ".cjs": "js" };
 
 /** Serves `overlay` contents for the source files it names; anything else loads from disk. */
-export function overlaid(root: string, overlay: ReadonlyMap<string, string | null>): Plugin {
+function overlaid(root: string, overlay: ReadonlyMap<string, string | null>): Plugin {
   return {
     name: "youi-specimen-overlay",
     setup(build) {
@@ -240,7 +238,7 @@ export function checkedTsconfig(root: string, tsconfig: string): { path: string 
     first ??= file;
     let extend: unknown;
     try {
-      extend = (JSON.parse(readFileSync(file, "utf8").replace(/\/\*[\s\S]*?\*\/|(^|[^:"])\/\/.*$/gm, "$1").replace(/,(\s*[}\]])/g, "$1")) as { extends?: unknown }).extends;
+      extend = (parseTsconfigJson(readFileSync(file, "utf8")) as { extends?: unknown }).extends;
     } catch {
       return { path: first };
     }
@@ -450,7 +448,7 @@ export async function renderComponents(root: string, tsconfig: string, jobs: rea
   if (code !== null && renderable.length > 0) {
     const bundle = join(scratch, "bundle.cjs");
     writeFileSync(bundle, code);
-    const results = await renderInWorkers(bundle, renderable, options.renderTimeoutMs ?? RENDER_TIMEOUT_MS, options.totalTimeoutMs ?? TOTAL_TIMEOUT_MS);
+    const results = await renderInWorkers(bundle, renderable, options.renderTimeoutMs ?? RENDER_TIMEOUT_MS, TOTAL_TIMEOUT_MS);
     for (const job of renderable) {
       const result = results.get(job.key);
       if (result?.html) { html.set(job.key, result.html); suppliedNames.set(job.key, result.suppliedNames ?? []); }

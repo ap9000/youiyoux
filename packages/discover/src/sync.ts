@@ -9,7 +9,7 @@ import { cleanData } from "./text.ts";
 import { join } from "node:path";
 import { LibraryEntry, sha256 } from "@youiyoux/core";
 import { CONCEPTS, type Concept } from "./aliases.ts";
-import { githubBucketFor, githubBuckets, PoliteClient, type Fetcher, type HttpResult } from "./http.ts";
+import { githubBuckets, PoliteClient, type Fetcher, type HttpResult } from "./http.ts";
 import { applySignals, defaultBudgets, refreshSignals, registryOf, type SignalBudgets, type SignalReport } from "./signals.ts";
 import { docsLinks, HEADLESS, isCandidate, looksLikeRegistry, mergeCategories, npmCandidates, npmEntry, npmSearchUrl, parseDirectory, parseNpmSearch, parseRegistryItems, registryEntry, registryUrl, SHADCN, skipReason, type DirectoryRegistry, type RegistryItem, type RegistrySource } from "./sources.ts";
 import { catalogBytes, readSources, HEALTH_FILE, INDEX_FILE, readHttpCache, readHealth, readSignals, SIGNALS_FILE, writeHttpCache, writeJson, type DiscoverIndex, type SourceStatus } from "./store.ts";
@@ -100,7 +100,6 @@ export async function syncIndex(options: SyncOptions): Promise<SyncSummary> {
   const now = options.now ?? (() => new Date());
   const builtAt = now().toISOString();
   const cache = await readHttpCache(options.cacheDir);
-  const previousBodies = new Map([...cache].map(([url, c]) => [url, c.sha256]));
   const client = new PoliteClient({
     ...(options.fetcher ? { fetcher: options.fetcher } : {}),
     ...(options.token ? { token: options.token } : {}),
@@ -108,7 +107,6 @@ export async function syncIndex(options: SyncOptions): Promise<SyncSummary> {
     perHost: options.perHost ?? 2,
     timeoutMs: options.timeoutMs ?? 15_000,
     buckets: githubBuckets(options.token),
-    bucketFor: githubBucketFor,
     cache,
     now,
     ...(options.sleep ? { sleep: options.sleep } : {}),
@@ -132,7 +130,7 @@ export async function syncIndex(options: SyncOptions): Promise<SyncSummary> {
           failure = "could not be parsed";
         }
       }
-      sources.push(failure === null && result.ok ? { id: `headless:${catalog.id}`, url: catalog.url, outcome: result.revalidated ? "revalidated" : "fetched", reason: null, httpStatus: result.status, items: names.length, health: null } : { id: `headless:${catalog.id}`, url: catalog.url, outcome: "failed", reason: failure, httpStatus: result.ok ? result.status : result.status, items: 0, health: null });
+      sources.push(failure === null && result.ok ? { id: `headless:${catalog.id}`, url: catalog.url, outcome: result.revalidated ? "revalidated" : "fetched", reason: null, httpStatus: result.status, items: names.length, health: null } : { id: `headless:${catalog.id}`, url: catalog.url, outcome: "failed", reason: failure, httpStatus: result.status, items: 0, health: null });
       return { id: catalog.id, names };
     }),
   );
@@ -228,7 +226,7 @@ export async function syncIndex(options: SyncOptions): Promise<SyncSummary> {
   const index: DiscoverIndex = cleanData({ schema: "youi.discover-index/v1", format: 2, builtAt, sources, categories: Object.fromEntries(categories), entries: final });
   await writeJson(join(options.cacheDir, SIGNALS_FILE), signals);
   await writeJson(join(options.cacheDir, HEALTH_FILE), cleanData({ checkedAt: builtAt, sources }));
-  await writeHttpCache(options.cacheDir, client.cache, previousBodies);
+  await writeHttpCache(options.cacheDir, client.cache);
   // The index last: a reader that sees the new index also sees the signals and health it was built from.
   await writeJson(join(options.cacheDir, INDEX_FILE), index);
 

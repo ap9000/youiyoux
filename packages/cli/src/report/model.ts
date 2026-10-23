@@ -19,22 +19,21 @@ import { chosenLibraries, classify, importOf } from "../check-diff.ts";
 import { inferProject, themeTokens } from "../check-repo.ts";
 import { isShowcase, SHOWCASE_GLOBS, reportTokens, tokenUsage, uiDefinition } from "./filters.ts";
 import { COMMAND } from "../command.ts";
-import { factsOf, nearDuplicateGroups, type ProjectFacts } from "./groups.ts";
+import { plural } from "../ui.ts";
+import { factsOf, nearDuplicateGroups, repoPath, SITES_PER_FINDING, type ProjectFacts } from "./groups.ts";
 import { clearImportCache } from "./imports.ts";
 import { findProjects, type ReportProject } from "./projects.ts";
 
-export const REPORT_SCHEMA = "youiyoux.report/1";
+const REPORT_SCHEMA = "youiyoux.report/1";
 /** How the report's own next steps run a command: anywhere, with nothing installed. */
 export const NPX = `npx ${COMMAND}`;
-/** Places listed per finding; the count says how many there are. */
-const SITES_PER_FINDING = 6;
 const TOP_COMPONENTS = 10;
 const TOP_FIXES = 5;
 const AGENT_LINE = `Set up youiyoux for your agent: run ${NPX} agents install, and your coding agent looks up these components before it writes a new one.`;
 
-export type FindingKind = "near-duplicate" | "hardcoded-value" | "off-library";
+type FindingKind = "near-duplicate" | "hardcoded-value" | "off-library";
 
-export interface Site {
+interface Site {
   /** `apps/web/src/button.tsx:12`, repo-relative. */
   readonly at: string;
   /** The line itself, only with --include-code. */
@@ -46,7 +45,8 @@ export interface Finding {
   /** The project's repo-relative directory. */
   readonly project: string;
   readonly title: string;
-  readonly detail: string | null;
+  /** Always null: kept so the JSON keeps its shape. */
+  readonly detail: null;
   /** Places it touches; `sites` lists the first few. */
   readonly count: number;
   readonly sites: readonly Site[];
@@ -59,7 +59,7 @@ export interface Finding {
   readonly exported?: number;
 }
 
-export interface ComponentUse {
+interface ComponentUse {
   readonly name: string;
   /** Repo-relative defining file. */
   readonly file: string;
@@ -99,7 +99,7 @@ export interface ProjectSection {
   rendered: RenderedLook[];
 }
 
-export interface ReportTotals {
+interface ReportTotals {
   readonly projects: number;
   readonly files: number;
   readonly libraries: readonly string[];
@@ -112,7 +112,7 @@ export interface ReportTotals {
   readonly offLibrary: number;
 }
 
-export interface RenderStatus {
+interface RenderStatus {
   /** drawn: looks embedded; off: no Chromium (how to turn it on is said); failed: it ran and could not draw. */
   state: "drawn" | "off" | "failed" | "none";
   note: string;
@@ -135,15 +135,13 @@ export interface ReportModel {
   render: RenderStatus;
 }
 
-export interface ModelOptions {
+interface ModelOptions {
   /** Keep the line of code at each place (default: no code at all). */
   readonly includeCode?: boolean;
   readonly now?: Date;
 }
 
-const plural = (count: number, word: string, many = `${word}s`): string => `${count} ${count === 1 ? word : many}`;
 const sentence = (text: string): string => text.charAt(0).toUpperCase() + text.slice(1);
-const repoPath = (dir: string, file: string): string => (dir === "." ? file : `${dir}/${file}`);
 const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /** Source lines by repo-relative file, read once, only when code is asked for. */
@@ -198,7 +196,7 @@ async function modulesOf(project: ReportProject, target: InventoryTarget, failed
 }
 
 /** Group drift findings by what fixes them, each group one finding with its places. */
-async function grouped(project: ReportProject, found: readonly DriftFinding[], lines: Lines, describe: (first: DriftFinding, count: number) => { title: string; detail: string | null; next: string }): Promise<Finding[]> {
+async function grouped(project: ReportProject, found: readonly DriftFinding[], lines: Lines, describe: (first: DriftFinding, count: number) => { title: string; next: string }): Promise<Finding[]> {
   const groups = new Map<string, DriftFinding[]>();
   for (const finding of found) {
     const key = `${finding.kind}\0${finding.kind === "off-library" ? finding.message : finding.fix}`;
@@ -208,7 +206,8 @@ async function grouped(project: ReportProject, found: readonly DriftFinding[], l
   for (const list of groups.values()) {
     const first = list[0]!;
     const sites = await Promise.all(list.slice(0, SITES_PER_FINDING).map((f) => lines.site(`${repoPath(project.dir, f.file)}:${f.line}`, repoPath(project.dir, f.file), f.line)));
-    findings.push({ kind: first.kind, project: project.dir, count: list.length, sites, ...describe(first, list.length) });
+    const { title, next } = describe(first, list.length);
+    findings.push({ kind: first.kind, project: project.dir, count: list.length, sites, title, detail: null, next });
   }
   return findings.sort((a, b) => b.count - a.count || a.title.localeCompare(b.title));
 }
@@ -285,7 +284,7 @@ async function analyseProject(project: ReportProject, index: number, inventory: 
       const found = (await Promise.all(modules.map((module) => reportTokens(module, tokens, usage)))).flat();
       hardcoded = await grouped(project, found, lines, (first, count) => {
         const { word, value, tokens: names } = hardcodedValue(first);
-        return { title: `${sentence(word)} ${value} is hardcoded in ${plural(count, "place")}; the theme already has it as ${names}`, detail: null, next: `${sentence(first.fix)} in each place` };
+        return { title: `${sentence(word)} ${value} is hardcoded in ${plural(count, "place")}; the theme already has it as ${names}`, next: `${sentence(first.fix)} in each place` };
       });
     } catch (error: unknown) {
       incomplete.push(`Hardcoded values were not checked (${errorText(error)}); run ${NPX} check --diff to see why`);
@@ -298,7 +297,7 @@ async function analyseProject(project: ReportProject, index: number, inventory: 
       // A kit's own files wrap the library they are built on: that is the choice, not a drift from it.
       const exempt = (file: string): boolean => kitDirs.some((dir) => file === dir || file.startsWith(`${dir}/`));
       const found = modules.flatMap((module) => offLibraryImports(module, { added: everyLine, classify, chosen, exempt }));
-      offLibrary = await grouped(project, found, lines, (first) => ({ title: first.message.replace(/^This imports/, "Imports"), detail: null, next: `${sentence(first.fix)}` }));
+      offLibrary = await grouped(project, found, lines, (first) => ({ title: first.message.replace(/^This imports/, "Imports"), next: sentence(first.fix) }));
     } catch (error: unknown) {
       incomplete.push(`Library choices were not compared (${errorText(error)}); run ${NPX} detect ${project.dir} to see why`);
     }
@@ -339,10 +338,10 @@ function topNext(f: Finding): string {
 
 /** The rule behind the headline duplicate count, said once wherever that count is shown. */
 export const DUPLICATE_RULE = "Duplicated components: groups of 2+ exported components that look alike or share a name.";
-export const isComponentDuplicate = (f: Finding): boolean => (f.exported ?? 0) >= 2;
+const isComponentDuplicate = (f: Finding): boolean => (f.exported ?? 0) >= 2;
 
 /** The five plain-English lines printed and put at the top of every output. */
-export function summaryLines(model: Pick<ReportModel, "repo" | "totals" | "topFixes" | "projects">): string[] {
+function summaryLines(model: Pick<ReportModel, "repo" | "totals" | "topFixes" | "projects">): string[] {
   const t = model.totals;
   const top = model.projects.flatMap((p) => p.components).sort((a, b) => b.uses - a.uses)[0];
   const first = model.topFixes[0];

@@ -104,7 +104,7 @@ function mappableStrings(value: SgNode): SgNode[] | null {
 }
 
 /** The prop pass. Sites in `held` files (an ambiguous import rewrite there) are never edited: a site that needs an edit becomes a residual. */
-function planEdits(migration: MigrationSpec, scan: ScanResult, rewriteValue: NonNullable<MigrationOptions["rewriteValue"]>, held: ReadonlyMap<string, string> = new Map()): Planned {
+function planEdits(migration: MigrationSpec, scan: ScanResult, rewriteValue: NonNullable<MigrationOptions["rewriteValue"]>, held: ReadonlyMap<string, string>): Planned {
   const contract = scan.elements.contracts.get(migration.element);
   const outputs = new Map<string, string>();
   const residuals: Residual[] = [];

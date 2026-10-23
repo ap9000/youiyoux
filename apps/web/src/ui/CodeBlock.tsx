@@ -6,12 +6,12 @@ interface CodeBlockProps {
   /** A file name or caption shown in the header bar. */
   title?: string;
   className?: string;
-  maxHeight?: "sm" | "lg" | "none";
+  maxHeight?: "sm" | "lg";
   /** On a phone (below md) its title bar and copy button are at least 44px tall, for a finger; a desktop keeps its density. */
   touch?: boolean;
 }
 
-const HEIGHTS = { sm: "max-h-56", lg: "max-h-[28rem]", none: "" } as const;
+const HEIGHTS = { sm: "max-h-56", lg: "max-h-[28rem]" } as const;
 
 export function CodeBlock({ code, title, className, maxHeight = "lg", touch = false }: CodeBlockProps) {
   return (

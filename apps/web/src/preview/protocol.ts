@@ -5,7 +5,7 @@
  */
 import type { PinnedState } from "./pin.ts";
 
-export type PreviewScheme = "light" | "dark";
+type PreviewScheme = "light" | "dark";
 
 /** Representative screens the style editor previews, beside one component's demo; `token` is the phone's edited-token view. */
 export type PreviewScreen = "components" | "type" | "scale" | "motion" | "focus" | "token";

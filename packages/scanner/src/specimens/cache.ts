@@ -7,7 +7,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { packageUnderRoot, within } from "./contain.ts";
 
 /** Bump when what a specimen entry holds changes, so old entries are never read. */
@@ -68,6 +68,13 @@ export function specimenKey(root: string, commit: string | null, files: readonly
   return hash.digest("hex").slice(0, 24);
 }
 
+/** JSON written to a temporary name and renamed, so a reader never sees half a file. */
+export function writeJsonAtomic(file: string, value: unknown): void {
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(`${file}.${process.pid}.tmp`, JSON.stringify(value));
+  renameSync(`${file}.${process.pid}.tmp`, file);
+}
+
 export class SpecimenCache {
   readonly dir: string;
 
@@ -89,11 +96,7 @@ export class SpecimenCache {
 
   /** Written to a temporary name and renamed, so a reader never sees half an entry. */
   write(project: string, key: string, value: unknown): void {
-    const dir = this.entryDir(project, key);
-    mkdirSync(dir, { recursive: true });
-    const file = join(dir, "entry.json");
-    writeFileSync(`${file}.${process.pid}.tmp`, JSON.stringify(value));
-    renameSync(`${file}.${process.pid}.tmp`, file);
+    writeJsonAtomic(join(this.entryDir(project, key), "entry.json"), value);
   }
 
   /** A scratch directory for one build (the bundle esbuild makes is evaluated from here). */

@@ -59,10 +59,6 @@ export const CONCEPTS: readonly Concept[] = [
 
 const BY_ID = new Map(CONCEPTS.map((c) => [c.id, c]));
 
-export function conceptById(id: string): Concept | undefined {
-  return BY_ID.get(id);
-}
-
 /** Lowercase words: kebab, snake and camel case split, punctuation dropped (`DatePicker` → `date picker`). */
 export function normalize(text: string): string {
   return text.normalize("NFC")

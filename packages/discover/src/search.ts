@@ -193,6 +193,11 @@ export function playsRole(role: string, f: Fields): boolean {
   return hasPhrase(f.name, n) || f.categories.some((c) => hasPhrase(c, n));
 }
 
+/** The listing's SPDX licence, or "unknown". */
+export function licenceOf(entry: LibraryEntry): string {
+  return entry.license && entry.license !== "unknown" ? entry.license.spdx : "unknown";
+}
+
 export function hitOf(entry: LibraryEntry, score: number, why: readonly string[]): DiscoverHit {
   return {
     id: entry.id,
@@ -201,7 +206,7 @@ export function hitOf(entry: LibraryEntry, score: number, why: readonly string[]
     kind: entry.kind,
     summary: entry.summary,
     source: { kind: entry.source.kind ?? null, name: entry.source.name, ref: entry.source.ref ?? null, url: entry.source.url ?? null },
-    license: entry.license && entry.license !== "unknown" ? entry.license.spdx : "unknown",
+    license: licenceOf(entry),
     signals: { ...(entry.signals?.via ? { via: entry.signals.via } : {}), weeklyDownloads: entry.signals?.weeklyDownloads ?? null, stars: entry.signals?.stars ?? null, pushedAt: entry.signals?.pushedAt ?? null, archived: entry.signals?.archived ?? null },
     install: entry.install ? { command: entry.install.command, npm: entry.install.npm, registryDeps: entry.install.registryDeps, implicitDeps: entry.install.implicitDeps } : null,
     score: Math.round(score * 100) / 100,

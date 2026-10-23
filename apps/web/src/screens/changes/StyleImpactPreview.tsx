@@ -13,7 +13,7 @@ import { Button } from "../../ui/Button.tsx";
 import { Section } from "../../ui/Section.tsx";
 import { Segmented } from "../../ui/Segmented.tsx";
 import { Swatch } from "../../ui/Swatch.tsx";
-import { plural } from "./ImpactPreview.tsx";
+import { plural } from "../../lib/plural.ts";
 
 const PAGE = 40;
 const COLOR = /^(?:#[0-9a-f]{3,8}|rgb\()/i;

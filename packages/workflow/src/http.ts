@@ -1,6 +1,6 @@
 /**
  * The loopback HTTP service: the workflow (rule, style and library drafts, and requests on
- * captured screens) under /api, and (optionally) the built hub at /.
+ * captured screens) under /api.
  *
  * It listens on 127.0.0.1 only. Requests must name a loopback Host (no DNS rebinding) and
  * may not come cross-site; writes must carry this run's session key (printed only in the
@@ -9,15 +9,14 @@
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
-import { extname, join, normalize, resolve, sep } from "node:path";
+import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import { COMPONENT_STATES, DefinitionError, ElementId, LibraryEntry, REQUEST_STATUSES, RequestTarget, RuleCheck, RuleRollout } from "@youiyoux/core";
 import type { Actor, ApiError } from "./api.ts";
 import { WorkflowError } from "./policy.ts";
 import type { RuleWorkflow } from "./service.ts";
 
-export const SESSION_HEADER = "x-youi-session";
+const SESSION_HEADER = "x-youi-session";
 const MAX_BODY = 1024 * 1024;
 
 const RuleFieldsInput = z.object({
@@ -60,26 +59,12 @@ const ApproveInput = z.object({ revision: z.number().int().positive(), previewId
 
 const STATUS: Record<ApiError["code"], number> = { "bad-request": 400, forbidden: 403, "not-found": 404, conflict: 409, stale: 409, invalid: 422, internal: 500 };
 
-const TYPES: Record<string, string> = {
-  ".html": "text/html; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".json": "application/json; charset=utf-8",
-  ".svg": "image/svg+xml",
-  ".webp": "image/webp",
-  ".png": "image/png",
-  ".woff2": "font/woff2",
-  ".ico": "image/x-icon",
-};
-
 const LOOPBACK_HOST = /^(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/;
 const LOOPBACK_ORIGIN = /^http:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/;
 
-export interface HandlerOptions {
+interface HandlerOptions {
   readonly workflow: RuleWorkflow;
   readonly actor: Actor;
-  /** The built hub (apps/web/dist) to serve at /, if any. */
-  readonly webRoot?: string | null;
   /** The secret every write must carry in `x-youi-session`. */
   readonly sessionKey: string;
 }
@@ -201,38 +186,14 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string, opti
   throw new WorkflowError("not-found", `no endpoint ${method} ${path}`);
 }
 
-async function staticFile(res: ServerResponse, root: string, path: string): Promise<void> {
-  const base = resolve(root);
-  let decoded: string;
-  try {
-    decoded = decodeURIComponent(path);
-  } catch {
-    throw new HttpError(400, "malformed path");
-  }
-  const wanted = resolve(base, `.${normalize(decoded)}`);
-  if (wanted !== base && !wanted.startsWith(`${base}${sep}`)) throw new HttpError(404, "not found");
-  let file = wanted;
-  const info = await stat(file).catch(() => null);
-  if (!info?.isFile()) {
-    // Client-side routes get the app (rule names contain dots); a missing asset is a 404.
-    if (extname(path) in TYPES || /\.(?:map|txt)$/.test(path)) throw new HttpError(404, "not found");
-    file = join(base, "index.html");
-  }
-  const body = await readFile(file);
-  const immutable = file.includes(`${sep}assets${sep}`);
-  res.writeHead(200, { ...BASE_HEADERS, "content-type": TYPES[extname(file)] ?? "application/octet-stream", "cache-control": immutable ? "public, max-age=31536000, immutable" : "no-cache" });
-  res.end(body);
-}
-
-export function createHandler(options: HandlerOptions): (req: IncomingMessage, res: ServerResponse) => void {
+function createHandler(options: HandlerOptions): (req: IncomingMessage, res: ServerResponse) => void {
   return (req, res) => {
     void (async () => {
       try {
         const path = new URL(req.url ?? "/", "http://loopback").pathname;
         screen(req, options.sessionKey);
         if (path === "/api" || path.startsWith("/api/")) return await api(req, res, path, options);
-        if (!options.webRoot || (req.method !== "GET" && req.method !== "HEAD")) throw new HttpError(404, "not found");
-        await staticFile(res, options.webRoot, path);
+        throw new HttpError(404, "not found");
       } catch (error: unknown) {
         fail(res, error);
       }

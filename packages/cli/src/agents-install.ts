@@ -23,8 +23,8 @@ import { shellQuote, write } from "./hooks-install.ts";
 export { RULE_BEGIN, RULE_END };
 const TOML_BEGIN = "# >>> youi mcp >>>";
 const TOML_END = "# <<< youi mcp <<<";
-export const MCP_NAME = "youiyoux";
-export const RULE_FILES = ["AGENTS.md", "CLAUDE.md"] as const;
+const MCP_NAME = "youiyoux";
+const RULE_FILES = ["AGENTS.md", "CLAUDE.md"] as const;
 const CLAUDE_MCP = ".mcp.json";
 const CODEX_CONFIG = ".codex/config.toml";
 
@@ -52,7 +52,7 @@ export function relativeTo(repoRoot: string, server: { command: string; args: re
 }
 
 /** The same command for a shell, e.g. `codex mcp add youiyoux -- <this>`. */
-export const shellLine = ({ command, args }: { command: string; args: readonly string[] }): string => [command, ...args].map(shellQuote).join(" ");
+const shellLine = ({ command, args }: { command: string; args: readonly string[] }): string => [command, ...args].map(shellQuote).join(" ");
 
 /* ------------------------------------------------------------ marked blocks */
 
@@ -188,7 +188,7 @@ export async function removeClaudeMcp(repoRoot: string): Promise<AgentsResult> {
 
 const tomlString = (value: string): string => JSON.stringify(value);
 
-export function codexBlock(server: { command: string; args: readonly string[] }): string {
+function codexBlock(server: { command: string; args: readonly string[] }): string {
   return [TOML_BEGIN, `[mcp_servers.${MCP_NAME}]`, `command = ${tomlString(server.command)}`, `args = [${server.args.map(tomlString).join(", ")}]`, TOML_END].join("\n");
 }
 

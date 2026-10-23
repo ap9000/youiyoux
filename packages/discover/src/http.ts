@@ -66,9 +66,8 @@ export interface PoliteOptions {
   /** Requests in flight at once to one host. */
   readonly perHost?: number;
   readonly timeoutMs?: number;
-  /** Named budgets; `bucketFor` picks one per URL (none: only the concurrency caps apply). */
+  /** Named budgets; githubBucketFor picks one per URL (none: only the concurrency caps apply). */
   readonly buckets?: Readonly<Record<string, RateBucket>>;
-  readonly bucketFor?: (url: URL) => string | null;
   /** GITHUB_TOKEN, read from the environment by the caller; sent to api.github.com only. */
   readonly token?: string;
   readonly cache?: Map<string, CachedResponse>;
@@ -191,7 +190,7 @@ export class PoliteClient {
       this.stats.cached++;
       return { ok: true, url, status: 200, body: cached.body, sha256: cached.sha256, fetchedAt: cached.fetchedAt, revalidated: true, headers: new Headers() };
     }
-    const bucket = npm ? "npm" : this.options.bucketFor?.(parsed) ?? githubBucketFor(parsed);
+    const bucket = npm ? "npm" : githubBucketFor(parsed);
     let host = this.hosts.get(parsed.host);
     if (!host) this.hosts.set(parsed.host, (host = new Gate(this.options.perHost ?? 2)));
     const gate = host;

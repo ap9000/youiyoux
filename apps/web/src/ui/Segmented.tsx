@@ -2,7 +2,7 @@
 import { clsx } from "clsx";
 import type { KeyboardEvent, ReactNode } from "react";
 
-export interface SegmentOption<T extends string> {
+interface SegmentOption<T extends string> {
   readonly value: T;
   readonly label: ReactNode;
   readonly count?: number;

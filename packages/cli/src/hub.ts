@@ -16,7 +16,7 @@ import { access, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-export interface HubOptions {
+interface HubOptions {
   /** Design repo checkout; default: the project config's source.path, else the demo system. */
   readonly design?: string;
   /** Product repo to scan (read-only) for the Where and Screens views. */
@@ -36,7 +36,7 @@ export interface HubOptions {
   readonly detect?: string;
 }
 
-export interface HubPlan {
+interface HubPlan {
   readonly web: string;
   /** Arguments for scripts/snapshot.ts, or null to show the committed demo snapshot as it is. */
   readonly snapshot: readonly string[] | null;
@@ -46,18 +46,21 @@ export interface HubPlan {
   readonly watch: readonly string[] | null;
 }
 
-export const HUB_SNAPSHOT_DIR = ".hub";
+const HUB_SNAPSHOT_DIR = ".hub";
 /** Vite's default; `youiyoux ui` pins it when it prints a link into the hub. */
 export const DEFAULT_HUB_PORT = "5173";
 
 /** The system, product and reports named, as the snapshot script's arguments. */
 const named = (options: HubOptions): string[] => (["design", "project", "config", "root", "inventory", "detect"] as const).flatMap((key) => (options[key] ? [`--${key}`, resolve(options[key])] : []));
 
+/** Whether a system or product is named (an inventory file or a detect report alone names neither). */
+const namesSystem = (options: HubOptions): boolean => (["design", "project", "config", "root"] as const).some((key) => options[key]);
+
 export function hubPlan(toolRoot: string, options: HubOptions): HubPlan {
   const web = join(toolRoot, "apps/web");
   const vite = [join(web, "node_modules/vite/bin/vite.js"), ...(options.port ? ["--port", options.port, "--strictPort"] : [])];
   // --watch with nothing named keeps the demo project live (an inventory file or a detect report alone names no project).
-  const watchesDemo = options.watch && !(["design", "project", "config", "root"] as const).some((key) => options[key]);
+  const watchesDemo = options.watch && !namesSystem(options);
   const flags = watchesDemo ? [...named(options), "--project", join(toolRoot, "examples/demo-app")] : named(options);
   const api: Record<string, string> = options.api ? { YOUI_API: options.api } : {};
   if (flags.length === 0) return { web, snapshot: null, env: api, vite, watch: null };
@@ -67,11 +70,11 @@ export function hubPlan(toolRoot: string, options: HubOptions): HubPlan {
 }
 
 /** The hub the npm package carries, built, under the tool's root: index.html, assets/, kit/. */
-export const BUILT_HUB = "hub";
+const BUILT_HUB = "hub";
 /** The demo system's snapshot the npm package carries, its preview frame built. */
-export const BUILT_DEMO = "hub-demo";
+const BUILT_DEMO = "hub-demo";
 
-export interface BuiltHubPlan {
+interface BuiltHubPlan {
   /** Arguments for the bundled snapshot script, or null to show the demo as it is. */
   readonly snapshot: readonly string[] | null;
   /** Arguments for the hub's own server. */
@@ -82,7 +85,7 @@ export interface BuiltHubPlan {
 /** The packaged hub: `out` is where a named system's snapshot goes. */
 export function builtHubPlan(toolRoot: string, options: HubOptions, out: string): BuiltHubPlan {
   const flags = named(options);
-  if (options.watch && !(["design", "project", "config", "root"] as const).some((key) => options[key])) throw new Error("--watch keeps a system's snapshot live: name it with --design or --project (the demo system is not watched)");
+  if (options.watch && !namesSystem(options)) throw new Error("--watch keeps a system's snapshot live: name it with --design or --project (the demo system is not watched)");
   const hub = join(toolRoot, BUILT_HUB);
   const snapshot = flags.length > 0 ? [join(toolRoot, "hub-snapshot.js"), "--out", out, ...flags] : null;
   const server = [join(toolRoot, "hub-server.js"), "--dist", hub, "--kit", join(hub, "kit"), "--snapshot", snapshot ? out : join(toolRoot, BUILT_DEMO), ...(snapshot ? ["--build-frame"] : []), ...(options.port ? ["--port", options.port] : []), ...(options.api ? ["--api", options.api] : []), ...(options.watch ? ["--live"] : [])];
@@ -143,7 +146,7 @@ export async function runHub(toolRoot: string, options: HubOptions): Promise<num
   }
 }
 
-export interface PreviewsOptions {
+interface PreviewsOptions {
   /** The running hub's port (default DEFAULT_HUB_PORT). */
   readonly port?: string;
   /** One registry's items (`@shadcn`, the default), or `all`. */

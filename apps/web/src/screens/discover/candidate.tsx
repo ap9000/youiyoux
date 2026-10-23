@@ -13,10 +13,10 @@ import { LIVE_SANDBOX, liveDocument } from "../inventory/try-live.tsx";
 import { DESK_WIDTH, FRAME_HEIGHT, type Tile } from "../inventory/Specimens.tsx";
 
 /** How long the hidden frame may take to draw before the preview says so. */
-export const DRAW_TIMEOUT_MS = 15_000;
+const DRAW_TIMEOUT_MS = 15_000;
 
 /** A candidate's shape before anything is drawn: unknown, so tiles show "drawing". */
-export const UNKNOWN_SHAPE: InventoryShape = { height: null, paddingX: null, paddingY: null, radius: null, fontSize: null, fontWeight: null };
+const UNKNOWN_SHAPE: InventoryShape = { height: null, paddingX: null, paddingY: null, radius: null, fontSize: null, fontWeight: null };
 
 /** The preview of one candidate, asked for while `id` is set (and only then). */
 export function usePreview(id: string | null, project: string | null): PreviewState | null {

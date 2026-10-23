@@ -2,7 +2,7 @@
 import type { Scheme } from "../../app/theme.tsx";
 import type { InventorySource } from "../../data/inventory-source.ts";
 import type { InventoryChunk, InventoryFamily } from "../../data/types.ts";
-import type { Tile } from "./Specimens.tsx";
+import { isDrawn, type Tile } from "./Specimens.tsx";
 
 const cssFor = (source: InventorySource, project: string, scheme: Scheme): string | null => {
   const file = source.index.projects.find((p) => p.id === project)?.specimenCss?.[scheme];
@@ -40,8 +40,6 @@ export function familyTiles(family: InventoryFamily, chunks: readonly InventoryC
   return tiles;
 }
 
-const drawn = (tile: Tile): boolean => tile.specimen !== null && tile.css !== null;
-
 /**
  * The tiles that can stand for a set, in the order to try them: its drawn specimens, most used
  * first, then its most used shape (the family's shape when it has none). A specimen can draw
@@ -50,6 +48,6 @@ const drawn = (tile: Tile): boolean => tile.specimen !== null && tile.css !== nu
 export function leadTiles(tiles: readonly Tile[], family: InventoryFamily, key: string): Tile[] {
   // A use stands for the family before any story does.
   const byUse = [...tiles].sort((a, b) => Number(Boolean(a.story)) - Number(Boolean(b.story)) || b.count - a.count);
-  const shape = byUse.find((t) => !drawn(t)) ?? { project: family.projects[0] ?? "", specimen: null, css: null, shape: family.shape, count: family.looks, place: "" };
-  return [...byUse.filter(drawn), shape].map((tile) => ({ ...tile, key }));
+  const shape = byUse.find((t) => !isDrawn(t)) ?? { project: family.projects[0] ?? "", specimen: null, css: null, shape: family.shape, count: family.looks, place: "" };
+  return [...byUse.filter(isDrawn), shape].map((tile) => ({ ...tile, key }));
 }

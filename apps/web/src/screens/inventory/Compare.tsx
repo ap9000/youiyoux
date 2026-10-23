@@ -18,7 +18,7 @@ import { Button } from "../../ui/Button.tsx";
 import { Segmented } from "../../ui/Segmented.tsx";
 import { familyTiles, leadTiles } from "./family-tiles.ts";
 import { TOUCH } from "./FilterBar.tsx";
-import { LARGE_TILE_HEIGHT, LeadTile, StateStrip, type Tile } from "./Specimens.tsx";
+import { LARGE_TILE_HEIGHT, LeadTile, StateStrip } from "./Specimens.tsx";
 
 type Side = InventoryFamily["sides"][number];
 
@@ -37,9 +37,6 @@ function sideTiles({ view, chunks, source, scheme }: CardProps, side: Side, pref
   const tiles = familyTiles(view.family, chunks, source, scheme, (project, kit) => project === side.project && kit === side.kit);
   return leadTiles(tiles, view.family, `${prefix}:${sideKey(view.family, side)}`);
 }
-
-/** The tile a side's strip draws: its lead tile's first drawn one, else its shape. */
-const stripTile = (tiles: readonly Tile[]): Tile => tiles.find((t) => t.specimen !== null && t.css !== null) ?? tiles[tiles.length - 1]!;
 
 export const compareAnchor = (family: string): string => `compare-${family}`;
 export const fixAnchor = (family: string): string => `fix-${family}`;
@@ -143,7 +140,8 @@ export function CompareCard(props: CardProps) {
           ].map(({ side, tiles }) => (
             <div key={sideKey(view.family, side)} className="min-w-0 space-y-1.5">
               <p className="truncate text-caption text-muted">{sideLabel(side, libraries)}</p>
-              <StateStrip tile={stripTile(tiles)} scheme={props.scheme} label={sideLabel(side, libraries)} />
+              {/* leadTiles puts the drawn tiles first and the shape last: the first is the one to strip. */}
+              <StateStrip tile={tiles[0]!} scheme={props.scheme} label={sideLabel(side, libraries)} />
             </div>
           ))}
         </div>

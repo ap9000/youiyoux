@@ -11,8 +11,6 @@ import type { WorkerRequest, WorkerResponse } from "./worker.ts";
 
 export interface SearchAnswer {
   readonly ids: readonly string[];
-  /** Search time inside the engine. */
-  readonly engineMs: number;
   /** Query to answer, including the worker round trip. */
   readonly totalMs: number;
 }
@@ -28,8 +26,7 @@ function inlineClient(docs: readonly SearchDoc[]): SearchClient {
       const started = performance.now();
       const { m, index } = await engine;
       const ids = m.searchIndex(index, query);
-      const ms = performance.now() - started;
-      return { ids, engineMs: ms, totalMs: ms };
+      return { ids, totalMs: performance.now() - started };
     },
   };
 }
@@ -48,7 +45,7 @@ function workerClient(docs: readonly SearchDoc[]): SearchClient {
     const request = pending.get(data.id);
     if (!request) return;
     pending.delete(data.id);
-    request.resolve({ ids: data.ids, engineMs: data.ms, totalMs: performance.now() - request.started });
+    request.resolve({ ids: data.ids, totalMs: performance.now() - request.started });
   };
   worker.onerror = () => {
     fallback ??= inlineClient(docs);

@@ -6,7 +6,8 @@
 import { clsx } from "clsx";
 import { CircleAlert, GitBranch, History as HistoryIcon, RotateCw, ShieldCheck, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { asRequestError, type DraftContent, type DraftView, type RuleDraftView, type WorkflowInfo, workflowApi, type WorkflowRequestError } from "../../data/workflow.ts";
+import { asRequestError, type DraftView, type RuleDraftView, type WorkflowInfo, workflowApi, type WorkflowRequestError } from "../../data/workflow.ts";
+import { same } from "../../lib/same.ts";
 import { Badge, type BadgeTone } from "../../ui/Badge.tsx";
 import { Button } from "../../ui/Button.tsx";
 import { CodeBlock } from "../../ui/CodeBlock.tsx";
@@ -49,8 +50,6 @@ export function DraftStatusBadge({ draft }: { draft: DraftView }) {
   const stage = STAGE[stageOf(draft)];
   return <Badge tone={stage.tone}>{stage.label}</Badge>;
 }
-
-const same = (a: DraftContent, b: DraftContent): boolean => JSON.stringify(a) === JSON.stringify(b);
 
 export const isOpen = (draft: DraftView): boolean => draft.status !== "handed-off" && draft.status !== "rolled-out" && draft.status !== "discarded";
 

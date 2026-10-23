@@ -26,10 +26,10 @@
  * error as Try it, and once it has drawn, its markup (`html`), which the hub draws statically in
  * its own CSS for the light, dark and state frames.
  */
-import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { basename, dirname, isAbsolute, join, resolve, sep } from "node:path";
 import type { Plugin } from "esbuild";
+import { sha256 } from "@youiyoux/core";
 import { limitOf, tsconfigAliases } from "./css.ts";
 import { inPackage, packageName, packageUnderRoot, realOf, within } from "./contain.ts";
 import { ASSET_LOADERS, BUNDLE_TIMEOUT_MS, bundleError, bundleWithin, checkedTsconfig, ICON_PATH, stubs } from "./render.ts";
@@ -196,7 +196,7 @@ const BANNER = `addEventListener("error", function (event) { if (!window.__youiR
 
 const digestOf = (path: string): string | null => {
   try {
-    return createHash("sha256").update(readFileSync(path)).digest("hex");
+    return sha256(readFileSync(path));
   } catch {
     return null;
   }
@@ -388,7 +388,7 @@ export async function bundlePreview(job: PreviewJob, options: { readonly bundleT
       const path = resolve(realOf(dir), input);
       inputs.push({ path, digest: digestOf(path) ?? "missing" });
     }
-    return { hash: createHash("sha256").update(built.text).digest("hex").slice(0, 16), code: built.text, inputs, notes: [...notes] };
+    return { hash: sha256(built.text).slice(0, 16), code: built.text, inputs, notes: [...notes] };
   } catch (error: unknown) {
     return { error: `it did not bundle: ${error instanceof Error ? error.message.split("\n")[0] : String(error)}` };
   }

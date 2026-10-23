@@ -24,7 +24,7 @@ const APP = resolve(import.meta.dirname, "..");
 export const KIT_PATH = "/kit/";
 export const FRAME_PATH = "/frame/";
 /** What a system's components may import from outside their own files. */
-export const KIT_PACKAGES = ["react", "react/jsx-runtime", "react-dom", "react-dom/client", "class-variance-authority", "clsx", "tailwind-merge", "lucide-react", "@radix-ui/react-dialog", "@radix-ui/react-label", "@radix-ui/react-separator", "@radix-ui/react-slot", "@radix-ui/react-switch", "@radix-ui/react-tabs"] as const;
+const KIT_PACKAGES = ["react", "react/jsx-runtime", "react-dom", "react-dom/client", "class-variance-authority", "clsx", "tailwind-merge", "lucide-react", "@radix-ui/react-dialog", "@radix-ui/react-label", "@radix-ui/react-separator", "@radix-ui/react-slot", "@radix-ui/react-switch", "@radix-ui/react-tabs"] as const;
 /** React's packages are CommonJS: their names are listed so a demo can import them by name. */
 const COMMONJS = new Set(["react", "react/jsx-runtime", "react-dom", "react-dom/client"]);
 const TAILWIND_SHEETS = ["index.css", "theme.css", "preflight.css", "utilities.css"];
@@ -32,7 +32,7 @@ const FONT_IMPORT = '@import "@fontsource-variable/geist";';
 const SYSTEM_IMPORT = '@import "@snapshot/preview/system.css";';
 
 /** `@radix-ui/react-tabs` → `radix-ui-react-tabs.js`. */
-export const kitFile = (specifier: string): string => `${specifier.replace(/^@/, "").replace(/[/]/g, "-")}.js`;
+const kitFile = (specifier: string): string => `${specifier.replace(/^@/, "").replace(/[/]/g, "-")}.js`;
 
 const write = (file: string, text: string): void => {
   mkdirSync(dirname(file), { recursive: true });

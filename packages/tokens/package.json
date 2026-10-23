@@ -5,5 +5,5 @@
   "private": true,
   "type": "module",
   "exports": { ".": "./src/index.ts", "./values": "./src/values.ts", "./contrast": "./src/contrast.ts", "./color": "./src/color.ts" },
-  "dependencies": { "@youiyoux/core": "workspace:*", "yaml": "2.9.1", "@terrazzo/parser": "2.7.1", "@terrazzo/plugin-css": "2.7.1", "@terrazzo/plugin-js": "2.7.1" }
+  "dependencies": { "@youiyoux/core": "workspace:*", "yaml": "2.9.1", "@terrazzo/parser": "2.7.1", "@terrazzo/plugin-css": "2.7.1" }
 }

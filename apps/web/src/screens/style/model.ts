@@ -9,6 +9,7 @@ import { aliasTarget, cssValue, resolveAliases, tokenVariables, variableSuffixes
 import type { StateEdit, StyleDraftContent, TokenEdit } from "@youiyoux/workflow/api";
 import type { PreviewVars } from "../../preview/protocol.ts";
 import type { ComponentContract, TokenEntry } from "../../data/types.ts";
+import { same } from "../../lib/same.ts";
 
 export type Scheme = "light" | "dark";
 export type ComponentState = StateEdit["state"];
@@ -75,14 +76,12 @@ export function editorModel(system: string, prefix: string, tokens: readonly Tok
 /** Tokens the editor can change: the snapshot carries their values as written (older snapshots do not). */
 export const editable = (token: TokenEntry): boolean => token.source !== undefined;
 
-const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
-
 export function editOf(content: StyleDraftContent, path: string): TokenEdit | undefined {
   return content.tokens.find((t) => t.path === path);
 }
 
 /** The published value as written, per scheme: dark follows light unless the dark set gives its own. */
-export function publishedSource(token: TokenEntry, scheme: Scheme): unknown {
+function publishedSource(token: TokenEntry, scheme: Scheme): unknown {
   const source = token.source ?? { light: token.light, dark: token.dark };
   return scheme === "light" || !token.darkOwn ? source.light : source.dark;
 }
@@ -106,7 +105,7 @@ export function hasOwnDark(token: TokenEntry, edit: TokenEdit | undefined): bool
 }
 
 /** The value with every alias followed (through the edits), as DTCG data. */
-export function resolvedOf(model: EditorModel, content: StyleDraftContent, path: string, scheme: Scheme): unknown {
+function resolvedOf(model: EditorModel, content: StyleDraftContent, path: string, scheme: Scheme): unknown {
   return resolveAliases(sourceOf(model, content, path, scheme), (p) => sourceOf(model, content, p, scheme));
 }
 
@@ -124,7 +123,7 @@ export function cssOf(model: EditorModel, content: StyleDraftContent, path: stri
 /* -------------------------------------------------------------- live preview */
 
 /** `--<prefix>-<component>-<state>-<role>`, as the token build names a contract's state variable. */
-export function stateVariable(prefix: string, component: string, state: string, role: string): string {
+function stateVariable(prefix: string, component: string, state: string, role: string): string {
   return `--${prefix}-${component.split("/").at(-1)}-${state}-${role.replace(/\./g, "-")}`;
 }
 

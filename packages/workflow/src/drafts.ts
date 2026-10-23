@@ -12,7 +12,7 @@ import { setJsonPath } from "./json-edit.ts";
 /** Key order of a rule file, as the hand-written rules use it. */
 const RULE_KEYS = ["$schema", "schema", "id", "title", "severity", "rollout", "statement", "rationale", "agent", "check", "files", "examples"] as const;
 
-export const DEFAULT_FILES = ["**/*.tsx"];
+const DEFAULT_FILES = ["**/*.tsx"];
 
 export function fieldsFromRule(rule: RuleSpec): RuleFields {
   return {
@@ -75,7 +75,7 @@ export function toRuleSpec(fields: RuleFields): { rule: RuleSpec | null; problem
   return parsed.success ? { rule: parsed.data, problems: [] } : { rule: null, problems: issues(parsed.error, candidate.id) };
 }
 
-export interface ValidationContext {
+interface ValidationContext {
   readonly mode: Draft["mode"];
   /** The rule a draft edits (its id may not change). */
   readonly ruleId: string;

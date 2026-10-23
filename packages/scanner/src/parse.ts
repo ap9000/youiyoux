@@ -60,6 +60,12 @@ export function unquote(text: string): string {
   return text.length >= 2 && /^["'`]/.test(text) ? text.slice(1, -1) : text;
 }
 
+/** Sort order for anything at a place in a file: file, then line, then column. */
+export const byPosition = <T extends { file: string; line: number; column: number }>(a: T, b: T): number => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column;
+
+/** `text` as a literal inside a regular expression. */
+export const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 function isTypeOnly(statement: SgNode): boolean {
   return /^import\s+type\b/.test(statement.text());
 }
@@ -210,8 +216,7 @@ export async function parseModule(file: string, source: string): Promise<ModuleI
   if (lang === "css") {
     // Stylesheets are read by youi's custom-property reader (tokens/css.ts); tree-sitter-css
     // rejects Tailwind at-rules (@theme, @custom-variant), so its errors say nothing here.
-    const parseErrors = 0;
-    return { file, lang, source, root, imports: [], runtimeSpecifiers: [], dynamicSpecifiers: cssSpecifiersOf(source), exports: [], starExports: [], declarations: new Set(), jsx: [], parseErrors };
+    return { file, lang, source, root, imports: [], runtimeSpecifiers: [], dynamicSpecifiers: cssSpecifiersOf(source), exports: [], starExports: [], declarations: new Set(), jsx: [], parseErrors: 0 };
   }
   const parseErrors = top.findAll({ rule: { kind: "ERROR" } }).length;
   const { exports, starExports } = exportsOf(top);

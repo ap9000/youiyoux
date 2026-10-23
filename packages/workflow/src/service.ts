@@ -17,20 +17,20 @@ import { parseId, shortHash, stableStringify, type LibraryEntry as LibraryEntryV
 import type { Actor, Draft, DraftContent, DraftEvent, DraftView, LibraryDraft, LibraryDraftContent, LibraryDraftView, LibraryPreview, LibrarySwap, Preview, PublishedRules, RuleDraft, RuleDraftView, SnapshotIdentity, StyleDraft, StyleDraftContent, StyleContrast, StyleDraftView, StylePreview, WorkflowInfo } from "./api.ts";
 import { DesignFiles } from "./design-files.ts";
 import { contentDigest, draftStatus, fieldsFromRule, newRuleFields, toRuleSpec, validateContent } from "./drafts.ts";
-import { describeStyle, normalizeStyleContent, styleDigest, styleSlug, validateStyleContent, type StyleContext } from "./style-drafts.ts";
-import { adoptionRefusal, describeLibrary, libraryDigest, libraryPath, librarySlug, normalizeLibraryContent, renderLibraryEntry, validateLibraryContent } from "./library-drafts.ts";
+import { describeStyle, emptyStyleContent, normalizeStyleContent, styleDigest, styleSlug, validateStyleContent, type StyleContext } from "./style-drafts.ts";
+import { adoptionRefusal, describeLibrary, libraryDigest, licenceOf, libraryPath, librarySlug, normalizeLibraryContent, renderLibraryEntry, validateLibraryContent } from "./library-drafts.ts";
 import { previewStyle } from "./style-preview.ts";
 import { scannerExecution, type RuleExecution } from "./execution.ts";
 import { branchTip, changesDigest, createReviewBranch, defaultBranch, hasChanges, headCommit, isAncestor, locate, type RepoLocation } from "./git.ts";
 import { authorize, WorkflowError, type Action } from "./policy.ts";
-import { comparePreview } from "./preview.ts";
+import { comparePreview, notRunReason } from "./preview.ts";
 import { RequestStore } from "./requests.ts";
 import type { WorkflowStore } from "./store.ts";
 
-export const WORKFLOW_VERSION = "0.1.0";
+const WORKFLOW_VERSION = "0.1.0";
 const MAX_PLACES = 200;
 
-export interface WorkflowOptions extends LoadProjectOptions {
+interface WorkflowOptions extends LoadProjectOptions {
   readonly projectRoot: string;
   readonly store: WorkflowStore;
   readonly execution?: RuleExecution;
@@ -66,7 +66,7 @@ interface Current {
 export type CreateInput = { kind?: "rule"; mode: "edit"; ruleId: string } | { kind?: "rule"; mode: "create" } | { kind: "style"; content?: StyleDraftContent } | { kind: "library"; content: LibraryDraftContent };
 
 /** A preview's headline, for history notes and commit messages. */
-export function previewSummary(draft: Draft): string {
+function previewSummary(draft: Draft): string {
   if (draft.kind === "rule") return draft.preview ? `flags ${draft.preview.flagged} place(s)` : "no preview";
   if (draft.kind === "library") {
     const q = draft.preview;
@@ -78,6 +78,7 @@ export function previewSummary(draft: Draft): string {
   return p ? `changes ${p.totals.tokens} token(s) and ${p.totals.contracts} component(s): ${p.totals.sites} site(s) and ${p.totals.direct} direct use(s) in ${p.totals.files} file(s) on ${p.totals.routes} screen(s)` : "no preview";
 }
 
+const capitalized = (text: string): string => `${text[0]!.toUpperCase()}${text.slice(1)}`;
 const randomId = (prefix: "d" | "p"): string => `${prefix}-${randomBytes(5).toString("hex")}`;
 
 export class RuleWorkflow {
@@ -94,9 +95,26 @@ export class RuleWorkflow {
 
   /** The product's comments and change requests on its captured screens (requests.ts), in its `.youi/requests`. */
   async requests(): Promise<RequestStore> {
-    const { projectRoot, configPath, designRoot, productRoot } = this.options;
-    const project = await loadProject(projectRoot, { ...(configPath ? { configPath } : {}), ...(designRoot ? { designRoot } : {}), ...(productRoot ? { productRoot } : {}) });
+    const project = await this.project();
     return new RequestStore(project.root, project.config.id, this.options.now ? { now: this.options.now } : {});
+  }
+
+  /** The project and its design definitions, as they are on disk now. */
+  private project(): Promise<Project> {
+    const { projectRoot, configPath, designRoot, productRoot } = this.options;
+    return loadProject(projectRoot, { ...(configPath ? { configPath } : {}), ...(designRoot ? { designRoot } : {}), ...(productRoot ? { productRoot } : {}) });
+  }
+
+  /** What every kind of preview starts with: the draft revision and snapshot it read, and how long it took. */
+  private previewHead(draft: Draft, before: Current, started: number): Pick<Preview, "id" | "at" | "draftRevision" | "draftDigest" | "snapshot" | "durationMs"> {
+    return { id: this.id("p"), at: this.now(), draftRevision: draft.revision, draftDigest: draft.digest, snapshot: before.snapshot, durationMs: Math.round(performance.now() - started) };
+  }
+
+  /** The design repository and project now, refused when they moved since `before` (while a preview ran). */
+  private async unchangedSince(before: Current): Promise<Current> {
+    const after = await this.current();
+    if (after.snapshot.digest !== before.snapshot.digest) throw new WorkflowError("stale", "the project or design repository changed while the preview ran; run it again");
+    return after;
   }
 
   private now(): string {
@@ -120,8 +138,7 @@ export class RuleWorkflow {
   }
 
   private async current(): Promise<Current> {
-    const { projectRoot, configPath, designRoot, productRoot } = this.options;
-    const project = await loadProject(projectRoot, { ...(configPath ? { configPath } : {}), ...(designRoot ? { designRoot } : {}), ...(productRoot ? { productRoot } : {}) });
+    const project = await this.project();
     const repo = await locate(project.repo.root);
     if (!repo) throw new WorkflowError("invalid", `the design definitions at ${project.repo.root} are not in a git repository; drafts need a commit to start from`);
     const branch = await defaultBranch(repo.top);
@@ -281,7 +298,7 @@ export class RuleWorkflow {
       current.project.system.rules.map(async (rule) => {
         const places = scan.report.violations.filter((v) => v.rule === rule.id);
         const run = scan.report.checks.find((c) => c.rule === rule.id);
-        const notRun = run && (run.state === "unsupported" || run.state === "error") ? (run.reason ?? run.state) : null;
+        const notRun = notRunReason(run);
         return {
           rule: { ...rule, execution: ruleCapability(rule) },
           file: files.get(rule.id)?.path ?? (await current.files.rulePath(current.tip, rule.id)),
@@ -357,7 +374,7 @@ export class RuleWorkflow {
 
   /** A style draft starts from the default branch tip, bound to every file it could touch. */
   private async createStyle(actor: Actor, current: Current, initial?: StyleDraftContent): Promise<StyleDraftView> {
-    const content = normalizeStyleContent(initial ?? { title: "", tokens: [], states: [] });
+    const content = normalizeStyleContent(initial ?? emptyStyleContent());
     const files: Record<string, string | null> = {};
     for (const path of await current.files.stylePaths(current.tip)) files[path] = await current.files.digest(current.tip, path);
     const at = this.now();
@@ -410,7 +427,7 @@ export class RuleWorkflow {
       approval: null,
       handoff: null,
       discarded: false,
-      events: [this.event(actor, "created", `${describeLibrary(content)[0]!.toUpperCase()}${describeLibrary(content).slice(1)}, from ${current.branch}@${current.tip.slice(0, 7)}.`)],
+      events: [this.event(actor, "created", `${capitalized(describeLibrary(content))}, from ${current.branch}@${current.tip.slice(0, 7)}.`)],
     };
     await this.options.store.put(draft);
     return (await this.view(draft, current)) as LibraryDraftView;
@@ -486,20 +503,14 @@ export class RuleWorkflow {
       const scan = await scanProject(before.project);
       const baseline = before.project.system.rules.find((r) => r.id === draft.ruleId) ?? null;
       const comparison = comparePreview({ project: before.project, scan, execution: this.execution, draft: rule, baseline: draft.mode === "edit" ? baseline : null });
-      const after = await this.current();
-      if (after.snapshot.digest !== before.snapshot.digest) throw new WorkflowError("stale", "the project or design repository changed while the preview ran; run it again");
+      const after = await this.unchangedSince(before);
       const { report } = scan;
       const designLimits = [
         ...(before.designDirty ? ["The design repository has uncommitted changes or another branch checked out; this preview reads the working tree."] : []),
         ...(before.snapshot.projectCommit === null ? [`${report.project} is not a git repository: later edits to it cannot be detected, so this preview cannot go stale.`] : []),
       ];
       const preview: Preview = {
-        id: this.id("p"),
-        at: this.now(),
-        draftRevision: draft.revision,
-        draftDigest: draft.digest,
-        snapshot: before.snapshot,
-        durationMs: Math.round(performance.now() - started),
+        ...this.previewHead(draft, before, started),
         scan: { status: report.status, files: report.coverage.filesScanned, failed: report.coverage.failed },
         ...comparison,
         limits: [...comparison.limits, ...designLimits],
@@ -531,20 +542,14 @@ export class RuleWorkflow {
       if (!impact) indexed = false;
       swaps.push({ target, kind: "family", name: null, looks: impact?.looks ?? null, files: impact?.files ?? null, routes: impact?.routes ?? null, listed: impact?.listed ?? null });
     }
-    const after = await this.current();
-    if (after.snapshot.digest !== before.snapshot.digest) throw new WorkflowError("stale", "the project or design repository changed while the preview ran; run it again");
+    const after = await this.unchangedSince(before);
     const entry = draft.content.entry;
     const preview: LibraryPreview = {
-      id: this.id("p"),
-      at: this.now(),
-      draftRevision: draft.revision,
-      draftDigest: draft.digest,
-      snapshot: before.snapshot,
-      durationMs: Math.round(performance.now() - started),
+      ...this.previewHead(draft, before, started),
       file,
       exists,
       stage: draft.content.request === "adopt" ? "candidate" : "library",
-      license: entry.license && entry.license !== "unknown" ? entry.license.spdx : "unknown",
+      license: licenceOf(draft.content),
       install: entry.install?.command ?? null,
       swaps,
       limits: [
@@ -554,7 +559,7 @@ export class RuleWorkflow {
         ...(swaps.some((s) => s.kind === "element") ? ["System elements are named, not counted: youiyoux where-used counts their sites."] : []),
       ],
     };
-    const next: LibraryDraft = { ...draft, preview, updatedAt: this.now(), events: [...draft.events, this.event(actor, "previewed", `${previewSummary({ ...draft, preview })[0]!.toUpperCase()}${previewSummary({ ...draft, preview }).slice(1)}.`)] };
+    const next: LibraryDraft = { ...draft, preview, updatedAt: this.now(), events: [...draft.events, this.event(actor, "previewed", `${capitalized(previewSummary({ ...draft, preview }))}.`)] };
     await this.options.store.put(next);
     return this.refreshed(next, after);
   }
@@ -567,16 +572,10 @@ export class RuleWorkflow {
     const started = performance.now();
     const scan = await scanProject(before.project);
     const impact = await previewStyle({ project: before.project, scan, files: before.files, commit: draft.base.commit, content: draft.content, published: await before.tokens() });
-    const after = await this.current();
-    if (after.snapshot.digest !== before.snapshot.digest) throw new WorkflowError("stale", "the project or design repository changed while the preview ran; run it again");
+    const after = await this.unchangedSince(before);
     const { report } = scan;
     const preview: StylePreview = {
-      id: this.id("p"),
-      at: this.now(),
-      draftRevision: draft.revision,
-      draftDigest: draft.digest,
-      snapshot: before.snapshot,
-      durationMs: Math.round(performance.now() - started),
+      ...this.previewHead(draft, before, started),
       scan: { status: report.status, files: report.coverage.filesScanned, failed: report.coverage.failed },
       ...impact,
       limits: [
@@ -765,12 +764,12 @@ export class RuleWorkflow {
 }
 
 /** One colour pair below AA, in words: "Button default (hover): text on fill, light: 1.21:1, needs 4.5:1". */
-export function describeContrast(c: StyleContrast): string {
+function describeContrast(c: StyleContrast): string {
   return `${c.label}, ${c.scheme}: ${c.after === null ? (c.unreadable ?? "could not read colour") : `${c.after.toFixed(2)}:1`}, needs ${c.required}:1`;
 }
 
 /** The colour pairs a style draft puts below WCAG AA (they passed before, or did not exist): what its approval must acknowledge. */
-export function newContrastFailures(preview: StylePreview): StyleContrast[] {
+function newContrastFailures(preview: StylePreview): StyleContrast[] {
   return preview.contrast.filter((c) => c.change === "new");
 }
 
@@ -799,6 +798,3 @@ function stored(view: Draft | DraftView): Draft {
 function shellQuote(path: string): string {
   return /^[\w./-]+$/.test(path) ? path : `'${path.replaceAll("'", "'\\''")}'`;
 }
-
-/** The workflow handles every kind of design change; `RuleWorkflow` is its original name. */
-export { RuleWorkflow as DesignWorkflow };

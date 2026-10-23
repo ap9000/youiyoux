@@ -279,8 +279,7 @@ export function projectPath(source: string, moduleUrl: string, root: string | nu
   let path: string;
   const webpack = /^webpack:\/\/[^/]*\/(.*)$/.exec(source);
   if (webpack) path = `/${webpack[1]!.replace(/^\.\//, "")}`;
-  else if (/^[a-z]+:\/\//i.test(source) && !source.startsWith("file://")) path = new URL(source).pathname;
-  else if (source.startsWith("file://")) path = new URL(source).pathname;
+  else if (/^[a-z]+:\/\//i.test(source)) path = new URL(source).pathname;
   else if (source.startsWith("/")) path = source;
   else path = new URL(source, moduleUrl).pathname;
   path = decodeURIComponent(path).replace(/^\/@fs\//, "/");

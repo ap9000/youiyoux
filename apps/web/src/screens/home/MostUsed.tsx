@@ -12,6 +12,7 @@ import { elementHref, parseId } from "../../data/ids.ts";
 import type { Model } from "../../data/model.ts";
 import type { ComponentContract } from "../../data/types.ts";
 import type { Site, UsageIndex } from "../../data/usage.ts";
+import { plural } from "../../lib/plural.ts";
 import { Button } from "../../ui/Button.tsx";
 import { KindIcon } from "../../ui/KindIcon.tsx";
 import { previewImage } from "../element/Preview.tsx";
@@ -43,8 +44,6 @@ export function filesOf(sites: readonly Site[]): FileUses[] {
     .map((entry) => ({ ...entry, lines: entry.lines.sort((a, b) => a - b) }))
     .sort((a, b) => b.lines.length - a.lines.length || a.file.localeCompare(b.file));
 }
-
-const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 export function MostUsed({ model, index, scheme }: { model: Model; index: UsageIndex; scheme: Scheme }) {
   const components = [...model.components.values()]

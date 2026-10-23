@@ -5,7 +5,7 @@
 import { clsx } from "clsx";
 import { useLiveState, type LiveState } from "../data/store.ts";
 
-export type LiveTone = "live" | "incomplete" | "failed";
+type LiveTone = "live" | "incomplete" | "failed";
 
 export interface LiveSummary {
   readonly tone: LiveTone;

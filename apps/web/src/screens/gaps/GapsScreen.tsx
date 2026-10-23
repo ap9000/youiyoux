@@ -10,6 +10,7 @@ import { ArrowRight, Puzzle, ScanSearch } from "lucide-react";
 import { Link } from "wouter";
 import { EMPTY_QUERY, queryToSearch } from "../../data/discover.ts";
 import { retryGaps, useGapsState } from "../../data/store.ts";
+import { plural } from "../../lib/plural.ts";
 import { Badge } from "../../ui/Badge.tsx";
 import { EmptyState } from "../../ui/EmptyState.tsx";
 import { PaneHeader, ResourceState } from "../../ui/Pane.tsx";
@@ -18,8 +19,6 @@ import { LicenceBadge } from "../discover/LicenceBadge.tsx";
 
 /** Discover, searching for the kind, with one candidate open when it is given. */
 export const discoverHref = (concept: Pick<GapConcept, "concept" | "name">, open: string | null = null): string => `/discover${queryToSearch({ ...EMPTY_QUERY, q: concept.name, role: concept.concept, open })}`;
-
-const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 /** A kind as a heading: `date picker` → `Date picker`, an initialism in capitals (`otp` → `OTP`). */
 export const kindLabel = (name: string): string => (/^[a-z]{1,3}$/.test(name) ? name.toUpperCase() : name.charAt(0).toUpperCase() + name.slice(1));
@@ -202,7 +201,7 @@ export function GapsScreen() {
   const open = report ? report.projects.reduce((n, p) => n + p.concepts.filter((c) => c.status === "hand-built" || c.status === "missing").length, 0) : undefined;
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <PaneHeader title="Gaps" {...(open !== undefined ? { count: open } : {})}>
+      <PaneHeader title="Gaps" count={open}>
         <Badge tone="outline">
           <Puzzle /> Suggestions, never installed
         </Badge>

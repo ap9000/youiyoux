@@ -18,7 +18,7 @@
  * the lockfile; failures to check are reported as incomplete, never as clean.
  */
 import { execFile } from "node:child_process";
-import { access, realpath } from "node:fs/promises";
+import { realpath } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { relPath } from "@youiyoux/core";
@@ -28,6 +28,7 @@ import { baselinePath, runCheck, type CheckResult, type DiffCheckResult } from "
 import { isChecked, stagedChange, workingTreeChange, isAdded, type ChangeProject, type ChangeSet } from "./check-diff.ts";
 import { diffFindingLine, diffGaps } from "./check-render.ts";
 import { configured, loadCheckProject, runRepoCheck } from "./check-repo.ts";
+import { exists } from "./init.ts";
 
 const run = promisify(execFile);
 const MAX_LISTED = 20;
@@ -42,19 +43,12 @@ export interface HookTarget {
   readonly root?: string;
 }
 
-export interface HookOutcome {
+interface HookOutcome {
   readonly stdout: string;
   readonly exitCode: number;
 }
 
 const SILENT: HookOutcome = { stdout: "", exitCode: 0 };
-
-async function exists(file: string): Promise<boolean> {
-  return access(file).then(
-    () => true,
-    () => false,
-  );
-}
 
 async function load(target: HookTarget, near: string): Promise<ChangeProject> {
   return loadCheckProject(target.project ?? near, { ...(target.config ? { configPath: target.config } : {}), ...(target.design ? { designRoot: target.design } : {}), ...(target.root ? { productRoot: target.root } : {}) }, !target.project);
@@ -78,7 +72,7 @@ function findingLines(result: DiffCheckResult, root: string): string[] {
 }
 
 /** The change to check for drift, or why there is none: drift needs git, the rule check does not. */
-async function changeFor(read: () => Promise<ChangeSet>): Promise<{ change?: ChangeSet; problem?: string }> {
+async function changeFor(read: () => Promise<ChangeSet>): Promise<{ change: ChangeSet; problem?: undefined } | { change?: undefined; problem: string }> {
   try {
     return { change: await read() };
   } catch (error: unknown) {
@@ -115,13 +109,14 @@ export async function runClaudeHook(input: string, target: HookTarget = {}): Pro
     const real = (path: string): Promise<string> => realpath(path).catch(() => path);
     const relative = relPath(await real(project.root), await real(file));
     if (!isChecked(project, relative)) return SILENT;
-    const { change, problem } = await changeFor(() => workingTreeChange(project, undefined, [relative]));
-    if (problem) return claudeContext(problem, project.root);
-    const result = configured(project) ? await runCheck(project, { files: [file], lock: false, baseline: await baselineFor(project, target), ...(change ? { diff: change } : {}) }) : await runRepoCheck(project, change!);
+    const found = await changeFor(() => workingTreeChange(project, undefined, [relative]));
+    if (found.problem !== undefined) return claudeContext(found.problem, project.root);
+    const { change } = found;
+    const result = configured(project) ? await runCheck(project, { files: [file], lock: false, baseline: await baselineFor(project, target), diff: change }) : await runRepoCheck(project, change);
     const lines = findingLines(result, project.root);
     const see = COMPONENT_FILE.test(relative) ? `See it: youiyoux render ${quoted(relative)} (or the MCP tool ui_render), then open the images: light and dark, desktop and phone, accessibility issues and the diff against the base.` : null;
     if (lines.length === 0) return see ? claudeContext(`youiyoux: ${relative} passes the design-system check. ${see}`, project.root) : SILENT;
-    const older = change && "violations" in result ? (result as CheckResult).violations.filter((v) => !isAdded(change.added, v.file, v.line)).length : 0;
+    const older = "violations" in result ? (result as CheckResult).violations.filter((v) => !isAdded(change.added, v.file, v.line)).length : 0;
     const known = older > 0 ? ` (${older} older findings on unchanged lines omitted)` : "";
     return claudeContext(`youiyoux design-system check (advisory) on ${relative}${known}:\n${lines.join("\n")}${!configured(project) ? `\n${result.diff?.notes.join("\n")}` : ""}\nFix these before finishing (each "Fix:" says what to write); \`youiyoux show <component>\` and the youiyoux MCP tools give the legal values. CI runs the authoritative check.${see ? `\n${see}` : ""}`, project.root);
   } catch (error: unknown) {
@@ -155,9 +150,10 @@ export async function runPreCommitHook(target: HookTarget = {}, options: { stric
     const staged = await stagedSources(project);
     const files = Object.keys(staged);
     if (files.length === 0) return SILENT;
-    const { change, problem } = await changeFor(() => stagedChange(project));
-    if (problem) return { stdout: `${viaNpx(problem, project.root)}\n`, exitCode: options.strict ? 1 : 0 };
-    const result = configured(project) ? await runCheck(project, { files: files.map((f) => join(project.root, f)), overrides: staged, lock: false, baseline: await baselineFor(project, target), ...(change ? { diff: change } : {}) }) : await runRepoCheck(project, change!);
+    const found = await changeFor(() => stagedChange(project));
+    if (found.problem !== undefined) return { stdout: `${viaNpx(found.problem, project.root)}\n`, exitCode: options.strict ? 1 : 0 };
+    const { change } = found;
+    const result = configured(project) ? await runCheck(project, { files: files.map((f) => join(project.root, f)), overrides: staged, lock: false, baseline: await baselineFor(project, target), diff: change }) : await runRepoCheck(project, change);
     const lines = findingLines(result, project.root);
     const failing = result.incomplete || (result.diff?.findings.length ?? 0) > 0;
     if (lines.length === 0) return { stdout: `${label}: ${files.length} staged file(s) clean, no drift\n`, exitCode: 0 };

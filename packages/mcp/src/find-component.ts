@@ -14,9 +14,10 @@ import { systemStage, type ComponentContract, type ScanReport } from "@youiyoux/
 import { libraryOfPackage, SHADCN_SLOTS } from "@youiyoux/detect";
 import { conceptForRole, hasPhrase, normalize, readNeed, type Concept, type DiscoverHit } from "@youiyoux/discover";
 import { importLine, type ComponentFacts, type ComponentProp, type ComponentSite, type Project, type ProjectComponents } from "@youiyoux/scanner";
+import { plural } from "./index-tools.ts";
 
 /** Matches shown; the rest are counted. */
-export const SHOWN_MATCHES = 3;
+const SHOWN_MATCHES = 3;
 /** Below this a hit is a guess, and "nothing fits" is the honest answer. */
 const THRESHOLD = 5;
 const SITES_SHOWN = 4;
@@ -27,7 +28,7 @@ const DISMISS_PROP = /^(?:on(?:Dismiss|Close|Remove|OpenChange)|closable|dismiss
 const ICON_WORDS = new Set(["icon", "icons", "glyph"]);
 const ICON_PACKAGES = /^(?:lucide-react|@heroicons\/react|@radix-ui\/react-icons|react-icons|@phosphor-icons\/react|@tabler\/icons-react)$/;
 
-export interface Candidate {
+interface Candidate {
   readonly classKit?: boolean;
   readonly provider?: { name: string; sites: readonly ComponentSite[] };
   readonly lacks?: readonly string[];
@@ -46,11 +47,11 @@ export interface Candidate {
   readonly evidence: readonly string[];
 }
 
-export type FindResult =
+type FindResult =
   | { readonly kind: "matches"; readonly need: string; readonly concepts: readonly string[]; readonly matches: readonly Candidate[]; readonly looked: number }
   | { readonly kind: "none"; readonly need: string; readonly concepts: readonly Concept[]; readonly looked: number; readonly primitive: PrimitiveStart | null };
 
-export interface PrimitiveStart {
+interface PrimitiveStart {
   readonly package: string;
   readonly library: string | null;
   readonly exports: readonly string[];
@@ -58,7 +59,7 @@ export interface PrimitiveStart {
 }
 
 /** The System's components as candidates: contract, import line, stage and live sites from the scan. */
-export interface SystemInput {
+interface SystemInput {
   readonly project: Project;
   readonly report: ScanReport | null;
 }
@@ -293,7 +294,6 @@ function primitiveFor(need: ReturnType<typeof readNeed>, components: ProjectComp
 /* ---------------------------------------------------------------- text */
 
 const s = (site: Pick<ComponentSite, "file" | "line">): string => `${site.file}:${site.line}`;
-const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? "" : "s"}`;
 
 function propsLine(props: readonly ComponentProp[] | null, file: string | null): string {
   if (!props) return `Props: not read statically; open ${file ?? "its file"}`;
@@ -346,7 +346,7 @@ export function matchesText(result: Extract<FindResult, { kind: "matches" }>, in
   ].join("\n");
 }
 
-export interface NoneFitsInput {
+interface NoneFitsInput {
   readonly result: Extract<FindResult, { kind: "none" }>;
   /** Discover candidates for the need, or null when there is no local index. */
   readonly discover: readonly DiscoverHit[] | null;

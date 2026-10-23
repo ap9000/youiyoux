@@ -24,13 +24,13 @@ export interface RequestInput {
   readonly target: RequestTarget;
 }
 
-export interface RequestList {
+interface RequestList {
   readonly requests: readonly RequestDoc[];
   /** Files in the directory that are not valid requests, with why. */
   readonly unreadable: ReadonlyArray<{ readonly file: string; readonly reason: string }>;
 }
 
-export interface RequestStoreOptions {
+interface RequestStoreOptions {
   readonly now?: () => Date;
   readonly newId?: () => string;
 }
@@ -38,7 +38,7 @@ export interface RequestStoreOptions {
 const authorOf = (actor: Actor): RequestAuthor => ({ kind: actor.kind, name: actor.name });
 
 /** A picture of the request's screen, and where its component is on it (CSS pixels of the page). */
-export interface RequestPicture {
+interface RequestPicture {
   /** Absolute path of the image. */
   readonly file: string;
   readonly box: RequestTarget["box"] | null;

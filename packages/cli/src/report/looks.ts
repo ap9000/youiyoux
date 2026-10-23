@@ -19,11 +19,13 @@ import { publicLook } from "./filters.ts";
 import { NPX, type ReportModel } from "./model.ts";
 
 /** Components drawn per project. */
-export const LOOKS_PER_PROJECT = 4;
+const LOOKS_PER_PROJECT = 4;
 export const DOWNLOAD_SIZE = "~100 MB";
 const DEPENDENCIES = "Install the repo's dependencies to see rendered looks";
+/** Notes that say a project or component could not be drawn with its own code and CSS (missing dependencies, most often). */
+const UNDRAWABLE = /not installed|loads no stylesheet|drawn from (?:its|their) (?:tag and )?classes|did not render|bundle failed|unstyled|stub fallback/i;
 
-export interface ChromiumStatus {
+interface ChromiumStatus {
   readonly available: boolean;
   /** Where it is, or where the headless shell would go. */
   readonly where: string;
@@ -64,7 +66,7 @@ export function downloadChromium(): Promise<boolean> {
   });
 }
 
-export interface LooksOptions {
+interface LooksOptions {
   /** A Chromium to use instead of the headless shell (YOUI_CHROMIUM). */
   readonly executablePath?: string;
   readonly cache?: SpecimenCache;
@@ -101,13 +103,13 @@ export async function addLooks(model: ReportModel, repoRoot: string, options: Lo
         continue;
       }
       const report = await renderShots(join(repoRoot, section.dir), names, { download: false, base: "HEAD", ...(options.executablePath ? { executablePath: options.executablePath } : {}), ...(options.cache ? { cache: options.cache } : {}), ...(options.log ? { log: options.log } : {}) });
-      const unavailable = report.notes.some((note) => /not installed|loads no stylesheet|drawn from (?:its|their) (?:tag and )?classes|did not render|bundle failed|unstyled|stub fallback/i.test(note));
+      const unavailable = report.notes.some((note) => UNDRAWABLE.test(note));
       if (unavailable) {
         missing.push(where);
         continue;
       }
       for (const component of report.components) {
-        if (component.notes.some((note) => /not installed|loads no stylesheet|drawn from (?:its|their) (?:tag and )?classes|did not render|bundle failed|unstyled|stub fallback/i.test(note))) {
+        if (component.notes.some((note) => UNDRAWABLE.test(note))) {
           missing.push(component.component);
           continue;
         }
