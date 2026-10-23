@@ -72,6 +72,8 @@ describe("GitHub Actions' OIDC token", () => {
     // By id, an owner is that account only: whoever takes a renamed owner's old name does not match.
     expect((await verifier(["1234567"])(token({ repository_owner_id: "1234567" }))).repository).toBe("acme/billing");
     await expect(verifier(["1234567"])(token({ repository_owner_id: "7654321" }))).rejects.toThrow("from acme (id 7654321), which this hub does not take records from");
+    // An account named with digits does not match an owner listed by that number: an id matches only an id.
+    await expect(verifier(["1234567"])(token({ repository_owner: "1234567", repository: "1234567/billing", repository_owner_id: "999" }))).rejects.toThrow("from 1234567 (id 999), which this hub does not take records from");
   });
 
   test("anything else is refused, saying why", async () => {

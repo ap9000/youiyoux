@@ -77,7 +77,10 @@ export interface GithubVerifierOptions {
 export type GithubVerifier = (token: string) => Promise<GithubClaims>;
 
 export function githubVerifier(options: GithubVerifierOptions): GithubVerifier {
-  const owners = new Set(options.owners.map((o) => o.trim().toLowerCase()));
+  // An all-digit entry is an id and matches only an id; any other, only a name (an account may be named with digits).
+  const listed = options.owners.map((o) => o.trim().toLowerCase()).filter(Boolean);
+  const ownerIds = new Set(listed.filter((o) => /^\d+$/.test(o)));
+  const ownerNames = new Set(listed.filter((o) => !/^\d+$/.test(o)));
   const branches = new Set(options.branches && options.branches.length > 0 ? options.branches : DEFAULT_BRANCHES);
   const issuer = options.issuer ?? GITHUB_ISSUER;
   const audience = audienceOf(options.audience);
@@ -121,7 +124,7 @@ export function githubVerifier(options: GithubVerifierOptions): GithubVerifier {
     const { repository, repository_owner: owner, repository_owner_id: ownerId, sha, ref, event_name: event } = claims;
     if (typeof repository !== "string" || typeof owner !== "string" || typeof sha !== "string" || typeof ref !== "string") throw new Error("missing its repository, owner, commit or ref");
     // An owner listed by id matches only that account; one listed by name, whoever holds the name now.
-    if (!(typeof ownerId === "string" && owners.has(ownerId)) && !owners.has(owner.toLowerCase())) throw new Error(`from ${owner}${typeof ownerId === "string" ? ` (id ${ownerId})` : ""}, which this hub does not take records from`);
+    if (!(typeof ownerId === "string" && ownerIds.has(ownerId)) && !ownerNames.has(owner.toLowerCase())) throw new Error(`from ${owner}${typeof ownerId === "string" ? ` (id ${ownerId})` : ""}, which this hub does not take records from`);
     if (!ref.startsWith("refs/heads/") || !branches.has(ref.slice("refs/heads/".length))) throw new Error(`from ${ref}: this hub takes records from ${[...branches].join(" and ")} only (YOUIYOUX_HUB_BRANCHES)`);
     return { repository, repository_owner: owner, sha, ref, ...(typeof event === "string" ? { event_name: event } : {}) };
   };
