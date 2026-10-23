@@ -13,7 +13,7 @@ import { join } from "node:path";
 import { stringify } from "yaml";
 import { executionLabel, MCP_TOOLS, ruleSlug, type ComponentContract, type RuleSpec } from "@youiyoux/core";
 import { cssValue, type ResolvedToken, type TokenBuild } from "@youiyoux/tokens";
-import { importLine, ruleCapability, type Project } from "@youiyoux/scanner";
+import { importLine, ruleCapability, withFile, type Project } from "@youiyoux/scanner";
 
 export const BLOCK_BEGIN = "<!-- youi:begin -->";
 export const BLOCK_END = "<!-- youi:end -->";
@@ -84,7 +84,7 @@ function enumSummary(contract: ComponentContract): string {
 
 /** Where components are imported from, for prose: the alias, or componentsDir by a relative path. */
 function importHint(config: Project["config"]): string {
-  return config.importFrom ? `\`${config.importFrom}\`` : `\`${config.componentsDir}\` (by a relative path from your file)`;
+  return config.importFrom ? `\`${withFile(config.importFrom)}\`` : `\`${config.componentsDir}\` (by a relative path from your file)`;
 }
 
 /* ----------------------------------------------------------------- AGENTS.md */

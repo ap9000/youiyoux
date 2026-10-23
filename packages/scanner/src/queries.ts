@@ -8,7 +8,7 @@ import { cssValue, cssVariable } from "@youiyoux/tokens";
 import { ruleCapability } from "./capabilities.ts";
 import type { TokenIndex } from "./checks.ts";
 import { assertSystemQuery } from "./library.ts";
-import type { Project } from "./project.ts";
+import { withFile, type Project } from "./project.ts";
 
 /** A System contract by id, name or part name. A Library id (`lib:…`) is refused, never looked up. */
 export function findContract(project: Project, query: string): ComponentContract | null {
@@ -20,7 +20,7 @@ export function findContract(project: Project, query: string): ComponentContract
 export function importLine(project: Project, contract: ComponentContract): string {
   const names = [contract.source.export, ...contract.source.also].join(", ");
   // Without an alias the specifier depends on the importing file, so say so rather than print one that does not resolve.
-  return `import { ${names} } from "${project.config.importFrom ?? `<relative path to ${project.config.componentsDir}>`}";`;
+  return `import { ${names} } from "${project.config.importFrom ? withFile(project.config.importFrom, contract.source.file) : `<relative path to ${project.config.componentsDir}>`}";`;
 }
 
 const MAX_PROP_TEXT = 40;

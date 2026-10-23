@@ -212,7 +212,7 @@ export const DRIFT_SEVERITY: Record<DriftKind, DiffFinding["severity"]> = { "nea
 export async function importOf(project: ChangeProject): Promise<(file: string, fromFile: string) => string> {
   const alias = await aliasRoot(project.root, project.config.tsconfig);
   return (file, fromFile) => {
-    if (project.system && file.startsWith(`${project.config.componentsDir}/`)) return importSpecifier(project.config, fromFile);
+    if (project.system && file.startsWith(`${project.config.componentsDir}/`)) return importSpecifier(project.config, fromFile, file);
     if (alias !== undefined && file.startsWith(alias)) return `@/${file.slice(alias.length).replace(/\.(tsx?|jsx?|mjs)$/, "").replace(/\/index$/, "")}`;
     const path = posix.relative(posix.dirname(fromFile), file).replace(/\.(tsx?|jsx?|mjs|astro)$/, "").replace(/\/index$/, "");
     return path.startsWith(".") ? path : `./${path}`;
@@ -235,7 +235,7 @@ export async function chosenLibraries(project: ChangeProject, added: AddedLines,
   const chosen = new Map<string, ChosenLibrary>();
   for (const { contract } of project.system?.components ?? []) {
     const type = EXPORT_TYPES[contract.name];
-    if (type && !chosen.has(type)) chosen.set(type, { library: "system", label: `the System's ${contract.name} (${contract.id})`, fix: (from) => `import { ${contract.name} } from "${importSpecifier(project.config, from)}"` });
+    if (type && !chosen.has(type)) chosen.set(type, { library: "system", label: `the System's ${contract.name} (${contract.id})`, fix: (from) => `import { ${contract.name} } from "${importSpecifier(project.config, from, contract.source.file)}"` });
   }
   let hits;
   try {

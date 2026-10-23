@@ -18,6 +18,10 @@ interface InitOptions {
   readonly system?: string;
   readonly componentsDir?: string;
   readonly force?: boolean;
+  /** Outputs to write instead of the defaults (adopt: the product's own variable names and dark selector). */
+  readonly outputs?: Record<string, unknown>;
+  /** Files allowed to define raw values (adopt: the stylesheet the tokens came from). */
+  readonly tokenSources?: readonly string[];
 }
 
 interface InitResult {
@@ -90,8 +94,10 @@ export async function initProject(options: InitOptions): Promise<InitResult> {
   notes.push(`owned components: ${componentsDir}`);
 
   const alias = await aliasRoot(root);
-  const importFrom = alias !== undefined && componentsDir.startsWith(alias) ? `@/${componentsDir.slice(alias.length)}` : undefined;
-  if (importFrom) notes.push(`imports use the @/ alias: ${importFrom}`);
+  // With no index barrel (shadcn/ui's layout), each component is imported from its own file.
+  const barrel = (await Promise.all(["index.ts", "index.tsx", "index.js"].map((f) => exists(join(root, componentsDir, f))))).some(Boolean);
+  const importFrom = alias !== undefined && componentsDir.startsWith(alias) ? `@/${componentsDir.slice(alias.length)}${barrel ? "" : "/{file}"}` : undefined;
+  if (importFrom) notes.push(`imports use the @/ alias: ${importFrom}${barrel ? "" : " (each component from its own file; no index barrel)"}`);
 
   const include = (
     await Promise.all(
@@ -120,7 +126,8 @@ export async function initProject(options: InitOptions): Promise<InitResult> {
     componentsDir,
     ...(importFrom ? { importFrom } : {}),
     routes: expo ? { strategy: "expo-router", appDir } : { strategy: "none" },
-    ...(prefix ? { outputs: { cssVarPrefix: prefix } } : {}),
+    ...(options.outputs ? { outputs: options.outputs } : prefix ? { outputs: { cssVarPrefix: prefix } } : {}),
+    ...(options.tokenSources && options.tokenSources.length > 0 ? { tokenSources: [...options.tokenSources] } : {}),
   });
   await writeFileAtomic(file, `${JSON.stringify(config, null, 2)}\n`);
   return { file, config, notes };

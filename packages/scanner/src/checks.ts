@@ -243,7 +243,7 @@ function lookalikes(analysis: ModuleAnalysis, elements: ElementIndex, config: { 
       column: site.column,
       text: `<${site.local}>`,
       message: `${site.local} here is ${site.resolved}, not the design-system ${contract?.name ?? site.resembles}.`,
-      suggestion: `import { ${contract?.name ?? site.local} } from "${importSpecifier(config, site.file)}"`,
+      suggestion: `import { ${contract?.name ?? site.local} } from "${importSpecifier(config, site.file, contract?.source.file)}"`,
     };
   });
 }

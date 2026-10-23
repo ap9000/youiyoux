@@ -130,7 +130,7 @@ describe("youi", () => {
       expect(err).toContain("youiyoux init --design <dir|package>");
       expect(await main(["init", "--project", dir, "--design", DEMO])).toBe(0);
       const config = JSON.parse(await readFile(join(dir, "youi.project.json"), "utf8")) as Record<string, unknown>;
-      expect(config).toMatchObject({ id: "mobile", system: "demo", source: { path: relative(dir, DEMO) }, componentsDir: "components/ui", importFrom: "@/components/ui", routes: { strategy: "expo-router", appDir: "app" } });
+      expect(config).toMatchObject({ id: "mobile", system: "demo", source: { path: relative(dir, DEMO) }, componentsDir: "components/ui", importFrom: "@/components/ui/{file}", routes: { strategy: "expo-router", appDir: "app" } });
       expect(String(config.$schema)).toMatch(/schema\/youi\.project\.schema\.json$/);
       expect(await readFile(join(dir, "components/ui/button.tsx"), "utf8")).toContain("buttonVariants");
       expect(await main(["init", "--project", dir, "--design", DEMO])).toBe(1);

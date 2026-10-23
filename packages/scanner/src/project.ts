@@ -68,6 +68,11 @@ export async function loadProject(root: string, options: LoadProjectOptions = {}
   };
 }
 
+/** `{file}` in an import specifier as the component's file name without its extension (`<file>` when no file is known). */
+export function withFile(specifier: string, sourceFile?: string): string {
+  return specifier.replace("{file}", sourceFile ? posix.basename(sourceFile).replace(/\.[^.]+$/, "") : "<file>");
+}
+
 async function isDirectory(path: string): Promise<boolean> {
   return (await stat(path).catch(() => null))?.isDirectory() ?? false;
 }
@@ -76,9 +81,11 @@ async function isDirectory(path: string): Promise<boolean> {
  * How a file imports the owned components: `importFrom` when the config sets it (an alias such
  * as `@/components/ui`), otherwise a relative path from that file to `componentsDir`. Without a
  * file, the componentsDir itself, which only reads as a path, not an import specifier.
+ * `{file}` in importFrom is the component's own file (`@/components/ui/{file}`: shadcn/ui
+ * imports each component from its module, with no barrel); `sourceFile` names it.
  */
-export function importSpecifier(config: Pick<ProjectConfig, "importFrom" | "componentsDir">, fromFile?: string): string {
-  if (config.importFrom) return config.importFrom;
+export function importSpecifier(config: Pick<ProjectConfig, "importFrom" | "componentsDir">, fromFile?: string, sourceFile?: string): string {
+  if (config.importFrom) return withFile(config.importFrom, sourceFile);
   if (!fromFile) return config.componentsDir;
   const path = posix.relative(posix.dirname(fromFile), config.componentsDir) || ".";
   return path.startsWith(".") ? path : `./${path}`;

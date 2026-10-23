@@ -22,7 +22,8 @@ import { renderDiscoverSearch, renderDiscoverShow, renderDiscoverSync } from "./
 import { startRuleEditor, type RuleEditor } from "./editor.ts";
 import { DEFAULT_HUB_PORT, runHub, runPreviews } from "./hub.ts";
 import { renderBrief, renderRequests } from "./requests.ts";
-import { initProject } from "./init.ts";
+import { exists, initProject } from "./init.ts";
+import { planAdoption, type AdoptPlan } from "./adopt.ts";
 import { noteSource, rebuildIndex, recordInventory, recordProject, renderHistory, renderRebuild, SCANS_LOG, SOURCES_FILE } from "./index-store.ts";
 import { renderGaps } from "./gaps.ts";
 import { renderInventory } from "./inventory.ts";
@@ -88,6 +89,12 @@ ${style.bold("Anywhere")}  ${style.dim("no design system needed")}
                            an unchanged component comes from the cache (YOUI_SPECIMEN_CACHE)
 
 ${style.bold("In a product repo")}
+  adopt [--components dir] [--css file] [--system id] [--dry-run]
+                           make this product's own UI its design system, kept in this repo: a draft
+                           contract per component in the components folder (the files stay where they
+                           are), the stylesheet's :root and dark variables as tokens (moved: the
+                           stylesheet imports the generated tokens.css, same names and values), three
+                           starter rules as warnings, then init and sync; --dry-run writes nothing
   init --design <dir|package>   write youi.project.json pointing at a design repo checkout, or at
                            the npm package that holds it (named, so no machine's folder), then sync;
                            a git repository goes in its source: { "git": "github:acme/design", "ref": "v3" }
@@ -602,6 +609,47 @@ async function cmdInit(values: Values): Promise<number> {
 }
 
 /**
+ * `youiyoux adopt`: the product's own components and stylesheet variables become its design system,
+ * kept in this repo (youi.config.json and design/), then init and sync as for any other system.
+ * Nothing is written when a file it would write is already there.
+ */
+async function cmdAdopt(values: Values): Promise<number> {
+  const root = resolve(values.project ?? process.cwd());
+  if (await exists(join(root, PROJECT_FILE))) throw new Error(`${root} already has ${PROJECT_FILE}: it follows a design system already (youiyoux sync updates it)`);
+  const plan = await planAdoption({ root, ...(values.components ? { componentsDir: values.components } : {}), ...(values.css ? { css: values.css } : {}), ...(values.system ? { system: values.system } : {}) });
+  const taken = (await Promise.all(plan.files.map(async (f) => ((await exists(join(root, f.path))) ? f.path : null)))).filter((f): f is string => f !== null);
+  if (taken.length > 0) throw new Error(`nothing was written: ${taken.slice(0, 5).join(", ")}${taken.length > 5 ? ` and ${taken.length - 5} more` : ""} already exist${taken.length === 1 ? "s" : ""}`);
+  if (values["dry-run"]) {
+    if (values.json) json(plan);
+    else print([...adoptLines(plan, true), "", style.dim(`dry run: nothing written; would write ${plan.files.map((f) => f.path).join(", ")}${plan.stylesheet ? ` and change ${plan.stylesheet.path}` : ""}`)].join("\n"));
+    return 0;
+  }
+  for (const file of plan.files) await writeFileAtomic(join(root, file.path), file.content);
+  if (plan.stylesheet) await writeFileAtomic(join(root, plan.stylesheet.path), plan.stylesheet.content);
+  await initProject({ root, design: root, schemaDir: join(TOOL_ROOT, "schema"), system: plan.system.id, componentsDir: plan.componentsDir, outputs: { ...plan.outputs, targets: [...plan.outputs.targets], dark: [...plan.outputs.dark] }, tokenSources: plan.tokenSources });
+  if (!values.json) print([...adoptLines(plan), ""].join("\n"));
+  const synced = await cmdSync({ ...values, project: root, components: undefined, css: undefined, system: undefined });
+  if (!values.json) print(`Next: describe each component in design/components/<name>/<name>.contract.json (its summary, guidance and examples; agents read them), see what is left with youiyoux check, and when a second app needs this System, youiyoux system extract <dir> moves it into its own repo`);
+  return synced;
+}
+
+function adoptLines(plan: AdoptPlan, dryRun = false): string[] {
+  const { tokens } = plan;
+  const shown = plan.components.slice(0, 6).join(", ") + (plan.components.length > 6 ? `, … ${plan.components.length - 6} more` : "");
+  return [
+    `${style.ok(dryRun ? "would adopt" : "adopted")} ${plan.system.name} ${style.dim(`(system ${plan.system.id}) from this product's own UI`)}`,
+    `  components  ${plural(plan.components.length, "component")} in ${plan.componentsDir} (${shown}): a draft contract each in design/components; the files stay where they are${plan.support.length > 0 ? ` (${plan.support.join(", ")} as support)` : ""}`,
+    tokens.stylesheet
+      ? `  tokens      ${plural(tokens.count, "variable")}${tokens.dark ? ", light and dark," : ""} from ${tokens.stylesheet} → design/tokens${tokens.left.length > 0 ? `; ${tokens.left.length} left in the stylesheet, not typed: ${tokens.left.slice(0, 4).map((l) => `--${l.name} (${l.value})`).join(", ")}${tokens.left.length > 4 ? ", …" : ""}` : ""}`
+      : `  tokens      none: no stylesheet defines :root variables (--css <file> names one)`,
+    ...(plan.stylesheet ? [`  stylesheet  ${plan.stylesheet.path}: their ${plural(plan.stylesheet.moved, "declaration")}${tokens.dark ? " (light and dark)" : ""} moved into the System; it imports ${plan.outputs.dir}/tokens.css (same names, same values)`] : []),
+    `  rules       3 starter rules, as warnings: design/rules`,
+    `  config      youi.config.json (the System) and youi.project.json (this product follows it)`,
+    ...plan.notes.map((n) => style.warn(`  ! ${n}`)),
+  ];
+}
+
+/**
  * `youiyoux link <dir>`: use this checkout of the design system for this product, on this machine
  * only (kept in the person's config folder, never in the repo); `youiyoux link` shows the link and
  * `youiyoux unlink` removes it. It never changes what sync writes for the team.
@@ -1042,7 +1090,7 @@ async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Pr
 type Command = (values: Values, positionals: string[], io: CliIo) => Promise<number>;
 
 const COMMANDS: Record<string, Command> = {
-  link: cmdLink, unlink: cmdUnlink, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, screens: cmdScreens, requests: cmdRequests, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+  adopt: cmdAdopt, link: cmdLink, unlink: cmdUnlink, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, screens: cmdScreens, requests: cmdRequests, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
 
 /** Every command name, for a front end that runs one by default (the youiyoux bin runs report). */
