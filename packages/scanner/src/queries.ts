@@ -4,7 +4,7 @@
  * bounded (pagination, top-N) so an agent lookup stays around 2 KB.
  */
 import { matchesQuery, systemStage, type ComponentContract, type PropValue, type ScanReport, type UsageSite } from "@youiyoux/core";
-import { cssValue } from "@youiyoux/tokens";
+import { cssValue, cssVariable } from "@youiyoux/tokens";
 import { ruleCapability } from "./capabilities.ts";
 import type { TokenIndex } from "./checks.ts";
 import { assertSystemQuery } from "./library.ts";
@@ -233,7 +233,7 @@ export function tokenRows(tokens: TokenIndex, group?: string, limit = 60): { col
       const dark = cssValue(t.type, t.dark);
       const key = tokens.themeKeys.get(t.id)?.[0];
       const utility = key ? utilityExample(key) : "";
-      return [t.id, `--${tokens.prefix}-${t.cssName}`, t.aliasOf ? `{${t.aliasOf}}` : light, dark === light || t.aliasOf ? "" : dark, utility];
+      return [t.id, cssVariable(tokens.prefix, t.cssName), t.aliasOf ? `{${t.aliasOf}}` : light, dark === light || t.aliasOf ? "" : dark, utility];
     });
   return { columns: ["id", "cssVar", "light", "dark", "utility"], rows: rows.slice(0, limit), total: rows.length, truncated: rows.length > limit };
 }

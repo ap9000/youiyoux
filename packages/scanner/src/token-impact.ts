@@ -8,7 +8,7 @@
  * files are invisible to it, so "no use found" is never proof of no effect.
  */
 import { matchesAny } from "@youiyoux/core";
-import type { ResolvedToken } from "@youiyoux/tokens";
+import { cssVariable, type ResolvedToken } from "@youiyoux/tokens";
 import { vendoredPath } from "./elements.ts";
 import { escapeRegExp } from "./parse.ts";
 import type { Project } from "./project.ts";
@@ -58,7 +58,7 @@ export function tokenClosure(tokens: readonly ResolvedToken[], tokenId: string):
 
 /** The names that use a token: its CSS variable, its Tailwind theme variables and their utilities. */
 function useNames(token: ResolvedToken, prefix: string, themeKeys: readonly string[]): string[] {
-  const variables = [`--${prefix}-${token.cssName}`, ...themeKeys.map((key) => `--${key}`)];
+  const variables = [cssVariable(prefix, token.cssName), ...themeKeys.map((key) => `--${key}`)];
   const utilities = themeKeys
     .filter((key) => !key.includes("--"))
     .flatMap((key) => {

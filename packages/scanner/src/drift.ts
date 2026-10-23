@@ -14,7 +14,7 @@
  */
 import type { SgNode } from "@ast-grep/napi";
 import type { InventoryRecipe, InventoryReport } from "@youiyoux/core";
-import { readRules, type ResolvedToken } from "@youiyoux/tokens";
+import { cssVariable, readRules, type ResolvedToken } from "@youiyoux/tokens";
 import { ARBITRARY, arbitraryTokens, COLOR_FN, colorTokens, dimensionTokens, HEX, offsetToPosition, rawColorsInCss, rawColorsInScript, stringNodes, tokenUtilities, type DimensionKind, type TokenIndex } from "./checks.ts";
 import { clusterShapeOf, compatible, shapeDistance } from "./inventory/cluster.ts";
 import { hasShape } from "./inventory/style.ts";
@@ -38,7 +38,7 @@ export type IsAdded = (file: string, line: number) => boolean;
 
 /* ------------------------------------------------------------ hardcoded values */
 
-const cssVar = (token: ResolvedToken, index: TokenIndex): string => `var(${[...index.byVar].find(([, t]) => t === token)?.[0] ?? `--${index.prefix}-${token.cssName}`})`;
+const cssVar = (token: ResolvedToken, index: TokenIndex): string => `var(${[...index.byVar].find(([, t]) => t === token)?.[0] ?? cssVariable(index.prefix, token.cssName)})`;
 const tokenList = (tokens: readonly ResolvedToken[]): string => tokens.slice(0, 3).map((t) => t.id).join(" or ");
 
 /** `text-` in `text-[#c62828]`: the utility a literal at `column` sits in, or null. */

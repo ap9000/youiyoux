@@ -98,6 +98,27 @@ describe("build", () => {
     expect(native).toContain("\"radius.control\": 8,");
   });
 
+  test("with no prefix, variables are --<name>, Tailwind names that would read themselves are left out, and shadcn-style CSS imports by its own names", async () => {
+    const repo = await loadDesignRepo(DEMO);
+    const output = OutputConfig.parse({ ...demoOutput, cssVarPrefix: "" });
+    const built = await buildTokens(DEMO, repo.systems[0]!.config, output, { contracts: repo.systems[0]!.components.map((c) => c.contract) });
+    const [css, theme] = [built.files[0]!.content, built.files[1]!.content];
+    expect(css).toContain("--color-foreground: #1c1c21;");
+    expect(css).toContain("--color-accent: var(--color-brand);");
+    expect(css).toContain("--button-hover-bg-default: var(--color-accent-hover);");
+    expect(css).not.toMatch(/--(?:demo|youi)?-/);
+    // `--color-foreground: var(--color-foreground)` would be a cycle; the map entry still writes its own.
+    expect(theme).not.toContain("--color-foreground:");
+    expect(theme).toContain("--color-primary: var(--color-accent);");
+    expect(theme).not.toContain("--radius-card:");
+
+    const shadcn = ":root {\n  --radius: 0.625rem;\n  --primary: oklch(0.205 0 0);\n  --ring: var(--primary);\n}\n.dark {\n  --primary: oklch(0.922 0 0);\n}\n";
+    const imported = importTokens({ css: { css: shadcn, prefix: "", light: { selector: ":root" }, dark: { selector: ".dark" } } });
+    expect(imported.base).toMatchObject({ color: { primary: { $value: { colorSpace: "oklch", components: [0.205, 0, 0] }, $extensions: { "dev.youiyoux": { css: "primary" } } }, ring: { $value: "{color.primary}" } } });
+    expect(imported.dark).toMatchObject({ color: { primary: { $value: { components: [0.922, 0, 0] } } } });
+    expect(imported.report.unparsed).toEqual([]);
+  });
+
   test("the build reproduces every variable a project ships (parity, light and dark)", async () => {
     const repo = await loadDesignRepo(DEMO);
     const built = await buildTokens(DEMO, repo.systems[0]!.config, demoOutput);

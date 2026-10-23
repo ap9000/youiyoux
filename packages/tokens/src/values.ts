@@ -9,6 +9,9 @@
  */
 import { formatCssColor, type DtcgColor } from "./color.ts";
 
+/** A token's CSS variable: `--<prefix>-<name>`, or `--<name>` with no prefix (a product whose own variables have none, as shadcn/ui's `--primary`). */
+export const cssVariable = (prefix: string, name: string): string => (prefix ? `--${prefix}-${name}` : `--${name}`);
+
 export interface Dimension {
   readonly value: number;
   readonly unit: string;

@@ -5,7 +5,7 @@
  * Edits are kept as a style draft's content, so saving sends exactly what the editor shows.
  */
 import { contrastText, gradePairs, ringOffset, systemPairs, type ContrastContract, type ContrastFinding, type ContrastRing, type ContrastText, type ContrastToken } from "@youiyoux/tokens/contrast";
-import { aliasTarget, cssValue, resolveAliases, tokenVariables, variableSuffixes } from "@youiyoux/tokens/values";
+import { aliasTarget, cssValue, cssVariable, resolveAliases, tokenVariables, variableSuffixes } from "@youiyoux/tokens/values";
 import type { StateEdit, StyleDraftContent, TokenEdit } from "@youiyoux/workflow/api";
 import type { PreviewVars } from "../../preview/protocol.ts";
 import type { ComponentContract, TokenEntry } from "../../data/types.ts";
@@ -122,9 +122,9 @@ export function cssOf(model: EditorModel, content: StyleDraftContent, path: stri
 
 /* -------------------------------------------------------------- live preview */
 
-/** `--<prefix>-<component>-<state>-<role>`, as the token build names a contract's state variable. */
+/** `--<prefix>-<component>-<state>-<role>` (no prefix: `--<component>-…`), as the token build names a contract's state variable. */
 function stateVariable(prefix: string, component: string, state: string, role: string): string {
-  return `--${prefix}-${component.split("/").at(-1)}-${state}-${role.replace(/\./g, "-")}`;
+  return cssVariable(prefix, `${component.split("/").at(-1)}-${state}-${role.replace(/\./g, "-")}`);
 }
 
 /**
@@ -132,7 +132,7 @@ function stateVariable(prefix: string, component: string, state: string, role: s
  * preview sheet writes aliases as `var()`, so whatever reads an edited token follows it.
  */
 export function previewVars(model: EditorModel, content: StyleDraftContent): PreviewVars {
-  const ref = (path: string, suffix = ""): string => `var(${model.byPath.get(path)?.cssVar ?? `--${model.prefix}-${path.replace(/\./g, "-")}`}${suffix})`;
+  const ref = (path: string, suffix = ""): string => `var(${model.byPath.get(path)?.cssVar ?? cssVariable(model.prefix, path.replace(/\./g, "-"))}${suffix})`;
   const vars: { light: Record<string, string>; dark: Record<string, string> } = { light: {}, dark: {} };
   for (const edit of content.tokens) {
     const token = model.byPath.get(edit.path);

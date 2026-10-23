@@ -106,8 +106,8 @@ export const TailwindConfig = z.object({
 export const OutputConfig = z.object({
   /** Where generated token files go, relative to the project root. */
   dir: RelPath.default("src/design"),
-  /** CSS custom property prefix: `--<prefix>-<name>`. */
-  cssVarPrefix: z.string().regex(/^[a-z][a-z0-9-]*$/).default("youi"),
+  /** CSS custom property prefix: `--<prefix>-<name>`; empty for none (`--<name>`), when the product's own variables have none, as shadcn/ui's `--primary`. */
+  cssVarPrefix: z.string().regex(/^(?:[a-z][a-z0-9-]*)?$/, "expected lowercase letters, digits and hyphens, starting with a letter, or empty for no prefix").default("youi"),
   /** Where the dark values apply: each entry is a selector, optionally inside a media query. */
   dark: z.array(DarkSelector).default(DEFAULT_DARK_SELECTORS),
   targets: z.array(z.enum(["css-vars", "tailwind-v4", "ts", "react-native"])).default(["css-vars", "tailwind-v4", "ts"]),

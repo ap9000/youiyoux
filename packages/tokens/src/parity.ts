@@ -46,7 +46,7 @@ export function sameCssValue(a: string, b: string): boolean {
 }
 
 function prefixed(map: Map<string, { value: string }>, prefix: string): Map<string, string> {
-  return new Map([...map].filter(([name]) => name.startsWith(`--${prefix}-`)).map(([name, d]) => [name, d.value]));
+  return new Map([...map].filter(([name]) => name.startsWith(prefix ? `--${prefix}-` : "--")).map(([name, d]) => [name, d.value]));
 }
 
 /** Compare `expectedCss` (the project's current file) with `builtCss` (generated tokens.css). */

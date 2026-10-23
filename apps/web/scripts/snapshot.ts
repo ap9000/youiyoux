@@ -162,7 +162,7 @@ function catalogTokens(system: string, prefix: string, tokens: readonly Resolved
     path: token.id,
     group: token.id.split(".")[0],
     type: token.type,
-    cssVar: `--${prefix}-${token.cssName}`,
+    cssVar: lib.cssVariable(prefix, token.cssName),
     light: lib.cssValue(token.type, token.light),
     dark: lib.cssValue(token.type, token.dark),
     ...(token.type === "typography" ? { lightValue: token.light } : {}),
@@ -200,12 +200,12 @@ function systemCss(name: string, tokens: readonly ResolvedToken[], contracts: re
   const byId = new Map(tokens.map((t) => [t.id, t]));
   const variable = (paths: readonly string[]): string | null => {
     const token = paths.map((p) => byId.get(p)).find(Boolean);
-    return token ? `var(--${prefix}-${token.cssName})` : null;
+    return token ? `var(${lib.cssVariable(prefix, token.cssName)})` : null;
   };
-  const ref = (path: string, suffix = ""): string => `var(--${prefix}-${byId.get(path)?.cssName ?? path.replace(/\./g, "-")}${suffix})`;
+  const ref = (path: string, suffix = ""): string => `var(${lib.cssVariable(prefix, `${byId.get(path)?.cssName ?? path.replace(/\./g, "-")}${suffix}`)})`;
   const decl = (scheme: "light" | "dark"): string =>
     tokens
-      .flatMap((t) => lib.tokenVariables(t.type, t.source?.[scheme] ?? t[scheme], ref).map(([suffix, css]) => `  --${prefix}-${t.cssName}${suffix}: ${css};`))
+      .flatMap((t) => lib.tokenVariables(t.type, t.source?.[scheme] ?? t[scheme], ref).map(([suffix, css]) => `  ${lib.cssVariable(prefix, `${t.cssName}${suffix}`)}: ${css};`))
       .join("\n");
   const states = lib.stateVariables(contracts, tokens, prefix).map(([property, css]) => `  ${property}: ${css};`).join("\n");
   const stage = [variable(STAGE) && `  background: ${variable(STAGE)};`, variable(INK) && `  color: ${variable(INK)};`].filter(Boolean).join("\n");

@@ -13,7 +13,7 @@ import cssPlugin from "@terrazzo/plugin-css";
 import { DL_EXT } from "./import.ts";
 import { resolverLayout } from "./layout.ts";
 import { renderNative, renderTailwind, renderTs, stateVariables, youiTypeVariables } from "./outputs.ts";
-import { cssComment, cssString, cssValue, resolveAliases } from "./values.ts";
+import { cssComment, cssString, cssValue, cssVariable, resolveAliases } from "./values.ts";
 
 export interface ResolvedToken {
   readonly id: string;
@@ -177,7 +177,7 @@ export async function buildTokens(repoRoot: string, system: SystemConfig, output
   const extraDark = declare(youiDark);
   const withExtra = (contents: string, extra: string): string => (extra ? `${contents.trimEnd()}\n${extra}` : contents);
 
-  const variableName = (token: TokenNormalized): string => `--${prefix}-${cssNameOf(token)}`;
+  const variableName = (token: TokenNormalized): string => cssVariable(prefix, cssNameOf(token));
   const permutations = [
     { input: inputs.light, prepare: (contents: string) => `:root {\n  color-scheme: light;\n${withExtra(indent(contents), extraLight)}\n}` },
     ...(system.themeModifier && darkIds.length > 0 ? [{ input: inputs.dark, include: darkIds, prepare: (contents: string) => wrapDark(withExtra(contents, extraDark), output) }] : []),

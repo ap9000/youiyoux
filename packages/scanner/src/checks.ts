@@ -5,7 +5,7 @@
  */
 import type { SgNode } from "@ast-grep/napi";
 import { matchesAny, type ElementId, type OutputConfig, type RuleRun, type RuleSpec, type Violation } from "@youiyoux/core";
-import { parseCssColor, readRules, sameColor, tailwindTheme, type DtcgColor, type ResolvedToken } from "@youiyoux/tokens";
+import { cssVariable, parseCssColor, readRules, sameColor, tailwindTheme, type DtcgColor, type ResolvedToken } from "@youiyoux/tokens";
 import { AST_GREP_FILE_LANG, ruleCapability } from "./capabilities.ts";
 import type { ElementIndex } from "./elements.ts";
 import { importSpecifier } from "./project.ts";
@@ -29,7 +29,7 @@ export function buildTokenIndex(tokens: readonly ResolvedToken[], output: Output
   const mapped = new Set(Object.keys(output.tailwind.map));
   const entries = [...tailwindTheme(tokens, output)].sort(([a], [b]) => Number(!mapped.has(a)) - Number(!mapped.has(b)));
   for (const [key, entry] of entries) if (entry.token) themeKeys.set(entry.token, [...(themeKeys.get(entry.token) ?? []), key]);
-  return { prefix: output.cssVarPrefix, tokens, byVar: new Map(tokens.map((t) => [`--${output.cssVarPrefix}-${t.cssName}`, t])), themeKeys };
+  return { prefix: output.cssVarPrefix, tokens, byVar: new Map(tokens.map((t) => [cssVariable(output.cssVarPrefix, t.cssName), t])), themeKeys };
 }
 
 function isColor(value: unknown): value is DtcgColor {
@@ -47,7 +47,7 @@ function colorSuggestion(literal: string, index: TokenIndex): string | undefined
   const matches = colorTokens(literal, index);
   if (!matches) return undefined;
   if (matches.length === 0) return "no token has this value: pick the role it plays (system_get_tokens) or propose a token";
-  const listed = matches.slice(0, 3).map((t) => `var(--${index.prefix}-${t.cssName}) (${t.id})`).join(" or ");
+  const listed = matches.slice(0, 3).map((t) => `var(${cssVariable(index.prefix, t.cssName)}) (${t.id})`).join(" or ");
   return `${listed}: same value, check it is the right role`;
 }
 
@@ -118,7 +118,7 @@ export function rawColorsInCss(module: ModuleInfo, index: TokenIndex, isTokenSou
         const lineText = lines[declaration.line - 1] ?? "";
         const column = Math.max(1, lineText.indexOf(match[0]) + 1);
         const suggestion = colorSuggestion(match[0], index);
-        findings.push({ file: module.file, line: declaration.line, column, text: `${declaration.property}: ${match[0]}`, message: `Raw colour ${match[0]} in ${declaration.property}; use var(--${index.prefix}-…).`, ...(suggestion ? { suggestion } : {}) });
+        findings.push({ file: module.file, line: declaration.line, column, text: `${declaration.property}: ${match[0]}`, message: `Raw colour ${match[0]} in ${declaration.property}; use var(${cssVariable(index.prefix, "…")}).`, ...(suggestion ? { suggestion } : {}) });
       }
     }
   }

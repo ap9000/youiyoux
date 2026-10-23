@@ -1,7 +1,7 @@
 /** Non-CSS-variable outputs rendered from resolved tokens: Tailwind v4 @theme, TS, React Native. */
 import type { ComponentContract, OutputConfig } from "@youiyoux/core";
 import type { ResolvedToken } from "./build.ts";
-import { cssValue, springCurve, tokenVariables, variableSuffixes, type Dimension, type FocusRing, type Spring, type Typography } from "./values.ts";
+import { cssValue, cssVariable, springCurve, tokenVariables, variableSuffixes, type Dimension, type FocusRing, type Spring, type Typography } from "./values.ts";
 
 const NAMESPACE: Record<string, string> = { color: "color", radius: "radius", space: "spacing", font: "font", shadow: "shadow", easing: "ease" };
 
@@ -9,9 +9,9 @@ const NAMESPACE: Record<string, string> = { color: "color", radius: "radius", sp
 function tailwindEntries(token: ResolvedToken, prefix: string): Array<[string, string]> {
   const [group, ...rest] = token.id.split(".");
   const name = rest.join("-");
-  const ref = `var(--${prefix}-${token.cssName})`;
+  const ref = `var(${cssVariable(prefix, token.cssName)})`;
   if (token.type === "typography") {
-    const sub = (s: string): string => `var(--${prefix}-${token.cssName}-${s})`;
+    const sub = (s: string): string => `var(${cssVariable(prefix, `${token.cssName}-${s}`)})`;
     const t = token.light as Typography;
     return [
       [`text-${name}`, sub("font-size")],
@@ -31,10 +31,10 @@ function tailwindEntries(token: ResolvedToken, prefix: string): Array<[string, s
       return named ? [[`ease-${named}`, ref]] : [];
     case "spring":
       // `ease-spring-snappy duration-spring-snappy`: the spring's curve and its settle time.
-      return named ? [[`ease-${named}`, ref], [`transition-duration-${named}`, `var(--${prefix}-${token.cssName}-duration)`]] : [];
+      return named ? [[`ease-${named}`, ref], [`transition-duration-${named}`, `var(${cssVariable(prefix, `${token.cssName}-duration`)})`]] : [];
     case "focusRing":
       // The ring's colour for outline-/ring- utilities; the ring itself is var(--<prefix>-<name>) (an outline shorthand).
-      return [[`color-${token.id.replace(/\./g, "-")}`, `var(--${prefix}-${token.cssName}-color)`]];
+      return [[`color-${token.id.replace(/\./g, "-")}`, `var(${cssVariable(prefix, `${token.cssName}-color`)})`]];
     default:
       return [];
   }
@@ -68,12 +68,13 @@ export function tailwindTheme(tokens: readonly ResolvedToken[], output: OutputCo
   const entries = new Map<string, ThemeEntry>();
   if (output.tailwind.includeAll) {
     for (const token of tokens) {
-      for (const [key, css] of tailwindEntries(token, output.cssVarPrefix)) if (!isReservedTailwindKey(key)) entries.set(key, { css, token: token.id });
+      // With no prefix, a token can already be named as Tailwind's variable (`--color-ink`): reading itself would be a cycle.
+      for (const [key, css] of tailwindEntries(token, output.cssVarPrefix)) if (!isReservedTailwindKey(key) && css !== `var(--${key})`) entries.set(key, { css, token: token.id });
     }
   }
   for (const [key, target] of Object.entries(output.tailwind.map)) {
     const token = byId.get(target);
-    entries.set(key, token ? { css: `var(--${output.cssVarPrefix}-${token.cssName})`, token: token.id } : { css: target });
+    entries.set(key, token ? { css: `var(${cssVariable(output.cssVarPrefix, token.cssName)})`, token: token.id } : { css: target });
   }
   return entries;
 }
@@ -92,7 +93,7 @@ function tsLiteral(map: Record<string, unknown>): string {
 }
 
 export function renderTs(tokens: readonly ResolvedToken[], prefix: string, header: string): string {
-  const vars = Object.fromEntries(tokens.map((t) => [t.id, `var(--${prefix}-${t.cssName})`]));
+  const vars = Object.fromEntries(tokens.map((t) => [t.id, `var(${cssVariable(prefix, t.cssName)})`]));
   const light = Object.fromEntries(tokens.map((t) => [t.id, cssValue(t.type, t.light)]));
   const dark = Object.fromEntries(tokens.map((t) => [t.id, cssValue(t.type, t.dark)]));
   return [
@@ -179,7 +180,7 @@ export function stateVariables(contracts: readonly Pick<ComponentContract, "id" 
       for (const [role, tokenId] of Object.entries(bindings ?? {}).sort(([a], [b]) => a.localeCompare(b))) {
         const token = byId.get(tokenId.replace(/^youi:[a-z][a-z0-9-]*\/token\//, ""));
         if (!token) continue;
-        for (const suffix of variableSuffixes(token.type)) vars.push([`--${prefix}-${component}-${state}-${role.replace(/\./g, "-")}${suffix}`, `var(--${prefix}-${token.cssName}${suffix})`]);
+        for (const suffix of variableSuffixes(token.type)) vars.push([cssVariable(prefix, `${component}-${state}-${role.replace(/\./g, "-")}${suffix}`), `var(${cssVariable(prefix, `${token.cssName}${suffix}`)})`]);
       }
     }
   }
@@ -189,8 +190,8 @@ export function stateVariables(contracts: readonly Pick<ComponentContract, "id" 
 /** Declarations for the variables Terrazzo does not emit (the youi types), per scheme: aliases stay var() references. */
 export function youiTypeVariables(tokens: readonly ResolvedToken[], prefix: string, scheme: "light" | "dark"): Array<[string, string]> {
   const byId = new Map(tokens.map((t) => [t.id, t]));
-  const ref = (path: string, suffix = ""): string => `var(--${prefix}-${byId.get(path)?.cssName ?? path.replace(/\./g, "-")}${suffix})`;
+  const ref = (path: string, suffix = ""): string => `var(${cssVariable(prefix, `${byId.get(path)?.cssName ?? path.replace(/\./g, "-")}${suffix}`)})`;
   return tokens
     .filter((t) => t.type === "spring" || t.type === "focusRing")
-    .flatMap((t) => tokenVariables(t.type, t.source?.[scheme] ?? t[scheme], ref).map(([suffix, css]) => [`--${prefix}-${t.cssName}${suffix}`, css] as [string, string]));
+    .flatMap((t) => tokenVariables(t.type, t.source?.[scheme] ?? t[scheme], ref).map(([suffix, css]) => [cssVariable(prefix, `${t.cssName}${suffix}`), css] as [string, string]));
 }

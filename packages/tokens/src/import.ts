@@ -30,6 +30,7 @@ export interface BlockRef {
 
 export interface CssSource {
   readonly css: string;
+  /** The variables' prefix (`acme` for `--acme-ink`); empty for unprefixed ones (`--primary`). */
   readonly prefix: string;
   readonly light: BlockRef;
   readonly dark?: BlockRef;
@@ -182,7 +183,8 @@ interface CssEntry {
 function cssEntries(source: CssSource, skip: ReadonlySet<string>): CssEntry[] {
   const strip = (map: Map<string, { value: string }>): Map<string, string> => {
     const out = new Map<string, string>();
-    for (const [prop, decl] of map) if (prop.startsWith(`--${source.prefix}-`)) out.set(prop.slice(source.prefix.length + 3), decl.value);
+    const start = source.prefix ? `--${source.prefix}-` : "--";
+    for (const [prop, decl] of map) if (prop.startsWith(start)) out.set(prop.slice(start.length), decl.value);
     return out;
   };
   const light = strip(customProperties(source.css, source.light.selector, source.light.outer));
@@ -191,7 +193,7 @@ function cssEntries(source: CssSource, skip: ReadonlySet<string>): CssEntry[] {
 }
 
 function aliasTarget(value: string, prefix: string): string | null {
-  return new RegExp(`^var\\(--${prefix}-([a-z0-9-]+)\\)$`).exec(value.trim())?.[1] ?? null;
+  return new RegExp(`^var\\(--${prefix ? `${prefix}-` : ""}([a-z0-9-]+)\\)$`).exec(value.trim())?.[1] ?? null;
 }
 
 export function importTokens(options: ImportOptions): ImportResult {
