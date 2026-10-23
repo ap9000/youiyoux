@@ -118,6 +118,11 @@ describe("a design system from git", () => {
     // Nothing of it is kept to be read later.
     const cached = await readdir(process.env.YOUI_SYSTEMS_CACHE!, { recursive: true });
     expect(cached.some((p) => String(p).endsWith("tokens/leak.json"))).toBe(false);
+    // A cached tree is checked each time it is used, not only when it was made (one cached before the check, or changed since).
+    const good = await gitCheckout(url, "v1");
+    await symlink(join(dir, "secret.txt"), join(good.root, "tokens/planted.json"));
+    await expect(gitCheckout(url, "v1")).rejects.toThrow("has links that lead outside it (tokens/planted.json)");
+    await rm(join(good.root, "tokens/planted.json"));
     // A link that stays inside is fine.
     await rm(join(repo, "tokens/leak.json"));
     await git(repo, "add", "-A");

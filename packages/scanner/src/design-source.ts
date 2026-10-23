@@ -79,7 +79,7 @@ export async function gitCheckout(url: string, ref: string, options: DesignSourc
   const bare = join(base, "repo.git");
   const refs = join(base, "refs.json");
   const recorded = options.refresh ? null : COMMIT.test(ref) ? ref : (options.locked ?? (await readRefs(refs))[ref] ?? null);
-  if (recorded !== null && (await isDirectory(join(base, recorded)))) return { root: join(base, recorded), commit: recorded };
+  if (recorded !== null && (await isDirectory(join(base, recorded)))) return { root: await contained(join(base, recorded), recorded), commit: recorded };
 
   if (recorded === null || !(await hasCommit(bare, recorded))) await fetchAll(bare, remote);
   const commit = recorded ?? (await revParse(bare, ref));
@@ -87,6 +87,7 @@ export async function gitCheckout(url: string, ref: string, options: DesignSourc
   if (recorded !== null && !(await hasCommit(bare, commit))) throw new Error(`${withoutCredentials(url)} has no commit ${commit}, which youi.lock.json records: run youiyoux sync to resolve "${ref}" again`);
   const tree = join(base, commit);
   if (!(await isDirectory(tree))) await extract(bare, commit, tree);
+  await contained(tree, commit);
   // Remembered only once its tree is usable: a refused commit is resolved afresh next time.
   if (recorded === null) await writeFileAtomic(refs, `${JSON.stringify({ ...(await readRefs(refs)), [ref]: commit }, null, 2)}\n`);
   return { root: tree, commit };
@@ -125,8 +126,7 @@ async function extract(bare: string, commit: string, tree: string): Promise<void
     await git(["--git-dir", bare, "archive", "--format=tar", "-o", join(temp, ".tree.tar"), commit]);
     await run("tar", ["-xf", join(temp, ".tree.tar"), "-C", temp]);
     await rm(join(temp, ".tree.tar"));
-    const escaping = await linksLeaving(temp);
-    if (escaping.length > 0) throw new Error(`the design system at ${commit} has links that lead outside it (${escaping.slice(0, 3).join(", ")}): it was not used, since sync would copy what they point at`);
+    await contained(temp, commit);
     await rename(temp, tree).catch(async (error: unknown) => {
       // Another run made it first: theirs is the same commit.
       if (!(await isDirectory(tree))) throw error;
@@ -138,6 +138,16 @@ async function extract(bare: string, commit: string, tree: string): Promise<void
 
 /** Any `user:password@` or token in a URL, as `***@`, for every message (git's own included). */
 export const withoutCredentials = (text: string): string => text.replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+@/gi, "$1***@");
+
+/**
+ * The tree, once no symbolic link in it leads outside: checked every time a tree is used, cached
+ * ones included (one made before this check, or changed since), not only when it is made.
+ */
+async function contained(tree: string, commit: string): Promise<string> {
+  const escaping = await linksLeaving(tree);
+  if (escaping.length > 0) throw new Error(`the design system at ${commit} has links that lead outside it (${escaping.slice(0, 3).join(", ")}): it was not used, since sync would copy what they point at`);
+  return tree;
+}
 
 /** Symbolic links in the tree whose target is outside it (absolute, or up past its top), as tree-relative paths. */
 async function linksLeaving(root: string): Promise<string[]> {
