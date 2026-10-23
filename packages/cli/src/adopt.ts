@@ -50,7 +50,14 @@ export interface AdoptPlan {
 
 const OUT_DIR = "design/build";
 /** Where a dark scheme's variables are written, in the order products write them. */
-const DARK_BLOCKS: readonly BlockRef[] = [{ selector: ".dark" }, { selector: ":root.dark" }, { selector: "[data-theme=\"dark\"]" }, { selector: ":root[data-theme=\"dark\"]" }, { selector: ":root", outer: "@media (prefers-color-scheme: dark)" }];
+const DARK_BLOCKS: readonly BlockRef[] = [
+  { selector: ".dark" },
+  { selector: ":root.dark" },
+  { selector: "[data-theme=\"dark\"]" },
+  { selector: ":root[data-theme=\"dark\"]" },
+  { selector: ":root", outer: "@media (prefers-color-scheme: dark)" },
+  { selector: ":root:not([data-theme=\"light\"])", outer: "@media (prefers-color-scheme: dark)" },
+];
 
 const kebab = (name: string): string => name.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
 const pascal = (file: string): string => basename(file).replace(/\.[^.]+$/, "").split(/[-_.]/).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join("");
@@ -178,12 +185,12 @@ function variableNames(tree: TokenTree, path: string[] = []): string[] {
 
 /**
  * The stylesheet without the moved declarations, importing the generated tokens: each moved
- * declaration's line is removed when the line holds only it; a block left empty goes too. Only
- * blocks at the top level are changed; anything else is left as it was (then null).
+ * declaration's line is removed when the line holds only it; a block (or an @media) left empty
+ * goes too. Only the :root block and the dark blocks given are changed; nothing to move is null.
  */
 function moveDeclarations(css: string, blocks: readonly BlockRef[], moved: ReadonlySet<string>, importPath: string): { content: string; moved: number } | null {
   const rules = readRules(css).filter((r) => blocks.some((b) => r.preludes.at(-1) === b.selector && (b.outer ? r.preludes.length === 2 && r.preludes[0] === b.outer : r.preludes.length === 1)));
-  if (rules.length === 0 || rules.some((r) => r.preludes.length > 1)) return null;
+  if (rules.length === 0) return null;
   const lines = css.split("\n");
   const drop = new Set<number>();
   for (const rule of rules) {
@@ -195,6 +202,8 @@ function moveDeclarations(css: string, blocks: readonly BlockRef[], moved: Reado
   if (drop.size === 0) return null;
   let content = lines.filter((_, i) => !drop.has(i)).join("\n");
   for (const block of blocks) content = content.replace(new RegExp(`(^|\\n)[ \\t]*${block.selector.replace(/[.[\]()"=:]/g, "\\$&")}\\s*\\{\\s*\\}[ \\t]*(?=\\n|$)`, "g"), "");
+  // An @media left holding nothing goes too.
+  for (const outer of new Set(blocks.flatMap((b) => (b.outer ? [b.outer] : [])))) content = content.replace(new RegExp(`(^|\\n)[ \\t]*${outer.replace(/[.[\]()"=:]/g, "\\$&")}\\s*\\{\\s*\\}[ \\t]*(?=\\n|$)`, "g"), "");
   const statement = `@import "${importPath}";`;
   const imports = [...content.matchAll(/^@import[^;]*;[ \t]*$/gm)];
   const at = imports.length > 0 ? imports.at(-1)!.index! + imports.at(-1)![0].length : 0;
@@ -268,7 +277,9 @@ export async function planAdoption(options: AdoptOptions): Promise<AdoptPlan> {
   const stylesheet = found.file ? inside(root, found.file, "the stylesheet") : null;
   const css = stylesheet ? await readTextOrNull(join(root, stylesheet)) : null;
   if (stylesheet && css === null) throw new Error(`${stylesheet} does not exist (--css <file>: the stylesheet that defines your :root variables)`);
-  const darkBlock = css ? DARK_BLOCKS.find((b) => readRules(css).some((r) => r.preludes.at(-1) === b.selector && (b.outer ? r.preludes[0] === b.outer : r.preludes.length === 1) && r.declarations.some((d) => d.property.startsWith("--")))) : undefined;
+  // Every place the product writes its dark values (a class toggle and the OS setting, often both): all move, and all are generated.
+  const darkBlocks = css ? DARK_BLOCKS.filter((b) => readRules(css).some((r) => r.preludes.at(-1) === b.selector && (b.outer ? r.preludes.length === 2 && r.preludes[0] === b.outer : r.preludes.length === 1) && r.declarations.some((d) => d.property.startsWith("--")))) : [];
+  const darkBlock = darkBlocks[0];
   const variables = css ? rootVariables(css) : [];
   const prefix = commonPrefix(variables.map((v) => v.name));
   const full = (name: string): string => (prefix ? `${prefix}-${name}` : name);
@@ -298,7 +309,7 @@ export async function planAdoption(options: AdoptOptions): Promise<AdoptPlan> {
 
   const moved = new Set(imported ? variableNames(imported.base).map(full) : []);
   const importPath = stylesheet ? relative(dirname(join(root, stylesheet)), join(root, OUT_DIR, "tokens.css")).split("\\").join("/") : "";
-  const rewritten = css && moved.size > 0 ? moveDeclarations(css, [{ selector: ":root" }, ...(darkBlock ? [darkBlock] : [])], moved, importPath.startsWith(".") ? importPath : `./${importPath}`) : null;
+  const rewritten = css && moved.size > 0 ? moveDeclarations(css, [{ selector: ":root" }, ...darkBlocks], moved, importPath.startsWith(".") ? importPath : `./${importPath}`) : null;
   if (css && moved.size > 0 && !rewritten) notes.push(`${stylesheet}'s variables were copied, not moved (their blocks are nested or share lines): import ${OUT_DIR}/tokens.css from it and remove them by hand`);
 
   for (const [rule, content] of starterRules(id, componentsDir)) out.push({ path: `design/rules/${rule}.rule.yaml`, content });
@@ -329,7 +340,7 @@ export async function planAdoption(options: AdoptOptions): Promise<AdoptPlan> {
     support,
     tokens: { stylesheet, count: tokenCount, dark: hasDark, left },
     stylesheet: rewritten && stylesheet ? { path: stylesheet, ...rewritten } : null,
-    outputs: { dir: OUT_DIR, cssVarPrefix: prefix, dark: darkBlock ? [{ ...(darkBlock.outer ? { media: darkBlock.outer.replace(/^@media\s+/, "") } : {}), selector: darkBlock.selector }] : [], targets: ["css-vars"] },
+    outputs: { dir: OUT_DIR, cssVarPrefix: prefix, dark: darkBlocks.map((b) => ({ ...(b.outer ? { media: b.outer.replace(/^@media\s+/, "") } : {}), selector: b.selector })), targets: ["css-vars"] },
     tokenSources: stylesheet ? [stylesheet] : [],
     notes,
   };

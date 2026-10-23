@@ -284,6 +284,13 @@ const STYLES = `@import "tailwindcss";
   --legacy-gutter: 24px;
 }
 
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --acme-ink: #ececf1;
+    --acme-paper: #121214;
+  }
+}
+
 :root[data-theme="dark"] {
   --acme-ink: #ececf1;
   --acme-paper: #121214;
@@ -331,7 +338,8 @@ describe("youiyoux adopt on a product laid out as Toolroll is", () => {
     // A line height of 1.4 is the number 1.4, never 1.4px.
     expect(tokens.typography).toEqual({ "label-font-size": expect.objectContaining({ $type: "dimension", $value: { value: 13, unit: "px" } }), "label-line-height": expect.objectContaining({ $type: "number", $value: 1.4 }) });
     const project = JSON.parse(await readFile(join(root, "youi.project.json"), "utf8")) as { outputs: Record<string, unknown>; importFrom: string };
-    expect(project.outputs).toMatchObject({ cssVarPrefix: "acme", dark: [{ selector: ':root[data-theme="dark"]' }] });
+    // Dark is written for the OS setting and for the toggle: both move, and both are generated.
+    expect(project.outputs).toMatchObject({ cssVarPrefix: "acme", dark: [{ selector: ':root[data-theme="dark"]' }, { media: "(prefers-color-scheme: dark)", selector: ':root:not([data-theme="light"])' }] });
     expect(project.importFrom).toBe("@/browser/components/ui");
     expect(await readFile(join(root, "src/design/tokens.css"), "utf8")).toContain("--so-c0");
     const built = await readFile(join(root, "design/build/tokens.css"), "utf8");
@@ -344,6 +352,10 @@ describe("youiyoux adopt on a product laid out as Toolroll is", () => {
     expect(styles).toContain('@import "tailwindcss";\n@import "../../design/build/tokens.css";');
     expect(styles).toContain("--legacy-gutter: 24px;");
     expect(styles).not.toContain("--acme-ink");
+    expect(styles).not.toContain("@media");
+    expect(styles).not.toContain("data-theme");
+    const media = { light: { selector: ":root" }, dark: { selector: ':root:not([data-theme="light"])', outer: "@media (prefers-color-scheme: dark)" } };
+    expect(compareParity(STYLES, media, built, media, "acme").different).toEqual([]);
     expect(await readFile(join(root, "DESIGN.md"), "utf8")).toContain("ink:");
   }, 60_000);
 
