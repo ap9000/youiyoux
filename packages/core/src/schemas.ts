@@ -53,13 +53,22 @@ export const SystemConfig = z.object({
   themeModifier: z.object({ name: z.string(), light: z.string(), dark: z.string() }).optional(),
   /** Directory holding `<name>/<name>.contract.json` component folders. */
   components: RelPath.default("components"),
-  /** Files every vendored component needs (e.g. the `cn` helper), relative to the components dir. */
+  /** Files every vendored component needs (e.g. the `cn` helper), relative to the implementations dir. */
   support: z.array(RelPath).default([]),
+  /**
+   * Where the contracts' source files (and support files) are: default, beside the contracts in
+   * the components dir. A system adopted inside a product names the product's own components folder,
+   * so its implementations are the files the product already imports, never copies of them.
+   */
+  implementations: RelPath.optional(),
   rules: RelPath.default("rules"),
   /** Narrative Markdown for DESIGN.md (principles, named rules); tokens are generated. */
   design: RelPath.optional(),
 });
 export type SystemConfig = z.infer<typeof SystemConfig>;
+
+/** The directory a system's `source.file` and `support` paths are relative to. */
+export const implementationsDir = (system: Pick<SystemConfig, "components" | "implementations">): string => system.implementations ?? system.components;
 
 export const DesignConfig = z.object({
   $schema: z.string().optional(),

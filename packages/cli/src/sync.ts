@@ -13,7 +13,7 @@ import { lstat, mkdir, mkdtemp, readdir, readlink, realpath, rm, symlink, writeF
 import { tmpdir } from "node:os";
 import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { promisify } from "node:util";
-import { findFiles, LockFile, normalizeRelPath, readDefinition, readTextOrNull, sha256, writeFileAtomic, type ElementId, type LockEntry } from "@youiyoux/core";
+import { findFiles, implementationsDir, LockFile, normalizeRelPath, readDefinition, readTextOrNull, sha256, writeFileAtomic, type ElementId, type LockEntry } from "@youiyoux/core";
 import { buildTokens } from "@youiyoux/tokens";
 import { PROJECT_FILE, vendoredPath, type Project } from "@youiyoux/scanner";
 import { TOOL_ROOT } from "./tool.ts";
@@ -241,8 +241,9 @@ export async function syncProject(project: Project, options: SyncOptions = {}): 
   const { config, system, repo } = project;
   const previous = await readLock(project.root);
   const writer = new Writer(project, options, previous);
+  const implementations = implementationsDir(system.config);
   for (const { contract } of system.components) {
-    if ((await readTextOrNull(join(repo.root, system.config.components, contract.source.file))) === null) throw new Error(`${system.config.components}/${contract.source.file} is named by ${contract.id} but does not exist; nothing was written`);
+    if ((await readTextOrNull(join(repo.root, implementations, contract.source.file))) === null) throw new Error(`${implementations}/${contract.source.file} is named by ${contract.id} but does not exist; nothing was written`);
   }
   // Component state variables ship with the tokens: the vendored implementations read them.
   const build = await buildTokens(repo.root, system.config, config.outputs, { contracts: system.components.map((c) => c.contract) });
@@ -264,11 +265,16 @@ export async function syncProject(project: Project, options: SyncOptions = {}): 
   for (const support of system.config.support) if (!sources.has(support)) sources.set(support, { elements: system.components.map((c) => c.contract.id), version: system.config.version });
   const upstreams = new Map<string, string>();
   for (const source of sources.keys()) {
-    const upstream = await readTextOrNull(join(repo.root, system.config.components, source));
-    if (upstream === null) throw new Error(`${system.config.components}/${source} is named by a contract but does not exist`);
+    const upstream = await readTextOrNull(join(repo.root, implementations, source));
+    if (upstream === null) throw new Error(`${implementations}/${source} is named by a contract but does not exist`);
     upstreams.set(source, upstream);
   }
-  for (const [source, { elements, version }] of sources) await writer.owned(vendoredPath(project, source), upstreams.get(source)!, elements, version);
+  for (const [source, { elements, version }] of sources) {
+    const file = vendoredPath(project, source);
+    // A system adopted in this product: the file is the system's own implementation, so there is nothing to copy or lock.
+    if (await sameFile(join(repo.root, implementations, source), join(project.root, file))) writer.record({ file, role: "component", action: "unchanged", detail: "the system's own implementation, in this project" });
+    else await writer.owned(file, upstreams.get(source)!, elements, version);
+  }
   await writer.retire();
 
   const lock: LockFile = {
@@ -281,6 +287,11 @@ export async function syncProject(project: Project, options: SyncOptions = {}): 
   };
   if (!options.dryRun) await writeFileAtomic(join(project.root, LOCK_FILE), `${JSON.stringify(lock, null, 2)}\n`);
   return { actions: writer.actions, lock, unknownTools: unknownToolMentions(project) };
+}
+
+async function sameFile(a: string, b: string): Promise<boolean> {
+  const [x, y] = await Promise.all([realpath(a).catch(() => null), realpath(b).catch(() => null)]);
+  return x !== null && x === y;
 }
 
 /** How the project's MCP server finds what this sync used: a config kept elsewhere and an overridden design repo are passed explicitly. */

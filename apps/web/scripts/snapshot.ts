@@ -397,7 +397,7 @@ async function writeSystem(out: string, designRoot: string, systemId: string | u
   const system = core.getSystem(repo, systemId);
   const { config } = system;
   const built = await lib.buildTokens(repo.root, config, output);
-  const componentsRoot = join(repo.root, config.components);
+  const componentsRoot = join(repo.root, core.implementationsDir(config));
   const catalog = {
     schema: "youiyoux.catalog/v1",
     system: {
@@ -420,7 +420,7 @@ async function writeSystem(out: string, designRoot: string, systemId: string | u
   rmSync(previewDir, { recursive: true, force: true });
   write(join(previewDir, "system.css"), systemCss(config.name, built.tokens, system.components.map((c) => c.contract), output, lib));
   const demos = writePreview(previewDir, system, componentsRoot);
-  const commit = commitOverride ?? definitionsCommit(repo.root, ["youi.config.json", dirname(config.tokens), config.components, config.rules, ...(config.design ? [config.design] : [])]);
+  const commit = commitOverride ?? definitionsCommit(repo.root, ["youi.config.json", dirname(config.tokens), config.components, ...(config.implementations ? [config.implementations] : []), config.rules, ...(config.design ? [config.design] : [])]);
   const summary = `${config.name} from ${repo.root} @ ${commit ?? "unknown"}: ${catalog.tokens.length} tokens, ${catalog.components.length} components (${demos} demos), ${catalog.rules.length} rules`;
   return { id: config.id, name: config.name, components: system.components.map((c) => c.contract.name), catalogFile, commit, summary };
 }

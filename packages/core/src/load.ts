@@ -97,7 +97,7 @@ export async function loadDesignRepo(root: string): Promise<DesignRepo> {
   if ((await readTextOrNull(join(root, DESIGN_CONFIG_FILE))) === null) throw new DefinitionError(root, [`no ${DESIGN_CONFIG_FILE}: not a design repo (pass --design <dir>, or set source in youi.project.json to its path or package)`]);
   const config = await readDefinition(join(root, DESIGN_CONFIG_FILE), DesignConfig, root);
   const systems = await Promise.all(
-    config.systems.map((system) => loadSystem(root, { ...system, tokens: normalizeRelPath(system.tokens), components: normalizeRelPath(system.components), rules: normalizeRelPath(system.rules), support: system.support.map(normalizeRelPath) })),
+    config.systems.map((system) => loadSystem(root, { ...system, tokens: normalizeRelPath(system.tokens), components: normalizeRelPath(system.components), ...(system.implementations ? { implementations: normalizeRelPath(system.implementations) } : {}), rules: normalizeRelPath(system.rules), support: system.support.map(normalizeRelPath) })),
   );
   const problems = systems.flatMap(validateGraph);
   if (problems.length > 0) throw new DefinitionError("design repo", problems);
