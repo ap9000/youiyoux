@@ -1,0 +1,31 @@
+{
+  "$id": "https://design-language.local/schema/youi.workspace.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema": {
+      "type": "string",
+      "const": "youi.workspace/v1"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "projects": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "projects"
+  ],
+  "additionalProperties": false
+}

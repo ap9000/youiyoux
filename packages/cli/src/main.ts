@@ -25,6 +25,7 @@ import { renderBrief, renderRequests } from "./requests.ts";
 import { exists, initProject } from "./init.ts";
 import { planAdoption, type AdoptPlan } from "./adopt.ts";
 import { extractSystem } from "./extract.ts";
+import { renderStatus, statusExitCode, workspaceStatus } from "./status.ts";
 import { noteSource, rebuildIndex, recordInventory, recordProject, renderHistory, renderRebuild, SCANS_LOG, SOURCES_FILE } from "./index-store.ts";
 import { renderGaps } from "./gaps.ts";
 import { renderInventory } from "./inventory.ts";
@@ -90,6 +91,11 @@ ${style.bold("Anywhere")}  ${style.dim("no design system needed")}
                            an unchanged component comes from the cache (YOUI_SPECIMEN_CACHE)
 
 ${style.bold("In a product repo")}
+  status [--json]          where the product stands with its design system, in a few lines: the System
+                           and its source, what a sync would change (a dry run, offline), local drift,
+                           errors and warnings (beyond the baseline), components used, open requests,
+                           and the one thing to do next. In a workspace (youi.workspace.json, or a repo
+                           holding several products), one block per product
   adopt [--components dir] [--css file] [--system id] [--fork] [--dry-run]
                            make this product's own UI its design system, kept in this repo: a draft
                            contract per component in the components folder (the files stay where they
@@ -675,6 +681,14 @@ function adoptLines(plan: AdoptPlan, dryRun = false): string[] {
   ];
 }
 
+/** `youiyoux status`: where each product stands with its design system, and the one thing to do next. */
+async function cmdStatus(values: Values): Promise<number> {
+  const report = await workspaceStatus(process.cwd(), values.project);
+  if (values.json) json(report);
+  else print(renderStatus(report));
+  return report.projects.length === 0 ? 1 : statusExitCode(report);
+}
+
 /** `youiyoux system extract <dir> [--package name]`: move a System adopt keeps inside the product into its own design repo. */
 async function cmdSystem(values: Values, positionals: string[]): Promise<number> {
   const [action, dir, ...extra] = positionals;
@@ -1140,7 +1154,7 @@ async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Pr
 type Command = (values: Values, positionals: string[], io: CliIo) => Promise<number>;
 
 const COMMANDS: Record<string, Command> = {
-  adopt: cmdAdopt, system: cmdSystem, link: cmdLink, unlink: cmdUnlink, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, screens: cmdScreens, requests: cmdRequests, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+  adopt: cmdAdopt, status: cmdStatus, system: cmdSystem, link: cmdLink, unlink: cmdUnlink, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, screens: cmdScreens, requests: cmdRequests, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
 
 /** Every command name, for a front end that runs one by default (the youiyoux bin runs report). */

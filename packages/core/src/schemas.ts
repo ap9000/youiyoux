@@ -9,6 +9,7 @@ import { LibraryEntry } from "./hierarchy.ts";
 import { ElementId, safeId } from "./ids.ts";
 import { GapsReport } from "./gaps.ts";
 import { RequestDoc } from "./requests.ts";
+import { StatusReport, WorkspaceConfig } from "./status.ts";
 import { TokenDocument } from "./tokens.ts";
 
 const SemVer = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, "expected semver x.y.z");
@@ -696,6 +697,8 @@ export const PUBLISHED_SCHEMAS = {
   "youi.tokens.schema.json": TokenDocument,
   "youi.request.schema.json": RequestDoc,
   "youi.gaps.schema.json": GapsReport,
+  "youi.workspace.schema.json": WorkspaceConfig,
+  "youi.status.schema.json": StatusReport,
 } as const;
 
 /** Project config with every path normalized, so comparisons with scanned paths are exact. Loaders call this. */
