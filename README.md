@@ -99,6 +99,7 @@ Node 20 or later.
 | `adopt` | Make this repo's own components and stylesheet variables its design system, kept in the repo. `--dry-run` |
 | `system extract <dir>` | Move an adopted System into a design repo of its own. `--package` |
 | `init --design <dir>`, `sync`, `check`, `show`, `where`, `plan`, `migrate` | With a design system repo |
+| `upgrade` | Move to the design system's new release: the sync and its migrations, previewed and gated; `--write` applies all of it or nothing. `--to <tag>` for a git source |
 
 Full reference: [docs/commands.md](docs/commands.md).
 

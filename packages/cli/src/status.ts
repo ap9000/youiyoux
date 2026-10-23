@@ -11,6 +11,7 @@ import { findFiles, findUp, readDefinition, readTextOrNull, WORKSPACE_FILE, Work
 import { loadProject, PROJECT_FILE, type Project } from "@youiyoux/scanner";
 import { baselinePath, runCheck } from "./check.ts";
 import { readLock, syncProject, verifyLock } from "./sync.ts";
+import { pendingMigrations } from "./upgrade.ts";
 import { padEnd, plural, style } from "./ui.ts";
 
 /** A product's folder as a person reads it: relative to here, or a sibling (`../billing`); anything further is absolute. */
@@ -31,9 +32,10 @@ function sourceOf(project: Project): string {
 }
 
 /** The one next step, most pressing first. */
-function nextStep(s: Omit<ProjectStatus, "next">): string {
+function nextStep(s: Omit<ProjectStatus, "next">, migrations: number): string {
   if (s.sync.state === "never") return "youiyoux sync: this product has never been synced with its System";
   if (s.sync.state === "conflict") return "youiyoux sync: resolve the conflicts it reports, then youiyoux sync --adopt records them";
+  if (migrations > 0) return `youiyoux upgrade: ${s.system.name} v${s.system.version} comes with ${plural(migrations, "migration")} for this product's code, which upgrade runs with the sync`;
   if (s.sync.state === "behind") return `youiyoux sync: ${plural(s.sync.changes.length, "file")} would change`;
   if (s.check.incomplete) return "youiyoux check: some files or rules could not be checked, and it says which";
   if (s.check.errors > 0) return `youiyoux check: fix ${plural(s.check.errors, "error")}`;
@@ -70,7 +72,7 @@ export async function projectStatus(project: Project, cwd = process.cwd()): Prom
     components: { system: project.system.components.length, used: new Set(usages.map((u) => u.element)).size, sites: usages.length },
     requests: { open: requests.requests.filter((r) => r.status === "open").length, addressed: requests.requests.filter((r) => r.status === "addressed").length, unreadable: requests.unreadable.length },
   };
-  return { ...status, next: nextStep(status) };
+  return { ...status, next: nextStep(status, lock ? pendingMigrations(project, lock).length : 0) };
 }
 
 /**

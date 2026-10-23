@@ -22,6 +22,8 @@ export interface Project {
   readonly designCommit?: string;
   /** True when the root came from an explicit override (`--root`) rather than the config or the project directory. */
   readonly rootOverride?: boolean;
+  /** Files as a pending step would write them, by project-relative path: every scan reads these instead of the disk (youiyoux upgrade previews migrations on the components a sync would bring). */
+  readonly staged?: Readonly<Record<string, string>>;
 }
 
 export interface LoadProjectOptions {
@@ -33,6 +35,8 @@ export interface LoadProjectOptions {
   readonly productRoot?: string;
   /** Resolve a git source's ref again, fetching first (youiyoux sync), instead of the recorded commit. */
   readonly refreshDesign?: boolean;
+  /** A git source at this ref instead of the config's (youiyoux upgrade --to), resolved afresh. */
+  readonly ref?: string;
 }
 
 /** The product root is missing, or holds nothing the config matches: every finding would be a false zero. */
@@ -53,7 +57,13 @@ export async function loadProject(root: string, options: LoadProjectOptions = {}
   const productRoot = options.productRoot !== undefined ? resolve(options.productRoot || ".") : config.root ? fromConfig(config.root) : resolve(root);
   if (!(await isDirectory(productRoot))) throw new ProjectRootError(`product root ${productRoot} is not a directory (config ${configFile}); ${ROOT_HINT}`);
   const linked = options.designRoot ? null : await linkedDesign(productRoot);
-  const located = options.designRoot || linked ? { root: resolve(options.designRoot || linked!), commit: null } : await locateDesign(config.source, configFile, productRoot, { refresh: options.refreshDesign });
+  if (options.ref !== undefined) {
+    if (options.designRoot || linked) throw new Error(`the design system is ${options.designRoot ? "the --design folder" : `your checkout ${linked}`}, not the config's source: check out ${options.ref} there${linked ? ", or youiyoux unlink" : ""}`);
+    if ("package" in config.source) throw new Error(`${config.source.package} is an npm package: install the version you want (npm install ${config.source.package}@<version>), then run this again without --to`);
+    if ("path" in config.source) throw new Error(`the design system is the folder ${config.source.path}: check out ${options.ref} there, then run this again without --to`);
+  }
+  const source = options.ref !== undefined && "git" in config.source ? { ...config.source, ref: options.ref } : config.source;
+  const located = options.designRoot || linked ? { root: resolve(options.designRoot || linked!), commit: null } : await locateDesign(source, configFile, productRoot, { refresh: options.refreshDesign || options.ref !== undefined });
   const repo = await loadDesignRepo(located.root);
   return {
     root: productRoot,

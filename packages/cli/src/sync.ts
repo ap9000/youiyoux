@@ -46,6 +46,8 @@ export interface SyncResult {
   readonly lock: LockFile;
   /** Rules whose agent instructions name an MCP tool the server does not expose. */
   readonly unknownTools: readonly UnknownToolMention[];
+  /** Every file this sync wrote, or would write on a dry run, with its content, by project-relative path. */
+  readonly contents: ReadonlyMap<string, string>;
 }
 
 const run = promisify(execFile);
@@ -85,6 +87,7 @@ export async function readLock(root: string): Promise<LockFile | null> {
 class Writer {
   readonly actions: SyncAction[] = [];
   readonly files: Record<string, LockEntry> = {};
+  readonly contents = new Map<string, string>();
   private readonly project: Project;
   private readonly options: SyncOptions;
   private readonly previous: LockFile | null;
@@ -100,6 +103,7 @@ class Writer {
   }
 
   async write(file: string, content: string): Promise<void> {
+    this.contents.set(file, content);
     if (!this.options.dryRun) await writeFileAtomic(this.path(file), content);
   }
 
@@ -286,7 +290,7 @@ export async function syncProject(project: Project, options: SyncOptions = {}): 
     files: Object.fromEntries(Object.entries(writer.files).sort(([a], [b]) => a.localeCompare(b))),
   };
   if (!options.dryRun) await writeFileAtomic(join(project.root, LOCK_FILE), `${JSON.stringify(lock, null, 2)}\n`);
-  return { actions: writer.actions, lock, unknownTools: unknownToolMentions(project) };
+  return { actions: writer.actions, lock, unknownTools: unknownToolMentions(project), contents: writer.contents };
 }
 
 async function sameFile(a: string, b: string): Promise<boolean> {

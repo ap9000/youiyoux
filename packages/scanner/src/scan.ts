@@ -84,7 +84,7 @@ async function parseAll(project: Project, files: readonly string[], overrides: R
 
 export async function scanProject(project: Project, options: ScanOptions = {}): Promise<ScanResult> {
   const started = performance.now();
-  const overrides = options.overrides ?? {};
+  const overrides = { ...project.staged, ...options.overrides };
   const { cache } = options;
   cache?.beginScan();
   const parse = cache?.parse ?? parseModule;

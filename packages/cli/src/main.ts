@@ -25,6 +25,7 @@ import { renderBrief, renderRequests } from "./requests.ts";
 import { exists, initProject } from "./init.ts";
 import { planAdoption, type AdoptPlan } from "./adopt.ts";
 import { extractSystem } from "./extract.ts";
+import { renderUpgrade, upgradeProject } from "./upgrade.ts";
 import { renderStatus, statusExitCode, statusTargets, workspaceStatus } from "./status.ts";
 import { startWorkspaceHub } from "./workspace-hub.ts";
 import { noteSource, rebuildIndex, recordInventory, recordProject, renderHistory, renderRebuild, SCANS_LOG, SOURCES_FILE } from "./index-store.ts";
@@ -158,6 +159,12 @@ ${style.bold("System")}  ${style.dim("approved elements: build only with these")
   plan <component> --patch <json|file>    classify a contract change and show its impact
   plan --token <id> [--value v]           impact of a token change
   migrate <migration.yaml> [--write] [--diff]   gated codemod for props and renamed or removed exports
+  upgrade [--to ref] [--write] [--diff]
+                           move to the System's new release in one step: the sync, and each component's
+                           migrations past the version youi.lock.json records, run as gated dry runs on
+                           the components as the sync would bring them; a preview unless --write, which
+                           writes all of it or, if a step fails, puts every file back. --to moves a git
+                           source to another tag or branch (written to the config's source.ref)
                            (imports, re-exports, uses); a dry run that prints the diff and the sites
                            left for a person (file:line, why) unless --write; --diff shows it after --write too
   rules [--preview <rule.yaml>]   whether each rule is checked; preview a draft rule on the current scan
@@ -274,6 +281,7 @@ const OPTIONS = {
   inventory: { type: "string" },
   package: { type: "string" },
   fork: { type: "boolean", default: false },
+  to: { type: "string" },
   cache: { type: "string" },
   role: { type: "string" },
   license: { type: "string" },
@@ -605,9 +613,19 @@ async function cmdSync(values: Values): Promise<number> {
   // sync is the update: a git source's ref is resolved again; every other command keeps to the recorded commit.
   const p = await loadProject(values.project ?? process.cwd(), { ...loadOptions(values), refreshDesign: true });
   const result = await syncProject(p, { dryRun: values["dry-run"], adopt: values.adopt });
-  if (values.json) json(result);
+  if (values.json) json({ actions: result.actions, lock: result.lock, unknownTools: result.unknownTools });
   else print([renderSync(result, values["dry-run"]), ...(p.linked ? [style.warn(`! linked: the design system is your checkout ${p.linked}, not the config's source (youiyoux unlink to undo)`)] : [])].join("\n"));
   return result.actions.some((a) => a.action === "conflict") ? 1 : 0;
+}
+
+async function cmdUpgrade(values: Values): Promise<number> {
+  if (values.to !== undefined && !/^[\w][\w./-]*$/.test(values.to)) throw new UsageError(`--to ${JSON.stringify(values.to)}: expected a git tag, branch or commit`);
+  // The new release: a git source's ref is resolved again (or --to's), as sync does.
+  const p = await loadProject(values.project ?? process.cwd(), { ...loadOptions(values), refreshDesign: true, ...(values.to !== undefined ? { ref: values.to } : {}) });
+  const result = await upgradeProject(p, { write: values.write, ...(values.to !== undefined ? { to: values.to } : {}) });
+  if (values.json) json(result);
+  else print([renderUpgrade(result, values.diff || result.status === "preview"), ...(p.linked ? [style.warn(`! linked: the design system is your checkout ${p.linked}, not the config's source (youiyoux unlink to undo)`)] : [])].join("\n"));
+  return result.status === "blocked" ? 1 : 0;
 }
 
 async function cmdInit(values: Values): Promise<number> {
@@ -1188,7 +1206,7 @@ async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Pr
 type Command = (values: Values, positionals: string[], io: CliIo) => Promise<number>;
 
 const COMMANDS: Record<string, Command> = {
-  adopt: cmdAdopt, status: cmdStatus, system: cmdSystem, link: cmdLink, unlink: cmdUnlink, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, screens: cmdScreens, requests: cmdRequests, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+  adopt: cmdAdopt, status: cmdStatus, system: cmdSystem, link: cmdLink, unlink: cmdUnlink, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, upgrade: cmdUpgrade, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, screens: cmdScreens, requests: cmdRequests, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
 
 /** Every command name, for a front end that runs one by default (the youiyoux bin runs report). */
@@ -1220,7 +1238,7 @@ export async function main(argv: string[], io: CliIo = {}): Promise<number> {
 }
 
 /** Commands that work on a product, and on a design repo: each runs from anywhere inside one, as git does. */
-const IN_A_PRODUCT = new Set(["system", "link", "unlink", "show", "where", "bom", "check", "baseline", "rules", "plan", "migrate", "sync", "scan", "watch", "hooks", "agents", "mcp", "ui", "library", "render", "screens", "requests"]);
+const IN_A_PRODUCT = new Set(["system", "link", "unlink", "show", "where", "bom", "check", "baseline", "rules", "plan", "migrate", "upgrade", "sync", "scan", "watch", "hooks", "agents", "mcp", "ui", "library", "render", "screens", "requests"]);
 const IN_A_DESIGN_REPO = new Set(["build", "parity"]);
 
 /**
