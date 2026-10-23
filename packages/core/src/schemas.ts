@@ -26,9 +26,11 @@ export const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*
 const PackageName = z.string().regex(PACKAGE_NAME, "expected an npm package name such as @acme/design");
 /**
  * A git repository youi may fetch: https, ssh, `git@host:path`, `github:owner/repo` or file://.
- * Never another transport (git's `ext::` runs a command), an option (`-`), or whitespace.
+ * Never another transport (git's `ext::` runs a command), an option (`-`), whitespace, or a
+ * password or token in an https or file URL: the config is committed, so credentials belong to
+ * git's credential helper or an ssh key.
  */
-const GIT_URL = /^(?:(?:https|ssh|file):\/\/[^\s]+|git@[A-Za-z0-9.-]+:[^\s:]+|github:[A-Za-z0-9-]+\/[A-Za-z0-9._-]+)$/;
+const GIT_URL = /^(?:(?:https|file):\/\/(?![^\s/]*@)[^\s]+|ssh:\/\/[^\s]+|git@[A-Za-z0-9.-]+:[^\s:]+|github:[A-Za-z0-9-]+\/[A-Za-z0-9._-]+)$/;
 const GitUrl = z.string().regex(GIT_URL, "expected a git URL: https://, ssh://, git@host:path, github:owner/repo or file://").refine((url) => !url.includes("::"), "expected a git URL without a transport prefix");
 /** A branch, tag or commit: never an option, `..`, or anything a shell or git would read as more. */
 const GitRef = z.string().regex(/^(?!-)(?!.*\.\.)[A-Za-z0-9._/-]+$/, "expected a branch, tag or commit such as v3 or main");

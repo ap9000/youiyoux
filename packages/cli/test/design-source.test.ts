@@ -3,13 +3,13 @@
  * link to a checkout. The repositories are local (file://): nothing touches the network.
  */
 import { execFile } from "node:child_process";
-import { cp, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { ProjectConfig } from "@youiyoux/core";
-import { gitCheckout, loadProject } from "@youiyoux/scanner";
+import { gitCheckout, loadProject, withoutCredentials } from "@youiyoux/scanner";
 import { main } from "../src/index.ts";
 
 const EXAMPLES = join(import.meta.dirname, "../../../examples");
@@ -103,6 +103,36 @@ describe("a design system from git", () => {
     await writeFile(join(root, "youi.lock.json"), JSON.stringify({ schema: "youi.lock/v1", system: "demo", systemVersion: "1.0.0", sourceCommit: "0".repeat(40), syncedAt: "2026-10-23T00:00:00.000Z", files: {} }));
     await expect(loadProject(root)).rejects.toThrow("which youi.lock.json records: run youiyoux sync to resolve");
     await expect(gitCheckout(`file://${join(dir, "nowhere")}`, "main")).rejects.toThrow(/could not fetch the design system from file:\/\//);
+  });
+
+  test("a fetched design repo with a link leading outside it is refused, so sync never copies what it points at", async () => {
+    const repo = join(dir, "linky-design");
+    await cp(join(EXAMPLES, "demo-design"), repo, { recursive: true });
+    await writeFile(join(dir, "secret.txt"), "not for the design\n");
+    await symlink("../../secret.txt", join(repo, "tokens/leak.json"));
+    await symlink("../youi.config.json", join(repo, "tokens/inside.json"));
+    await git(repo, "init", "--quiet", "--initial-branch=main");
+    await git(repo, "add", ".");
+    await git(repo, "commit", "--quiet", "-m", "links");
+    await expect(gitCheckout(`file://${repo}`, "main")).rejects.toThrow("has links that lead outside it (tokens/leak.json)");
+    // Nothing of it is kept to be read later.
+    const cached = await readdir(process.env.YOUI_SYSTEMS_CACHE!, { recursive: true });
+    expect(cached.some((p) => String(p).endsWith("tokens/leak.json"))).toBe(false);
+    // A link that stays inside is fine.
+    await rm(join(repo, "tokens/leak.json"));
+    await git(repo, "add", "-A");
+    await git(repo, "commit", "--quiet", "-m", "inside only");
+    expect((await gitCheckout(`file://${repo}`, "main")).commit).toBe(await head(repo));
+  });
+
+  test("credentials never sit in a config's URL, and never reach a message", async () => {
+    const base = { schema: "youi.project/v1", id: "app", system: "demo", include: ["**/*.tsx"], componentsDir: "components/ui" };
+    const ok = (git: string) => ProjectConfig.safeParse({ ...base, source: { git, ref: "v3" } }).success;
+    for (const bad of ["https://user:s3cret@github.com/acme/design.git", "https://ghp_s3cret@github.com/acme/design.git", "file://user:s3cret@/srv/design"]) expect(ok(bad), bad).toBe(false);
+    expect(withoutCredentials("fatal: unable to access 'https://user:s3cret@host/x/' and https://ghp_s3cret@github.com/a")).toBe("fatal: unable to access 'https://***@host/x/' and https://***@github.com/a");
+    const failed = await gitCheckout(`file://user:s3cret@${join(dir, "nowhere")}`, "main").catch((error: unknown) => String(error));
+    expect(failed).toContain("could not fetch the design system");
+    expect(failed).not.toContain("s3cret");
   });
 
   test("only git URLs and refs that cannot be read as anything else are accepted", () => {

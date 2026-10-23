@@ -50,7 +50,7 @@
           "properties": {
             "git": {
               "type": "string",
-              "pattern": "^(?:(?:https|ssh|file):\\/\\/[^\\s]+|git@[A-Za-z0-9.-]+:[^\\s:]+|github:[A-Za-z0-9-]+\\/[A-Za-z0-9._-]+)$"
+              "pattern": "^(?:(?:https|file):\\/\\/(?![^\\s/]*@)[^\\s]+|ssh:\\/\\/[^\\s]+|git@[A-Za-z0-9.-]+:[^\\s:]+|github:[A-Za-z0-9-]+\\/[A-Za-z0-9._-]+)$"
             },
             "ref": {
               "type": "string",

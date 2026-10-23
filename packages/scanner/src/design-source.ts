@@ -10,11 +10,12 @@
  */
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, realpath, rename, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, readlink, realpath, rename, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import { expandGitSource, readTextOrNull, writeFileAtomic, type ProjectConfig } from "@youiyoux/core";
+import { within } from "./specimens/contain.ts";
 
 const run = promisify(execFile);
 const LOCK_FILE = "youi.lock.json";
@@ -81,16 +82,13 @@ export async function gitCheckout(url: string, ref: string, options: DesignSourc
   if (recorded !== null && (await isDirectory(join(base, recorded)))) return { root: join(base, recorded), commit: recorded };
 
   if (recorded === null || !(await hasCommit(bare, recorded))) await fetchAll(bare, remote);
-  let commit = recorded;
-  if (commit === null) {
-    commit = await revParse(bare, ref);
-    if (commit === null) throw new Error(`${url} has no branch, tag or commit "${ref}"`);
-    await writeFileAtomic(refs, `${JSON.stringify({ ...(await readRefs(refs)), [ref]: commit }, null, 2)}\n`);
-  } else if (!(await hasCommit(bare, commit))) {
-    throw new Error(`${url} has no commit ${commit}, which youi.lock.json records: run youiyoux sync to resolve "${ref}" again`);
-  }
+  const commit = recorded ?? (await revParse(bare, ref));
+  if (commit === null) throw new Error(`${withoutCredentials(url)} has no branch, tag or commit "${ref}"`);
+  if (recorded !== null && !(await hasCommit(bare, commit))) throw new Error(`${withoutCredentials(url)} has no commit ${commit}, which youi.lock.json records: run youiyoux sync to resolve "${ref}" again`);
   const tree = join(base, commit);
   if (!(await isDirectory(tree))) await extract(bare, commit, tree);
+  // Remembered only once its tree is usable: a refused commit is resolved afresh next time.
+  if (recorded === null) await writeFileAtomic(refs, `${JSON.stringify({ ...(await readRefs(refs)), [ref]: commit }, null, 2)}\n`);
   return { root: tree, commit };
 }
 
@@ -106,7 +104,7 @@ async function fetchAll(bare: string, remote: string): Promise<void> {
     await git(["--git-dir", bare, "fetch", "--quiet", "--force", "--prune", "--tags", "--", remote, "+refs/heads/*:refs/heads/*"]);
   } catch (error: unknown) {
     const detail = (error as { stderr?: string }).stderr?.trim().split("\n").pop() ?? (error instanceof Error ? error.message : String(error));
-    throw new Error(`could not fetch the design system from ${remote}: ${detail}`);
+    throw new Error(withoutCredentials(`could not fetch the design system from ${remote}: ${detail}`));
   }
 }
 
@@ -127,6 +125,8 @@ async function extract(bare: string, commit: string, tree: string): Promise<void
     await git(["--git-dir", bare, "archive", "--format=tar", "-o", join(temp, ".tree.tar"), commit]);
     await run("tar", ["-xf", join(temp, ".tree.tar"), "-C", temp]);
     await rm(join(temp, ".tree.tar"));
+    const escaping = await linksLeaving(temp);
+    if (escaping.length > 0) throw new Error(`the design system at ${commit} has links that lead outside it (${escaping.slice(0, 3).join(", ")}): it was not used, since sync would copy what they point at`);
     await rename(temp, tree).catch(async (error: unknown) => {
       // Another run made it first: theirs is the same commit.
       if (!(await isDirectory(tree))) throw error;
@@ -134,6 +134,24 @@ async function extract(bare: string, commit: string, tree: string): Promise<void
   } finally {
     await rm(temp, { recursive: true, force: true });
   }
+}
+
+/** Any `user:password@` or token in a URL, as `***@`, for every message (git's own included). */
+export const withoutCredentials = (text: string): string => text.replace(/([a-z][a-z0-9+.-]*:\/\/)[^\s/@]+@/gi, "$1***@");
+
+/** Symbolic links in the tree whose target is outside it (absolute, or up past its top), as tree-relative paths. */
+async function linksLeaving(root: string): Promise<string[]> {
+  const leaving: string[] = [];
+  const pending = [root];
+  while (pending.length > 0) {
+    const dir = pending.pop()!;
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) pending.push(path);
+      else if (entry.isSymbolicLink() && !within(root, resolve(dir, await readlink(path)))) leaving.push(relative(root, path));
+    }
+  }
+  return leaving.sort();
 }
 
 async function readRefs(file: string): Promise<Record<string, string>> {
