@@ -1,6 +1,6 @@
 {
   "name": "youiyoux",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "description": "Your agent rebuilds components you already have. youiyoux catches it: npx youiyoux turns any repo into a shareable report of near-duplicate components, hardcoded token values and off-library imports, with the fixes.",
   "license": "MIT",
   "repository": {
