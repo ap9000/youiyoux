@@ -1,6 +1,6 @@
 {
   "name": "youiyoux-workspace",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "license": "MIT",
   "private": true,
   "description": "YouIyouX: design-language tooling. The youi CLI, scanner, MCP server and hub; design systems live in their own repos.",
