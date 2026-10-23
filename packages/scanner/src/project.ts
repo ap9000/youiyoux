@@ -2,7 +2,7 @@
 import { stat } from "node:fs/promises";
 import { dirname, join, posix, resolve } from "node:path";
 import { getSystem, loadDesignRepo, normalizeProjectConfig, ProjectConfig, readDefinition, type DesignRepo, type LoadedSystem } from "@youiyoux/core";
-import { locateDesign } from "./design-source.ts";
+import { linkedDesign, locateDesign } from "./design-source.ts";
 
 export const PROJECT_FILE = "youi.project.json";
 
@@ -16,6 +16,8 @@ export interface Project {
   readonly configFile?: string;
   /** True when the design repo came from an explicit override rather than the config's source. */
   readonly designOverride?: boolean;
+  /** The checkout this person linked the project to (youiyoux link), used instead of the config's source. */
+  readonly linked?: string;
   /** The commit a git source is at, for the lockfile. */
   readonly designCommit?: string;
   /** True when the root came from an explicit override (`--root`) rather than the config or the project directory. */
@@ -50,7 +52,8 @@ export async function loadProject(root: string, options: LoadProjectOptions = {}
   const fromConfig = (path: string): string => resolve(dirname(configFile), path);
   const productRoot = options.productRoot !== undefined ? resolve(options.productRoot || ".") : config.root ? fromConfig(config.root) : resolve(root);
   if (!(await isDirectory(productRoot))) throw new ProjectRootError(`product root ${productRoot} is not a directory (config ${configFile}); ${ROOT_HINT}`);
-  const located = options.designRoot ? { root: resolve(options.designRoot), commit: null } : await locateDesign(config.source, configFile, productRoot, { refresh: options.refreshDesign });
+  const linked = options.designRoot ? null : await linkedDesign(productRoot);
+  const located = options.designRoot || linked ? { root: resolve(options.designRoot || linked!), commit: null } : await locateDesign(config.source, configFile, productRoot, { refresh: options.refreshDesign });
   const repo = await loadDesignRepo(located.root);
   return {
     root: productRoot,
@@ -60,6 +63,7 @@ export async function loadProject(root: string, options: LoadProjectOptions = {}
     configFile,
     designOverride: Boolean(options.designRoot),
     rootOverride: options.productRoot !== undefined,
+    ...(linked ? { linked } : {}),
     ...(located.commit ? { designCommit: located.commit } : {}),
   };
 }

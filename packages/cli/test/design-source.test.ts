@@ -1,6 +1,9 @@
-/** A design system from git, fetched into a cache and pinned by the lockfile. The repositories are local (file://): nothing touches the network. */
+/**
+ * A design system from git, fetched into a cache and pinned by the lockfile, and a person's own
+ * link to a checkout. The repositories are local (file://): nothing touches the network.
+ */
 import { execFile } from "node:child_process";
-import { cp, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -47,6 +50,7 @@ afterAll(async () => {
 beforeEach(() => {
   env = { ...process.env };
   process.env.YOUI_SYSTEMS_CACHE = join(dir, `cache-${Math.random().toString(36).slice(2)}`);
+  process.env.YOUI_LINKS = join(dir, `links-${Math.random().toString(36).slice(2)}.json`);
   out = "";
   vi.spyOn(process.stdout, "write").mockImplementation((chunk) => ((out += String(chunk)), true));
 });
@@ -108,5 +112,40 @@ describe("a design system from git", () => {
     for (const bad of ["ext::sh -c touch% /tmp/pwned", "--upload-pack=touch /tmp/pwned", "-uhttps://x", "https://x y", "github:acme/../design", "http://example.com/design.git", "/srv/design", "fd::17"]) expect(ok(bad), bad).toBe(false);
     for (const ref of ["-x", "--upload-pack=x", "a..b", "v 3", "main;rm"]) expect(ok("github:acme/design", ref), ref).toBe(false);
     for (const ref of ["v3", "main", "release/2026-10", "a".repeat(40)]) expect(ok("github:acme/design", ref), ref).toBe(true);
+  });
+});
+
+describe("youiyoux link: a person's own checkout", () => {
+  test("link uses the checkout for this product on this machine only, sync says so and never writes it, unlink goes back", async () => {
+    const root = await product("linked-app", "v1");
+    const mine = join(dir, "my-design");
+    await cp(join(EXAMPLES, "demo-design"), mine, { recursive: true });
+    expect(await main(["link", mine, "--project", root])).toBe(0);
+    expect(out).toContain("for you only");
+    const project = await loadProject(root);
+    expect(project.repo.root).toBe(mine);
+    expect(project.linked).toBe(mine);
+    expect(project.designOverride).toBe(false);
+    out = "";
+    expect(await main(["sync", "--project", root])).toBe(0);
+    expect(out).toContain(`linked: the design system is your checkout ${mine}`);
+    // Nothing the team shares names the checkout: not the config, not the MCP entry sync writes.
+    expect(await readFile(join(root, "youi.project.json"), "utf8")).not.toContain(mine);
+    const mcp = await readFile(join(root, ".mcp.json"), "utf8");
+    expect(mcp).toContain('"mcp"');
+    expect(mcp).not.toContain("my-design");
+    expect(JSON.parse(await readFile(process.env.YOUI_LINKS!, "utf8"))).toEqual({ [root]: mine });
+    expect(await main(["unlink", "--project", root])).toBe(0);
+    expect((await loadProject(root)).linked).toBeUndefined();
+    expect((await loadProject(root)).designCommit).toBe(first);
+  }, 60_000);
+
+  test("link refuses a folder that is not a design repo", async () => {
+    const root = await product("refused-app", "v1");
+    const err = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    await mkdir(join(dir, "not-design"), { recursive: true });
+    expect(await main(["link", join(dir, "not-design"), "--project", root])).toBe(1);
+    expect(String(err.mock.calls.flat().join(""))).toContain("not a design repo");
+    expect(await readFile(process.env.YOUI_LINKS!, "utf8").catch(() => null)).toBeNull();
   });
 });

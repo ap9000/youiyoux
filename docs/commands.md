@@ -37,6 +37,8 @@ This repository is the tool. It holds no product's design data: each design syst
 
 A design repo is any directory with a `youi.config.json`. A product names it in its `youi.project.json` with `source.path` (relative to the config, or absolute), or with `source.package`: an npm package that holds `youi.config.json`, found in the product's `node_modules` or a parent's (a published design package, or a monorepo's workspace package), so the config names no one's folders; or with `source.git` and `source.ref`: a repository (`github:acme/design`, `https://…`, `git@host:path`, `ssh://…` or `file://…`; no other transport) at a tag, branch or commit. A git source is fetched into `~/.cache/youiyoux/systems` (`YOUI_SYSTEMS_CACHE`), one tree per commit, and used offline from then on: at the commit `youi.lock.json` records, so a teammate's fresh clone gets the same design, else where the ref last resolved. `youiyoux sync` fetches and resolves the ref again and records the new commit, as an update moves a lockfile; git never prompts, so a private repository needs your usual credentials (a credential helper or an ssh key). Any command also takes `--design <dir>`.
 
+`youiyoux link <dir>` uses your own checkout of the design system for this product, on this machine only: the link is kept in `~/.config/youiyoux/links.json` (`YOUI_LINKS`), never in the repo, and nothing sync writes for the team (the config, `.mcp.json`, the lockfile's source) names it. `sync` says when a product is linked; `youiyoux link` alone shows the link; `youiyoux unlink` removes it.
+
 Commands find their project as git finds a repository: run anywhere inside a product, they use the nearest folder upward holding `youi.project.json`, without leaving the git repository. It fails closed, as git does: outside a git repository nothing above the current folder is used, and a config another user owns is ignored, so a file left in a shared folder such as `/tmp` is never read. `build` and `parity` find the nearest `youi.config.json` the same way. `--project`, `--config` or `--root` (and `--design`) still say where explicitly, and win. A design repo keeps the layout below; [`examples/demo-design`](../examples/demo-design) is a complete one.
 
 | Path in a design repo | Contents |
@@ -87,6 +89,7 @@ In a product repo:
 | --- | --- |
 | `youiyoux init --design <dir\|package>` | Write `youi.project.json` pointing at a design repo checkout, or at the installed npm package that holds it (`source.package`; a folder of that name wins), detecting Expo Router, the components directory and the `@/` alias, then sync |
 | `youiyoux sync` | Write tokens (`tokens.css`, Tailwind v4 `theme.css`, `tokens.ts`; React Native optional), DESIGN.md, the `youiyoux` skill and the AGENTS.md block; vendor owned components with 3-way merges; record `youi.lock.json` (with a git source's commit, after fetching and resolving its ref again) |
+| `youiyoux link [<dir>]` / `youiyoux unlink` | Use your own checkout of the design system for this product, on this machine only (never written to the repo); `link` alone shows the link |
 | `youiyoux scan` | Build the `youi.usage/v1` usage map |
 | `youiyoux where <component>` / `youiyoux bom <route>` | Where a component lives, screen by screen; everything on one screen |
 | `youiyoux show <component>` | The contract: import, legal values, guidance |

@@ -1,6 +1,7 @@
 /**
  * Where a project's design system comes from: its config's `source` (a folder, an installed
- * package, or a git repository).
+ * package, or a git repository), unless the person has linked the project to a checkout of their
+ * own (`youiyoux link`), which lives outside the repo and is never committed.
  *
  * A git source is fetched into a cache (one tree per commit, never written after it is made) and
  * used offline from then on: at the commit the product's lockfile records, else at the commit the
@@ -142,6 +143,36 @@ async function readRefs(file: string): Promise<Record<string, string>> {
   } catch {
     return {};
   }
+}
+
+/* ------------------------------------------------------------------------- links */
+
+/** Where links are kept: YOUI_LINKS, else $XDG_CONFIG_HOME/youiyoux/links.json; per person, never in a repo. */
+export const linksFile = (): string => process.env.YOUI_LINKS || join(process.env.XDG_CONFIG_HOME || join(homedir(), ".config"), "youiyoux/links.json");
+
+async function readLinks(): Promise<Record<string, string>> {
+  try {
+    const links = JSON.parse(await readFile(linksFile(), "utf8")) as Record<string, unknown>;
+    return Object.fromEntries(Object.entries(links).filter((e): e is [string, string] => typeof e[1] === "string"));
+  } catch {
+    return {};
+  }
+}
+
+const productKey = async (productRoot: string): Promise<string> => realpath(productRoot).catch(() => resolve(productRoot));
+
+/** The checkout this person linked the product to, or null. */
+export async function linkedDesign(productRoot: string): Promise<string | null> {
+  return (await readLinks())[await productKey(productRoot)] ?? null;
+}
+
+/** Link the product to a design checkout (null: unlink), for this person only. */
+export async function setLink(productRoot: string, design: string | null): Promise<void> {
+  const links = await readLinks();
+  const key = await productKey(productRoot);
+  if (design === null) delete links[key];
+  else links[key] = resolve(design);
+  await writeFileAtomic(linksFile(), `${JSON.stringify(links, null, 2)}\n`);
 }
 
 async function isDirectory(path: string): Promise<boolean> {

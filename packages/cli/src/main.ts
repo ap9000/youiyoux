@@ -9,7 +9,7 @@ import { DefinitionError, DESIGN_CONFIG_FILE, findUp, getSystem, loadDesignRepo,
 import { buildGaps, candidateSource, declaredPackages, expandAll, MissingIndexError, selectSources, discoverCacheDir, discoverIndexPath, ingestCatalog, readCatalog, searchCatalog, sharedStore, showFromCatalog, syncIndex, type Fetcher } from "@youiyoux/discover";
 import { indexHome, storeLocation } from "@youiyoux/store";
 import { buildTokens, compareParity } from "@youiyoux/tokens";
-import { adoptionRequest, buildInventory, captureScreens, captureText, chosenSession, openLoginBrowser, recordSession, sessionFile, type LoginBrowser, type LoginPage, within, RenderUnavailableError, renderShots, shotsNext, type ShotsOptions, checkCapabilities, componentCard, describeIdentity, designRootOf, evaluateRule, findContract, loadProject, planChange, PROJECT_FILE, type LoadProjectOptions, ProjectWatcher, ruleCapability, runMigration, scanProject, screenBom, searchLibrary, whereUsed, type CacheStats, type PlanInput, type Project, type WatchUpdate } from "@youiyoux/scanner";
+import { adoptionRequest, buildInventory, captureScreens, captureText, chosenSession, openLoginBrowser, recordSession, sessionFile, type LoginBrowser, type LoginPage, within, RenderUnavailableError, renderShots, shotsNext, type ShotsOptions, checkCapabilities, componentCard, describeIdentity, designRootOf, evaluateRule, linkedDesign, linksFile, setLink, findContract, loadProject, planChange, PROJECT_FILE, type LoadProjectOptions, ProjectWatcher, ruleCapability, runMigration, scanProject, screenBom, searchLibrary, whereUsed, type CacheStats, type PlanInput, type Project, type WatchUpdate } from "@youiyoux/scanner";
 import { baselinePath, diffExitCodeOf, exitCodeOf, runCheck, writeBaseline, type CheckResult } from "./check.ts";
 import { configured, loadCheckProject, runRepoCheck } from "./check-repo.ts";
 import { workingTreeChange, type ChangeProject } from "./check-diff.ts";
@@ -94,6 +94,8 @@ ${style.bold("In a product repo")}
   sync [--dry-run] [--adopt]   tokens, DESIGN.md, skill, AGENTS.md block, owned components (3-way merge), lockfile;
                            a git source's ref is fetched and resolved again (every other command uses the
                            commit youi.lock.json records, from the cache, offline)
+  link [<dir>] | unlink    use your own checkout of the design system for this product, on this machine only
+                           (never written to the repo); link alone shows it
   scan [--out file]        build the usage map (default .youi/usage.json)
   mcp [--cache dir]        stdio MCP server: system_* tools (build with), library_* tools (browse, request),
                            discover_* tools (read the Discover index; never fetch), index_* tools
@@ -199,8 +201,8 @@ ${style.bold("Options")}
   --root <dir>      product root, for a config kept outside the product
                     (default: "root" in the config, relative to it; else --project)
   --design <dir>    design repo checkout, the directory holding youi.config.json
-                    (default: the config's source: a path, an installed package or a git repository
-                    at a ref; for build and
+                    (default: youiyoux link's checkout, else the config's source: a path, an installed
+                    package or a git repository at a ref; for build and
                     parity, the nearest folder upward holding youi.config.json)
   --json            machine-readable output`;
 
@@ -580,7 +582,7 @@ async function cmdSync(values: Values): Promise<number> {
   const p = await loadProject(values.project ?? process.cwd(), { ...loadOptions(values), refreshDesign: true });
   const result = await syncProject(p, { dryRun: values["dry-run"], adopt: values.adopt });
   if (values.json) json(result);
-  else print(renderSync(result, values["dry-run"]));
+  else print([renderSync(result, values["dry-run"]), ...(p.linked ? [style.warn(`! linked: the design system is your checkout ${p.linked}, not the config's source (youiyoux unlink to undo)`)] : [])].join("\n"));
   return result.actions.some((a) => a.action === "conflict") ? 1 : 0;
 }
 
@@ -597,6 +599,32 @@ async function cmdInit(values: Values): Promise<number> {
   // A package is found again through the config's source; a --design folder is passed on as given.
   const { design: _named, ...rest } = values;
   return cmdSync({ ...(design.package ? rest : values), project: root });
+}
+
+/**
+ * `youiyoux link <dir>`: use this checkout of the design system for this product, on this machine
+ * only (kept in the person's config folder, never in the repo); `youiyoux link` shows the link and
+ * `youiyoux unlink` removes it. It never changes what sync writes for the team.
+ */
+async function cmdLink(values: Values, positionals: string[]): Promise<number> {
+  const [dir] = positionals;
+  // Loaded with the new checkout, which checks it is a design repo holding the project's system (and survives a stale link).
+  const p = await loadProject(values.project ?? process.cwd(), { ...loadOptions(values), ...(dir !== undefined ? { designRoot: dir } : {}) });
+  if (dir === undefined) {
+    print(p.linked ? `${p.root} uses your checkout ${p.linked} (youiyoux unlink to undo)` : `${p.root} uses its config's source; not linked`);
+    return 0;
+  }
+  await setLink(p.root, p.repo.root);
+  print(`${style.ok("linked")} ${p.root} → ${p.repo.root}, for you only ${style.dim(`(${linksFile()}; youiyoux unlink to undo)`)}`);
+  return 0;
+}
+
+async function cmdUnlink(values: Values): Promise<number> {
+  const root = values.project ?? process.cwd();
+  const linked = await linkedDesign(root);
+  if (linked !== null) await setLink(root, null);
+  print(linked ? `${style.ok("unlinked")} ${resolve(root)} uses its config's source again` : `${resolve(root)} was not linked`);
+  return 0;
 }
 
 /** init's --design: a folder when one is there, else an npm package installed for the product (written to the config by name). */
@@ -1014,7 +1042,7 @@ async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Pr
 type Command = (values: Values, positionals: string[], io: CliIo) => Promise<number>;
 
 const COMMANDS: Record<string, Command> = {
-  show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, screens: cmdScreens, requests: cmdRequests, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+  link: cmdLink, unlink: cmdUnlink, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, screens: cmdScreens, requests: cmdRequests, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
 
 /** Every command name, for a front end that runs one by default (the youiyoux bin runs report). */
@@ -1046,7 +1074,7 @@ export async function main(argv: string[], io: CliIo = {}): Promise<number> {
 }
 
 /** Commands that work on a product, and on a design repo: each runs from anywhere inside one, as git does. */
-const IN_A_PRODUCT = new Set(["show", "where", "bom", "check", "baseline", "rules", "plan", "migrate", "sync", "scan", "watch", "hooks", "agents", "mcp", "ui", "library", "render", "screens", "requests"]);
+const IN_A_PRODUCT = new Set(["link", "unlink", "show", "where", "bom", "check", "baseline", "rules", "plan", "migrate", "sync", "scan", "watch", "hooks", "agents", "mcp", "ui", "library", "render", "screens", "requests"]);
 const IN_A_DESIGN_REPO = new Set(["build", "parity"]);
 
 /**
