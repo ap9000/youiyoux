@@ -11,8 +11,8 @@
  */
 import { cp, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, rmdir, stat } from "node:fs/promises";
 import { basename, dirname, join, posix, relative, resolve, sep } from "node:path";
-import { DESIGN_CONFIG_FILE, implementationsDir, loadDesignRepo, readTextOrNull, writeFileAtomic, type SystemConfig } from "@youiyoux/core";
-import { escapingLinks, PROJECT_FILE, type Project } from "@youiyoux/scanner";
+import { DESIGN_CONFIG_FILE, implementationsDir, loadDesignRepo, normalizeRelPath, readTextOrNull, writeFileAtomic, type SystemConfig } from "@youiyoux/core";
+import { escapingLinks, PROJECT_FILE, within, type Project } from "@youiyoux/scanner";
 
 export interface ExtractOptions {
   /** Also write a package.json naming the new repo as this npm package. */
@@ -44,6 +44,23 @@ export async function heldInPlace(project: Project): Promise<boolean> {
   return repo === root && project.system.config.implementations !== undefined;
 }
 
+/**
+ * Extract copies the System's folders into the new repo and then removes them from the product, so
+ * each must hold the System alone: never the product's root (`"."`, which would copy the whole
+ * product, secrets included, and remove it), never outside it, and never holding what must stay:
+ * the components, the product's config, its generated outputs or the new repo itself.
+ */
+function ownedPaths(project: Project, paths: readonly string[], kept: readonly string[]): void {
+  const root = project.repo.root;
+  for (const path of paths) {
+    const own = normalizeRelPath(path);
+    if (own === "." || own.startsWith("../") || !within(root, join(root, own)) || resolve(root, own) === resolve(root)) throw new Error(`the System's ${path} is not a folder of its own inside ${root}: move its files into one (design/…) before extracting; nothing was changed`);
+    for (const keep of kept.map((k) => normalizeRelPath(toPosix(k)))) {
+      if (keep === own || keep.startsWith(`${own}/`)) throw new Error(`the System's ${own} holds ${keep}, which stays in the product: move the System's files into a folder of their own before extracting; nothing was changed`);
+    }
+  }
+}
+
 export async function extractSystem(project: Project, dir: string, options: ExtractOptions = {}): Promise<ExtractResult> {
   if (!(await heldInPlace(project))) throw new Error(`${project.root}'s System is already a design repo of its own (${project.repo.root}): extract moves a System youiyoux adopt keeps inside the product`);
   const target = resolve(dir);
@@ -56,6 +73,8 @@ export async function extractSystem(project: Project, dir: string, options: Extr
   const components = from(config.components);
   const implementations = from(implementationsDir(config));
   const tokensDir = posix.dirname(config.tokens);
+  const removed = [DESIGN_CONFIG_FILE, config.components, tokensDir, config.rules, ...(config.design ? [config.design] : [])];
+  ownedPaths(project, removed, [implementationsDir(config), relative(project.root, project.configFile ?? join(project.root, PROJECT_FILE)), project.config.outputs.dir, relative(project.root, target)]);
 
   // The new system: every path inside the new repo, no implementations folder (they sit beside their contracts).
   const { implementations: _inPlace, ...rest } = config;
@@ -95,7 +114,6 @@ export async function extractSystem(project: Project, dir: string, options: Extr
     for (const entry of await readdir(temp, { recursive: true })) if (!(await isDirectory(join(temp, entry)))) written.push(toPosix(entry));
     written.sort();
 
-    const removed = [DESIGN_CONFIG_FILE, config.components, tokensDir, config.rules, ...(config.design ? [config.design] : [])];
     const source = { path: toPosix(relative(project.root, target)) || "." };
     if (!options.dryRun) {
       if (await isDirectory(target)) await rmdir(target);

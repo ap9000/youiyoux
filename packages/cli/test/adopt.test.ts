@@ -320,6 +320,27 @@ describe("youiyoux system extract", () => {
       await writeFile(join(full, "README.md"), "mine\n");
       expect(await main(["system", "extract", full, "--project", root])).toBe(1);
       expect(err.mock.calls.flat().join("")).toContain("already exists and is not empty");
+      // A System folder that is the product's root, or holds what stays, would copy the product (secrets too) and remove it.
+      const adopted = await readFile(join(root, "youi.config.json"), "utf8");
+      await writeFile(join(root, ".env"), "TOKEN=not-for-the-design-repo\n");
+      for (const [field, value, said] of [["tokens", "web.resolver.json", "is not a folder of its own"], ["tokens", "components/web.resolver.json", "holds components/ui, which stays in the product"]] as const) {
+        const system = (JSON.parse(adopted) as { systems: Record<string, unknown>[] }).systems[0]!;
+        await writeFile(join(root, "youi.config.json"), JSON.stringify({ schema: "youi.config/v1", name: "x", systems: [{ ...system, [field]: value }] }));
+        err.mockClear();
+        expect(await main(["system", "extract", join(dir, "root-design"), "--project", root])).toBe(1);
+        expect(err.mock.calls.flat().join("")).toContain(said);
+        await expect(readdir(join(dir, "root-design"))).rejects.toThrow();
+      }
+      await writeFile(join(root, "youi.config.json"), adopted);
+      const productConfig = await readFile(join(root, "youi.project.json"), "utf8");
+      const followed = JSON.parse(productConfig) as { outputs: Record<string, unknown> };
+      await writeFile(join(root, "youi.project.json"), JSON.stringify({ ...followed, outputs: { ...followed.outputs, dir: "design/tokens/out" } }));
+      err.mockClear();
+      expect(await main(["system", "extract", join(dir, "root-design"), "--project", root])).toBe(1);
+      expect(err.mock.calls.flat().join("")).toContain("holds design/tokens/out, which stays in the product");
+      await writeFile(join(root, "youi.project.json"), productConfig);
+      expect(await readFile(join(root, ".env"), "utf8")).toContain("TOKEN");
+      expect(await readFile(join(root, "components/ui/button.tsx"), "utf8")).toContain("buttonVariants");
       // A link in the System that leads outside it would carry what it points at into the new repo.
       await writeFile(join(dir, "secret.json"), "{}\n");
       await symlink(join(dir, "secret.json"), join(root, "design/tokens/leak.json"));
