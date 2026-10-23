@@ -66,7 +66,7 @@ afterEach(async () => {
 
 describe("GitHub Actions' OIDC token", () => {
   test("GitHub's, for this hub, unexpired and from an accepted owner: its repository, commit and branch", async () => {
-    expect(await verifier()(token())).toEqual({ repository: "acme/billing", repository_owner: "acme", sha: SHA, ref: "refs/heads/main" });
+    expect(await verifier()(token({ event_name: "push" }))).toEqual({ repository: "acme/billing", repository_owner: "acme", sha: SHA, ref: "refs/heads/main", event_name: "push" });
     // Owners match as GitHub names them, in any case.
     expect((await verifier(["ACME"])(token())).repository).toBe("acme/billing");
   });
@@ -95,6 +95,11 @@ describe("GitHub Actions' OIDC token", () => {
     expect(recordMismatch(claims, record({ repo: "acme/payroll" }))).toBe("the record names acme/payroll, but it was sent from acme/billing");
     expect(recordMismatch(claims, record({ commit: "d".repeat(40) }))).toBe(`the record names commit ${"d".repeat(40)}, but it was sent from ${SHA}`);
     expect(recordMismatch(claims, record({ ref: "release" }))).toBe("the record names release, but it was sent from main");
+    // A tag or a pull request named like the branch never stands for it.
+    expect(recordMismatch({ ...claims, ref: "refs/tags/main" }, record())).toBe("it was sent from refs/tags/main, not a branch");
+    expect(recordMismatch({ ...claims, ref: "refs/pull/7/merge" }, record({ ref: "7/merge" }))).toBe("it was sent from refs/pull/7/merge, not a branch");
+    expect(recordMismatch({ ...claims, event_name: "pull_request_target" }, record())).toBe("it was sent from a pull_request_target run, not a push to the branch");
+    expect(recordMismatch({ ...claims, event_name: "push" }, record())).toBeNull();
   });
 
   test("in a job with id-token: write it asks GitHub for a token for the hub's address; elsewhere there is none", async () => {

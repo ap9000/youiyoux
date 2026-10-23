@@ -20,6 +20,8 @@ export interface GithubClaims {
   readonly repository_owner: string;
   readonly sha: string;
   readonly ref: string;
+  /** The event the run is for (`push`, `workflow_dispatch`, `pull_request`…). */
+  readonly event_name?: string;
 }
 
 /** One of GitHub's public keys, as its JWKS lists them. */
@@ -106,10 +108,10 @@ export function githubVerifier(options: GithubVerifierOptions): GithubVerifier {
     const seconds = now().getTime() / 1000;
     if (typeof claims.exp !== "number" || claims.exp < seconds - LEEWAY_SECONDS) throw new Error("expired");
     if (typeof claims.nbf === "number" && claims.nbf > seconds + LEEWAY_SECONDS) throw new Error("not valid yet");
-    const { repository, repository_owner: owner, sha, ref } = claims;
+    const { repository, repository_owner: owner, sha, ref, event_name: event } = claims;
     if (typeof repository !== "string" || typeof owner !== "string" || typeof sha !== "string" || typeof ref !== "string") throw new Error("missing its repository, owner, commit or ref");
     if (!owners.has(owner.toLowerCase())) throw new Error(`from ${owner}, which this hub does not take records from`);
-    return { repository, repository_owner: owner, sha, ref };
+    return { repository, repository_owner: owner, sha, ref, ...(typeof event === "string" ? { event_name: event } : {}) };
   };
 }
 
@@ -117,7 +119,10 @@ export function githubVerifier(options: GithubVerifierOptions): GithubVerifier {
 export function recordMismatch(claims: GithubClaims, record: { readonly repo: string; readonly commit: string | null; readonly ref: string | null }): string | null {
   if (claims.repository.toLowerCase() !== record.repo.toLowerCase()) return `the record names ${record.repo}, but it was sent from ${claims.repository}`;
   if (record.commit !== claims.sha) return `the record names commit ${record.commit ?? "none"}, but it was sent from ${claims.sha}`;
-  const branch = claims.ref.replace(/^refs\/(?:heads|tags|pull)\//, "");
+  // A branch only, compared exactly: a tag or a pull request named like a branch never stands for it.
+  if (!claims.ref.startsWith("refs/heads/")) return `it was sent from ${claims.ref}, not a branch`;
+  if (claims.event_name !== undefined && claims.event_name.startsWith("pull_request")) return `it was sent from a ${claims.event_name} run, not a push to the branch`;
+  const branch = claims.ref.slice("refs/heads/".length);
   if (record.ref !== branch) return `the record names ${record.ref ?? "no branch"}, but it was sent from ${branch}`;
   return null;
 }
