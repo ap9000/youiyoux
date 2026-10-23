@@ -229,13 +229,11 @@ jobs:
           ref: ${input.design.commit}
           path: .youi-ci/design
           token: \${{ secrets.YOUI_REPO_TOKEN }}
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10.13.1
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - run: pnpm install --frozen-lockfile --ignore-scripts
+      # corepack (in Node 24) runs the pnpm the tool pins: no third-party action beside YOUI_REPO_TOKEN.
+      - run: corepack enable && pnpm install --frozen-lockfile --ignore-scripts
         working-directory: .youi-ci/tool
       - name: youiyoux check
         run: node .youi-ci/tool/packages/cli/bin/youi.js check ${checkArgs}
@@ -259,7 +257,7 @@ export async function installWorkflow(project: Project, toolRoot: string, target
   const projectDir = posix(relative(top, await realpath(project.root).catch(() => project.root)));
   let text = workflowText({ tool, design, projectDir, configPath, diff });
   if (published) {
-    text = text.replace(/      - name: Check out youi\n[\s\S]*?(?=      - name: Check out the design)/, "").replace(/      - run: pnpm install --frozen-lockfile --ignore-scripts\n        working-directory: .youi-ci\/tool\n/, "").replaceAll("node .youi-ci/tool/packages/cli/bin/youi.js", "npx -y youiyoux");
+    text = text.replace(/      - name: Check out youi\n[\s\S]*?(?=      - name: Check out the design)/, "").replace(/      # corepack \(in Node 24\)[^\n]*\n      - run: corepack enable && pnpm install --frozen-lockfile --ignore-scripts\n        working-directory: .youi-ci\/tool\n/, "").replaceAll("node .youi-ci/tool/packages/cli/bin/youi.js", "npx -y youiyoux");
   }
   return write(file, text, before, `authoritative: ${published ? "runs the published youiyoux package; pinned to" : `pinned to ${tool.slug}@${tool.commit.slice(0, 7)} and`} rules ${design.slug}@${design.commit.slice(0, 7)}${diff ? "; pull requests also fail on drift they add (youiyoux check --diff --strict)" : ""}`);
 }

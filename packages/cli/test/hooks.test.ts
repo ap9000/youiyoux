@@ -370,6 +370,9 @@ describe("drift findings reach the agent after a UI edit", () => {
     expect(portableText).toContain("npx -y youiyoux check");
     expect(portableText).not.toMatch(/_npx|dist\/chunks|\.youi-ci\/tool|repository: npm\/youiyoux/);
     expect(portableText).toContain('npx -y youiyoux check --diff "origin/$YOUI_BASE"');
+    // Only GitHub's own actions run beside YOUI_REPO_TOKEN: the tool's pnpm comes from corepack.
+    for (const workflow of [text, portableText]) expect([...workflow.matchAll(/uses: ([\w-]+)\//g)].map((m) => m[1])).toEqual(workflow === text ? ["actions", "actions", "actions", "actions"] : ["actions", "actions", "actions"]);
+    expect(text).toContain("      - run: corepack enable && pnpm install --frozen-lockfile --ignore-scripts\n        working-directory: .youi-ci/tool\n");
     await writeFile(portable.file, portableText.replaceAll("youiyoux hooks install", "youi hooks install").replaceAll("name: youiyoux check", "name: youi check"));
     expect((await installWorkflow(project, join(fixture.dir, "_npx/hash/node_modules/youiyoux/dist"), { project: fixture.app }, false)).action).toBe("updated");
     expect(await readFile(portable.file, "utf8")).toContain('check --diff "origin/$YOUI_BASE"');
