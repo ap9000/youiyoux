@@ -9,6 +9,7 @@
 import { basename } from "node:path";
 import { parse as parseYaml } from "yaml";
 import type { PoliteClient } from "./http.ts";
+import { cleanText } from "./text.ts";
 import { digestOf, fetchText, IngestError, itemsOf, type IngestLink, type IngestSource, type ItemInput, type ReaderResult } from "./ingest.ts";
 
 type DesignTarget = Extract<IngestLink, { kind: "design-md" }>;
@@ -62,7 +63,7 @@ function bodyComponents(body: string): Array<{ name: string; summary: string }> 
 
 export async function readDesignMd(target: DesignTarget, client: PoliteClient, fetchedAt: string, readLocal: (path: string) => Promise<string>): Promise<ReaderResult> {
   const text = target.local
-    ? await readLocal(target.location).then((body) => ({ body, sha256: digestOf(body) }), () => {
+    ? await readLocal(target.location).then((body) => ({ body: cleanText(body), sha256: digestOf(body) }), () => {
         throw new IngestError(`could not read ${basename(target.location)}`);
       })
     : await fetchText(client, target.location, "the DESIGN.md");

@@ -66,7 +66,8 @@ export async function readGithub(target: GithubTarget, client: PoliteClient, fet
       throw new IngestError(`${repo}'s ${registry} is not JSON`);
     }
     const { items, invalid } = parseRegistryItems(value);
-    const built = new Set(files.filter((f) => /(^|\/)public\/r\/[^/]+\.json$/.test(f)));
+    // A built item is offered as an install command a person copies: only paths of plain characters, so nothing in one can reach a shell.
+    const built = new Set(files.filter((f) => /(^|\/)public\/r\/[^/]+\.json$/.test(f) && /^[A-Za-z0-9._/-]+$/.test(f)));
     const inputs: ItemInput[] = items.filter(isCandidate).map((item) => {
       const servedAt = [...built].find((f) => f.endsWith(`/r/${item.name}.json`));
       return {

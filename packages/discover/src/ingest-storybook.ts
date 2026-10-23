@@ -6,6 +6,7 @@
  * licence: unknown.
  */
 import type { PoliteClient } from "./http.ts";
+import { cleanData } from "./text.ts";
 import { IngestError, itemsOf, type IngestLink, type IngestSource, type ItemInput, type ReaderResult } from "./ingest.ts";
 
 type StorybookTarget = Extract<IngestLink, { kind: "storybook" }>;
@@ -24,7 +25,8 @@ export async function readStorybook(target: StorybookTarget, client: PoliteClien
     const value = got.value as { entries?: unknown; stories?: unknown };
     const found = (value.entries ?? value.stories) as unknown;
     if (found && typeof found === "object" && !Array.isArray(found)) {
-      entries = found as Record<string, IndexEntry>;
+      // Cleaned before a title is split into its folders.
+      entries = cleanData(found) as Record<string, IndexEntry>;
       index = { body: got.result.body, url, sha256: got.result.sha256 };
       break;
     }

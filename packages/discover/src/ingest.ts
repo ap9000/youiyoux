@@ -18,6 +18,7 @@ import { readFigma } from "./ingest-figma.ts";
 import { readGithub } from "./ingest-github.ts";
 import { readStorybook } from "./ingest-storybook.ts";
 import { nameSlug, sourceSlug, summaryOf } from "./sources.ts";
+import { cleanData, cleanText } from "./text.ts";
 
 /** At most this many items from one link; the rest are counted in a note. */
 export const INGEST_CAP = 300;
@@ -165,13 +166,14 @@ export const digestOf = (value: unknown): string => sha256(typeof value === "str
 export async function fetchJson(client: PoliteClient, url: string, what: string): Promise<unknown> {
   const got = await client.json(url, false);
   if (!got.ok) throw new IngestError(`could not read ${what} (${url}): ${got.status === 404 ? "not found" : got.message}`);
-  return got.value;
+  // Cleaned where it arrives, before a reader splits or joins anything: a control sequence cut in two is not caught later.
+  return cleanData(got.value);
 }
 
 export async function fetchText(client: PoliteClient, url: string, what: string): Promise<{ body: string; sha256: string; fetchedAt: string }> {
   const got = await client.get(url, "text/plain, text/markdown, */*");
   if (!got.ok) throw new IngestError(`could not read ${what} (${url}): ${got.status === 404 ? "not found" : got.message}`);
-  return { body: got.body, sha256: got.sha256, fetchedAt: got.fetchedAt };
+  return { body: cleanText(got.body), sha256: got.sha256, fetchedAt: got.fetchedAt };
 }
 
 /** Read one link into Library items. Nothing is written. */
@@ -187,13 +189,14 @@ export async function ingestLink(link: string, options: IngestOptions): Promise<
         ? (options.figma ? readFigma(target, options.client, fetchedAt) : Promise.reject(new IngestError("a Figma file is read through Figma's API: set FIGMA_TOKEN to a personal access token that can read the file (Figma > Settings > Security > Personal access tokens)")))
         : readDesignMd(target, options.client, fetchedAt, (path) => readFile(path, "utf8")));
   const over = result.entries.length - INGEST_CAP;
-  return {
+  // Every string a source served (a title, a name, a path, a reason) without terminal controls, as Discover keeps its listings.
+  return cleanData({
     ...result,
     link: link.trim(),
     fetchedAt,
     entries: result.entries.slice(0, INGEST_CAP),
     notes: [...result.notes, ...(over > 0 ? [`${over} more item${over === 1 ? "" : "s"} not read: at most ${INGEST_CAP} come from one link`] : [])],
-  };
+  });
 }
 
 export type ReaderResult = Pick<IngestResult, "source" | "license" | "entries" | "skipped" | "notes">;

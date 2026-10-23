@@ -33,7 +33,11 @@ export const nodeFetcher: Fetcher = async (url, init) => {
     if (!location) throw new Error("redirect missing location");
     const next = new URL(location, url);
     if (!publicHttps(next.href)) throw new Error("redirect must use https on a public host");
-    if (next.origin !== new URL(url).origin) delete headers.authorization;
+    // Credentials are for the origin they were meant for: neither token follows a redirect elsewhere.
+    if (next.origin !== new URL(url).origin) {
+      delete headers.authorization;
+      delete headers["x-figma-token"];
+    }
     url = next.href;
   }
   throw new Error("too many redirects");
