@@ -37,7 +37,7 @@ This repository is the tool. It holds no product's design data: each design syst
 
 A design repo is any directory with a `youi.config.json`. A product names it in its `youi.project.json` with `source.path` (relative to the config, or absolute), or with `source.package`: an npm package that holds `youi.config.json`, found in the product's `node_modules` or a parent's (a published design package, or a monorepo's workspace package), so the config names no one's folders. Any command also takes `--design <dir>`.
 
-Commands find their project as git finds a repository: run anywhere inside a product, they use the nearest folder upward holding `youi.project.json`, without leaving the git repository. `build` and `parity` find the nearest `youi.config.json` the same way. `--project`, `--config` or `--root` (and `--design`) still say where explicitly, and win. A design repo keeps the layout below; [`examples/demo-design`](../examples/demo-design) is a complete one.
+Commands find their project as git finds a repository: run anywhere inside a product, they use the nearest folder upward holding `youi.project.json`, without leaving the git repository. It fails closed, as git does: outside a git repository nothing above the current folder is used, and a config another user owns is ignored, so a file left in a shared folder such as `/tmp` is never read. `build` and `parity` find the nearest `youi.config.json` the same way. `--project`, `--config` or `--root` (and `--design`) still say where explicitly, and win. A design repo keeps the layout below; [`examples/demo-design`](../examples/demo-design) is a complete one.
 
 | Path in a design repo | Contents |
 | --- | --- |

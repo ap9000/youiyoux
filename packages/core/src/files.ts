@@ -1,5 +1,5 @@
 /** Filesystem helpers shared by the loader, scanner and sync. */
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import * as fsp from "node:fs/promises";
 import { mkdir, readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { randomBytes } from "node:crypto";
@@ -144,14 +144,21 @@ export async function readDefinition<T extends z.ZodType>(file: string, schema: 
 }
 
 /**
- * The nearest directory from `start` upward that holds `file`, or null. The walk stops at the top
- * of the git repository `start` is in (the directory holding `.git`), so a config from an
- * enclosing repository, or from the home directory above it, is never picked up.
+ * The nearest directory from `start` upward that holds `file`, inside the git repository `start`
+ * is in, or null. It fails closed, as git does for repositories (CVE-2022-24765): the walk stops at
+ * the repository's top (the directory holding `.git`), so a config from an enclosing repository is
+ * never picked up; outside any repository nothing is found, so a config left in a shared folder
+ * above (`/tmp`) is never read; and a file another user owns ends the search.
  */
-export function findUp(start: string, file: string): string | null {
+export function findUp(start: string, file: string, owner = process.getuid?.()): string | null {
+  let found: string | null = null;
   for (let dir = nodePath.resolve(start); ; dir = dirname(dir)) {
-    if (existsSync(join(dir, file))) return dir;
-    if (existsSync(join(dir, ".git")) || dirname(dir) === dir) return null;
+    if (found === null && existsSync(join(dir, file))) {
+      if (owner !== undefined && statSync(join(dir, file)).uid !== owner) return null;
+      found = dir;
+    }
+    if (existsSync(join(dir, ".git"))) return found;
+    if (dirname(dir) === dir) return null;
   }
 }
 

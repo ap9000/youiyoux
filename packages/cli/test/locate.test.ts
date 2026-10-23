@@ -49,6 +49,20 @@ describe("finding the project from where you are", () => {
     expect(findUp(join(worktree, "src"), "youi.project.json")).toBeNull();
   });
 
+  test("it fails closed: outside any repository nothing is found, and a config another user owns ends the search", async () => {
+    // A config left in a shared folder (/tmp) above a folder that is not a repository is never read.
+    const loose = join(dir, "shared/work");
+    await mkdir(loose, { recursive: true });
+    await writeFile(join(dir, "shared/youi.project.json"), "{}");
+    expect(findUp(loose, "youi.project.json")).toBeNull();
+    // Inside a repository, a config owned by someone else is not this person's project.
+    const deep = join(app, "components/ui");
+    const me = process.getuid?.();
+    if (me === undefined) return;
+    expect(findUp(deep, "youi.project.json", me)).toBe(app);
+    expect(findUp(deep, "youi.project.json", me + 1)).toBeNull();
+  });
+
   test("product commands get the found project; a flag that says where always wins; design-repo commands find youi.config.json", () => {
     const sub = join(app, "components/ui");
     expect(located("check", { help: false } as never, sub).project).toBe(app);
