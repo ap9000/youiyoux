@@ -114,12 +114,14 @@ function typeLiteral(value: string): TypedValue | null {
   if (shadow && shadow.length > 0 && /\d/.test(value) && value.includes(" ")) return { type: "shadow", value: shadow };
   const bezier = parseCubicBezier(value);
   if (bezier) return { type: "cubicBezier", value: bezier };
+  // A bare number (a line height of 1.4, a weight of 500) is a number, never 1.4px; only 0 is a length without a unit.
+  if (/^-?\d*\.?\d+$/.test(value.trim()) && Number(value) !== 0) return { type: "number", value: Number(value) };
   const dimension = parseDimension(value);
   if (dimension) return { type: "dimension", value: dimension };
   return null;
 }
 
-const GROUP_BY_TYPE: Record<string, string> = { color: "color", shadow: "shadow", cubicBezier: "easing", dimension: "space" };
+const GROUP_BY_TYPE: Record<string, string> = { color: "color", shadow: "shadow", cubicBezier: "easing", dimension: "space", number: "number" };
 
 function emEtc(value: string | number | undefined, fontSize: DtcgDimension): DtcgDimension | undefined {
   if (value === undefined) return undefined;
@@ -217,6 +219,8 @@ export function importTokens(options: ImportOptions): ImportResult {
       const literal = typeLiteral(entry.light);
       if (literal) typed.set(entry.name, literal);
     }
+    const taken = new Set<string>();
+    const trimmed: Array<{ name: string; short: string }> = [];
     for (const entry of entries) {
       const target = aliasTarget(entry.light, source.prefix);
       const type = typed.get(entry.name)?.type ?? (target ? typed.get(target)?.type : undefined);
@@ -224,8 +228,19 @@ export function importTokens(options: ImportOptions): ImportResult {
         unparsed.push({ name: entry.name, value: entry.light });
         continue;
       }
-      pathOf.set(entry.name, options.paths?.[entry.name] ?? `${GROUP_BY_TYPE[type]}.${entry.name}`);
+      const group = GROUP_BY_TYPE[type]!;
+      const path = options.paths?.[entry.name] ?? `${group}.${entry.name}`;
+      pathOf.set(entry.name, path);
+      taken.add(path);
+      if (!options.paths?.[entry.name] && entry.name.startsWith(`${group}-`) && entry.name.length > group.length + 1) trimmed.push({ name: entry.name, short: `${group}.${entry.name.slice(group.length + 1)}` });
       typed.set(entry.name, typed.get(entry.name) ?? { type, value: null });
+    }
+    // `--space-md` is space.md, not space.space-md, unless another variable is space.md already; its CSS name is kept either way.
+    for (const { name, short } of trimmed) {
+      if (taken.has(short)) continue;
+      taken.delete(pathOf.get(name)!);
+      taken.add(short);
+      pathOf.set(name, short);
     }
     for (const entry of entries) {
       const path = pathOf.get(entry.name);
