@@ -674,7 +674,8 @@ async function cmdSystem(values: Values, positionals: string[]): Promise<number>
   }
   print([...lines, ""].join("\n"));
   const synced = await cmdSync({ ...values, project: p.root, package: undefined });
-  print(`Next: make ${relative(process.cwd(), result.target) || "."} a repository of its own and commit it; then each app follows it by ${values.package ? `package (publish ${values.package}, add it as a dependency, set source to { "package": "${values.package}" })` : "package or git"} ({ "git": "<url>", "ref": "v${result.system.version}" }). Change components there from now on: youiyoux sync merges them into each product`);
+  const git = `push it and set source to { "git": "<its url>", "ref": "v${result.system.version}" }`;
+  print(`Next: make ${relative(process.cwd(), result.target) || "."} a repository of its own and commit it. For each app to follow it, ${values.package ? `publish ${values.package}, add it as a dependency and set source to { "package": "${values.package}" }, or ${git}` : `${git}, or publish it as an npm package (--package names it)`}. Change components there from now on: youiyoux sync merges them into each product`);
   return synced;
 }
 
