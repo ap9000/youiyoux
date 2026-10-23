@@ -1,4 +1,5 @@
-/** WCAG 2.x contrast for resolved CSS colours (hex and rgb() forms, as the token build emits them), and the colour pairs a system must pass. Browser-safe: the hub imports it as `@youiyoux/tokens/contrast`. */
+/** WCAG 2.x contrast for resolved CSS colours (hex, rgb(), and the oklch() and hsl() forms color.ts reads), and the colour pairs a system must pass. Browser-safe: the hub imports it as `@youiyoux/tokens/contrast`. */
+import { parseCssColor, srgbOf } from "./color.ts";
 
 export interface Rgba {
   readonly r: number;
@@ -39,7 +40,11 @@ export function parseColor(css: string): Rgba | null {
   const value = css.trim();
   if (HEX.test(value)) return parseHex(value.slice(1));
   const rgb = RGB.exec(value);
-  return rgb ? parseRgb(rgb[1] ?? "") : null;
+  if (rgb) return parseRgb(rgb[1] ?? "");
+  const other = parseCssColor(value);
+  if (!other) return null;
+  const [r, g, b] = srgbOf(other).map((c) => c * 255) as [number, number, number];
+  return { r, g, b, a: other.alpha ?? 1 };
 }
 
 /** `top` painted over an opaque `bottom`. */

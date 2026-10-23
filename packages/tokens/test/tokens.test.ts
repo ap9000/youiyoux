@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DefinitionError, FONT_FAMILY_NAME, loadDesignRepo, OutputConfig } from "@youiyoux/core";
 import { describe, expect, test } from "vitest";
-import { buildTokens, compareParity, contrastText, cssComment, cssString, cssValue, formatCssColor, FAMILY_NAME, generatedHeader, importTokens, isLargeText, parseCssColor, parseShadow, readRules, resolverLayout, sameCssValue, springCurve, systemPairs, gradePairs, tokenVariables } from "../src/index.ts";
+import { buildTokens, compareParity, contrastRatio, contrastText, cssComment, cssString, cssValue, formatCssColor, FAMILY_NAME, sameColor, toHex, generatedHeader, importTokens, isLargeText, parseCssColor, parseShadow, readRules, resolverLayout, sameCssValue, springCurve, systemPairs, gradePairs, tokenVariables } from "../src/index.ts";
 
 const DEMO = join(import.meta.dirname, "../../../examples/demo-design");
 const demoOutput = OutputConfig.parse({
@@ -21,6 +21,26 @@ describe("colour", () => {
     expect(formatCssColor(soft)).toBe("rgb(255 151 125 / .12)");
     expect(formatCssColor(parseCssColor("rgba(0, 0, 0, 0.5)")!)).toBe("rgb(0 0 0 / .5)");
     expect(parseCssColor("var(--x)")).toBeNull();
+  });
+
+  test("reads oklch() as Tailwind v4 and shadcn/ui write it, keeps it exactly, and compares and grades it by its sRGB value", () => {
+    const primary = parseCssColor("oklch(0.205 0 0)")!;
+    expect(primary).toEqual({ colorSpace: "oklch", components: [0.205, 0, 0], hex: "#171717" });
+    expect(formatCssColor(primary)).toBe("oklch(0.205 0 0)");
+    expect(formatCssColor(parseCssColor("oklch(1 0 0 / 10%)")!)).toBe("oklch(1 0 0 / .1)");
+    expect(parseCssColor("oklch(62.8% 0.2577 29.23deg)")!.components).toEqual([0.628, 0.2577, 29.23]);
+    // Tailwind's red-500 is #fb2c36 in sRGB.
+    expect(toHex(parseCssColor("oklch(0.637 0.237 25.331)")!)).toBe("#fb2c36");
+    expect(sameColor(parseCssColor("oklch(0.985 0 0)")!, parseCssColor("#fafafa")!)).toBe(true);
+    expect(sameColor(parseCssColor("oklch(0.985 0 0)")!, parseCssColor("#ffffff")!)).toBe(false);
+    expect(contrastRatio("oklch(0.145 0 0)", "oklch(1 0 0)")).toBeCloseTo(contrastRatio("#0a0a0a", "#ffffff")!, 2);
+  });
+
+  test("reads hsl() into sRGB; a bare `210 40% 98%` is not a colour (it is only one inside hsl(var(--x)))", () => {
+    expect(parseCssColor("hsl(0 100% 50%)")).toMatchObject({ colorSpace: "srgb", hex: "#ff0000" });
+    expect(toHex(parseCssColor("hsl(210, 40%, 98%)")!)).toBe("#f8fafc");
+    expect(parseCssColor("hsl(0 0% 0% / .5)")!.alpha).toBe(0.5);
+    expect(parseCssColor("210 40% 98%")).toBeNull();
   });
 
   test("shadows parse layer by layer and compare across formatting", () => {
@@ -151,6 +171,26 @@ describe("motion and focus (youi types)", () => {
     expect(built.tokens.find((t) => t.id === "focus.ring")).toMatchObject({ dependsOn: ["color.accent"], source: { light: { color: "{color.accent}" } }, dark: { color: { hex: "#8c85ff" } } });
     // Without contracts there are no state variables.
     expect((await buildTokens(DEMO, system.config, demoOutput)).files[0]!.content).not.toContain("--demo-button-");
+  });
+
+  test("an oklch() colour builds to the same oklch() in light and dark", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "youi-tokens-"));
+    try {
+      await cp(DEMO, dir, { recursive: true });
+      for (const [name, value] of [["demo.tokens.json", "oklch(0.205 0 0)"], ["demo.dark.tokens.json", "oklch(0.922 0 0 / 80%)"]] as const) {
+        const file = join(dir, "tokens/demo", name);
+        const tokens = JSON.parse(await readFile(file, "utf8")) as { color: Record<string, { $type?: string; $value: unknown }> };
+        tokens.color.accent = { $type: "color", ...tokens.color.accent, $value: parseCssColor(value) };
+        await writeFile(file, JSON.stringify(tokens, null, 2));
+      }
+      const repo = await loadDesignRepo(dir);
+      const built = await buildTokens(dir, repo.systems[0]!.config, demoOutput);
+      const css = built.files.find((f) => f.path === "tokens.css")!.content;
+      expect(css).toContain("--demo-color-accent: oklch(0.205 0 0);");
+      expect(css).toContain("--demo-color-accent: oklch(0.922 0 0 / .8);");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   test("a malformed spring stops the build, naming the file and the token", async () => {

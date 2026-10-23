@@ -66,7 +66,7 @@ export function stringNodes(module: ModuleInfo): SgNode[] {
 /* --------------------------------------------------------------- raw-color */
 
 export const HEX = /#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![0-9a-zA-Z_-])/g;
-export const COLOR_FN = /\b(?:rgba?|hsla?)\(\s*-?[\d.]+[^)]*\)/g;
+export const COLOR_FN = /\b(?:rgba?|hsla?|oklch)\(\s*-?[\d.]+[^)]*\)/g;
 
 /** Attributes whose strings are fragments, ids or URLs, never colours (`href="#fade"`). */
 const NON_COLOR_ATTRIBUTES = new Set(["href", "to", "id", "htmlFor", "key", "name", "src", "action", "formAction", "aria-controls", "aria-describedby", "aria-labelledby"]);

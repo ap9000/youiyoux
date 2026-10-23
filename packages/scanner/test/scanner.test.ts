@@ -151,6 +151,14 @@ describe("review regressions", () => {
     expect(importSpecifier(plain, "src/browser/views/x.tsx")).toBe("../../../components/ui");
   });
 
+  test("an oklch() colour written in code is a raw colour, as hex and rgb() are", async () => {
+    const project = await loadProject(FIXTURE);
+    const file = "app/oklch.tsx";
+    const code = 'export function Swatch() {\n  return <div style={{ color: "oklch(0.637 0.237 25.331)" }} className="bg-[oklch(0.2_0_0)]" />;\n}\n';
+    const report = (await scanProject(project, { overrides: { [file]: code } })).report;
+    expect(report.violations.filter((v) => v.file === file && v.rule.endsWith("no-raw-color")).map((v) => v.text)).toEqual(["oklch(0.637 0.237 25.331)", "oklch(0.2_0_0)"]);
+  });
+
   test("colour context, fragments, ignore scope and default exports", async () => {
     const project = await loadProject(FIXTURE);
     const file = "app/review.tsx";

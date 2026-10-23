@@ -70,7 +70,7 @@ function arbitraryFindings(module: ModuleInfo, index: TokenIndex, added: IsAdded
     const start = node.range().start;
     for (const match of text.matchAll(ARBITRARY)) {
       const [whole, utility, value] = match as unknown as [string, string, string];
-      if (value.startsWith("#") || /^(rgb|hsl)a?\(/.test(value)) continue; // colours: colorFindings
+      if (value.startsWith("#") || /^(?:(?:rgb|hsl)a?|oklch)\(/.test(value)) continue; // colours: colorFindings
       const offset = match.index! + whole.indexOf(`${utility}-[`);
       const at = offsetToPosition(text, offset, start);
       if (!added(module.file, at.line)) continue;
