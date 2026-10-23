@@ -44,7 +44,7 @@ export interface AdoptPlan {
   readonly support: readonly string[];
   readonly tokens: { readonly stylesheet: string | null; readonly count: number; readonly dark: boolean; readonly left: ReadonlyArray<{ name: string; value: string }> };
   /** The stylesheet as it becomes: its moved declarations gone, the generated tokens imported; null when it is left as it is. */
-  readonly stylesheet: { readonly path: string; readonly content: string; readonly moved: number } | null;
+  readonly stylesheet: { readonly path: string; readonly content: string; readonly moved: number; readonly kept: readonly string[] } | null;
   readonly outputs: { readonly dir: string; readonly cssVarPrefix: string; readonly dark: ReadonlyArray<{ media?: string; selector: string }>; readonly targets: readonly ["css-vars"] };
   readonly tokenSources: readonly string[];
   readonly notes: readonly string[];
@@ -206,22 +206,36 @@ function variableNames(tree: TokenTree, path: string[] = []): string[] {
 }
 
 /**
- * The stylesheet without the moved declarations, importing the generated tokens: each moved
- * declaration's line is removed when the line holds only it; a block (or an @media) left empty
- * goes too. Only the :root block and the dark blocks given are changed; nothing to move is null.
+ * The stylesheet without the moved declarations, importing the generated tokens. A declaration is
+ * taken out of its line, also when the line holds several (`--ground: #efefef; --paper: #fff;`);
+ * a line left empty goes, and so does a block (or an @media) left holding nothing. Only the :root
+ * block and the dark blocks given are changed. `kept` names what could not be taken out alone (a
+ * declaration sharing its line with a selector): it stays, with the same value. Nothing moved is null.
  */
-function moveDeclarations(css: string, blocks: readonly BlockRef[], moved: ReadonlySet<string>, importPath: string): { content: string; moved: number } | null {
+function moveDeclarations(css: string, blocks: readonly BlockRef[], moved: ReadonlySet<string>, importPath: string): { content: string; moved: number; kept: string[] } | null {
   const rules = readRules(css).filter((r) => blocks.some((b) => r.preludes.at(-1) === b.selector && (b.outer ? r.preludes.length === 2 && r.preludes[0] === b.outer : r.preludes.length === 1)));
   if (rules.length === 0) return null;
   const lines = css.split("\n");
+  const byLine = new Map<number, Set<string>>();
+  for (const rule of rules) for (const d of rule.declarations) if (moved.has(d.property.slice(2))) byLine.set(d.line - 1, (byLine.get(d.line - 1) ?? new Set()).add(d.property));
+  let count = 0;
+  const kept: string[] = [];
   const drop = new Set<number>();
-  for (const rule of rules) {
-    for (const d of rule.declarations) {
-      const line = lines[d.line - 1] ?? "";
-      if (moved.has(d.property.slice(2)) && new RegExp(`^\\s*${d.property.replace(/[-]/g, "\\-")}\\s*:[^;]*;?\\s*$`).test(line)) drop.add(d.line - 1);
-    }
+  for (const [index, properties] of byLine) {
+    const segments = lines[index]!.split(";");
+    const left = segments.filter((segment) => {
+      const property = /^\s*(--[\w-]+)\s*:/.exec(segment)?.[1];
+      if (property === undefined || !properties.has(property)) return true;
+      properties.delete(property);
+      count++;
+      return false;
+    });
+    kept.push(...[...properties].map((p) => p.slice(2)));
+    const text = left.join(";");
+    if (text.trim() === "") drop.add(index);
+    else lines[index] = /^\s/.test(text) || index === 0 ? text : `${lines[index]!.match(/^\s*/)![0]}${text.trimStart()}`;
   }
-  if (drop.size === 0) return null;
+  if (count === 0) return null;
   let content = lines.filter((_, i) => !drop.has(i)).join("\n");
   for (const block of blocks) content = content.replace(new RegExp(`(^|\\n)[ \\t]*${block.selector.replace(/[.[\]()"=:]/g, "\\$&")}\\s*\\{\\s*\\}[ \\t]*(?=\\n|$)`, "g"), "");
   // An @media left holding nothing goes too.
@@ -230,7 +244,7 @@ function moveDeclarations(css: string, blocks: readonly BlockRef[], moved: Reado
   const imports = [...content.matchAll(/^@import[^;]*;[ \t]*$/gm)];
   const at = imports.length > 0 ? imports.at(-1)!.index! + imports.at(-1)![0].length : 0;
   content = at > 0 ? `${content.slice(0, at)}\n${statement}${content.slice(at)}` : `${statement}\n${content}`;
-  return { content: content.replace(/\n{3,}/g, "\n\n"), moved: drop.size };
+  return { content: content.replace(/\n{3,}/g, "\n\n"), moved: count, kept: [...new Set(kept)].sort() };
 }
 
 export async function planAdoption(options: AdoptOptions): Promise<AdoptPlan> {
@@ -335,6 +349,11 @@ export async function planAdoption(options: AdoptOptions): Promise<AdoptPlan> {
   const rewritten = moving && found.forked ? { ...moving, content: moving.content.split("\n").filter((line) => !line.includes(GENERATED_MARK) && !/^\/\* Built with Terrazzo/.test(line)).join("\n") } : moving;
   if (found.forked) notes.push(`forked from ${found.forked.system ?? "the System"}${found.forked.version ? ` v${found.forked.version}` : ""}: this product's System starts from the ${found.forked.count} variables it generated into ${found.forked.file}, and the product no longer follows ${found.forked.system ?? "it"}`);
   if (css && moved.size > 0 && !rewritten) notes.push(`${stylesheet}'s variables were copied, not moved (their blocks are nested or share lines): import ${OUT_DIR}/tokens.css from it and remove them by hand`);
+  // Other blocks that set variables (themes as html.dark, html.peach; never Tailwind's @theme): left to the stylesheet, so the System holds :root's values (and dark's) only.
+  const read = [":root", ...darkBlocks.map((b) => [b.outer, b.selector].filter(Boolean).join(" > "))];
+  const others = css ? [...new Set(readRules(css).filter((r) => !read.includes(r.preludes.join(" > ")) && !r.preludes.at(-1)!.startsWith("@") && r.declarations.some((d) => d.property.startsWith("--"))).map((r) => r.preludes.join(" > ").replace(/\s+/g, " ")))] : [];
+  if (others.length > 0) notes.push(`${plural(others.length, "other block")} in ${stylesheet} set${others.length === 1 ? "s" : ""} variables too and stay${others.length === 1 ? "s" : ""} there, as ${others.length === 1 ? "it was" : "they were"} (${others.slice(0, 4).join(" · ")}${others.length > 4 ? " · …" : ""}): the System holds the :root${darkBlocks.length > 0 ? " and dark" : ""} values only`);
+  if (rewritten && rewritten.kept.length > 0) notes.push(`${plural(rewritten.kept.length, "variable")} ${rewritten.kept.length === 1 ? "stays" : "stay"} in ${stylesheet} too, written where adopt cannot take them out alone (beside a selector): ${rewritten.kept.slice(0, 4).map((n) => `--${n}`).join(", ")}${rewritten.kept.length > 4 ? ", …" : ""}; they hold the same values, so remove them by hand`);
 
   for (const [rule, content] of starterRules(id, componentsDir)) out.push({ path: `design/rules/${rule}.rule.yaml`, content });
   out.push({

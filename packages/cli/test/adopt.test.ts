@@ -244,6 +244,28 @@ describe("youiyoux adopt", () => {
     }
   }, 60_000);
 
+  test("variables written several to a line are each taken out; one beside its selector stays, said, with the same value", async () => {
+    const root = await shadcnApp("packed-app");
+    const packed = '@import "tailwindcss";\n\n:root {\n  --background: oklch(1 0 0); --foreground: oklch(0.145 0 0);\n  --primary: oklch(0.205 0 0); --radius: 0.625rem;\n}\n\n.dark { --background: oklch(0.145 0 0); --foreground: oklch(0.985 0 0); }\n';
+    await writeFile(join(root, "app/globals.css"), packed);
+    out = "";
+    expect(await main(["adopt", "--project", root])).toBe(0);
+    expect(out).toContain("their 5 declarations (light and dark) moved");
+    expect(out).toContain("1 variable stays in app/globals.css too, written where adopt cannot take them out alone (beside a selector): --background");
+    expect(await readFile(join(root, "app/globals.css"), "utf8")).toBe('@import "tailwindcss";\n@import "../design/build/tokens.css";\n\n.dark { --background: oklch(0.145 0 0); }\n');
+    const built = await readFile(join(root, "design/build/tokens.css"), "utf8");
+    const blocks = { light: { selector: ":root" }, dark: { selector: ".dark" } };
+    expect(compareParity(packed, blocks, built, blocks, "").different).toEqual([]);
+  }, 60_000);
+
+  test("themes set in other blocks (html.peach) stay in the stylesheet, and adopt says so", async () => {
+    const root = await shadcnApp("themed-app");
+    await writeFile(join(root, "app/globals.css"), `${GLOBALS}\nhtml.peach {\n  --primary: oklch(0.8 0.1 50);\n}\n`);
+    out = "";
+    expect(await main(["adopt", "--project", root, "--dry-run"])).toBe(0);
+    expect(out).toContain("1 other block in app/globals.css sets variables too and stays there, as it was (html.peach): the System holds the :root and dark values only");
+  }, 60_000);
+
   test("it writes nothing when the product already follows a system, a file it would write is there, or with --dry-run", async () => {
     const root = await shadcnApp("dry-app");
     out = "";
