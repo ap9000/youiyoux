@@ -285,20 +285,22 @@ Without `--write` it prints that plan: the files the sync changes, each migratio
 
 A team's view across repositories, read-only and fed by CI. No source code leaves a repository.
 
-**In each repository**, `youiyoux hooks install --record` writes a workflow that runs `youiyoux record --send` on each push to the default branch, pinned to this youiyoux version, after installing with the repository's lockfile. Give the repository two secrets: `YOUIYOUX_HUB_URL` (the hub's https address) and `YOUIYOUX_HUB_TOKEN` (its ingest token). The record (`youi.record/v1`) is each product's status as `youiyoux status` reads it: the System and version it follows and has synced, sync state, drift, check counts against the baseline, components used, open requests and the next step. Every string goes through the shareable report's redaction (repo-relative paths only; no home, username, environment or `.env` values, or credentials in URLs), and the record is refused if anything survives it. `youiyoux record` alone prints what it would send; `--out` writes it.
+**In each repository**, `youiyoux hooks install --record` writes a workflow that runs `youiyoux record --send` on each push to the default branch, pinned to this youiyoux version, after installing with the repository's lockfile, with only GitHub's own actions beside it. Give the repository the secret `YOUIYOUX_HUB_URL` (the hub's https address). The workflow has `id-token: write`, so the record carries GitHub's OIDC token for the hub's address, which proves the repository, commit and branch it was sent from. A hub on a shared ingest token also needs `YOUIYOUX_HUB_TOKEN`. The record (`youi.record/v1`) is each product's status as `youiyoux status` reads it: the System and version it follows and has synced, sync state, drift, check counts against the baseline, components used, open requests and the next step. Every string goes through the shareable report's redaction (repo-relative paths only; no home, username, environment or `.env` values, or credentials in URLs), and the record is refused if anything survives it. `youiyoux record` alone prints what it would send; `--out` writes it.
 
 **The hub** is `youiyoux hub serve`, on any host that runs Node 20 or later behind https:
 
 ```sh
-npm install youiyoux pg          # pg only for Postgres
-export YOUIYOUX_HUB_TOKEN=…      # for CI: openssl rand -base64 32
-export YOUIYOUX_HUB_VIEW_KEY=…   # for people: another one
-export DATABASE_URL=postgres://… # else a SQLite file (--db, Node 22.5 or later)
+npm install youiyoux pg                          # pg only for Postgres
+export YOUIYOUX_HUB_GITHUB_OWNERS=acme,acme-labs  # whose repositories may send records
+export YOUIYOUX_HUB_AUDIENCE=https://hub.acme.dev # the hub's address, as CI's YOUIYOUX_HUB_URL names it
+export YOUIYOUX_HUB_VIEW_KEY=…                    # for people: openssl rand -base64 32
+export DATABASE_URL=postgres://…                 # else a SQLite file (--db, Node 22.5 or later)
 npx youiyoux hub serve --host 0.0.0.0 --port "$PORT"
 ```
 
-- It refuses to start without both secrets, when either is shorter than 24 characters, or when they are the same: whoever can read the hub must not be able to write to it.
-- `POST /api/records` takes a record with the ingest token; one that is not a valid `youi.record/v1`, is over 2 MB, or still holds a path outside its repository or a URL with credentials is refused. Each repository keeps its last 100 records.
+- **Who may send a record.** With `YOUIYOUX_HUB_GITHUB_OWNERS`, only GitHub Actions in those owners' repositories, and only its own repository's record: the hub checks the OIDC token is signed by GitHub (its published keys), issued for `YOUIYOUX_HUB_AUDIENCE`, unexpired and from an accepted owner, then that the record names the token's repository, commit and branch. No CI secret is shared. For CI other than GitHub's, leave the owners unset and set `YOUIYOUX_HUB_TOKEN` instead (another random string); then whoever holds the token can send a record naming any repository.
+- It refuses to start without what its mode needs, when a secret is shorter than 24 characters, or when the token and the view key are the same: whoever can read the hub must not be able to write to it.
+- `POST /api/records` refuses a record that is not a valid `youi.record/v1`, is over 2 MB, still holds a path outside its repository or a URL with credentials, or is dated more than five minutes after the hub's clock (it would otherwise stay its repository's latest). Each repository keeps its last 100 records.
 - People sign in with the view key once. The session is an HttpOnly, SameSite=Strict cookie (Secure beyond this machine), and changing the key signs everyone out. Scripts can send the view key as a Bearer token to `GET /api/org` (`youi.org/v1`).
 - The page shows a headline sentence with the counts, each System's adoption as a split bar of the versions its products have synced (the newest, the older ones, never synced), and each repository's products with what to do next. Nothing on it changes a repository: approval stays in the design repo's pull requests.
 - `GET /api/health` answers for the platform's health check. Every other path under `/api/` is refused, and the page's only script is its own (a strict Content-Security-Policy, no framing).

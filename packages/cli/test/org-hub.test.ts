@@ -236,9 +236,9 @@ describe("youiyoux record", () => {
     process.env.YOUIYOUX_HUB_URL = hub.url;
     delete process.env.YOUIYOUX_HUB_TOKEN;
     // Outside CI: GitHub Actions would name its own repository, commit and branch here (and does, when this suite runs there).
-    for (const name of ["GITHUB_REPOSITORY", "GITHUB_SHA", "GITHUB_REF_NAME"]) delete process.env[name];
+    for (const name of ["GITHUB_REPOSITORY", "GITHUB_SHA", "GITHUB_REF_NAME", "ACTIONS_ID_TOKEN_REQUEST_URL", "ACTIONS_ID_TOKEN_REQUEST_TOKEN"]) delete process.env[name];
     expect(await main(["record", "--send", "--project", root])).toBe(2);
-    expect(err).toContain("YOUIYOUX_HUB_TOKEN (from the environment only, never a flag)");
+    expect(err).toContain("in GitHub Actions, permissions: id-token: write; elsewhere, the hub's ingest token in YOUIYOUX_HUB_TOKEN");
     process.env.YOUIYOUX_HUB_TOKEN = "wrong-token-but-long-enough-000000";
     expect(await main(["record", "--send", "--project", root])).toBe(1);
     expect(err).toMatch(/refused the record \(401\)/);
@@ -274,6 +274,8 @@ describe("youiyoux hooks install --record", () => {
     expect(text).toContain("run: npx -y youiyoux@0.1.10 record --send");
     // The secrets reach the step only through its environment.
     expect(text).toContain("YOUIYOUX_HUB_TOKEN: ${{ secrets.YOUIYOUX_HUB_TOKEN }}");
+    // GitHub's OIDC token proves the repository.
+    expect(text).toContain("  id-token: write\n");
     expect((await installRecordWorkflow(root, "0.1.10", false)).action).toBe("unchanged");
     await writeFile(join(root, ".github/workflows/youiyoux-record.yml"), "name: ours\n");
     await expect(installRecordWorkflow(root, "0.1.10", false)).rejects.toThrow("was not written by youiyoux; pass --force");

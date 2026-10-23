@@ -284,9 +284,10 @@ export function recordWorkflowText(input: { readonly branch: string; readonly ve
   return `${RECORD_HEADER}
 # Sends where each product here stands with its System to your team's hosted hub
 # (youiyoux hub serve): youiyoux record, redacted as the shareable report is, with no code.
-# Set two repository secrets: YOUIYOUX_HUB_URL (the hub's https address) and
-# YOUIYOUX_HUB_TOKEN (the hub's ingest token). Pinned to youiyoux ${input.version}; change it here.
-# Only GitHub's own actions run here: the record step holds the token.
+# Set the repository secret YOUIYOUX_HUB_URL (the hub's https address). The record proves this
+# repository with GitHub's OIDC token (id-token: write), so a hub that takes GitHub's needs no
+# other secret; a hub on a shared ingest token also needs YOUIYOUX_HUB_TOKEN.
+# Pinned to youiyoux ${input.version}; change it here. Only GitHub's own actions run here.
 name: youiyoux record
 on:
   push:
@@ -294,6 +295,7 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+  id-token: write
 concurrency:
   group: youiyoux-record
   cancel-in-progress: true
@@ -326,5 +328,5 @@ export async function installRecordWorkflow(dir: string, version: string | null,
   const file = join(top, RECORD_WORKFLOW);
   const before = await readTextOrNull(file);
   if (before !== null && !before.startsWith(RECORD_HEADER) && !force) throw new Error(`${file} exists and was not written by youiyoux; pass --force to replace it`);
-  return write(file, recordWorkflowText({ branch, version, install: await installStep(top) }), before, `sends this repository's record (redacted, no code) to the hub in YOUIYOUX_HUB_URL on each push to ${branch}; set YOUIYOUX_HUB_URL and YOUIYOUX_HUB_TOKEN as repository secrets`);
+  return write(file, recordWorkflowText({ branch, version, install: await installStep(top) }), before, `sends this repository's record (redacted, no code) to the hub in YOUIYOUX_HUB_URL on each push to ${branch}, proving the repository with GitHub's OIDC token; set YOUIYOUX_HUB_URL as a repository secret (and YOUIYOUX_HUB_TOKEN for a hub on a shared token)`);
 }

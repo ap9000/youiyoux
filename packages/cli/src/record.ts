@@ -4,8 +4,10 @@
  * report's Redactor (repo-relative paths, no home, username, env or .env values, no credentials
  * in URLs) and refused if anything sensitive survives. No source code is in a status.
  *
- * With --send it is posted to the hub (YOUIYOUX_HUB_URL, or --hub) with YOUIYOUX_HUB_TOKEN, read
- * from the environment only, so it never sits in a command line or a log.
+ * With --send it is posted to the hub (YOUIYOUX_HUB_URL, or --hub). In GitHub Actions with
+ * `id-token: write`, it carries GitHub's OIDC token for the hub's address, which proves the
+ * repository, commit and branch (github-oidc.ts); otherwise YOUIYOUX_HUB_TOKEN, read from the
+ * environment only, so it never sits in a command line or a log.
  */
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -13,6 +15,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { CiRecord, RepoName } from "@youiyoux/core";
 import { githubSlug } from "./hooks-install.ts";
+import { GITHUB_TOKEN_HEADER } from "./org-hub.ts";
 import { Redactor } from "./report/safe.ts";
 import { workspaceStatus } from "./status.ts";
 import { TOOL_ROOT } from "./tool.ts";
@@ -74,9 +77,16 @@ export function recordsUrl(hub: string): URL {
   return new URL(`${url.pathname.replace(/\/+$/, "")}/api/records`, url.origin);
 }
 
-export async function sendRecord(record: CiRecord, hub: string, token: string, fetcher: typeof fetch = fetch): Promise<string> {
+/** How the record proves who sent it: the hub's ingest token, GitHub's OIDC token, or both (the hub uses the one its mode needs). */
+export interface Credentials {
+  readonly token?: string | null;
+  readonly github?: string | null;
+}
+
+export async function sendRecord(record: CiRecord, hub: string, credentials: Credentials, fetcher: typeof fetch = fetch): Promise<string> {
   const url = recordsUrl(hub);
-  const response = await fetcher(url, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify(record), redirect: "error", signal: AbortSignal.timeout(30_000) }).catch((error: unknown) => {
+  const headers: Record<string, string> = { "content-type": "application/json", ...(credentials.token ? { authorization: `Bearer ${credentials.token}` } : {}), ...(credentials.github ? { [GITHUB_TOKEN_HEADER]: credentials.github } : {}) };
+  const response = await fetcher(url, { method: "POST", headers, body: JSON.stringify(record), redirect: "error", signal: AbortSignal.timeout(30_000) }).catch((error: unknown) => {
     throw new Error(`could not reach the hub at ${url.origin}: ${error instanceof Error ? error.message : String(error)}`);
   });
   if (response.ok) return url.origin;

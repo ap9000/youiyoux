@@ -28,7 +28,8 @@ import { planAdoption, type AdoptPlan } from "./adopt.ts";
 import { extractSystem } from "./extract.ts";
 import { renderUpgrade, upgradeProject } from "./upgrade.ts";
 import { buildRecord, HUB_TOKEN_ENV, HUB_URL_ENV, renderRecord, sendRecord, toolVersion } from "./record.ts";
-import { secretsProblem, startOrgHub, VIEW_KEY_ENV } from "./org-hub.ts";
+import { AUDIENCE_ENV, GITHUB_OWNERS_ENV, secretsProblem, startOrgHub, VIEW_KEY_ENV } from "./org-hub.ts";
+import { audienceOf, githubVerifier, requestGithubToken } from "./github-oidc.ts";
 import { renderStatus, statusExitCode, statusTargets, workspaceStatus } from "./status.ts";
 import { startWorkspaceHub } from "./workspace-hub.ts";
 import { noteSource, rebuildIndex, recordInventory, recordProject, renderHistory, renderRebuild, SCANS_LOG, SOURCES_FILE } from "./index-store.ts";
@@ -145,11 +146,14 @@ ${style.bold("In a product repo")}
   record [--send [--hub url]] [--repo owner/name] [--out file] [--json]
                            this repository's record for the team's hosted hub (youi.record/v1): each
                            product's status, redacted as the shareable report is, no code; --send
-                           posts it to YOUIYOUX_HUB_URL with YOUIYOUX_HUB_TOKEN (environment only)
+                           posts it to YOUIYOUX_HUB_URL, proved by GitHub Actions' OIDC token
+                           (id-token: write), else with YOUIYOUX_HUB_TOKEN (environment only)
   hub serve [--port n] [--host h] [--db file]
                            the team's hosted hub, read-only: CI sends records, people sign in with
                            YOUIYOUX_HUB_VIEW_KEY and see every repository and each System's adoption
-                           by version. Records are kept in Postgres (DATABASE_URL) or a SQLite file
+                           by version. YOUIYOUX_HUB_GITHUB_OWNERS and YOUIYOUX_HUB_AUDIENCE: GitHub
+                           Actions proves each record's repository (else YOUIYOUX_HUB_TOKEN, shared).
+                           Records are kept in Postgres (DATABASE_URL) or a SQLite file
 
 ${style.bold("System")}  ${style.dim("approved elements: build only with these")}
   show <component>         the contract: import, legal prop values, guidance, examples
@@ -650,13 +654,14 @@ async function cmdUpgrade(values: Values): Promise<number> {
 /** `youiyoux record [--repo owner/name] [--out file] [--send [--hub url]]`: this repository's record for the team's hosted hub. */
 async function cmdRecord(values: Values): Promise<number> {
   const hub = values.hub ?? process.env[HUB_URL_ENV];
-  const token = process.env[HUB_TOKEN_ENV];
-  // Checked before the work: a CI step missing its secrets says so at once.
+  const token = process.env[HUB_TOKEN_ENV] || null;
+  // Checked before the work: a CI step missing what it needs says so at once.
   if (values.send && !hub) throw new UsageError(`youiyoux record --send needs the hub's address: set ${HUB_URL_ENV} (or pass --hub <url>)`);
-  if (values.send && !token) throw new UsageError(`youiyoux record --send needs the hub's ingest token in ${HUB_TOKEN_ENV} (from the environment only, never a flag)`);
+  const github = values.send ? await requestGithubToken(audienceOf(hub!)) : null;
+  if (values.send && !token && !github) throw new UsageError(`youiyoux record --send needs a way to prove where the record comes from: in GitHub Actions, permissions: id-token: write; elsewhere, the hub's ingest token in ${HUB_TOKEN_ENV} (from the environment only, never a flag)`);
   const record = await buildRecord(values.project ?? process.cwd(), values.repo ? { repo: values.repo } : {});
   if (values.out) await writeFileAtomic(resolve(values.out), `${JSON.stringify(record, null, 2)}\n`);
-  const sentTo = values.send ? await sendRecord(record, hub!, token!) : null;
+  const sentTo = values.send ? await sendRecord(record, hub!, { token, github }) : null;
   if (values.json) json(record);
   else print([renderRecord(record, sentTo), ...(values.out ? [style.dim(`  written to ${values.out}`)] : []), ...(!values.send && !values.out ? [style.dim(`  youiyoux record --send posts it to the hub in ${HUB_URL_ENV}; --out <file> writes it; --json prints it`)] : [])].join("\n"));
   return 0;
@@ -671,7 +676,11 @@ function builtHub(): string | null {
 /** `youiyoux hub serve [--port n] [--host h] [--db file]`: the team's hosted hub, read-only, fed by CI. */
 async function cmdHubServe(values: Values, positionals: string[]): Promise<number> {
   if (positionals[0] !== "serve" || positionals.length > 1) throw new UsageError("youiyoux hub serve [--port n] [--host h] [--db file]   (the team's hosted hub: read-only, fed by youiyoux record in CI)");
-  const problem = secretsProblem(process.env[HUB_TOKEN_ENV], process.env[VIEW_KEY_ENV]);
+  const owners = (process.env[GITHUB_OWNERS_ENV] ?? "").split(",").map((o) => o.trim()).filter(Boolean);
+  const audience = process.env[AUDIENCE_ENV];
+  if (owners.length > 0 && !audience) throw new UsageError(`${GITHUB_OWNERS_ENV} needs ${AUDIENCE_ENV}: the hub's address, exactly as CI's ${HUB_URL_ENV} names it (GitHub's token is issued for it)`);
+  const github = owners.length > 0 ? githubVerifier({ owners, audience: audience! }) : undefined;
+  const problem = secretsProblem(github ? undefined : process.env[HUB_TOKEN_ENV], process.env[VIEW_KEY_ENV], Boolean(github));
   if (problem) throw new UsageError(problem);
   const port = Number(values.port ?? process.env.PORT ?? 8080);
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new UsageError(`--port ${JSON.stringify(values.port ?? process.env.PORT)}: expected a port number`);
@@ -679,8 +688,9 @@ async function cmdHubServe(values: Values, positionals: string[]): Promise<numbe
   const path = resolve(values.db ?? process.env.YOUI_HUB_DB ?? join(process.env.XDG_DATA_HOME || join(homedir(), ".local/share"), "youiyoux/hub.db"));
   const store = await openStore({ path });
   const dist = builtHub();
-  const hub = await startOrgHub({ store, ingestToken: process.env[HUB_TOKEN_ENV]!, viewKey: process.env[VIEW_KEY_ENV]!, dist, host: values.host ?? "127.0.0.1", port });
-  print([`${style.ok("youiyoux hub")} ${hub.url}  ${style.dim(`read-only · records kept in ${where({ path })}`)}`, ...(dist ? [] : [style.warn("! the hub's page is not built here (pnpm --filter web build): the API answers at /api/org")]), style.dim(`  CI sends records with ${HUB_TOKEN_ENV}; people sign in with ${VIEW_KEY_ENV}. Put it behind https; --host 0.0.0.0 to listen beyond this machine`)].join("\n"));
+  const hub = await startOrgHub({ store, ...(github ? { github } : { ingestToken: process.env[HUB_TOKEN_ENV]! }), viewKey: process.env[VIEW_KEY_ENV]!, dist, host: values.host ?? "127.0.0.1", port });
+  const senders = github ? `CI sends records from GitHub Actions in ${owners.join(", ")}, each proving its repository (OIDC, for ${audienceOf(audience!)})${process.env[HUB_TOKEN_ENV] ? `; ${HUB_TOKEN_ENV} is not used` : ""}` : `CI sends records with ${HUB_TOKEN_ENV}, which can name any repository (${GITHUB_OWNERS_ENV} makes GitHub Actions prove each one's)`;
+  print([`${style.ok("youiyoux hub")} ${hub.url}  ${style.dim(`read-only · records kept in ${where({ path })}`)}`, ...(dist ? [] : [style.warn("! the hub's page is not built here (pnpm --filter web build): the API answers at /api/org")]), style.dim(`  ${senders}; people sign in with ${VIEW_KEY_ENV}. Put it behind https; --host 0.0.0.0 to listen beyond this machine`)].join("\n"));
   await new Promise<void>((done) => {
     const stop = (): void => done();
     process.once("SIGINT", stop);

@@ -11,10 +11,14 @@
  *   GET  /api/health    "ok", for the platform's health check; no data
  *   GET  /              the hub's page, in its read-only organisation mode
  *
- * Two secrets, set in the environment: YOUIYOUX_HUB_TOKEN for CI and YOUIYOUX_HUB_VIEW_KEY for
- * people, each 24 characters or more and different. It refuses to start without them. A record
- * holding a path outside its repository or a URL with credentials is refused: `youiyoux record`
- * redacts both, so one that still has them was not made by it.
+ * Who may send a record: with YOUIYOUX_HUB_GITHUB_OWNERS set, only GitHub Actions in those
+ * owners' repositories, each proving with GitHub's OIDC token that the record's repository, commit
+ * and branch are its own (github-oidc.ts); no shared secret. Otherwise whoever holds
+ * YOUIYOUX_HUB_TOKEN, which can name any repository: for CI other than GitHub's. People sign in
+ * with YOUIYOUX_HUB_VIEW_KEY. Each secret is 24 characters or more, and the two differ; the hub
+ * refuses to start without what its mode needs. A record holding a path outside its repository or
+ * a URL with credentials is refused (`youiyoux record` redacts both), and so is one dated more
+ * than five minutes after it arrives, which would otherwise stay its repository's latest.
  */
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -22,9 +26,16 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { extname, join, normalize, sep } from "node:path";
 import { CiRecord, type OrgView, type ProjectStatus, type ProjectStatusFailure } from "@youiyoux/core";
 import type { Store } from "@youiyoux/store";
+import { recordMismatch, type GithubVerifier } from "./github-oidc.ts";
 import { compareVersions } from "./upgrade.ts";
 
 export const VIEW_KEY_ENV = "YOUIYOUX_HUB_VIEW_KEY";
+export const GITHUB_OWNERS_ENV = "YOUIYOUX_HUB_GITHUB_OWNERS";
+export const AUDIENCE_ENV = "YOUIYOUX_HUB_AUDIENCE";
+/** The header a record's GitHub Actions OIDC token comes in. */
+export const GITHUB_TOKEN_HEADER = "x-youi-github-oidc";
+/** How far ahead of the hub's clock a record's generatedAt may be. */
+const FUTURE_MS = 5 * 60 * 1000;
 /** The page reads this meta tag: it shows the organisation, from this API, and nothing else. */
 export const ORG_META = "youi-org";
 const COOKIE = "youi_hub_session";
@@ -34,8 +45,10 @@ const SESSION_DAYS = 30;
 
 export interface OrgHubOptions {
   readonly store: Store;
-  /** For CI: records are accepted only with it. */
-  readonly ingestToken: string;
+  /** For CI other than GitHub's: records are accepted with it (unused when `github` is set). */
+  readonly ingestToken?: string;
+  /** GitHub Actions' OIDC tokens: when set, a record is accepted only with one, for its own repository, commit and branch. */
+  readonly github?: GithubVerifier;
   /** For people: the organisation is shown only with it. */
   readonly viewKey: string;
   /** The built hub (index.html, assets/), or null to serve the API only. */
@@ -52,11 +65,11 @@ export interface OrgHub {
   close(): Promise<void>;
 }
 
-/** Why the two secrets cannot be used, or null. */
-export function secretsProblem(ingest: string | undefined, view: string | undefined): string | null {
-  const missing = [!ingest && "YOUIYOUX_HUB_TOKEN", !view && VIEW_KEY_ENV].filter(Boolean);
-  if (missing.length > 0) return `set ${missing.join(" and ")} in the environment: a random string of ${MIN_SECRET} characters or more each (openssl rand -base64 32), the token for CI and the view key for people`;
-  if (ingest!.length < MIN_SECRET || view!.length < MIN_SECRET) return `YOUIYOUX_HUB_TOKEN and ${VIEW_KEY_ENV} must be ${MIN_SECRET} characters or more (openssl rand -base64 32)`;
+/** Why the secrets cannot be used, or null. With GitHub's OIDC (`github`), CI needs no ingest token. */
+export function secretsProblem(ingest: string | undefined, view: string | undefined, github = false): string | null {
+  const missing = [!github && !ingest && "YOUIYOUX_HUB_TOKEN", !view && VIEW_KEY_ENV].filter(Boolean);
+  if (missing.length > 0) return `set ${missing.join(" and ")} in the environment: a random string of ${MIN_SECRET} characters or more${missing.length > 1 ? " each" : ""} (openssl rand -base64 32)${github ? "" : `, the token for CI and the view key for people; or ${GITHUB_OWNERS_ENV} and ${AUDIENCE_ENV}, so GitHub Actions proves each record's repository and no CI token is shared`}`;
+  if ((ingest !== undefined && ingest.length < MIN_SECRET) || view!.length < MIN_SECRET) return `${ingest !== undefined ? "YOUIYOUX_HUB_TOKEN and " : ""}${VIEW_KEY_ENV} must be ${MIN_SECRET} characters or more (openssl rand -base64 32)`;
   if (ingest === view) return `YOUIYOUX_HUB_TOKEN and ${VIEW_KEY_ENV} must differ: whoever can read the hub must not be able to write to it`;
   return null;
 }
@@ -157,7 +170,7 @@ export function orgView(latest: ReadonlyArray<{ record: CiRecord; receivedAt: st
 const TYPES: Record<string, string> = { ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".png": "image/png", ".webp": "image/webp", ".json": "application/json" };
 
 export async function startOrgHub(options: OrgHubOptions): Promise<OrgHub> {
-  const problem = secretsProblem(options.ingestToken, options.viewKey);
+  const problem = secretsProblem(options.github ? undefined : options.ingestToken, options.viewKey, Boolean(options.github));
   if (problem) throw new Error(problem);
   const host = options.host ?? "127.0.0.1";
   const local = ["127.0.0.1", "localhost", "::1"].includes(host);
@@ -193,8 +206,20 @@ export async function startOrgHub(options: OrgHubOptions): Promise<OrgHub> {
       try {
         if (path === "/api/health" && method === "GET") return send(res, 200, { ok: true });
         if (path === "/api/records" && method === "POST") {
-          const token = bearer(req);
-          if (token === null || !same(token, options.ingestToken)) return send(res, 401, { error: "this hub takes records only with its ingest token (YOUIYOUX_HUB_TOKEN)" });
+          // Who is sending: with GitHub's OIDC, the token's repository (checked against the record below); else the shared ingest token.
+          const oidc = req.headers[GITHUB_TOKEN_HEADER];
+          let sender: Awaited<ReturnType<GithubVerifier>> | null = null;
+          if (options.github) {
+            if (typeof oidc !== "string") return send(res, 401, { error: "this hub takes records from GitHub Actions with its OIDC token: give the workflow permissions: id-token: write (youiyoux hooks install --record does)" });
+            try {
+              sender = await options.github(oidc);
+            } catch (error: unknown) {
+              return send(res, 401, { error: `the GitHub Actions token was refused: ${error instanceof Error ? error.message : String(error)}` });
+            }
+          } else {
+            const token = bearer(req);
+            if (token === null || !same(token, options.ingestToken!)) return send(res, 401, { error: "this hub takes records only with its ingest token (YOUIYOUX_HUB_TOKEN)" });
+          }
           if (!(req.headers["content-type"] ?? "").startsWith("application/json")) return send(res, 415, { error: "a record is JSON (content-type: application/json)" });
           let parsed: unknown;
           try {
@@ -205,9 +230,15 @@ export async function startOrgHub(options: OrgHubOptions): Promise<OrgHub> {
           }
           const record = CiRecord.safeParse(parsed);
           if (!record.success) return send(res, 422, { error: `not a youi.record/v1: ${record.error.issues.slice(0, 3).map((i) => `${i.path.join(".") || "record"}: ${i.message}`).join("; ")}` });
+          if (sender) {
+            const mismatch = recordMismatch(sender, record.data);
+            if (mismatch) return send(res, 403, { error: `${mismatch}: a repository's CI sends only its own record` });
+          }
+          const received = now();
+          if (Date.parse(record.data.generatedAt) > received.getTime() + FUTURE_MS) return send(res, 422, { error: `the record is dated ${record.data.generatedAt}, after the hub's clock (${received.toISOString()}) by more than five minutes: it would stay its repository's latest, so it was not kept` });
           const leaks = unredacted(record.data);
           if (leaks.length > 0) return send(res, 422, { error: `the record holds ${leaks.join(" and ")}, so it was not kept: youiyoux record redacts these` });
-          await options.store.putRecord(record.data, now().toISOString());
+          await options.store.putRecord(record.data, received.toISOString());
           return send(res, 201, { kept: record.data.repo, products: record.data.products.length });
         }
         if (path === "/api/session" && method === "POST") {
