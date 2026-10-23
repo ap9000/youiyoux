@@ -9,7 +9,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vite
 import { StatusReport, type ProjectStatus } from "@youiyoux/core";
 import { RequestStore } from "@youiyoux/workflow";
 import { main } from "../src/index.ts";
-import { workspaceStatus } from "../src/status.ts";
+import { renderStatus, workspaceStatus } from "../src/status.ts";
 
 const EXAMPLES = join(import.meta.dirname, "../../../examples");
 
@@ -144,4 +144,15 @@ describe("youiyoux status in a workspace", () => {
     expect(report.projects.map((p) => p.root).sort()).toEqual(["apps/admin", "apps/web"]);
     expect(report.projects.map((p) => ("id" in p ? p.id : null)).sort()).toEqual(["admin", "web"]);
   }, 60_000);
+});
+
+describe("the status header", () => {
+  test("names the product's folder only when it says more than the name: never `.` or the id again", async () => {
+    const { root } = await product("header");
+    const report = await workspaceStatus(dir, root);
+    const at = (place: string): string => renderStatus({ ...report, projects: [{ ...(report.projects[0] as ProjectStatus), root: place }] }).split("\n")[0]!.replace(/\x1b\[[0-9;]*m/g, "");
+    expect(at(".")).toMatch(/^demo-app · Demo v1\.0\.0 /);
+    expect(at("demo-app")).toMatch(/^demo-app · Demo v1\.0\.0 /);
+    expect(at("apps/web")).toMatch(/^demo-app · apps\/web · Demo v1\.0\.0 /);
+  });
 });

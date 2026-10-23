@@ -129,7 +129,8 @@ function projectLines(s: ProjectStatus): string[] {
   const counts = `${check.errors > 0 ? style.error(plural(check.errors, "error")) : style.ok("0 errors")} · ${plural(check.warnings, "warning")}`;
   const baseline = check.baseline ? style.dim(` beyond the baseline (${check.baseline.known} accepted${check.baseline.fixed > 0 ? `, ${check.baseline.fixed} fixed` : ""})`) : "";
   return [
-    `${style.bold(s.id)}${s.root === s.id ? "" : ` ${style.dim(`· ${s.root}`)}`} · ${s.system.name} v${s.system.version} ${style.dim(`(${s.system.source}${s.system.linked ? ", linked" : ""}) · ${synced}`)}`,
+    // The folder, when it says more than the name: never "." (here) or the id again.
+    `${style.bold(s.id)}${s.root === s.id || s.root === "." ? "" : ` ${style.dim(`· ${s.root}`)}`} · ${s.system.name} v${s.system.version} ${style.dim(`(${s.system.source}${s.system.linked ? ", linked" : ""}) · ${synced}`)}`,
     row("sync", sync),
     row("drift", drift),
     row("check", `${counts}${baseline}${check.incomplete ? style.warn(" · incomplete: not a pass") : ""}`),
