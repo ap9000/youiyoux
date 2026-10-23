@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -5,7 +6,7 @@ import { join, relative } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { InventoryReport } from "@youiyoux/core";
 import { BrowserBundleCache, BUNDLE_BUSY, BUNDLE_CACHE_LIMITS, bundleForBrowser, buildInventory, buildProjectCss, defaultCacheDir, escapingLinks, findStylesheets, forScheme, loadInventoryTarget, markupOf, newStats, pageStylesheets, projectSpecimens, projectTailwind, relativeInside, SpecimenCache, stylesheetLinks, tailwindCliBuilds, within, type ProjectSpecimens } from "../src/index.ts";
-import { renderComponents, type ComponentRecipe } from "../src/specimens/render.ts";
+import { bundleWithin, renderComponents, type ComponentRecipe } from "../src/specimens/render.ts";
 
 const FIXTURES = join(import.meta.dirname, "fixtures/inventory");
 const CONSOLE = join(FIXTURES, "console");
@@ -910,5 +911,30 @@ describe("one bad component fails alone; every stage has a time limit (c8)", () 
     expect(css.sources[0]).toEqual({ sheet: "src/app/globals.css", via: "import in src/app/layout.tsx", as: "plain" });
     expect(css.light).toContain(".lg-button {");
     expect(css.light).not.toContain(".bg-primary");
+  });
+});
+
+describe("esbuild's service process dies (c8)", () => {
+  test("the next bundle restarts it and goes on, instead of every bundle after failing", async () => {
+    const options = { stdin: { contents: "export const answer = 42;" }, bundle: true, format: "esm" } as const;
+    expect(await bundleWithin(options, 10_000)).toContain("42");
+    // esbuild runs one service process per Node process, a child started with --service=.
+    const service = execFileSync("ps", ["-A", "-o", "pid=,ppid=,command="], { encoding: "utf8" })
+      .split("\n")
+      .map((line) => line.trim().split(/\s+/))
+      .find(([, ppid, ...command]) => Number(ppid) === process.pid && command.some((part) => part.startsWith("--service=")));
+    expect(service).toBeDefined();
+    const pid = Number(service![0]);
+    process.kill(pid, "SIGKILL");
+    const alive = (): boolean => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    while (alive()) await new Promise((wait) => setTimeout(wait, 10));
+    expect(await bundleWithin(options, 10_000)).toContain("42");
   });
 });

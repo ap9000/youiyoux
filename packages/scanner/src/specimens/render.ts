@@ -251,10 +251,27 @@ export function checkedTsconfig(root: string, tsconfig: string): { path: string 
   return { path: first };
 }
 
-/** An esbuild run that is cancelled after `timeoutMs`: its output, and (with `metafile`) the files it read. */
+/** esbuild's own words when its service process has gone: every later call in this process fails the same way until it is stopped. */
+const SERVICE_GONE = /^The service (is no longer running|was stopped)/;
+
+/**
+ * An esbuild run that is cancelled after `timeoutMs`: its output, and (with `metafile`) the files
+ * it read. When esbuild's service process has died (killed, or crashed), it is restarted and the
+ * run tried once more, so a long-running hub or MCP server keeps bundling.
+ */
 export async function bundleWithin(options: BuildOptions & { metafile: true }, timeoutMs: number, signal?: AbortSignal): Promise<{ text: string; inputs: string[] }>;
 export async function bundleWithin(options: BuildOptions, timeoutMs: number, signal?: AbortSignal): Promise<string>;
 export async function bundleWithin(options: BuildOptions, timeoutMs: number, signal?: AbortSignal): Promise<string | { text: string; inputs: string[] }> {
+  try {
+    return await bundleOnce(options, timeoutMs, signal);
+  } catch (error) {
+    if (!(error instanceof Error && SERVICE_GONE.test(error.message))) throw error;
+    await (await import("esbuild")).stop();
+    return await bundleOnce(options, timeoutMs, signal);
+  }
+}
+
+async function bundleOnce(options: BuildOptions, timeoutMs: number, signal?: AbortSignal): Promise<string | { text: string; inputs: string[] }> {
   signal?.throwIfAborted();
   const esbuild = await import("esbuild");
   const context = await esbuild.context({ ...options, write: false });
