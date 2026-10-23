@@ -12,6 +12,7 @@ import { readFileSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { Redactor } from "../src/report/safe.ts";
 import { fixtureRepo, GIT_ENV, report, singleFiles, type FixtureRepo } from "./report-fixtures.ts";
 
 const hex = (n: number): string => randomBytes(n).toString("hex");
@@ -118,5 +119,14 @@ describe("youiyoux report: safe to share", () => {
     expect(outputs.code.html).toMatch(/<pre>[^<]*data-marker=&quot;marker-/);
     expect(outputs.code.html).toContain("https://[redacted]@git.example.com/");
     expect(outputs.code.html).toContain("Lines of code were included (--include-code)");
+  });
+});
+
+describe("the Redactor's repo root", () => {
+  test("is matched only as a whole path: a sibling folder that starts with the same name is outside the repo, never a relative path", () => {
+    const redactor = new Redactor({ root: "/home/runner/work/app", home: "/nowhere", username: "", env: {} });
+    expect(redactor.text("/home/runner/work/app/src/a.ts and /home/runner/work/app")).toBe("src/a.ts and .");
+    expect(redactor.text("path /home/runner/work/app-design")).toBe("path [path outside the repo]");
+    expect(redactor.text("/home/runner/work/app.old/x")).toBe("[path outside the repo]");
   });
 });

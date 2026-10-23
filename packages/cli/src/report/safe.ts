@@ -69,6 +69,15 @@ function looksSecret(text: string): boolean {
   return entropy >= 3.5;
 }
 
+/**
+ * Paths inside the repo made relative (`<root>/src/a.ts` → `src/a.ts`, the root itself → `.`), the
+ * root matched only as a whole path: a sibling such as `<root>-design` is a path outside the repo.
+ */
+function withoutRoot(text: string, root: string): string {
+  const at = escapeRegExp(root);
+  return text.replace(new RegExp(`${at}/`, "g"), "").replace(new RegExp(`${at}(?![\\w.-])`, "g"), ".");
+}
+
 export class Redactor {
   private readonly roots: string[];
   private readonly home: string;
@@ -111,7 +120,7 @@ export class Redactor {
   /** One string, cleaned. */
   text(input: string): string {
     let text = input;
-    for (const root of this.roots) text = text.split(`${root}/`).join("").split(root).join(".");
+    for (const root of this.roots) text = withoutRoot(text, root);
     text = text.replace(/\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@:"'<>]+(?::[^\s/@"'<>]*)?@/gi, `$1${REDACTED}@`);
     for (const value of this.values) text = text.split(value).join(REDACTED);
     text = text.replace(/(^|[\s"'`(=,:;])(?:~\/|\/(?:Users|home|root|var|private|tmp|opt|mnt|media|Volumes|srv|etc|usr|workspace|workspaces|builds|runner|github|nix)\b)[^\s"'`<>)]*/g, `$1${OUTSIDE}`);
@@ -162,7 +171,7 @@ export class Redactor {
   scrub(output: string): string {
     let text = output;
     if (this.leaks(text).length === 0) return text;
-    for (const root of this.roots) text = text.split(`${root}/`).join("").split(root).join(".");
+    for (const root of this.roots) text = withoutRoot(text, root);
     if (this.home.length > 1) text = text.split(this.home).join("~");
     for (const value of this.values) text = text.split(value).join(REDACTED);
     text = text.replace(/\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@:"'<>]+:[^\s/@"'<>]+@/gi, `$1${REDACTED}@`);
