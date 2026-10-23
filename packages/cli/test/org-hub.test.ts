@@ -235,6 +235,8 @@ describe("youiyoux record", () => {
     vi.spyOn(process.stderr, "write").mockImplementation((chunk) => ((err += String(chunk)), true));
     process.env.YOUIYOUX_HUB_URL = hub.url;
     delete process.env.YOUIYOUX_HUB_TOKEN;
+    // Outside CI: GitHub Actions would name its own repository, commit and branch here (and does, when this suite runs there).
+    for (const name of ["GITHUB_REPOSITORY", "GITHUB_SHA", "GITHUB_REF_NAME"]) delete process.env[name];
     expect(await main(["record", "--send", "--project", root])).toBe(2);
     expect(err).toContain("YOUIYOUX_HUB_TOKEN (from the environment only, never a flag)");
     process.env.YOUIYOUX_HUB_TOKEN = "wrong-token-but-long-enough-000000";
