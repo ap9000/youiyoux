@@ -108,8 +108,9 @@ In a product repo:
 | `youiyoux show <component>` | The contract: import, legal values, guidance |
 | `youiyoux check` | Rules plus lockfile drift; exits 1 on errors |
 | `youiyoux check --diff [base] [--strict] [--json] [--format github]` | Only what a change adds: the working tree against HEAD, or against the merge-base with `base` (`--diff main`). Flags a new component that near-duplicates an existing one (same role, every shape dimension within the [inventory](#inventory)'s tolerance; fix: `use <Button variant="ghost"> from "@/components/ui"`), a hardcoded colour, spacing or radius a token holds (fix: `use rounded-control (radius.control, var(--demo-radius-control))`), and an import that brings an element in from a library other than the project's choice (the System's component, else the library the rest of the code imports it from, read by [detect](#detect)), plus rule violations on added lines. Each finding has its fix, and the output says what to do next. Exits 0 (advisory) unless `--strict`, then 1 on any finding or an incomplete check. Without git it stops and says why |
-| `youiyoux hooks install [--claude] [--git] [--ci [--diff]] [--strict]` | Wire the checks in, keeping existing config. Claude Code (PostToolUse): after each Edit/Write/MultiEdit of a checked file, only the findings on its added or changed lines go back to Claude, each with its fix; never blocks. git pre-commit: the staged files and the drift their staged lines add (`--strict` blocks on new findings or incomplete analysis). Codex has no documented post-edit hook, so no native post-edit hook is installed for it: it follows AGENTS.md (which tells agents to run `youiyoux check --diff`) and meets the pre-commit hook. `--ci` writes a pinned GitHub workflow; with `--diff`, pull requests also run `youiyoux check --diff origin/<base> --strict --format github` |
+| `youiyoux hooks install [--claude] [--git] [--ci [--diff]] [--strict]` | Wire the checks in, keeping existing config. Claude Code (PostToolUse): after each Edit/Write/MultiEdit of a checked file, only the findings on its added or changed lines go back to Claude, each with its fix; never blocks. git pre-commit: the staged files and the drift their staged lines add (`--strict` blocks on new findings or incomplete analysis). Codex has no documented post-edit hook, so no native post-edit hook is installed for it: it follows AGENTS.md (which tells agents to run `youiyoux check --diff`) and meets the pre-commit hook. `--ci` writes a pinned GitHub workflow; with `--diff`, pull requests also run `youiyoux check --diff origin/<base> --strict --format github`. `--record` writes `.github/workflows/youiyoux-record.yml`, which sends `youiyoux record` to the [hosted hub](#the-hosted-hub) on each push to the default branch |
 | `youiyoux plan` / `youiyoux migrate` | Classify a change and its impact; run a gated codemod: a dry run that prints the diff and the residual sites unless `--write` ([migrations](#migrations)) |
+| `youiyoux record [--send [--hub <url>]] [--repo owner/name] [--out file] [--json]` / `youiyoux hub serve` | This repository's record for the team's hosted hub, and the hub itself ([the hosted hub](#the-hosted-hub)) |
 | `youiyoux upgrade [--to <ref>] [--write] [--diff]` | Move the product to its System's new release in one step: the sync, and every migration the release ships for components this product has, past the version `youi.lock.json` records ([upgrading](#upgrading)). A preview unless `--write` |
 | `youiyoux library search <query>` / `youiyoux library request <id> --reason …` | Browse the Library; draft a request to adopt an item into the System |
 | `youiyoux discover sync [--icons]` | Build the local Discover index (`~/.cache/youiyoux/discover`, or `--cache` / `YOUI_DISCOVER_CACHE`): the official shadcn registry, the registry directory and selected community registries (defaults: coss, Kibo, Magic UI, Aceternity; a chosen one the directory no longer lists is reported with how to drop it), headless catalogs for category names, npm search, and npm and GitHub signals. A registry's licence is its GitHub repository's, credited only when the two link both ways: the registry's homepage links the repository and the repository's homepage is that site (else a search result whose homepage is exactly the registry's); no such repository leaves it unknown. GPL and AGPL are marked copyleft. Polite (capped concurrency, timeouts, ETag/If-Modified-Since, npm/GitHub rate budgets, npm 429 backoff) and cached. Icon sets require `--icons`; mirrors collapse to originals. Reports total metadata catalog size. `GITHUB_TOKEN`, when set, is sent to GitHub only and never stored or printed |
@@ -280,6 +281,28 @@ It works everything out in memory before it writes anything:
 
 Without `--write` it prints that plan: the files the sync changes, each migration's sites, the sites left for a person, and one diff per source file of everything the upgrade does to it. With `--write`, nothing is written unless all of it holds; then the config's ref, the sync, and each migration again on the written files, gated again. If any step fails, every file the upgrade wrote is put back and it says which step failed. `youiyoux status` names `upgrade` as the next step when a release brings migrations for the product's code.
 
+## The hosted hub
+
+A team's view across repositories, read-only and fed by CI. No source code leaves a repository.
+
+**In each repository**, `youiyoux hooks install --record` writes a workflow that runs `youiyoux record --send` on each push to the default branch, pinned to this youiyoux version, after installing with the repository's lockfile. Give the repository two secrets: `YOUIYOUX_HUB_URL` (the hub's https address) and `YOUIYOUX_HUB_TOKEN` (its ingest token). The record (`youi.record/v1`) is each product's status as `youiyoux status` reads it: the System and version it follows and has synced, sync state, drift, check counts against the baseline, components used, open requests and the next step. Every string goes through the shareable report's redaction (repo-relative paths only; no home, username, environment or `.env` values, or credentials in URLs), and the record is refused if anything survives it. `youiyoux record` alone prints what it would send; `--out` writes it.
+
+**The hub** is `youiyoux hub serve`, on any host that runs Node 20 or later behind https:
+
+```sh
+npm install youiyoux pg          # pg only for Postgres
+export YOUIYOUX_HUB_TOKEN=…      # for CI: openssl rand -base64 32
+export YOUIYOUX_HUB_VIEW_KEY=…   # for people: another one
+export DATABASE_URL=postgres://… # else a SQLite file (--db, Node 22.5 or later)
+npx youiyoux hub serve --host 0.0.0.0 --port "$PORT"
+```
+
+- It refuses to start without both secrets, when either is shorter than 24 characters, or when they are the same: whoever can read the hub must not be able to write to it.
+- `POST /api/records` takes a record with the ingest token; one that is not a valid `youi.record/v1`, is over 2 MB, or still holds a path outside its repository or a URL with credentials is refused. Each repository keeps its last 100 records.
+- People sign in with the view key once. The session is an HttpOnly, SameSite=Strict cookie (Secure beyond this machine), and changing the key signs everyone out. Scripts can send the view key as a Bearer token to `GET /api/org` (`youi.org/v1`).
+- The page shows a headline sentence with the counts, each System's adoption as a split bar of the versions its products have synced (the newest, the older ones, never synced), and each repository's products with what to do next. Nothing on it changes a repository: approval stays in the design repo's pull requests.
+- `GET /api/health` answers for the platform's health check. Every other path under `/api/` is refused, and the page's only script is its own (a strict Content-Security-Policy, no framing).
+
 ## Guarantees
 
 - **Identity, not names.** A `<Button>` counts only if its import resolves (TypeScript module resolution, through barrels and aliases) to the owned implementation. A same-named component from elsewhere is reported as a lookalike.
@@ -294,5 +317,5 @@ Without `--write` it prints that plan: the files the sync changes, each migratio
 - **Trial**: *Try alternatives* for an element, and *Try on a page* to see a candidate in a real screen before adopting it.
 - **Replace with…**: swap one element for another across all of its uses, as a planned, reviewed change.
 - **Screens, live**: screen snapshots with element positions, a live page view, and click-to-change on an element in place.
-- **Hosted server**: on Railway, with logins, per-scope permissions, the Access page and a GitHub App; per-PR preview links for every change.
+- **Hosted server, beyond read-only**: logins per person, per-scope permissions, the Access page and a GitHub App; per-PR preview links for every change. ([The hosted hub](#the-hosted-hub) is read-only, with one view key.)
 - **Public release prep**.

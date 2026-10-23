@@ -1,4 +1,5 @@
 /** What the store holds and answers: the same on SQLite and Postgres. */
+import type { CiRecord } from "@youiyoux/core";
 import type { Engine } from "./driver.ts";
 
 /** `chosen`: the synced sources, what a default search reads. `all`: listings `--all` added, kept apart. */
@@ -260,6 +261,11 @@ export interface Store {
   latestRun(source?: string): Promise<{ run: string; source: string; scannedAt: string } | null>;
   families(filter?: { readonly run?: string; readonly role?: string } & Page): Promise<{ run: string | null; total: number; rows: FamilyRecord[] }>;
   looks(filter: { readonly run?: string; readonly family?: string; readonly role?: string } & Page): Promise<{ run: string | null; total: number; rows: LookRecord[] }>;
+
+  /** Keep what CI sent a hosted hub (youi.record/v1), received now; a repository's last 100 are kept. A record for a commit already kept replaces it. */
+  putRecord(record: CiRecord, receivedAt: string): Promise<void>;
+  /** Each repository's newest record (by generatedAt, then receipt), by repository name. */
+  latestRecords(): Promise<Array<{ readonly record: CiRecord; readonly receivedAt: string }>>;
 
   /** Replace everything one source said about the graph. */
   replaceGraph(source: string, graph: Graph): Promise<void>;

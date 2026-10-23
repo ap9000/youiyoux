@@ -110,6 +110,12 @@ export const MIGRATIONS: readonly Migration[] = [
     `DELETE FROM edges`,
     `DELETE FROM nodes`,
   ] },
+  // What CI sends a hosted hub (youi.record/v1, redacted, no code): not derived from git like the
+  // rest, so a rebuild (reset) keeps it; each repository's last 100 are kept.
+  { id: 4, name: "ci-records", statements: ({ json }) => [
+    `CREATE TABLE IF NOT EXISTS ci_records (id TEXT PRIMARY KEY, repo TEXT NOT NULL, commit_sha TEXT, ref TEXT, generated_at TEXT NOT NULL, received_at TEXT NOT NULL, record ${json} NOT NULL)`,
+    `CREATE INDEX IF NOT EXISTS ci_records_repo ON ci_records (repo, generated_at)`,
+  ] },
 ];
 
 export const SCHEMA_VERSION = Math.max(...MIGRATIONS.map((m) => m.id));

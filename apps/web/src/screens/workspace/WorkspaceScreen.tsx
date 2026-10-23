@@ -27,7 +27,7 @@ const failed = (p: ProjectStatus | ProjectStatusFailure): p is ProjectStatusFail
 const mono = "font-mono text-mono-sm";
 
 /** `youiyoux sync: 2 files would change`: the command in mono, why in words. */
-function Next({ next }: { next: string }) {
+export function Next({ next }: { next: string }) {
   const at = next.indexOf(": ");
   const [command, why] = next.startsWith("youiyoux ") && at > 0 ? [next.slice(0, at), next.slice(at + 2)] : [null, next];
   return (
@@ -38,7 +38,7 @@ function Next({ next }: { next: string }) {
   );
 }
 
-function Facts({ status }: { status: ProjectStatus }) {
+export function Facts({ status }: { status: ProjectStatus }) {
   const { check, components, requests, drift } = status;
   const sync = SYNC[status.sync.state];
   return (

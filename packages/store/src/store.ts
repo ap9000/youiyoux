@@ -3,14 +3,17 @@
  * `INSERT … ON CONFLICT DO UPDATE`, `WITH RECURSIVE … UNION` with a depth guard); the
  * adapter only supplies the JSON column type and the full-text match.
  */
+import type { CiRecord } from "@youiyoux/core";
 import { pageInteger, Lock, type Adapter, type Param, type Row } from "./driver.ts";
 import { MIGRATIONS, SCHEMA_VERSION } from "./migrations.ts";
 import type { Ambiguous, ProjectScope, DiscoverFilter, DiscoverItem, DiscoverMatchQuery, DiscoverPage, DiscoverRow, DiscoverScope, EdgeKind, Facets, FamilyRecord, Graph, GraphNode, InventoryRun, Licence, LookRecord, NodeKind, Page, Reached, RuleCovers, ScanRecord, Signal, SourceClass, Store, StoreStats, SwapImpact, WhereUsed } from "./types.ts";
 
+/** The tables a rebuild empties: everything derived from git. ci_records is what CI sent, kept across rebuilds. */
 const TABLES = ["meta", "discover_items", "discover_roles", "signals", "licences", "scans", "families", "looks", "nodes", "edges"] as const;
 /** SQLite allows 32,766 parameters a statement and Postgres 65,535: batches stay well under both. */
 const MAX_PARAMS = 30_000;
 const MAX_DEPTH = 6;
+const RECORDS_KEPT = 100;
 const SOURCE_CLASSES: readonly SourceClass[] = ["official", "community", "npm", "other"];
 
 const json = (value: unknown): string => JSON.stringify(value);
@@ -257,6 +260,21 @@ export class SqlStore implements Store {
   async licence(itemId: string): Promise<Licence | null> {
     const row = (await this.db.all<{ item_id: string; spdx: string; evidence_url: string | null; verified_at: string | null }>(`SELECT item_id, spdx, evidence_url, verified_at FROM licences WHERE item_id = ?`, [itemId]))[0];
     return row ? { itemId: row.item_id, spdx: row.spdx, evidenceUrl: row.evidence_url, verifiedAt: row.verified_at } : null;
+  }
+
+  /* ---------------------------------------------------------------- CI records */
+
+  async putRecord(record: CiRecord, receivedAt: string): Promise<void> {
+    await this.write(async () => {
+      const id = `${record.repo}@${record.commit ?? record.generatedAt}`;
+      await this.insert("ci_records", ["id", "repo", "commit_sha", "ref", "generated_at", "received_at", "record"], [[id, record.repo, record.commit, record.ref, record.generatedAt, receivedAt, json(record)]], "ON CONFLICT (id) DO UPDATE SET ref = excluded.ref, generated_at = excluded.generated_at, received_at = excluded.received_at, record = excluded.record");
+      await this.db.run(`DELETE FROM ci_records WHERE repo = ? AND id NOT IN (SELECT id FROM ci_records WHERE repo = ? ORDER BY generated_at DESC, received_at DESC LIMIT ${RECORDS_KEPT})`, [record.repo, record.repo]);
+    });
+  }
+
+  async latestRecords(): Promise<Array<{ record: CiRecord; receivedAt: string }>> {
+    const rows = await this.db.all<{ record: unknown; received_at: string }>(`SELECT record, received_at FROM (SELECT record, received_at, repo, ROW_NUMBER() OVER (PARTITION BY repo ORDER BY generated_at DESC, received_at DESC) AS n FROM ci_records) ranked WHERE n = 1 ORDER BY repo`);
+    return rows.map((r) => ({ record: parse<CiRecord>(r.record), receivedAt: String(r.received_at) }));
   }
 
   /* ----------------------------------------------------------------- inventory */

@@ -4,6 +4,7 @@
  */
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { inventoryRun, MIGRATIONS, nodeId, projectGraph, SCHEMA_VERSION, SqlStore, type Store } from "../src/index.ts";
+import type { CiRecord } from "@youiyoux/core";
 import { EXTRA_ALL, inventory, item, ITEMS, PROJECT } from "./fixtures.ts";
 
 export interface Engine {
@@ -70,7 +71,7 @@ export function storeContract(engine: Engine): void {
     test(`${engine.name}: migrations are recorded once and re-running them changes nothing`, async () => {
       expect((await store.stats()).schema).toBe(SCHEMA_VERSION);
       expect(await (store as SqlStore).migrate()).toEqual([]);
-      expect(MIGRATIONS.map((m) => m.id)).toEqual([1, 2, 3]);
+      expect(MIGRATIONS.map((m) => m.id)).toEqual([1, 2, 3, 4]);
       expect((await store.stats()).engine).toBe(engine.name === "sqlite" ? "sqlite" : "postgres");
     });
 
@@ -263,6 +264,24 @@ export function storeContract(engine: Engine): void {
       await reader.close();
       store = await engine.reopen!();
       expect(await store.meta("not-allowed")).toBeNull();
+    });
+
+    test(`${engine.name}: CI records: each repository's newest, the same commit sent again replaces it, a repository keeps its last 100, and a rebuild keeps them`, async () => {
+      const record = (repo: string, n: number): CiRecord => ({ schema: "youi.record/v1", repo, commit: n.toString(16).padStart(40, "0"), ref: "main", generatedAt: new Date(Date.UTC(2026, 9, 1, 0, n)).toISOString(), tool: "0.1.10", products: [{ root: ".", error: `run ${n}`, next: "youiyoux adopt" }] });
+      for (let n = 1; n <= 102; n++) await store.putRecord(record("acme/billing", n), new Date(Date.UTC(2026, 9, 2, 0, n)).toISOString());
+      await store.putRecord(record("acme/admin", 5), "2026-10-03T00:00:00.000Z");
+      // An older run arriving late never hides the newer one; a commit sent again replaces its row.
+      await store.putRecord(record("acme/admin", 3), "2026-10-04T00:00:00.000Z");
+      await store.putRecord({ ...record("acme/admin", 5), ref: "release" }, "2026-10-05T00:00:00.000Z");
+      const latest = await store.latestRecords();
+      expect(latest.map((l) => [l.record.repo, l.record.commit?.slice(-2), l.record.ref, l.receivedAt])).toEqual([
+        ["acme/admin", "05", "release", "2026-10-05T00:00:00.000Z"],
+        ["acme/billing", "66", "main", new Date(Date.UTC(2026, 9, 2, 0, 102)).toISOString()],
+      ]);
+      expect(latest[1]!.record.products).toEqual([{ root: ".", error: "run 102", next: "youiyoux adopt" }]);
+      await store.reset();
+      expect((await store.latestRecords()).length).toBe(2);
+      await fill(store);
     });
 
     test(`${engine.name}: emptied and rebuilt from the same inputs, it answers exactly as before`, async () => {

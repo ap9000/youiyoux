@@ -1,6 +1,7 @@
 /** `youi`: the YouIyouX command line. */
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
+import { homedir } from "node:os";
 import { appendFile, readFile, rm, rmdir } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { parseArgs, promisify, type ParseArgsConfig } from "node:util";
@@ -15,7 +16,7 @@ import { configured, loadCheckProject, runRepoCheck } from "./check-repo.ts";
 import { workingTreeChange, type ChangeProject } from "./check-diff.ts";
 import { actionable, diffJson, githubAnnotations, githubDiffAnnotations, githubDiffSummary, githubSummary, renderCheckText, renderDiffText } from "./check-render.ts";
 import { runClaudeHook, runPreCommitHook, type HookTarget } from "./hooks.ts";
-import { codexFallback, installRepoAgentInstructions, hookCommand, installClaudeHook, installPreCommit, installWorkflow, repoRootOf } from "./hooks-install.ts";
+import { codexFallback, installRepoAgentInstructions, hookCommand, installClaudeHook, installPreCommit, installRecordWorkflow, installWorkflow, repoRootOf } from "./hooks-install.ts";
 import { installAgentRule, installClaudeMcp, installCodexMcp, mcpCommand, relativeTo, removeAgentRule, removeClaudeMcp, removeCodexMcp, type AgentsResult } from "./agents-install.ts";
 import { detectTarget, renderDetect } from "./detect.ts";
 import { renderDiscoverSearch, renderDiscoverShow, renderDiscoverSync } from "./discover.ts";
@@ -26,6 +27,8 @@ import { exists, initProject } from "./init.ts";
 import { planAdoption, type AdoptPlan } from "./adopt.ts";
 import { extractSystem } from "./extract.ts";
 import { renderUpgrade, upgradeProject } from "./upgrade.ts";
+import { buildRecord, HUB_TOKEN_ENV, HUB_URL_ENV, renderRecord, sendRecord, toolVersion } from "./record.ts";
+import { secretsProblem, startOrgHub, VIEW_KEY_ENV } from "./org-hub.ts";
 import { renderStatus, statusExitCode, statusTargets, workspaceStatus } from "./status.ts";
 import { startWorkspaceHub } from "./workspace-hub.ts";
 import { noteSource, rebuildIndex, recordInventory, recordProject, renderHistory, renderRebuild, SCANS_LOG, SOURCES_FILE } from "./index-store.ts";
@@ -129,14 +132,24 @@ ${style.bold("In a product repo")}
                            a marked rule in AGENTS.md and CLAUDE.md, and the youiyoux MCP server for
                            Claude Code (.mcp.json) and Codex (.codex/config.toml); default both.
                            Idempotent; remove takes out only youi's parts. No youi.project.json needed
-  hooks install [--claude] [--git] [--ci [--diff]] [--strict]
+  hooks install [--claude] [--git] [--ci [--diff]] [--record] [--strict]
                            live checks, existing config kept (default: --claude --git):
                            Claude Code PostToolUse (advisory context after each edit: violations
                            plus the drift the edit adds, each with its fix),
                            git pre-commit (advisory on staged files and their drift; --strict blocks
                            new errors and drift; Codex has no post-edit hook, so this and AGENTS.md
                            cover it), CI workflow (authoritative, pinned rules version, PR
-                           annotations; --diff also fails pull requests on drift they add)
+                           annotations; --diff also fails pull requests on drift they add);
+                           --record: a workflow that sends youiyoux record to the team's hub on each
+                           push to the default branch
+  record [--send [--hub url]] [--repo owner/name] [--out file] [--json]
+                           this repository's record for the team's hosted hub (youi.record/v1): each
+                           product's status, redacted as the shareable report is, no code; --send
+                           posts it to YOUIYOUX_HUB_URL with YOUIYOUX_HUB_TOKEN (environment only)
+  hub serve [--port n] [--host h] [--db file]
+                           the team's hosted hub, read-only: CI sends records, people sign in with
+                           YOUIYOUX_HUB_VIEW_KEY and see every repository and each System's adoption
+                           by version. Records are kept in Postgres (DATABASE_URL) or a SQLite file
 
 ${style.bold("System")}  ${style.dim("approved elements: build only with these")}
   show <component>         the contract: import, legal prop values, guidance, examples
@@ -282,6 +295,12 @@ const OPTIONS = {
   package: { type: "string" },
   fork: { type: "boolean", default: false },
   to: { type: "string" },
+  repo: { type: "string" },
+  send: { type: "boolean", default: false },
+  hub: { type: "string" },
+  host: { type: "string" },
+  db: { type: "string" },
+  record: { type: "boolean", default: false },
   cache: { type: "string" },
   role: { type: "string" },
   license: { type: "string" },
@@ -628,6 +647,50 @@ async function cmdUpgrade(values: Values): Promise<number> {
   return result.status === "blocked" ? 1 : 0;
 }
 
+/** `youiyoux record [--repo owner/name] [--out file] [--send [--hub url]]`: this repository's record for the team's hosted hub. */
+async function cmdRecord(values: Values): Promise<number> {
+  const hub = values.hub ?? process.env[HUB_URL_ENV];
+  const token = process.env[HUB_TOKEN_ENV];
+  // Checked before the work: a CI step missing its secrets says so at once.
+  if (values.send && !hub) throw new UsageError(`youiyoux record --send needs the hub's address: set ${HUB_URL_ENV} (or pass --hub <url>)`);
+  if (values.send && !token) throw new UsageError(`youiyoux record --send needs the hub's ingest token in ${HUB_TOKEN_ENV} (from the environment only, never a flag)`);
+  const record = await buildRecord(values.project ?? process.cwd(), values.repo ? { repo: values.repo } : {});
+  if (values.out) await writeFileAtomic(resolve(values.out), `${JSON.stringify(record, null, 2)}\n`);
+  const sentTo = values.send ? await sendRecord(record, hub!, token!) : null;
+  if (values.json) json(record);
+  else print([renderRecord(record, sentTo), ...(values.out ? [style.dim(`  written to ${values.out}`)] : []), ...(!values.send && !values.out ? [style.dim(`  youiyoux record --send posts it to the hub in ${HUB_URL_ENV}; --out <file> writes it; --json prints it`)] : [])].join("\n"));
+  return 0;
+}
+
+/** The built hub this tool carries (the npm package) or a checkout's build of apps/web, or null. */
+function builtHub(): string | null {
+  for (const dir of [join(TOOL_ROOT, "hub"), join(TOOL_ROOT, "apps/web/dist")]) if (existsSync(join(dir, "index.html"))) return dir;
+  return null;
+}
+
+/** `youiyoux hub serve [--port n] [--host h] [--db file]`: the team's hosted hub, read-only, fed by CI. */
+async function cmdHubServe(values: Values, positionals: string[]): Promise<number> {
+  if (positionals[0] !== "serve" || positionals.length > 1) throw new UsageError("youiyoux hub serve [--port n] [--host h] [--db file]   (the team's hosted hub: read-only, fed by youiyoux record in CI)");
+  const problem = secretsProblem(process.env[HUB_TOKEN_ENV], process.env[VIEW_KEY_ENV]);
+  if (problem) throw new UsageError(problem);
+  const port = Number(values.port ?? process.env.PORT ?? 8080);
+  if (!Number.isInteger(port) || port < 0 || port > 65535) throw new UsageError(`--port ${JSON.stringify(values.port ?? process.env.PORT)}: expected a port number`);
+  const { openStore, storeLocation: where } = await import("@youiyoux/store");
+  const path = resolve(values.db ?? process.env.YOUI_HUB_DB ?? join(process.env.XDG_DATA_HOME || join(homedir(), ".local/share"), "youiyoux/hub.db"));
+  const store = await openStore({ path });
+  const dist = builtHub();
+  const hub = await startOrgHub({ store, ingestToken: process.env[HUB_TOKEN_ENV]!, viewKey: process.env[VIEW_KEY_ENV]!, dist, host: values.host ?? "127.0.0.1", port });
+  print([`${style.ok("youiyoux hub")} ${hub.url}  ${style.dim(`read-only · records kept in ${where({ path })}`)}`, ...(dist ? [] : [style.warn("! the hub's page is not built here (pnpm --filter web build): the API answers at /api/org")]), style.dim(`  CI sends records with ${HUB_TOKEN_ENV}; people sign in with ${VIEW_KEY_ENV}. Put it behind https; --host 0.0.0.0 to listen beyond this machine`)].join("\n"));
+  await new Promise<void>((done) => {
+    const stop = (): void => done();
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+  });
+  await hub.close();
+  await store.close();
+  return 0;
+}
+
 async function cmdInit(values: Values): Promise<number> {
   if (!values.design) throw new UsageError("youiyoux init --design <dir|package>   (a design repo checkout, the directory holding youi.config.json, or the npm package that holds it)");
   const root = values.project ?? process.cwd();
@@ -836,7 +899,14 @@ async function cmdHooks(values: Values, positionals: string[]): Promise<number> 
     process.stdout.write(outcome.stdout);
     return outcome.exitCode;
   }
-  if (action !== "install") throw new UsageError("youiyoux hooks install [--claude] [--git] [--ci [--diff]] [--strict]   or   youiyoux hooks run claude|pre-commit");
+  if (action !== "install") throw new UsageError("youiyoux hooks install [--claude] [--git] [--ci [--diff]] [--record] [--strict]   or   youiyoux hooks run claude|pre-commit");
+  // The record workflow needs only the repository: it runs youiyoux record, which finds every product itself.
+  if (values.record && !values.claude && !values.git && !values.ci) {
+    const result = { kind: "record", ...(await installRecordWorkflow(values.project ?? process.cwd(), toolVersion(), values.force)) };
+    if (values.json) json([result]);
+    else print(`${result.action === "unchanged" ? style.dim(result.action) : style.ok(result.action)} ${result.kind}: ${result.file}\n  ${style.dim(result.guarantee)}`);
+    return 0;
+  }
   const p = await loadCheckProject(values.project ?? process.cwd(), loadOptions(values), !values.project);
   if (values.ci && !configured(p)) throw new UsageError("Run youiyoux init --design <dir> before installing the pinned CI workflow; repo-mode CI can run youiyoux check --diff <base> --strict directly");
   // The hook finds the config it was installed with, even when --project named the config's directory and --root the product.
@@ -847,6 +917,7 @@ async function cmdHooks(values: Values, positionals: string[]): Promise<number> 
   if (values.git || all) results.push({ kind: "git pre-commit", ...(await installPreCommit(p.root, hookCommand(TOOL_ROOT, "pre-commit", target, values.strict ? ["--strict"] : []), values.strict)) });
   if (values.git || all) results.push({ kind: "Codex", ...(configured(p) ? codexFallback(p.root, p.config.agents.agentsMd) : await installRepoAgentInstructions(p.root)) });
   if (values.ci && configured(p)) results.push({ kind: "CI", ...(await installWorkflow(p, TOOL_ROOT, target, values.force, { diff: values.diff })) });
+  if (values.record) results.push({ kind: "record", ...(await installRecordWorkflow(p.root, toolVersion(), values.force)) });
   if (values.json) json(results);
   else for (const r of results) print(`${r.action === "unchanged" || r.action === "skipped" ? style.dim(r.action) : style.ok(r.action)} ${r.kind}: ${r.file}
   ${style.dim(r.guarantee)}`);
@@ -1206,7 +1277,7 @@ async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Pr
 type Command = (values: Values, positionals: string[], io: CliIo) => Promise<number>;
 
 const COMMANDS: Record<string, Command> = {
-  adopt: cmdAdopt, status: cmdStatus, system: cmdSystem, link: cmdLink, unlink: cmdUnlink, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, upgrade: cmdUpgrade, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, screens: cmdScreens, requests: cmdRequests, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+  adopt: cmdAdopt, status: cmdStatus, system: cmdSystem, link: cmdLink, unlink: cmdUnlink, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, upgrade: cmdUpgrade, record: cmdRecord, hub: cmdHubServe, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, screens: cmdScreens, requests: cmdRequests, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
 
 /** Every command name, for a front end that runs one by default (the youiyoux bin runs report). */

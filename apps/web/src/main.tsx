@@ -5,15 +5,26 @@ import { sessionKey } from "./data/session-key.ts";
 import { startModel } from "./data/store.ts";
 import "./styles/app.css";
 
-// Fetch the snapshot while React mounts; on repeat visits it comes from Cache Storage.
-startModel();
-// Keep the rule editor's key from the link `youiyoux ui` printed, whichever page it opens.
-sessionKey();
-
 const root = document.getElementById("root");
 if (!root) throw new Error("index.html is missing #root");
-createRoot(root).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+// The hosted hub (youiyoux hub serve) names its API here: it shows the organisation, and no snapshot is read.
+const org = document.querySelector<HTMLMetaElement>('meta[name="youi-org"]')?.content;
+if (org) {
+  void import("./org/OrgApp.tsx").then(({ OrgApp }) =>
+    createRoot(root).render(
+      <StrictMode>
+        <OrgApp api={org} />
+      </StrictMode>,
+    ),
+  );
+} else {
+  // Fetch the snapshot while React mounts; on repeat visits it comes from Cache Storage.
+  startModel();
+  // Keep the rule editor's key from the link `youiyoux ui` printed, whichever page it opens.
+  sessionKey();
+  createRoot(root).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+}
