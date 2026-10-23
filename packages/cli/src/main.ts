@@ -24,6 +24,7 @@ import { DEFAULT_HUB_PORT, runHub, runPreviews } from "./hub.ts";
 import { renderBrief, renderRequests } from "./requests.ts";
 import { exists, initProject } from "./init.ts";
 import { planAdoption, type AdoptPlan } from "./adopt.ts";
+import { extractSystem } from "./extract.ts";
 import { noteSource, rebuildIndex, recordInventory, recordProject, renderHistory, renderRebuild, SCANS_LOG, SOURCES_FILE } from "./index-store.ts";
 import { renderGaps } from "./gaps.ts";
 import { renderInventory } from "./inventory.ts";
@@ -95,6 +96,10 @@ ${style.bold("In a product repo")}
                            are), the stylesheet's :root and dark variables as tokens (moved: the
                            stylesheet imports the generated tokens.css, same names and values), three
                            starter rules as warnings, then init and sync; --dry-run writes nothing
+  system extract <dir> [--package name] [--dry-run]
+                           move the System adopt keeps here into a design repo of its own at <dir>
+                           (contracts with their implementations, tokens, rules), for a second app to
+                           follow; this product then follows it by path, and sync vendors its components
   init --design <dir|package>   write youi.project.json pointing at a design repo checkout, or at
                            the npm package that holds it (named, so no machine's folder), then sync;
                            a git repository goes in its source: { "git": "github:acme/design", "ref": "v3" }
@@ -257,6 +262,7 @@ const OPTIONS = {
   dark: { type: "string" },
   state: { type: "string" },
   inventory: { type: "string" },
+  package: { type: "string" },
   cache: { type: "string" },
   role: { type: "string" },
   license: { type: "string" },
@@ -647,6 +653,29 @@ function adoptLines(plan: AdoptPlan, dryRun = false): string[] {
     `  config      youi.config.json (the System) and youi.project.json (this product follows it)`,
     ...plan.notes.map((n) => style.warn(`  ! ${n}`)),
   ];
+}
+
+/** `youiyoux system extract <dir> [--package name]`: move a System adopt keeps inside the product into its own design repo. */
+async function cmdSystem(values: Values, positionals: string[]): Promise<number> {
+  const [action, dir, ...extra] = positionals;
+  if (action !== "extract" || dir === undefined || extra.length > 0) throw new UsageError("youiyoux system extract <dir> [--package <name>] [--dry-run]   (move the System youiyoux adopt keeps in this product into a design repo of its own)");
+  if (values.package !== undefined && !PACKAGE_NAME.test(values.package)) throw new UsageError(`--package ${JSON.stringify(values.package)}: expected an npm package name such as @acme/design`);
+  const p = await project(values);
+  const result = await extractSystem(p, dir, { ...(values.package ? { package: values.package } : {}), dryRun: values["dry-run"] });
+  const contracts = result.written.filter((f) => f.endsWith(".contract.json")).length;
+  const lines = [
+    `${style.ok(values["dry-run"] ? "would extract" : "extracted")} ${p.system.config.name} ${style.dim(`(system ${result.system.id})`)} → ${result.target}`,
+    `  repo        ${plural(result.written.length, "file")}: youi.config.json, ${plural(contracts, "contract")} with their implementations beside them, the tokens, rules${result.system.design ? " and design.md" : ""}${values.package ? `, and package.json (${values.package})` : ""}`,
+    `  product     youi.project.json follows it (source: ${JSON.stringify(result.source)}); ${values["dry-run"] ? "would remove" : "removed"} its System files: ${result.removed.join(", ")}`,
+  ];
+  if (values["dry-run"]) {
+    print([...lines, "", style.dim("dry run: nothing written or removed")].join("\n"));
+    return 0;
+  }
+  print([...lines, ""].join("\n"));
+  const synced = await cmdSync({ ...values, project: p.root, package: undefined });
+  print(`Next: make ${relative(process.cwd(), result.target) || "."} a repository of its own and commit it; then each app follows it by ${values.package ? `package (publish ${values.package}, add it as a dependency, set source to { "package": "${values.package}" })` : "package or git"} ({ "git": "<url>", "ref": "v${result.system.version}" }). Change components there from now on: youiyoux sync merges them into each product`);
+  return synced;
 }
 
 /**
@@ -1090,7 +1119,7 @@ async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Pr
 type Command = (values: Values, positionals: string[], io: CliIo) => Promise<number>;
 
 const COMMANDS: Record<string, Command> = {
-  adopt: cmdAdopt, link: cmdLink, unlink: cmdUnlink, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, screens: cmdScreens, requests: cmdRequests, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+  adopt: cmdAdopt, system: cmdSystem, link: cmdLink, unlink: cmdUnlink, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, screens: cmdScreens, requests: cmdRequests, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
 
 /** Every command name, for a front end that runs one by default (the youiyoux bin runs report). */
@@ -1122,7 +1151,7 @@ export async function main(argv: string[], io: CliIo = {}): Promise<number> {
 }
 
 /** Commands that work on a product, and on a design repo: each runs from anywhere inside one, as git does. */
-const IN_A_PRODUCT = new Set(["link", "unlink", "show", "where", "bom", "check", "baseline", "rules", "plan", "migrate", "sync", "scan", "watch", "hooks", "agents", "mcp", "ui", "library", "render", "screens", "requests"]);
+const IN_A_PRODUCT = new Set(["system", "link", "unlink", "show", "where", "bom", "check", "baseline", "rules", "plan", "migrate", "sync", "scan", "watch", "hooks", "agents", "mcp", "ui", "library", "render", "screens", "requests"]);
 const IN_A_DESIGN_REPO = new Set(["build", "parity"]);
 
 /**

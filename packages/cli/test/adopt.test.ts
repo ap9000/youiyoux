@@ -268,3 +268,73 @@ describe("youiyoux adopt", () => {
     }
   }, 60_000);
 });
+
+describe("youiyoux system extract", () => {
+  test("an adopted System moves into its own design repo; the product follows it by path, unchanged, and a change made there merges into it", async () => {
+    const root = await shadcnApp("extract-app");
+    expect(await main(["adopt", "--project", root])).toBe(0);
+    const [button, tokensCss] = await Promise.all([readFile(join(root, "components/ui/button.tsx"), "utf8"), readFile(join(root, "design/build/tokens.css"), "utf8")]);
+    const target = join(dir, "acme-design");
+    out = "";
+    expect(await main(["system", "extract", target, "--project", root, "--package", "@acme/design"])).toBe(0);
+    expect(out).toContain(`extracted @acme/web (system web) → ${target}`);
+    expect(out).toContain("2 contracts with their implementations beside them");
+
+    // A plain design repo: implementations beside their contracts, no implementations folder.
+    const config = JSON.parse(await readFile(join(target, "youi.config.json"), "utf8")) as { systems: Record<string, unknown>[] };
+    expect(config.systems[0]).toMatchObject({ id: "web", tokens: "tokens/web.resolver.json", components: "components", rules: "rules", design: "design.md" });
+    expect(config.systems[0]).not.toHaveProperty("implementations");
+    expect(await readFile(join(target, "components/button/button.tsx"), "utf8")).toBe(button);
+    expect(JSON.parse(await readFile(join(target, "components/card/card.contract.json"), "utf8"))).toMatchObject({ source: { file: "card/card.tsx", also: ["CardHeader"] } });
+    expect(JSON.parse(await readFile(join(target, "package.json"), "utf8"))).toMatchObject({ name: "@acme/design", version: "0.1.0" });
+
+    // The product: its System files gone, its components and generated tokens as they were, now vendored copies.
+    for (const gone of ["youi.config.json", "design/components", "design/tokens", "design/rules", "design/design.md"]) await expect(readFile(join(root, gone), "utf8")).rejects.toThrow();
+    expect(JSON.parse(await readFile(join(root, "youi.project.json"), "utf8"))).toMatchObject({ source: { path: "../acme-design" } });
+    expect(await readFile(join(root, "components/ui/button.tsx"), "utf8")).toBe(button);
+    expect(await readFile(join(root, "design/build/tokens.css"), "utf8")).toBe(tokensCss);
+    const lock = JSON.parse(await readFile(join(root, "youi.lock.json"), "utf8")) as { files: Record<string, { kind: string }> };
+    expect(lock.files["components/ui/button.tsx"]).toMatchObject({ kind: "vendored" });
+    expect(await verifyLock(await loadProject(root))).toEqual([]);
+
+    // The System changes in its own repo now, and sync brings it to the product.
+    await writeFile(join(target, "components/button/button.tsx"), button.replace("rounded-md", "rounded-lg"));
+    expect(await main(["sync", "--project", root])).toBe(0);
+    expect(await readFile(join(root, "components/ui/button.tsx"), "utf8")).toContain("rounded-lg");
+  }, 60_000);
+
+  test("it refuses a System that is already its own repo and a folder that is not empty, and a dry run changes nothing", async () => {
+    const err = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      const plain = join(dir, "plain-app");
+      await cp(join(EXAMPLES, "demo-app"), plain, { recursive: true });
+      const config = JSON.parse(await readFile(join(plain, "youi.project.json"), "utf8")) as Record<string, unknown>;
+      await writeFile(join(plain, "youi.project.json"), JSON.stringify({ ...config, $schema: undefined, source: { path: join(EXAMPLES, "demo-design") } }));
+      expect(await main(["system", "extract", join(dir, "nowhere"), "--project", plain])).toBe(1);
+      expect(err.mock.calls.flat().join("")).toContain("is already a design repo of its own");
+
+      const root = await shadcnApp("extract-refused");
+      expect(await main(["adopt", "--project", root])).toBe(0);
+      const full = join(dir, "full");
+      await mkdir(full, { recursive: true });
+      await writeFile(join(full, "README.md"), "mine\n");
+      expect(await main(["system", "extract", full, "--project", root])).toBe(1);
+      expect(err.mock.calls.flat().join("")).toContain("already exists and is not empty");
+      // A link in the System that leads outside it would carry what it points at into the new repo.
+      await writeFile(join(dir, "secret.json"), "{}\n");
+      await symlink(join(dir, "secret.json"), join(root, "design/tokens/leak.json"));
+      expect(await main(["system", "extract", join(dir, "leaky-design"), "--project", root])).toBe(1);
+      expect(err.mock.calls.flat().join("")).toContain("links that lead outside it (tokens/leak.json)");
+      await expect(readdir(join(dir, "leaky-design"))).rejects.toThrow();
+      await rm(join(root, "design/tokens/leak.json"));
+      out = "";
+      expect(await main(["system", "extract", join(dir, "dry-design"), "--project", root, "--dry-run"])).toBe(0);
+      expect(out).toContain("dry run: nothing written or removed");
+      await expect(readdir(join(dir, "dry-design"))).rejects.toThrow();
+      expect(await readFile(join(root, "youi.config.json"), "utf8")).toContain('"implementations": "components/ui"');
+      expect((await readdir(dir)).filter((name) => name.startsWith("."))).toEqual([]);
+    } finally {
+      err.mockRestore();
+    }
+  }, 60_000);
+});
