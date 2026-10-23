@@ -2,7 +2,7 @@
  * A System inside the product: its contracts, tokens and rules in the product's repo, its
  * implementations the product's own components, never copied.
  */
-import { cp, mkdir, mkdtemp, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
@@ -215,6 +215,33 @@ describe("youiyoux adopt", () => {
     out = "";
     expect(await main(["show", "Button", "--project", root])).toBe(0);
     expect(out).toContain("destructive");
+  }, 60_000);
+
+  test("a stylesheet or components folder outside the product is refused by name, from components.json, a flag or a symlink, and nothing is written", async () => {
+    const outside = join(dir, "outside.css");
+    await writeFile(outside, GLOBALS);
+    const err = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    try {
+      const shadcn = await shadcnApp("escape-json");
+      const config = JSON.parse(await readFile(join(shadcn, "components.json"), "utf8")) as Record<string, unknown>;
+      await writeFile(join(shadcn, "components.json"), JSON.stringify({ ...config, tailwind: { css: "../outside.css" } }));
+      expect(await main(["adopt", "--project", shadcn])).toBe(1);
+      expect(err.mock.calls.flat().join("")).toContain('the stylesheet "../outside.css" leads outside');
+
+      const linked = await shadcnApp("escape-link");
+      await rm(join(linked, "app/globals.css"));
+      await symlink(outside, join(linked, "app/globals.css"));
+      expect(await main(["adopt", "--project", linked])).toBe(1);
+      expect(err.mock.calls.flat().join("")).toContain('the stylesheet "app/globals.css" leads outside');
+
+      const flagged = await shadcnApp("escape-flag");
+      expect(await main(["adopt", "--project", flagged, "--components", "../escape-link/components/ui"])).toBe(1);
+      expect(err.mock.calls.flat().join("")).toContain('the components folder "../escape-link/components/ui" leads outside');
+      for (const root of [shadcn, linked, flagged]) await expect(readFile(join(root, "youi.config.json"), "utf8")).rejects.toThrow();
+      expect(await readFile(outside, "utf8")).toBe(GLOBALS);
+    } finally {
+      err.mockRestore();
+    }
   }, 60_000);
 
   test("it writes nothing when the product already follows a system, a file it would write is there, or with --dry-run", async () => {

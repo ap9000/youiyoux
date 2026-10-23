@@ -14,9 +14,9 @@
  * the System into its own repo or package.
  */
 import { readFile } from "node:fs/promises";
-import { basename, dirname, join, posix, relative } from "node:path";
+import { basename, dirname, isAbsolute, join, posix, relative, resolve } from "node:path";
 import { findFiles, readTextOrNull, type ComponentContract, type PropSpec, type RuleSpec, type SystemConfig } from "@youiyoux/core";
-import { collectComponents, type ComponentFacts } from "@youiyoux/scanner";
+import { collectComponents, within, type ComponentFacts } from "@youiyoux/scanner";
 import { DL_EXT, importTokens, readRules, type BlockRef, type DtcgToken, type TokenTree } from "@youiyoux/tokens";
 import { stringify } from "yaml";
 import { exists, readJson } from "./init.ts";
@@ -57,6 +57,17 @@ const json = (value: unknown): string => `${JSON.stringify(value, null, 2)}\n`;
 /** A plain id from a package name (`@acme/web-app` → `web-app`), as init names the project. */
 export function slugOf(name: string): string {
   return name.replace(/^@[^/]+\//, "").toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/^[^a-z]+/, "").replace(/-+$/, "") || "app";
+}
+
+/**
+ * A product-relative path that stays inside the product, through every symlink: the components
+ * folder and the stylesheet come from components.json and flags, and adopt reads and rewrites them,
+ * so anything leading outside is refused by name.
+ */
+function inside(root: string, path: string, what: string): string {
+  const normal = posix.normalize(path.split("\\").join("/")).replace(/^\.\//, "").replace(/\/+$/, "");
+  if (isAbsolute(normal) || normal === ".." || normal.startsWith("../") || !within(root, resolve(root, normal))) throw new Error(`${what} ${JSON.stringify(path)} leads outside ${root}: adopt reads and writes only inside the product`);
+  return normal;
 }
 
 /** The names a module exports: `export const|function|class x` and `export { a, b as c }` (type-only exports left out). */
@@ -152,7 +163,8 @@ export async function planAdoption(options: AdoptOptions): Promise<AdoptPlan> {
   const notes: string[] = [];
 
   const facts = await collectComponents(root);
-  const componentsDir = options.componentsDir ?? facts.shadcnUi ?? (await firstExisting(root, ["components/ui", "src/components/ui"])) ?? facts.componentsDir;
+  const chosen = options.componentsDir ?? facts.shadcnUi ?? (await firstExisting(root, ["components/ui", "src/components/ui"])) ?? facts.componentsDir;
+  const componentsDir = chosen ? inside(root, chosen, "the components folder") : null;
   if (!componentsDir || !(await exists(join(root, componentsDir)))) throw new Error("no folder of components found: pass --components <dir> (the folder your app imports its UI components from)");
   const inDir = (file: string): boolean => posix.dirname(file) === componentsDir;
   const files = (await findFiles(root, [`${componentsDir}/*.{ts,tsx,js,jsx}`])).filter((f) => !/^index\./.test(posix.basename(f)) && !/\.(test|spec|stories|d)\.[^.]+$/.test(f));
@@ -172,6 +184,11 @@ export async function planAdoption(options: AdoptOptions): Promise<AdoptPlan> {
     }
     const main = defined.find((c) => c.export === pascal(file)) ?? defined[0]!;
     const folder = kebab(main.export);
+    // The name becomes a folder and an id: anything but letters and digits is left out, by name.
+    if (!/^[a-z0-9][a-z0-9-]*$/.test(folder)) {
+      notes.push(`${file}: ${main.export} has no contract (its name is not plain letters and digits); write one by hand`);
+      continue;
+    }
     const exportsOf = exportedNames(source);
     const sites = main.sites.length;
     const contract: ComponentContract = {
@@ -198,7 +215,8 @@ export async function planAdoption(options: AdoptOptions): Promise<AdoptPlan> {
   if (components.length === 0) throw new Error(`${componentsDir} exports no React components: pass --components <dir> (the folder your app imports its UI components from)`);
 
   // Tokens: the stylesheet's variables, by their own names (no prefix), light and dark.
-  const stylesheet = await stylesheetOf(root, options.css);
+  const found = await stylesheetOf(root, options.css);
+  const stylesheet = found ? inside(root, found, "the stylesheet") : null;
   const css = stylesheet ? await readTextOrNull(join(root, stylesheet)) : null;
   if (stylesheet && css === null) throw new Error(`${stylesheet} does not exist (--css <file>: the stylesheet that defines your :root variables)`);
   const darkBlock = css ? DARK_BLOCKS.find((b) => readRules(css).some((r) => r.preludes.at(-1) === b.selector && (b.outer ? r.preludes[0] === b.outer : r.preludes.length === 1) && r.declarations.some((d) => d.property.startsWith("--")))) : undefined;
