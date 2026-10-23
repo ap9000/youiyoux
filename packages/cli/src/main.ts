@@ -90,12 +90,14 @@ ${style.bold("Anywhere")}  ${style.dim("no design system needed")}
                            an unchanged component comes from the cache (YOUI_SPECIMEN_CACHE)
 
 ${style.bold("In a product repo")}
-  adopt [--components dir] [--css file] [--system id] [--dry-run]
+  adopt [--components dir] [--css file] [--system id] [--fork] [--dry-run]
                            make this product's own UI its design system, kept in this repo: a draft
                            contract per component in the components folder (the files stay where they
                            are), the stylesheet's :root and dark variables as tokens (moved: the
                            stylesheet imports the generated tokens.css, same names and values), three
-                           starter rules as warnings, then init and sync; --dry-run writes nothing
+                           starter rules as warnings, then init and sync; --dry-run writes nothing.
+                           Variables youiyoux generated from another System are left to it (adopt says
+                           which); --fork takes them as the start of this product's own System
   system extract <dir> [--package name] [--dry-run]
                            move the System adopt keeps here into a design repo of its own at <dir>
                            (contracts with their implementations, tokens, rules), for a second app to
@@ -263,6 +265,7 @@ const OPTIONS = {
   state: { type: "string" },
   inventory: { type: "string" },
   package: { type: "string" },
+  fork: { type: "boolean", default: false },
   cache: { type: "string" },
   role: { type: "string" },
   license: { type: "string" },
@@ -622,7 +625,7 @@ async function cmdInit(values: Values): Promise<number> {
 async function cmdAdopt(values: Values): Promise<number> {
   const root = resolve(values.project ?? process.cwd());
   if (await exists(join(root, PROJECT_FILE))) throw new Error(`${root} already has ${PROJECT_FILE}: it follows a design system already (youiyoux sync updates it)`);
-  const plan = await planAdoption({ root, ...(values.components ? { componentsDir: values.components } : {}), ...(values.css ? { css: values.css } : {}), ...(values.system ? { system: values.system } : {}) });
+  const plan = await planAdoption({ root, ...(values.components ? { componentsDir: values.components } : {}), ...(values.css ? { css: values.css } : {}), ...(values.system ? { system: values.system } : {}), fork: values.fork });
   const taken = (await Promise.all(plan.files.map(async (f) => ((await exists(join(root, f.path))) ? f.path : null)))).filter((f): f is string => f !== null);
   if (taken.length > 0) throw new Error(`nothing was written: ${taken.slice(0, 5).join(", ")}${taken.length > 5 ? ` and ${taken.length - 5} more` : ""} already exist${taken.length === 1 ? "s" : ""}`);
   if (values["dry-run"]) {
@@ -664,6 +667,11 @@ function adoptLines(plan: AdoptPlan, dryRun = false): string[] {
     `  rules       3 starter rules, as warnings: design/rules`,
     `  config      youi.config.json (the System) and youi.project.json (this product follows it)`,
     ...plan.notes.map((n) => style.warn(`  ! ${n}`)),
+    // The product follows a System already: its values were left to it, and here is how to keep one System, or fork it.
+    ...plan.follows.map((g) => {
+      const system = g.system ?? "a System";
+      return style.warn(`  ! ${g.file} holds ${plural(g.count, "variable")} youiyoux generated from ${system}${g.version ? ` v${g.version}` : ""}: this product already uses ${g.system ? "that System" : "one"}, so they were left to it. To manage the product with ${system}, run youiyoux init --design <${system}'s repo or package>; to make a System of the product's own from them, run youiyoux adopt --fork`);
+    }),
   ];
 }
 
