@@ -8,6 +8,7 @@ export * from "./identity.ts";
 export * from "./library.ts";
 export * from "./parse.ts";
 export * from "./project.ts";
+export * from "./design-source.ts";
 export * from "./resolve.ts";
 export * from "./routes.ts";
 export * from "./scan.ts";

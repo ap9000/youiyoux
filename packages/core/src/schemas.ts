@@ -24,6 +24,17 @@ const IsoTime = z.string().datetime({ offset: true });
 /** An npm package name (`design`, `@acme/design`): never `..`, a path or a URL, so it is safe to look up in node_modules. */
 export const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/;
 const PackageName = z.string().regex(PACKAGE_NAME, "expected an npm package name such as @acme/design");
+/**
+ * A git repository youi may fetch: https, ssh, `git@host:path`, `github:owner/repo` or file://.
+ * Never another transport (git's `ext::` runs a command), an option (`-`), or whitespace.
+ */
+const GIT_URL = /^(?:(?:https|ssh|file):\/\/[^\s]+|git@[A-Za-z0-9.-]+:[^\s:]+|github:[A-Za-z0-9-]+\/[A-Za-z0-9._-]+)$/;
+const GitUrl = z.string().regex(GIT_URL, "expected a git URL: https://, ssh://, git@host:path, github:owner/repo or file://").refine((url) => !url.includes("::"), "expected a git URL without a transport prefix");
+/** A branch, tag or commit: never an option, `..`, or anything a shell or git would read as more. */
+const GitRef = z.string().regex(/^(?!-)(?!.*\.\.)[A-Za-z0-9._/-]+$/, "expected a branch, tag or commit such as v3 or main");
+
+/** A git source's URL as git takes it (`github:owner/repo` is GitHub over https). */
+export const expandGitSource = (url: string): string => url.startsWith("github:") ? `https://github.com/${url.slice("github:".length)}.git` : url;
 
 /* ---------------------------------------------------------------- youi.config/v1 */
 
@@ -119,9 +130,11 @@ export const ProjectConfig = z.object({
    * Where the design system is: `path`, its checkout (the directory holding youi.config.json),
    * relative to this config file or absolute; or `package`, an npm package that holds
    * youi.config.json, found in the product's node_modules (a published design package, or a
-   * monorepo's workspace package), so the config names no machine's folders.
+   * monorepo's workspace package), so the config names no machine's folders; or `git`, a
+   * repository at `ref` (a tag, branch or commit), fetched into a cache and pinned by the
+   * lockfile's commit.
    */
-  source: z.union([z.object({ path: z.string().min(1) }).strict(), z.object({ package: PackageName }).strict()]),
+  source: z.union([z.object({ path: z.string().min(1) }).strict(), z.object({ package: PackageName }).strict(), z.object({ git: GitUrl, ref: GitRef }).strict()]),
   /** The product root, relative to this config file or absolute; for a config kept outside the product. Default: the --project directory. */
   root: z.string().min(1).optional(),
   tsconfig: RelPath.default("tsconfig.json"),

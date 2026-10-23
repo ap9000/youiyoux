@@ -89,8 +89,11 @@ ${style.bold("Anywhere")}  ${style.dim("no design system needed")}
 
 ${style.bold("In a product repo")}
   init --design <dir|package>   write youi.project.json pointing at a design repo checkout, or at
-                           the npm package that holds it (named, so no machine's folder), then sync
-  sync [--dry-run] [--adopt]   tokens, DESIGN.md, skill, AGENTS.md block, owned components (3-way merge), lockfile
+                           the npm package that holds it (named, so no machine's folder), then sync;
+                           a git repository goes in its source: { "git": "github:acme/design", "ref": "v3" }
+  sync [--dry-run] [--adopt]   tokens, DESIGN.md, skill, AGENTS.md block, owned components (3-way merge), lockfile;
+                           a git source's ref is fetched and resolved again (every other command uses the
+                           commit youi.lock.json records, from the cache, offline)
   scan [--out file]        build the usage map (default .youi/usage.json)
   mcp [--cache dir]        stdio MCP server: system_* tools (build with), library_* tools (browse, request),
                            discover_* tools (read the Discover index; never fetch), index_* tools
@@ -196,7 +199,8 @@ ${style.bold("Options")}
   --root <dir>      product root, for a config kept outside the product
                     (default: "root" in the config, relative to it; else --project)
   --design <dir>    design repo checkout, the directory holding youi.config.json
-                    (default: the project config's source, a path or an installed package; for build and
+                    (default: the config's source: a path, an installed package or a git repository
+                    at a ref; for build and
                     parity, the nearest folder upward holding youi.config.json)
   --json            machine-readable output`;
 
@@ -572,7 +576,8 @@ async function cmdLibrary(values: Values, positionals: string[]): Promise<number
 }
 
 async function cmdSync(values: Values): Promise<number> {
-  const p = await project(values);
+  // sync is the update: a git source's ref is resolved again; every other command keeps to the recorded commit.
+  const p = await loadProject(values.project ?? process.cwd(), { ...loadOptions(values), refreshDesign: true });
   const result = await syncProject(p, { dryRun: values["dry-run"], adopt: values.adopt });
   if (values.json) json(result);
   else print(renderSync(result, values["dry-run"]));

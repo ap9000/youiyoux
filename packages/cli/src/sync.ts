@@ -275,7 +275,7 @@ export async function syncProject(project: Project, options: SyncOptions = {}): 
     schema: "youi.lock/v1",
     system: system.config.id,
     systemVersion: system.config.version,
-    sourceCommit: await gitHead(repo.root),
+    sourceCommit: project.designCommit ?? (await gitHead(repo.root)),
     syncedAt: new Date().toISOString(),
     files: Object.fromEntries(Object.entries(writer.files).sort(([a], [b]) => a.localeCompare(b))),
   };

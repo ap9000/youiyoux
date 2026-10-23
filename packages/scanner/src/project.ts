@@ -1,7 +1,8 @@
 /** A consumer project: its youi.project.json, its root, and the design system it uses. */
-import { realpath, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import { dirname, join, posix, resolve } from "node:path";
 import { getSystem, loadDesignRepo, normalizeProjectConfig, ProjectConfig, readDefinition, type DesignRepo, type LoadedSystem } from "@youiyoux/core";
+import { locateDesign } from "./design-source.ts";
 
 export const PROJECT_FILE = "youi.project.json";
 
@@ -13,8 +14,10 @@ export interface Project {
   readonly system: LoadedSystem;
   /** Absolute path of the config this project was loaded from (it may live outside the project, e.g. in a design repo). */
   readonly configFile?: string;
-  /** True when the design repo came from an explicit override rather than the config's source.path. */
+  /** True when the design repo came from an explicit override rather than the config's source. */
   readonly designOverride?: boolean;
+  /** The commit a git source is at, for the lockfile. */
+  readonly designCommit?: string;
   /** True when the root came from an explicit override (`--root`) rather than the config or the project directory. */
   readonly rootOverride?: boolean;
 }
@@ -26,6 +29,8 @@ export interface LoadProjectOptions {
   readonly designRoot?: string;
   /** Override the product root (otherwise the config's `root`, then the directory passed to loadProject). */
   readonly productRoot?: string;
+  /** Resolve a git source's ref again, fetching first (youiyoux sync), instead of the recorded commit. */
+  readonly refreshDesign?: boolean;
 }
 
 /** The product root is missing, or holds nothing the config matches: every finding would be a false zero. */
@@ -45,24 +50,18 @@ export async function loadProject(root: string, options: LoadProjectOptions = {}
   const fromConfig = (path: string): string => resolve(dirname(configFile), path);
   const productRoot = options.productRoot !== undefined ? resolve(options.productRoot || ".") : config.root ? fromConfig(config.root) : resolve(root);
   if (!(await isDirectory(productRoot))) throw new ProjectRootError(`product root ${productRoot} is not a directory (config ${configFile}); ${ROOT_HINT}`);
-  const designRoot = options.designRoot ? resolve(options.designRoot) : await designRootOf(config.source, configFile, productRoot);
-  const repo = await loadDesignRepo(designRoot);
-  return { root: productRoot, config, repo, system: getSystem(repo, config.system), configFile, designOverride: Boolean(options.designRoot), rootOverride: options.productRoot !== undefined };
-}
-
-/**
- * The design repo a config's `source` names: a `path` beside the config file, or a `package`
- * installed for the product (its node_modules, then each parent's, as Node finds packages; a
- * workspace link is followed to the package's own folder).
- */
-export async function designRootOf(source: ProjectConfig["source"], configFile: string, productRoot: string): Promise<string> {
-  if ("path" in source) return resolve(dirname(configFile), source.path);
-  for (let dir = resolve(productRoot); ; dir = dirname(dir)) {
-    const candidate = join(dir, "node_modules", ...source.package.split("/"));
-    if (await isDirectory(candidate)) return realpath(candidate);
-    if (dirname(dir) === dir) break;
-  }
-  throw new Error(`the design system package ${source.package} is not installed for ${productRoot} (config ${configFile}): add it as a dependency and install, or set source.path to its checkout`);
+  const located = options.designRoot ? { root: resolve(options.designRoot), commit: null } : await locateDesign(config.source, configFile, productRoot, { refresh: options.refreshDesign });
+  const repo = await loadDesignRepo(located.root);
+  return {
+    root: productRoot,
+    config,
+    repo,
+    system: getSystem(repo, config.system),
+    configFile,
+    designOverride: Boolean(options.designRoot),
+    rootOverride: options.productRoot !== undefined,
+    ...(located.commit ? { designCommit: located.commit } : {}),
+  };
 }
 
 async function isDirectory(path: string): Promise<boolean> {

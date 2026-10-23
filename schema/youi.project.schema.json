@@ -44,6 +44,24 @@
             "package"
           ],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "git": {
+              "type": "string",
+              "pattern": "^(?:(?:https|ssh|file):\\/\\/[^\\s]+|git@[A-Za-z0-9.-]+:[^\\s:]+|github:[A-Za-z0-9-]+\\/[A-Za-z0-9._-]+)$"
+            },
+            "ref": {
+              "type": "string",
+              "pattern": "^(?!-)(?!.*\\.\\.)[A-Za-z0-9._/-]+$"
+            }
+          },
+          "required": [
+            "git",
+            "ref"
+          ],
+          "additionalProperties": false
         }
       ]
     },
