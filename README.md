@@ -34,6 +34,7 @@ In any repo. No config, no account. You get three files:
 - **Keep hardcoded colours out of PRs.** `npx youiyoux check --diff` names the token to use instead.
 - **Share a UI health report.** Send the page or the card to your team or a maintainer.
 - **Let your agent see what it built.** `npx youiyoux render <file>`: light and dark, desktop and phone, accessibility issues, a diff against main.
+- **Turn the UI you have into a design system.** `npx youiyoux adopt`: your components and your stylesheet's variables become a System in your repo, with rules for your agent; `youiyoux system extract <dir>` moves it into its own repo when a second app needs it.
 
 ## What it finds
 
@@ -95,6 +96,8 @@ Node 20 or later.
 | `inventory` | Every UI element, grouped by shape. `--project`, `--include`, `--exclude`, `--json`, `--history` |
 | `detect <repo\|url>` | Which UI libraries a repo or site uses |
 | `discover "<need>"` | Outside components for a need (shadcn registries, npm); `discover sync` first |
+| `adopt` | Make this repo's own components and stylesheet variables its design system, kept in the repo. `--dry-run` |
+| `system extract <dir>` | Move an adopted System into a design repo of its own. `--package` |
 | `init --design <dir>`, `sync`, `check`, `show`, `where`, `plan`, `migrate` | With a design system repo |
 
 Full reference: [docs/commands.md](docs/commands.md).
