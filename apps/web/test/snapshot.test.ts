@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, test } from "vitest";
-import { buildSpecimens, configuredSpecimenCss, DISCOVER_LISTINGS_MAX, libraries, readInventory, readSource, sheetReport, writeDetect, writeDiscover, writeInventory } from "../scripts/snapshot.ts";
+import { buildSpecimens, configuredSpecimenCss, DISCOVER_LISTINGS_MAX, libraries, readInventory, readSource, sheetReport, usageFiles, writeDetect, writeDiscover, writeInventory, writeScreens } from "../scripts/snapshot.ts";
 import type { InventoryChunk, InventoryIndex } from "../src/data/types.ts";
 
 const TOOL = resolve(import.meta.dirname, "../../..");
@@ -192,5 +192,27 @@ describe("snapshot Discover listings (a static host's fallback)", () => {
     expect(gaps.projects.map((p) => p.id)).toEqual(["console", "site"]);
     // The demo System has Button, Input and Card: they are its, not gaps.
     expect(gaps.projects[0]!.concepts.filter((c) => c.status === "system").map((c) => c.concept).sort()).toEqual(["button", "card", "input"]);
+  });
+});
+
+describe("snapshot screens", () => {
+  // --watch prunes every data file the manifest does not name: a screen's places must be named, or they vanish.
+  test("every file writeScreens copies, places included, is a file the usage ref names", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "youi-screens-"));
+    try {
+      const shots = join(dir, "shots");
+      const data = join(dir, "data");
+      await mkdir(shots, { recursive: true });
+      await writeFile(join(shots, "screens.json"), JSON.stringify({ schema: "youiyoux.screens/v1", project: "app", source: "http://localhost:3000", capturedAt: "2026-01-01T00:00:00.000Z", viewport: { width: 1280, height: 800 }, screens: [{ route: "/settings", path: "/settings" }] }));
+      for (const variant of ["light", "light.thumb", "dark", "dark.thumb"]) await writeFile(join(shots, `settings.${variant}.webp`), `picture ${variant}`);
+      await writeFile(join(shots, "settings.places.json"), JSON.stringify({ schema: "youiyoux.places/v1", places: [] }));
+      const screens = writeScreens(shots, data, "app");
+      expect(screens.screens[0]!.places).toBeDefined();
+      const written = await readdir(data);
+      expect(written).toHaveLength(5);
+      expect(new Set(usageFiles([{ project: "app", file: "app.usage.json", screens }]))).toEqual(new Set(["app.usage.json", ...written]));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

@@ -628,9 +628,9 @@ export async function writeGaps(dataDir: string, inventory: InventoryReport, pat
   return file;
 }
 
-/** Every data file a usage ref names: its usage map and its screenshots. */
-function usageFiles(usage: readonly UsageRef[]): string[] {
-  return usage.flatMap((u) => [u.file, ...(u.screens?.screens ?? []).flatMap((shot) => [shot.light, shot.dark].flatMap((f) => (f ? [f.full, f.thumb] : [])))]);
+/** Every data file a usage ref names: its usage map, its screenshots and their places (what `--watch` keeps when it prunes). */
+export function usageFiles(usage: readonly UsageRef[]): string[] {
+  return usage.flatMap((u) => [u.file, ...(u.screens?.screens ?? []).flatMap((shot) => [...[shot.light, shot.dark].flatMap((f) => (f ? [f.full, f.thumb] : [])), ...(shot.places ? [shot.places] : [])])]);
 }
 
 /** The manifest last: written to a temporary name and renamed, so a reader never sees half of it. */
