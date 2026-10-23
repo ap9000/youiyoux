@@ -69,6 +69,9 @@ describe("GitHub Actions' OIDC token", () => {
     expect(await verifier()(token({ event_name: "push" }))).toEqual({ repository: "acme/billing", repository_owner: "acme", sha: SHA, ref: "refs/heads/main", event_name: "push" });
     // Owners match as GitHub names them, in any case.
     expect((await verifier(["ACME"])(token())).repository).toBe("acme/billing");
+    // By id, an owner is that account only: whoever takes a renamed owner's old name does not match.
+    expect((await verifier(["1234567"])(token({ repository_owner_id: "1234567" }))).repository).toBe("acme/billing");
+    await expect(verifier(["1234567"])(token({ repository_owner_id: "7654321" }))).rejects.toThrow("from acme (id 7654321), which this hub does not take records from");
   });
 
   test("anything else is refused, saying why", async () => {
@@ -86,6 +89,10 @@ describe("GitHub Actions' OIDC token", () => {
     expect(await refused(token({ repository_owner: "evil", repository: "evil/billing" }))).toBe("from evil, which this hub does not take records from");
     expect(await refused(token({ sha: undefined }))).toBe("missing its repository, owner, commit or ref");
     expect(await refused("not.a")).toBe("not a JSON Web Token");
+    // Only the branches the hub takes records from: a push to a feature branch does not replace the repository's latest.
+    expect(await refused(token({ ref: "refs/heads/feature/x" }))).toBe("from refs/heads/feature/x: this hub takes records from main and master only (YOUIYOUX_HUB_BRANCHES)");
+    expect(await refused(token({ ref: "refs/tags/main" }))).toBe("from refs/tags/main: this hub takes records from main and master only (YOUIYOUX_HUB_BRANCHES)");
+    expect(await githubVerifier({ owners: ["acme"], audience: AUDIENCE, branches: ["trunk"], jwks: async () => JWKS, now: () => NOW })(token({ ref: "refs/heads/trunk" })).then((c) => c.ref)).toBe("refs/heads/trunk");
   });
 
   test("the record must be the token's own repository, commit and branch", () => {

@@ -29,7 +29,7 @@ import { extractSystem } from "./extract.ts";
 import { renderUpgrade, upgradeProject } from "./upgrade.ts";
 import { buildRecord, HUB_TOKEN_ENV, HUB_URL_ENV, renderRecord, sendRecord, toolVersion } from "./record.ts";
 import { AUDIENCE_ENV, GITHUB_OWNERS_ENV, secretsProblem, startOrgHub, VIEW_KEY_ENV } from "./org-hub.ts";
-import { audienceOf, githubVerifier, requestGithubToken } from "./github-oidc.ts";
+import { audienceOf, DEFAULT_BRANCHES, githubVerifier, requestGithubToken } from "./github-oidc.ts";
 import { renderStatus, statusExitCode, statusTargets, workspaceStatus } from "./status.ts";
 import { startWorkspaceHub } from "./workspace-hub.ts";
 import { noteSource, rebuildIndex, recordInventory, recordProject, renderHistory, renderRebuild, SCANS_LOG, SOURCES_FILE } from "./index-store.ts";
@@ -679,7 +679,8 @@ async function cmdHubServe(values: Values, positionals: string[]): Promise<numbe
   const owners = (process.env[GITHUB_OWNERS_ENV] ?? "").split(",").map((o) => o.trim()).filter(Boolean);
   const audience = process.env[AUDIENCE_ENV];
   if (owners.length > 0 && !audience) throw new UsageError(`${GITHUB_OWNERS_ENV} needs ${AUDIENCE_ENV}: the hub's address, exactly as CI's ${HUB_URL_ENV} names it (GitHub's token is issued for it)`);
-  const github = owners.length > 0 ? githubVerifier({ owners, audience: audience! }) : undefined;
+  const branches = (process.env.YOUIYOUX_HUB_BRANCHES ?? "").split(",").map((b) => b.trim()).filter(Boolean);
+  const github = owners.length > 0 ? githubVerifier({ owners, audience: audience!, branches }) : undefined;
   const problem = secretsProblem(github ? undefined : process.env[HUB_TOKEN_ENV], process.env[VIEW_KEY_ENV], Boolean(github));
   if (problem) throw new UsageError(problem);
   const port = Number(values.port ?? process.env.PORT ?? 8080);
@@ -689,7 +690,7 @@ async function cmdHubServe(values: Values, positionals: string[]): Promise<numbe
   const store = await openStore({ path });
   const dist = builtHub();
   const hub = await startOrgHub({ store, ...(github ? { github } : { ingestToken: process.env[HUB_TOKEN_ENV]! }), viewKey: process.env[VIEW_KEY_ENV]!, dist, host: values.host ?? "127.0.0.1", port });
-  const senders = github ? `CI sends records from GitHub Actions in ${owners.join(", ")}, each proving its repository (OIDC, for ${audienceOf(audience!)})${process.env[HUB_TOKEN_ENV] ? `; ${HUB_TOKEN_ENV} is not used` : ""}` : `CI sends records with ${HUB_TOKEN_ENV}, which can name any repository (${GITHUB_OWNERS_ENV} makes GitHub Actions prove each one's)`;
+  const senders = github ? `CI sends records from GitHub Actions in ${owners.join(", ")}, on ${(branches.length > 0 ? branches : DEFAULT_BRANCHES).join(" or ")}, each proving its repository (OIDC, for ${audienceOf(audience!)})${process.env[HUB_TOKEN_ENV] ? `; ${HUB_TOKEN_ENV} is not used` : ""}` : `CI sends records with ${HUB_TOKEN_ENV}, which can name any repository (${GITHUB_OWNERS_ENV} makes GitHub Actions prove each one's)`;
   print([`${style.ok("youiyoux hub")} ${hub.url}  ${style.dim(`read-only · records kept in ${where({ path })}`)}`, ...(dist ? [] : [style.warn("! the hub's page is not built here (pnpm --filter web build): the API answers at /api/org")]), style.dim(`  ${senders}; people sign in with ${VIEW_KEY_ENV}. Put it behind https; --host 0.0.0.0 to listen beyond this machine`)].join("\n"));
   await new Promise<void>((done) => {
     const stop = (): void => done();

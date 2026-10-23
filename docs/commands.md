@@ -291,14 +291,16 @@ A team's view across repositories, read-only and fed by CI. No source code leave
 
 ```sh
 npm install youiyoux pg                          # pg only for Postgres
-export YOUIYOUX_HUB_GITHUB_OWNERS=acme,acme-labs  # whose repositories may send records
+export YOUIYOUX_HUB_GITHUB_OWNERS=1234567,7654321 # whose repositories may send records: gh api orgs/acme --jq .id
 export YOUIYOUX_HUB_AUDIENCE=https://hub.acme.dev # the hub's address, as CI's YOUIYOUX_HUB_URL names it
 export YOUIYOUX_HUB_VIEW_KEY=…                    # for people: openssl rand -base64 32
 export DATABASE_URL=postgres://…                 # else a SQLite file (--db, Node 22.5 or later)
 npx youiyoux hub serve --host 0.0.0.0 --port "$PORT"
 ```
 
-- **Who may send a record.** With `YOUIYOUX_HUB_GITHUB_OWNERS`, only GitHub Actions in those owners' repositories, and only its own repository's record: the hub checks the OIDC token is signed by GitHub (its published keys), issued for `YOUIYOUX_HUB_AUDIENCE`, unexpired and from an accepted owner, then that the record names the token's repository, commit and branch: a branch only (never a tag or a pull request named like one), from a run that is not a pull request's. No CI secret is shared. For CI other than GitHub's, leave the owners unset and set `YOUIYOUX_HUB_TOKEN` instead (another random string); then whoever holds the token can send a record naming any repository.
+- **Who may send a record.** With `YOUIYOUX_HUB_GITHUB_OWNERS`, only GitHub Actions in those owners' repositories, and only its own repository's record: the hub checks the OIDC token is signed by GitHub (its published keys), issued for `YOUIYOUX_HUB_AUDIENCE`, unexpired, from an accepted owner and from an accepted branch, then that the record names the token's repository, commit and branch (never a tag or a pull request named like one, and not from a pull request's run). No CI secret is shared.
+  - List owners by GitHub's numeric id (`gh api orgs/acme --jq .id`): an id is that account only, while a name a renamed owner gives up can be taken by anyone. Names work too.
+  - Records come from `main` and `master` only, so a push to a feature branch never replaces a repository's latest; `YOUIYOUX_HUB_BRANCHES=trunk,release` names others. For CI other than GitHub's, leave the owners unset and set `YOUIYOUX_HUB_TOKEN` instead (another random string); then whoever holds the token can send a record naming any repository.
 - It refuses to start without what its mode needs, when a secret is shorter than 24 characters, or when the token and the view key are the same: whoever can read the hub must not be able to write to it.
 - `POST /api/records` refuses a record that is not a valid `youi.record/v1`, is over 2 MB, still holds a path outside its repository or a URL with credentials, or is dated more than five minutes after the hub's clock (it would otherwise stay its repository's latest). Each repository keeps its last 100 records.
 - People sign in with the view key once. The session is an HttpOnly, SameSite=Strict cookie (Secure beyond this machine), and changing the key signs everyone out. Scripts can send the view key as a Bearer token to `GET /api/org` (`youi.org/v1`).
