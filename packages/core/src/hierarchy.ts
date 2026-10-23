@@ -83,8 +83,8 @@ export function isFamilyId(id: string): boolean {
   return FAMILY_ID_PATTERN.test(id);
 }
 
-/** Where an item was found: a shadcn registry, an npm package, a GitHub repository or a Storybook. */
-export const LIBRARY_SOURCE_KINDS = ["shadcn-registry", "npm", "github", "storybook"] as const;
+/** Where an item was found: a shadcn registry, an npm package, a GitHub repository, a Storybook, a Figma file or a DESIGN.md. */
+export const LIBRARY_SOURCE_KINDS = ["shadcn-registry", "npm", "github", "storybook", "figma", "design-md"] as const;
 export type LibrarySourceKind = (typeof LIBRARY_SOURCE_KINDS)[number];
 
 const Iso = z.string().datetime({ offset: true });

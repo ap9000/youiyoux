@@ -11,3 +11,4 @@ export * from "./on-demand.ts";
 export * from "./catalog.ts";
 export * from "./preview.ts";
 export * from "./gaps.ts";
+export * from "./ingest.ts";

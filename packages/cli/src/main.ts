@@ -189,6 +189,12 @@ ${style.bold("System")}  ${style.dim("approved elements: build only with these")
 ${style.bold("Library")}  ${style.dim("ingested references: browse and request adoption, never build with")}
   library search <query>   Library items (lib: ids) and the System elements each could swap in for
   library request <id> --reason <text>   draft an adoption request for a person to approve
+  library ingest <link> [--draft] [--json]
+                           read what a GitHub repository, a Storybook, a Figma file (FIGMA_TOKEN) or a
+                           DESIGN.md holds into Library items, each sorted into a role, and show them;
+                           --draft files them as one draft in the changes queue, where a person keeps or
+                           drops each and approves the rest (youiyoux ui > Changes). GITHUB_TOKEN raises
+                           GitHub's 60 requests an hour
 
 ${style.bold("Discover")}  ${style.dim("UI components by need, across shadcn registries and npm: candidates, never installed")}
   discover sync [--cache dir] [--max-registries n] [--icons]
@@ -305,6 +311,7 @@ const OPTIONS = {
   host: { type: "string" },
   db: { type: "string" },
   record: { type: "boolean", default: false },
+  draft: { type: "boolean", default: false },
   cache: { type: "string" },
   role: { type: "string" },
   license: { type: "string" },
@@ -629,7 +636,17 @@ async function cmdLibrary(values: Values, positionals: string[]): Promise<number
     else print(renderAdoptionRequest(request));
     return 0;
   }
-  throw new UsageError("youiyoux library search <query>   or   youiyoux library request <id> --reason <text>");
+  if (action === "ingest" && query && positionals.length === 2) {
+    const { fileIngestDraft, readLink, renderIngest } = await import("./ingest.ts");
+    // The product is read first: --draft needs it, and a link is not read for nothing.
+    const p = values.draft ? await project(values) : null;
+    const reading = await readLink(query, { allowLocal: true });
+    const filed = p ? await fileIngestDraft(p, reading, values.state) : null;
+    if (values.json) json({ ...reading, ...(filed ? { draft: filed.id } : {}) });
+    else print(renderIngest(reading, filed));
+    return 0;
+  }
+  throw new UsageError("youiyoux library search <query>   or   youiyoux library request <id> --reason <text>   or   youiyoux library ingest <link> [--draft]");
 }
 
 async function cmdSync(values: Values): Promise<number> {

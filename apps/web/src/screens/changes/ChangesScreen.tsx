@@ -1,14 +1,15 @@
 /**
  * Changes: the review queue for every change to the design system, by status: draft,
  * waiting for approval, approved, sent for review, rolled out. Rule drafts, style drafts
- * (token values and component states) and library drafts (Discover's Save to Library and
- * adoption requests). A rule draft opens on its rule's page; the others open here, at /changes/<id>.
+ * (token values and component states), library drafts (Discover's Save to Library and
+ * adoption requests) and ingest drafts (everything one link holds, to keep or drop). A rule draft opens on its rule's page; the others open here, at /changes/<id>.
  */
-import { ArrowRight, GitPullRequestArrow, Paintbrush, ShieldCheck } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
-import { Link, useParams } from "wouter";
+import { ArrowRight, GitPullRequestArrow, Link2, Paintbrush, ShieldCheck } from "lucide-react";
+import { useCallback, useMemo, useState, type FormEvent } from "react";
+import { Link, useLocation, useParams } from "wouter";
 import { type DraftView, workflowApi, useRemote, type WorkflowRequestError } from "../../data/workflow.ts";
 import { Badge } from "../../ui/Badge.tsx";
+import { CONTROL } from "../../ui/Field.tsx";
 import { Button } from "../../ui/Button.tsx";
 import { EmptyState } from "../../ui/EmptyState.tsx";
 import { PaneHeader, PaneSkeleton } from "../../ui/Pane.tsx";
@@ -16,6 +17,7 @@ import { Segmented } from "../../ui/Segmented.tsx";
 import { DraftEditor, DraftStatusBadge, STAGE, stageOf, type Stage } from "./DraftEditor.tsx";
 import { plural } from "../../lib/plural.ts";
 import { ServiceDown, ServiceDownPanel } from "./ServiceDown.tsx";
+import { describeIngestDraft, ingestSummary } from "./IngestDraftReview.tsx";
 import { describeLibraryDraft } from "./LibraryDraftReview.tsx";
 import { describeStyleDraft } from "./StyleDraftReview.tsx";
 
@@ -53,7 +55,7 @@ function QueueHeader({ count }: { count?: number }) {
 /** The queue without its service: the frame, what to run, and the path a change takes. No counts, since none are known. */
 function QueueOffline({ error, onRetry }: { error: WorkflowRequestError; onRetry: () => void }) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <QueueHeader />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-4xl space-y-8 p-6 max-sm:p-4">
@@ -82,9 +84,53 @@ export const draftHref = (draft: DraftView): string => (draft.kind === "rule" ? 
 
 function summary(draft: DraftView): string {
   if (draft.kind === "rule") return `${draft.mode === "edit" ? "Edit" : "New rule"} · revision ${draft.revision}${draft.preview ? ` · flags ${draft.preview.flagged}` : ""}`;
+  if (draft.kind === "ingest") return `${ingestSummary(draft)} · revision ${draft.revision}${draft.preview ? ` · writes ${plural(draft.preview.files.length, "item")}` : ""}`;
   if (draft.kind === "library") return `${draft.content.request === "adopt" ? "Adoption request" : "Library reference"} · revision ${draft.revision}${draft.content.swapsWith.length ? ` · swaps with ${draft.content.swapsWith.join(", ")}` : ""}`;
   const p = draft.preview;
   return `${plural(draft.content.tokens.length, "token")}, ${plural(draft.content.states.length, "state binding")} · revision ${draft.revision}${p ? ` · ${plural(p.totals.sites, "site")} on ${plural(p.totals.routes, "screen")}` : ""}`;
+}
+
+/**
+ * Ingest a link: the service reads a GitHub repository, a Storybook, a Figma file or a DESIGN.md
+ * into Library items and files them as one draft, which opens for a person to keep or drop each.
+ */
+export function IngestLink() {
+  const [, navigate] = useLocation();
+  const [link, setLink] = useState("");
+  const [state, setState] = useState<{ busy: boolean; error: string | null }>({ busy: false, error: null });
+  const submit = (event: FormEvent): void => {
+    event.preventDefault();
+    setState({ busy: true, error: null });
+    workflowApi.ingest(link.trim()).then(
+      (draft) => navigate(`/changes/${draft.id}`),
+      (error: unknown) => setState({ busy: false, error: error instanceof Error ? error.message : String(error) }),
+    );
+  };
+  return (
+    <form onSubmit={submit} className="space-y-1.5" aria-label="Ingest a link into the Library">
+      <div className="flex gap-2 max-sm:flex-col">
+        <input
+          type="text"
+          spellCheck={false}
+          aria-label="Link to ingest"
+          placeholder="github:owner/repo, a Storybook, a Figma file or a DESIGN.md URL"
+          value={link}
+          onChange={(e) => setLink(e.target.value)}
+          className={`${CONTROL} h-8 min-w-0 flex-1`}
+        />
+        <Button type="submit" disabled={state.busy || link.trim().length === 0}>
+          <Link2 /> {state.busy ? "Reading…" : "Ingest"}
+        </Button>
+      </div>
+      {state.error ? (
+        <p role="alert" className="text-small text-danger">
+          {state.error}
+        </p>
+      ) : (
+        <p className="text-small text-muted">Reads what the link holds into Library items, as one draft: you keep or drop each, then approve. Nothing is installed.</p>
+      )}
+    </form>
+  );
 }
 
 function Queue({ drafts }: { drafts: readonly DraftView[] }) {
@@ -96,23 +142,24 @@ function Queue({ drafts }: { drafts: readonly DraftView[] }) {
   const shown = filter === "all" ? queued : queued.filter((q) => q.stage === filter);
   const options = [{ value: "all" as const, label: "All", count: queued.length }, ...STAGES.map((value) => ({ value, label: STAGE[value].label, count: queued.filter((q) => q.stage === value).length }))];
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <QueueHeader count={queued.length} />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-4xl space-y-4 p-6 animate-enter max-sm:p-4">
+          <IngestLink />
           <Segmented label="Status" value={filter} options={options} onChange={setFilter} className="max-w-full overflow-x-auto" />
           {shown.length === 0 ? (
             <EmptyState icon={GitPullRequestArrow} title={queued.length === 0 ? "No changes yet" : "Nothing in this status"}>
-              Changes to the system appear here, from draft to rolled out. Start one from Rules (Edit a rule, or New rule) or from Style (tokens and component states).
+              Changes to the system appear here, from draft to rolled out. Start one from Rules (Edit a rule, or New rule), from Style (tokens and component states), or by ingesting a link into the Library above.
             </EmptyState>
           ) : (
             <ul className="divide-y divide-line overflow-hidden rounded-md border border-line">
               {shown.map(({ draft }) => (
                 <li key={draft.id}>
                   <Link href={draftHref(draft)} className="flex items-center gap-3 px-4 py-3 hover:bg-raised">
-                    <Badge tone="outline">{draft.kind === "rule" ? "Rule" : draft.kind === "style" ? "Style" : "Library"}</Badge>
+                    <Badge tone="outline">{draft.kind === "rule" ? "Rule" : draft.kind === "style" ? "Style" : draft.kind === "ingest" ? "Ingest" : "Library"}</Badge>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-body text-ink">{draft.kind === "rule" ? draft.content.rule.title || "Untitled rule" : draft.kind === "style" ? describeStyleDraft(draft) : describeLibraryDraft(draft)}</p>
+                      <p className="truncate text-body text-ink">{draft.kind === "rule" ? draft.content.rule.title || "Untitled rule" : draft.kind === "style" ? describeStyleDraft(draft) : draft.kind === "ingest" ? describeIngestDraft(draft) : describeLibraryDraft(draft)}</p>
                       <p className="truncate text-small text-muted">
                         {summary(draft)}
                         {draft.handoff ? ` · ${draft.handoff.branch}` : ""}
@@ -148,7 +195,7 @@ function DraftPage({ id, onChanged }: { id: string; onChanged: () => void }) {
           Changes
         </Link>
         <span>/</span>
-        <span className="truncate text-ink-2">{draft.kind === "style" ? describeStyleDraft(draft) : draft.kind === "library" ? describeLibraryDraft(draft) : draft.content.rule.title}</span>
+        <span className="truncate text-ink-2">{draft.kind === "style" ? describeStyleDraft(draft) : draft.kind === "library" ? describeLibraryDraft(draft) : draft.kind === "ingest" ? describeIngestDraft(draft) : draft.content.rule.title}</span>
         {draft.kind === "rule" && (
           <Link href={`/rules/draft/${draft.id}`} className="ml-auto hover:text-ink">
             Open on its rule

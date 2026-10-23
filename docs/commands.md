@@ -113,6 +113,7 @@ In a product repo:
 | `youiyoux record [--send [--hub <url>]] [--repo owner/name] [--out file] [--json]` / `youiyoux hub serve` | This repository's record for the team's hosted hub, and the hub itself ([the hosted hub](#the-hosted-hub)) |
 | `youiyoux upgrade [--to <ref>] [--write] [--diff]` | Move the product to its System's new release in one step: the sync, and every migration the release ships for components this product has, past the version `youi.lock.json` records ([upgrading](#upgrading)). A preview unless `--write` |
 | `youiyoux library search <query>` / `youiyoux library request <id> --reason …` | Browse the Library; draft a request to adopt an item into the System |
+| `youiyoux library ingest <link> [--draft] [--json]` | Read what a GitHub repository, a Storybook, a Figma file or a DESIGN.md holds into Library items, each sorted into a role, and show them; `--draft` files them as one draft for a person to review ([Library ingestion](#library-ingestion)) |
 | `youiyoux discover sync [--icons]` | Build the local Discover index (`~/.cache/youiyoux/discover`, or `--cache` / `YOUI_DISCOVER_CACHE`): the official shadcn registry, the registry directory and selected community registries (defaults: coss, Kibo, Magic UI, Aceternity; a chosen one the directory no longer lists is reported with how to drop it), headless catalogs for category names, npm search, and npm and GitHub signals. A registry's licence is its GitHub repository's, credited only when the two link both ways: the registry's homepage links the repository and the repository's homepage is that site (else a search result whose homepage is exactly the registry's); no such repository leaves it unknown. GPL and AGPL are marked copyleft. Polite (capped concurrency, timeouts, ETag/If-Modified-Since, npm/GitHub rate budgets, npm 429 backoff) and cached. Icon sets require `--icons`; mirrors collapse to originals. Reports total metadata catalog size. `GITHUB_TOKEN`, when set, is sent to GitHub only and never stored or printed |
 | `youiyoux discover "<need>" [--role r] [--license spdx,…] [--limit n] [--offset n] [--json]` / `youiyoux discover show <id\|ref>` | Candidates for a need, ranked by match (names and aliases: command menu = command palette = cmdk, toast = snackbar…) plus signals, each with its licence (SPDX with evidence, or unknown), downloads (labeled with the dependency package when borrowed), stars and install command, paged, with facets (role, source, licence, headless/styled); one candidate with provenance and its npm, registry and implicit dependencies. Reads the local index (the store, loaded from the synced JSON); nothing is installed |
 | `youiyoux discover sources [list\|add\|remove] <name>` | Choose community sources. Add validates against the cached directory; run sync first. Choices persist across syncs |
@@ -281,6 +282,21 @@ It works everything out in memory before it writes anything:
 
 Without `--write` it prints that plan: the files the sync changes, each migration's sites, the sites left for a person, and one diff per source file of everything the upgrade does to it. With `--write`, nothing is written unless all of it holds; then the config's ref, the sync, and each migration again on the written files, gated again. If any step fails, every file the upgrade wrote is put back and it says which step failed. `youiyoux status` names `upgrade` as the next step when a release brings migrations for the product's code.
 
+## Library ingestion
+
+`youiyoux library ingest <link>` reads what one link holds into Library items (`youi.library/v1`), each sorted into the role its name says (Discover's concepts: an Alert Dialog is a dialog, a ComboBox a combobox), and shows them. Nothing is written to the Library: `--draft` files them as one ingest draft in the product's changes queue, and the hub's Changes page has a field to ingest a link the same way.
+
+| Link | What is read | Licence |
+| --- | --- | --- |
+| A GitHub repository (`github:owner/repo`, `#ref`, or its https URL, `/tree/<ref>/<folder>` for one folder) | Through GitHub's API, at one commit: a shadcn `registry.json` (its components and blocks, with their files' digests and dependencies, installable from the built item when the repository serves one); else a youiyoux design repo's component contracts; else the component files under a components folder, by name | The one GitHub detects in the licence file, with that file as the evidence; none, or one GitHub cannot name, is unknown |
+| A published Storybook (its https URL) | Its `index.json` (Storybook 7 and later) or `stories.json` (6): one item per component title with its stories, linked to its docs; a title under Pages, Templates, Layouts or Patterns is a pattern | Unknown: a Storybook does not say |
+| A Figma file (`figma.com/design/<key>/…`) | Through Figma's API with `FIGMA_TOKEN`: a component set (a Button and its variants) or a component outside one is an item; styles are one token item per kind | Unknown |
+| A DESIGN.md (an https URL, a file on GitHub, or a path: the CLI only) | A token item per frontmatter group (colors, typography, rounded, spacing, …), a component item per component it names (a variant folded into its base) | Unknown |
+
+- **Reviewed before it lands.** One draft per link. A person keeps or drops each item (a save changes only that; no item, source or licence can be edited), previews, approves, and the kept items are written on a review branch as references at stage `library`: never System elements, never installed. Each is requested for adoption on its own, which needs a known licence.
+- **Said, never dropped.** What a reader saw but could not read (a registry's styles and examples, a contract that is not one) is listed with why; at most 300 items come from one link, and the rest are counted.
+- **The network.** Public https only, through Discover's polite client. `GITHUB_TOKEN` (sent to api.github.com only) raises GitHub's limit of 60 requests an hour; a repository needs four or so. `FIGMA_TOKEN` is sent to api.figma.com only. A local DESIGN.md is read by the CLI only, and its path is written into no item.
+
 ## The hosted hub
 
 A team's view across repositories, read-only and fed by CI. No source code leaves a repository.
@@ -317,7 +333,6 @@ npx youiyoux hub serve --host 0.0.0.0 --port "$PORT"
 
 ## Roadmap (not built yet)
 
-- **Library ingestion from links**: GitHub repos, Figma files, component catalogs, Storybook and DESIGN.md files, each categorized and reviewed before it lands in the Library.
 - **Trial**: *Try alternatives* for an element, and *Try on a page* to see a candidate in a real screen before adopting it.
 - **Replace with…**: swap one element for another across all of its uses, as a planned, reviewed change.
 - **Screens, live**: screen snapshots with element positions, a live page view, and click-to-change on an element in place.

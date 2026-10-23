@@ -1,8 +1,9 @@
 /**
  * The design-change workflow's wire shapes: what the loopback service returns and the
- * hub reads. Three kinds of draft share one lifecycle (draft, impact preview, approval, review
- * branch): rule drafts, style drafts (token values and component-state bindings) and library
- * drafts (a Discover candidate saved to the Library, or an adoption request for one).
+ * hub reads. Four kinds of draft share one lifecycle (draft, impact preview, approval, review
+ * branch): rule drafts, style drafts (token values and component-state bindings), library
+ * drafts (a Discover candidate saved to the Library, or an adoption request for one) and ingest
+ * drafts (everything one link holds, read into Library items, for a person to keep or drop).
  * Types only (the hub imports this file type-only), so no runtime code here.
  */
 import type { ComponentState, ElementId, LibraryEntry, RuleExecution, RuleRollout, RuleSpec } from "@youiyoux/core";
@@ -260,6 +261,40 @@ export interface LibraryDraftContent {
   readonly swapsWith: readonly string[];
 }
 
+/** What one link held, as the service read it (`youiyoux library ingest`): fixed once the draft exists. */
+export interface IngestReading {
+  readonly link: string;
+  readonly source: { readonly kind: string; readonly name: string; readonly url: string | null };
+  /** The source's licence, with its evidence, or unknown. */
+  readonly license: NonNullable<LibraryEntry["license"]>;
+  readonly fetchedAt: string;
+  readonly entries: readonly LibraryEntry[];
+  /** What was seen but not read, and why. */
+  readonly skipped: ReadonlyArray<{ readonly name: string; readonly reason: string }>;
+  readonly notes: readonly string[];
+}
+
+/** An ingest draft: the reading, and the items (by id) a reviewer keeps; the only thing a save changes. */
+export interface IngestDraftContent {
+  readonly reading: IngestReading;
+  readonly keep: readonly string[];
+}
+
+export interface IngestPreview {
+  readonly id: string;
+  readonly at: string;
+  readonly draftRevision: number;
+  readonly draftDigest: string;
+  readonly snapshot: SnapshotIdentity;
+  readonly durationMs: number;
+  /** Each kept item's Library file, and whether the review edits one already there. */
+  readonly files: ReadonlyArray<{ readonly id: string; readonly file: string; readonly exists: boolean }>;
+  readonly dropped: number;
+  /** An SPDX id, or "unknown". */
+  readonly license: string;
+  readonly limits: readonly string[];
+}
+
 /** What swapping the item in for one family or element would touch, from the local index. */
 export interface LibrarySwap {
   readonly target: string;
@@ -334,7 +369,15 @@ export interface LibraryDraft extends DraftCommon {
   readonly preview: LibraryPreview | null;
 }
 
-export type Draft = RuleDraft | StyleDraft | LibraryDraft;
+/** An ingest draft: every item one link held, to keep or drop, then write to the Library together. */
+export interface IngestDraft extends DraftCommon {
+  readonly kind: "ingest";
+  readonly mode: "create";
+  readonly content: IngestDraftContent;
+  readonly preview: IngestPreview | null;
+}
+
+export type Draft = RuleDraft | StyleDraft | LibraryDraft | IngestDraft;
 export type DraftKind = Draft["kind"];
 
 export type DraftStatus = "draft" | "previewed" | "approved" | "handed-off" | "rolled-out" | "discarded";
@@ -357,8 +400,9 @@ export interface DraftViewFields {
 export type RuleDraftView = RuleDraft & DraftViewFields;
 export type StyleDraftView = StyleDraft & DraftViewFields;
 export type LibraryDraftView = LibraryDraft & DraftViewFields;
+export type IngestDraftView = IngestDraft & DraftViewFields;
 /** A draft plus what is true about it right now. */
-export type DraftView = RuleDraftView | StyleDraftView | LibraryDraftView;
+export type DraftView = RuleDraftView | StyleDraftView | LibraryDraftView | IngestDraftView;
 
 export interface RulePlace {
   readonly file: string;

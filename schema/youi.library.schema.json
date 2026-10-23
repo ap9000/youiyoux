@@ -61,7 +61,9 @@
             "shadcn-registry",
             "npm",
             "github",
-            "storybook"
+            "storybook",
+            "figma",
+            "design-md"
           ]
         },
         "ref": {

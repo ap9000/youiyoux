@@ -5,8 +5,9 @@
  * than wait when a budget is spent; npm 429s get bounded Retry-After backoff. The network itself is one injected `Fetcher`, so tests
  * replay recorded responses and never reach the network.
  *
- * A GitHub token is only ever put in the Authorization header of api.github.com requests:
- * it is never cached, written or logged, and any message that could carry it is redacted.
+ * A GitHub token is only ever put in the Authorization header of api.github.com requests, and a
+ * Figma token only in the X-Figma-Token header of api.figma.com requests: neither is cached,
+ * written or logged, and any message that could carry one is redacted.
  */
 import { slimResponse } from "./store.ts";
 import { publicHttps } from "./urls.ts";
@@ -70,6 +71,8 @@ export interface PoliteOptions {
   readonly buckets?: Readonly<Record<string, RateBucket>>;
   /** GITHUB_TOKEN, read from the environment by the caller; sent to api.github.com only. */
   readonly token?: string;
+  /** FIGMA_TOKEN, read from the environment by the caller; sent to api.figma.com only (X-Figma-Token). */
+  readonly figmaToken?: string;
   readonly cache?: Map<string, CachedResponse>;
   readonly now?: () => Date;
   readonly random?: () => number;
@@ -147,8 +150,9 @@ export class PoliteClient {
 
   /** Replace the token wherever it appears, so no message, log line or file can carry it. */
   redact(text: string): string {
-    const token = this.options.token;
-    return cleanText(token ? text.split(token).join("***") : text);
+    let clean = text;
+    for (const token of [this.options.token, this.options.figmaToken]) if (token) clean = clean.split(token).join("***");
+    return cleanText(clean);
   }
 
   /** True when the bucket still has room in its window; a spent bucket stays spent for this run. */
@@ -219,6 +223,7 @@ export class PoliteClient {
     if (cached?.etag) headers["if-none-match"] = cached.etag;
     if (cached?.lastModified) headers["if-modified-since"] = cached.lastModified;
     if (this.options.token && parsed.hostname === "api.github.com") headers.authorization = `Bearer ${this.options.token}`;
+    if (this.options.figmaToken && parsed.hostname === "api.figma.com") headers["x-figma-token"] = this.options.figmaToken;
     this.stats.sent++;
     this.inFlight++;
     this.stats.maxInFlight = Math.max(this.stats.maxInFlight, this.inFlight);

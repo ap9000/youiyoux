@@ -10,7 +10,7 @@ import { homedir, userInfo } from "node:os";
 import { join, resolve } from "node:path";
 import { shortHash, type LibraryEntry } from "@youiyoux/core";
 import { loadProject } from "@youiyoux/scanner";
-import type { WorkflowInfo } from "@youiyoux/workflow";
+import type { IngestReading, WorkflowInfo } from "@youiyoux/workflow";
 
 interface RuleEditorOptions {
   readonly project: string;
@@ -55,13 +55,24 @@ async function libraryLicence(id: string): Promise<LibraryEntry["license"] | nul
   }
 }
 
+/** Where a product's drafts live, shared by the hub and the CLI: ~/.youi/workflow/<design repo + product>, unless named. */
+export function workflowStateDir(project: { readonly repo: { readonly root: string }; readonly root: string }, state?: string): string {
+  return resolve(state ?? join(homedir(), ".youi", "workflow", shortHash(`${project.repo.root}\0${project.root}`)));
+}
+
+/** A link read into Library items for an ingest draft: by the hub's service, never from a local file. */
+async function ingest(link: string): Promise<IngestReading> {
+  const { readLink } = await import("./ingest.ts");
+  return readLink(link, { allowLocal: false });
+}
+
 export async function startRuleEditor(options: RuleEditorOptions): Promise<RuleEditor> {
   const { FileStore, RuleWorkflow, serveWorkflow } = await import("@youiyoux/workflow");
   const projectRoot = resolve(options.project);
   const load = { ...(options.config ? { configPath: resolve(options.config) } : {}), ...(options.design ? { designRoot: resolve(options.design) } : {}), ...(options.root ? { productRoot: resolve(options.root) } : {}) };
   const project = await loadProject(projectRoot, load);
-  const stateDir = resolve(options.state ?? join(homedir(), ".youi", "workflow", shortHash(`${project.repo.root}\0${project.root}`)));
-  const workflow = new RuleWorkflow({ projectRoot, store: new FileStore(stateDir), swapImpact, libraryLicence, ...load });
+  const stateDir = workflowStateDir(project, options.state);
+  const workflow = new RuleWorkflow({ projectRoot, store: new FileStore(stateDir), swapImpact, libraryLicence, ingest, ...load });
   const actor = { kind: "person" as const, name: userInfo().username };
   // Fails here, before the hub starts, when the design repo is not a git checkout.
   const info = await workflow.info(actor);

@@ -38,12 +38,16 @@ const StateEditInput = z.object({ component: ElementId, state: z.enum(COMPONENT_
 const StyleContentInput = z.object({ title: z.string().max(200), tokens: z.array(TokenEditInput).max(500), states: z.array(StateEditInput).max(200) });
 /** A Discover listing as a youi.library/v1 item; the workflow checks it again, with the request. */
 const LibraryContentInput = z.object({ entry: LibraryEntry, request: z.enum(["save", "adopt"]), reason: z.string().max(2000), swapsWith: z.array(z.string().min(1).max(200)).max(50) });
+/** An ingest draft starts from a link the service reads itself; a save only names the items kept. */
+const IngestCreateInput = z.object({ kind: z.literal("ingest"), link: z.string().min(1).max(2000) });
+const IngestKeepInput = z.object({ keep: z.array(z.string().min(1).max(300)).max(1000) }).strict();
 const CreateInput = z.union([
   z.object({ kind: z.literal("style"), content: StyleContentInput.optional() }),
   z.object({ kind: z.literal("library"), content: LibraryContentInput }),
+  IngestCreateInput,
   z.discriminatedUnion("mode", [z.object({ kind: z.literal("rule").optional(), mode: z.literal("edit"), ruleId: ElementId }), z.object({ kind: z.literal("rule").optional(), mode: z.literal("create") })]),
 ]);
-const SaveInput = z.object({ revision: z.number().int().positive(), content: z.union([DraftContentInput, StyleContentInput, LibraryContentInput]) });
+const SaveInput = z.object({ revision: z.number().int().positive(), content: z.union([DraftContentInput, StyleContentInput, LibraryContentInput, IngestKeepInput]) });
 
 /** A comment or change request on a captured screen, and what moves it on (requests.ts). */
 const RequestInput = z.object({ kind: z.enum(["comment", "change"]), body: z.string().min(1).max(4000), target: RequestTarget });
@@ -140,7 +144,8 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string, opti
   if (path === "/api/drafts" && method === "POST") {
     const input = parse(CreateInput, await readJson(req));
     if ("kind" in input && input.kind === "library") return send(res, 201, await workflow.create(actor, { kind: "library", content: input.content }));
-    return send(res, 201, await workflow.create(actor, "kind" in input && input.kind === "style" ? { kind: "style", ...(input.content ? { content: styleContent(input.content) } : {}) } : (input as Exclude<typeof input, { kind: "style" } | { kind: "library" }>)));
+    if ("kind" in input && input.kind === "ingest") return send(res, 201, await workflow.create(actor, { kind: "ingest", link: input.link }));
+    return send(res, 201, await workflow.create(actor, "kind" in input && input.kind === "style" ? { kind: "style", ...(input.content ? { content: styleContent(input.content) } : {}) } : (input as Exclude<typeof input, { kind: "style" } | { kind: "library" } | { kind: "ingest" }>)));
   }
   if (path === "/api/requests" && method === "GET") return send(res, 200, await (await workflow.requests()).list());
   if (path === "/api/requests" && method === "POST") return send(res, 201, await (await workflow.requests()).create(actor, parse(RequestInput, await readJson(req))));

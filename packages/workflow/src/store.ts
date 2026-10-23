@@ -42,7 +42,7 @@ function decode(text: string, file: string): Draft {
   if (!commits.every((c) => typeof c === "string" && COMMIT.test(c))) throw new Error(`${file} names a commit that is not a git object id`);
   // Drafts written before style drafts existed are rule drafts.
   const kind = (draft as { kind?: unknown }).kind ?? "rule";
-  if (kind !== "rule" && kind !== "style" && kind !== "library") throw new Error(`${file} is a "${String(kind)}" draft, which this youi does not know`);
+  if (kind !== "rule" && kind !== "style" && kind !== "library" && kind !== "ingest") throw new Error(`${file} is a "${String(kind)}" draft, which this youi does not know`);
   return { ...draft, kind } as Draft;
 }
 

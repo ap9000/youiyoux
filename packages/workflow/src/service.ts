@@ -14,10 +14,11 @@ import { randomBytes } from "node:crypto";
 import { loadProject, ruleCapability, scanProject, SCANNER_VERSION, type LoadProjectOptions, type Project, type ScanResult } from "@youiyoux/scanner";
 import { buildTokens, type ResolvedToken } from "@youiyoux/tokens";
 import { parseId, shortHash, stableStringify, type LibraryEntry as LibraryEntryValue } from "@youiyoux/core";
-import type { Actor, Draft, DraftContent, DraftEvent, DraftView, LibraryDraft, LibraryDraftContent, LibraryDraftView, LibraryPreview, LibrarySwap, Preview, PublishedRules, RuleDraft, RuleDraftView, SnapshotIdentity, StyleDraft, StyleDraftContent, StyleContrast, StyleDraftView, StylePreview, WorkflowInfo } from "./api.ts";
+import type { Actor, Draft, DraftContent, DraftEvent, DraftView, IngestDraft, IngestDraftView, IngestPreview, IngestReading, LibraryDraft, LibraryDraftContent, LibraryDraftView, LibraryPreview, LibrarySwap, Preview, PublishedRules, RuleDraft, RuleDraftView, SnapshotIdentity, StyleDraft, StyleDraftContent, StyleContrast, StyleDraftView, StylePreview, WorkflowInfo } from "./api.ts";
 import { DesignFiles } from "./design-files.ts";
 import { contentDigest, draftStatus, fieldsFromRule, newRuleFields, toRuleSpec, validateContent } from "./drafts.ts";
 import { describeStyle, emptyStyleContent, normalizeStyleContent, styleDigest, styleSlug, validateStyleContent, type StyleContext } from "./style-drafts.ts";
+import { describeIngest, ingestDigest, ingestFiles, ingestSlug, keptEntries, normalizeIngestContent, validateIngestContent } from "./ingest-drafts.ts";
 import { adoptionRefusal, describeLibrary, libraryDigest, licenceOf, libraryPath, librarySlug, normalizeLibraryContent, renderLibraryEntry, validateLibraryContent } from "./library-drafts.ts";
 import { previewStyle } from "./style-preview.ts";
 import { scannerExecution, type RuleExecution } from "./execution.ts";
@@ -48,6 +49,12 @@ interface WorkflowOptions extends LoadProjectOptions {
    * client's; without it (no index), an adoption request is refused, since nothing can check it.
    */
   readonly libraryLicence?: (id: string) => Promise<LibraryEntryValue["license"] | null>;
+  /**
+   * Read a link into Library items (`youiyoux library ingest`, Discover's readers). An ingest
+   * draft's items are always what this read, never what a client sent; without it, no ingest
+   * draft can start.
+   */
+  readonly ingest?: (link: string) => Promise<IngestReading>;
 }
 
 /** The design repository and project as they are right now. */
@@ -63,11 +70,17 @@ interface Current {
   readonly tokens: () => Promise<readonly ResolvedToken[]>;
 }
 
-export type CreateInput = { kind?: "rule"; mode: "edit"; ruleId: string } | { kind?: "rule"; mode: "create" } | { kind: "style"; content?: StyleDraftContent } | { kind: "library"; content: LibraryDraftContent };
+export type CreateInput = { kind?: "rule"; mode: "edit"; ruleId: string } | { kind?: "rule"; mode: "create" } | { kind: "style"; content?: StyleDraftContent } | { kind: "library"; content: LibraryDraftContent } | { kind: "ingest"; link: string };
 
 /** A preview's headline, for history notes and commit messages. */
 function previewSummary(draft: Draft): string {
   if (draft.kind === "rule") return draft.preview ? `flags ${draft.preview.flagged} place(s)` : "no preview";
+  if (draft.kind === "ingest") {
+    const q = draft.preview;
+    if (!q) return "no preview";
+    const edits = q.files.filter((f) => f.exists).length;
+    return `writes ${q.files.length} Library item(s)${edits ? ` (${edits} already there, edited)` : ""}${q.dropped ? `, ${q.dropped} dropped` : ""}, licence ${q.license}`;
+  }
   if (draft.kind === "library") {
     const q = draft.preview;
     if (!q) return "no preview";
@@ -180,6 +193,7 @@ export class RuleWorkflow {
   private async problems(draft: Draft, current: Current): Promise<string[]> {
     if (draft.kind === "style") return validateStyleContent(draft.content, await this.styleContext(current));
     if (draft.kind === "library") return validateLibraryContent(draft.content, { componentIds: new Set(current.project.system.components.map((c) => c.contract.id)) });
+    if (draft.kind === "ingest") return validateIngestContent(draft.content);
     return validateContent(draft.content, {
       mode: draft.mode,
       ruleId: draft.ruleId,
@@ -273,7 +287,7 @@ export class RuleWorkflow {
       checks: this.execution.supportedChecks(),
       executor: this.execution.name,
       components: current.project.system.components.map((c) => ({ id: c.contract.id, name: c.contract.name })),
-      kinds: ["rule", "style", "library"],
+      kinds: ["rule", "style", "library", ...(this.options.ingest ? (["ingest"] as const) : [])],
       limits: [
         `One design repository and one project (${current.project.config.id}).`,
         `Approved changes become a local review branch in the design repository; nothing is pushed or merged for you.`,
@@ -330,12 +344,14 @@ export class RuleWorkflow {
   async create(actor: Actor, input: { kind?: "rule"; mode: "edit"; ruleId: string } | { kind?: "rule"; mode: "create" }): Promise<RuleDraftView>;
   async create(actor: Actor, input: { kind: "style"; content?: StyleDraftContent }): Promise<StyleDraftView>;
   async create(actor: Actor, input: { kind: "library"; content: LibraryDraftContent }): Promise<LibraryDraftView>;
+  async create(actor: Actor, input: { kind: "ingest"; link: string }): Promise<IngestDraftView>;
   async create(actor: Actor, input: CreateInput): Promise<DraftView>;
   async create(actor: Actor, input: CreateInput): Promise<DraftView> {
     authorize(actor, "draft");
     const current = await this.current();
     if (input.kind === "style") return this.createStyle(actor, current, input.content);
     if (input.kind === "library") return this.createLibrary(actor, current, input.content);
+    if (input.kind === "ingest") return this.createIngest(actor, current, input.link);
     let content: DraftContent;
     let ruleId: string;
     const files: Record<string, string | null> = {};
@@ -434,6 +450,44 @@ export class RuleWorkflow {
   }
 
   /**
+   * An ingest draft starts from what this service reads at the link, every item kept, bound to the
+   * Library files the items would write. A link that cannot be read is said, and no draft exists.
+   */
+  private async createIngest(actor: Actor, current: Current, link: string): Promise<IngestDraftView> {
+    if (!this.options.ingest) throw new WorkflowError("invalid", "this service cannot read links: run youiyoux library ingest <link> --draft");
+    const reading = await this.options.ingest(link).catch((error: unknown) => {
+      throw new WorkflowError("invalid", error instanceof Error ? error.message : String(error));
+    });
+    const content = normalizeIngestContent({ reading, keep: reading.entries.map((e) => e.id) });
+    const problems = validateIngestContent(content);
+    if (problems.length > 0) throw new WorkflowError("invalid", `${link} was read, but not into items the Library takes`, problems);
+    const files: Record<string, string | null> = {};
+    for (const entry of reading.entries) {
+      const path = libraryPath(entry.id);
+      files[path] = await current.files.digest(current.tip, path);
+    }
+    const at = this.now();
+    const draft: IngestDraft = {
+      id: this.id("d"),
+      kind: "ingest",
+      mode: "create",
+      createdAt: at,
+      updatedAt: at,
+      revision: 1,
+      digest: ingestDigest(content),
+      content,
+      base: { branch: current.branch, commit: current.tip, files },
+      preview: null,
+      approval: null,
+      handoff: null,
+      discarded: false,
+      events: [this.event(actor, "created", `${capitalized(describeIngest(content))}: read from ${reading.link}, from ${current.branch}@${current.tip.slice(0, 7)}.`)],
+    };
+    await this.options.store.put(draft);
+    return (await this.view(draft, current)) as IngestDraftView;
+  }
+
+  /**
    * The draft with the licence the local Discover index lists for its id, whatever the client
    * sent: `unknown` when the index does not list it. With no index, a save keeps what was sent
    * (a reference only) and an adoption request is refused, since nothing can check its licence.
@@ -448,15 +502,17 @@ export class RuleWorkflow {
   }
 
   /** Save content. Saving is only saving: it withdraws any approval and never publishes. */
-  async save(actor: Actor, id: string, input: { revision: number; content: DraftContent | StyleDraftContent | LibraryDraftContent }): Promise<DraftView> {
+  async save(actor: Actor, id: string, input: { revision: number; content: DraftContent | StyleDraftContent | LibraryDraftContent | { keep: readonly string[] } }): Promise<DraftView> {
     return this.locked(id, async () => {
       const draft = await this.load(id);
       this.guard(actor, "draft", draft);
       if (input.revision !== draft.revision) throw new WorkflowError("conflict", `draft ${id} is at revision ${draft.revision}, not ${input.revision}: it was saved elsewhere. Reload it before saving.`);
       const isStyle = "tokens" in input.content;
       const isLibrary = "entry" in input.content;
-      if (isStyle !== (draft.kind === "style") || isLibrary !== (draft.kind === "library")) throw new WorkflowError("bad-request", `draft ${id} is a ${draft.kind} draft; send ${draft.kind} content`);
+      const isIngest = "keep" in input.content;
+      if (isStyle !== (draft.kind === "style") || isLibrary !== (draft.kind === "library") || isIngest !== (draft.kind === "ingest")) throw new WorkflowError("bad-request", `draft ${id} is a ${draft.kind} draft; send ${draft.kind === "ingest" ? "the items to keep ({ keep: [ids] })" : `${draft.kind} content`}`);
       if (draft.kind === "library") return this.saveLibrary(actor, draft, input.revision, input.content as LibraryDraftContent);
+      if (draft.kind === "ingest") return this.saveIngest(actor, draft, input.revision, (input.content as { keep: readonly string[] }).keep);
       const current = await this.current();
       const content = isStyle ? normalizeStyleContent(input.content as StyleDraftContent) : (input.content as DraftContent);
       const digest = isStyle ? styleDigest(content as StyleDraftContent) : contentDigest(content as DraftContent);
@@ -471,6 +527,22 @@ export class RuleWorkflow {
       await this.options.store.put(next);
       return this.view(next, current);
     });
+  }
+
+  /** Only which items are kept changes: the reading is what the service read, and stays so. */
+  private async saveIngest(actor: Actor, draft: IngestDraft, revision: number, keep: readonly string[]): Promise<DraftView> {
+    const current = await this.current();
+    const known = new Set(draft.content.reading.entries.map((e) => e.id));
+    const unknown = keep.filter((id) => !known.has(id));
+    if (unknown.length > 0) throw new WorkflowError("invalid", `${unknown.join(", ")} ${unknown.length === 1 ? "is" : "are"} not in what ${draft.content.reading.source.name} held`);
+    const content = normalizeIngestContent({ reading: draft.content.reading, keep });
+    const digest = ingestDigest(content);
+    if (digest === draft.digest) return this.refreshed(draft, current);
+    const events = [...draft.events, this.event(actor, "saved", `Revision ${revision + 1}: ${describeIngest(content)}.`)];
+    if (draft.approval) events.push(this.event(actor, "approval-invalidated", "Approval withdrawn: the draft changed."));
+    const next: IngestDraft = { ...draft, revision: draft.revision + 1, digest, content, approval: null, updatedAt: this.now(), events };
+    await this.options.store.put(next);
+    return this.view(next, current);
   }
 
   private async saveLibrary(actor: Actor, draft: LibraryDraft, revision: number, input: LibraryDraftContent): Promise<DraftView> {
@@ -495,6 +567,7 @@ export class RuleWorkflow {
       this.guard(actor, "preview", draft);
       if (draft.kind === "style") return this.previewStyle(actor, draft);
       if (draft.kind === "library") return this.previewLibrary(actor, draft);
+      if (draft.kind === "ingest") return this.previewIngest(actor, draft);
       const before = await this.current();
       const problems = await this.problems(draft, before);
       const { rule } = toRuleSpec(draft.content.rule);
@@ -560,6 +633,37 @@ export class RuleWorkflow {
       ],
     };
     const next: LibraryDraft = { ...draft, preview, updatedAt: this.now(), events: [...draft.events, this.event(actor, "previewed", `${capitalized(previewSummary({ ...draft, preview }))}.`)] };
+    await this.options.store.put(next);
+    return this.refreshed(next, after);
+  }
+
+  /** An ingest draft's preview: each kept item's Library file, new or an edit, and what the items are not. */
+  private async previewIngest(actor: Actor, draft: IngestDraft): Promise<DraftView> {
+    const before = await this.current();
+    const problems = await this.problems(draft, before);
+    if (problems.length > 0) throw new WorkflowError("invalid", "fix the draft before previewing it", problems);
+    const started = performance.now();
+    const files: Array<{ id: string; file: string; exists: boolean }> = [];
+    for (const entry of keptEntries(draft.content)) {
+      const file = libraryPath(entry.id);
+      files.push({ id: entry.id, file, exists: (await before.files.read(before.tip, file)) !== null });
+    }
+    const after = await this.unchangedSince(before);
+    const { reading } = draft.content;
+    const license = reading.license === "unknown" ? "unknown" : reading.license.spdx;
+    const preview: IngestPreview = {
+      ...this.previewHead(draft, before, started),
+      files,
+      dropped: reading.entries.length - files.length,
+      license,
+      limits: [
+        "Nothing is installed and nothing joins the System: approving writes the kept items to the Library as references, each to be requested for adoption on its own.",
+        ...(license === "unknown" ? [`${reading.source.name}'s licence is unknown: its items can be kept as references, not adopted, until a licence is found.`] : []),
+        ...(files.some((f) => f.exists) ? ["Items already in the Library are rewritten with what this link holds now."] : []),
+        ...(reading.skipped.length > 0 ? [`${reading.skipped.length} thing(s) at the link were not read as items; the draft lists them.`] : []),
+      ],
+    };
+    const next: IngestDraft = { ...draft, preview, updatedAt: this.now(), events: [...draft.events, this.event(actor, "previewed", `${capitalized(previewSummary({ ...draft, preview }))}.`)] };
     await this.options.store.put(next);
     return this.refreshed(next, after);
   }
@@ -654,7 +758,7 @@ export class RuleWorkflow {
       const current = await this.current();
       const view = await this.refreshed(draft, current);
       if (!view.canHandoff) throw new WorkflowError("stale", "only a current approval can be handed off", [...view.problems, ...view.baseStale, ...(view.approval ? [] : ["Approve the draft first (an approval is withdrawn when the draft, the design repository or the project changes)."])]);
-      const { files, branch, message } = draft.kind === "style" ? await this.styleChange(draft, view as StyleDraftView, current) : draft.kind === "library" ? await this.libraryChange(draft, view as LibraryDraftView, current) : await this.ruleChange(draft, view as RuleDraftView, current);
+      const { files, branch, message } = draft.kind === "style" ? await this.styleChange(draft, view as StyleDraftView, current) : draft.kind === "library" ? await this.libraryChange(draft, view as LibraryDraftView, current) : draft.kind === "ingest" ? await this.ingestChange(draft, view as IngestDraftView, current) : await this.ruleChange(draft, view as RuleDraftView, current);
       if (Object.keys(files).length === 0) throw new WorkflowError("invalid", "this draft changes nothing in the design repository");
       const created = await createReviewBranch(current.repo.top, {
         base: draft.base.commit,
@@ -750,6 +854,26 @@ export class RuleWorkflow {
       `Approved by ${approval.by.name} at ${approval.at}.`,
     ].join("\n");
     return { files: text === existing ? {} : { [path]: text }, branch: `youi/library/${librarySlug(draft.content)}-${draft.id.slice(2, 8)}`, message };
+  }
+
+  /** What an ingest draft's review branch carries: one Library file per kept item. */
+  private async ingestChange(draft: IngestDraft, view: IngestDraftView, current: Current): Promise<{ files: Record<string, string>; branch: string; message: string }> {
+    const existing = new Map<string, string | null>();
+    for (const entry of keptEntries(draft.content)) existing.set(libraryPath(entry.id), await current.files.read(draft.base.commit, libraryPath(entry.id)));
+    const all = ingestFiles(draft.content, (path) => existing.get(path) ?? null);
+    const files = Object.fromEntries(Object.entries(all).filter(([path, text]) => text !== existing.get(path)));
+    const { reading } = draft.content;
+    const approval = view.approval!;
+    const message = [
+      `library: ${describeIngest(draft.content)}`,
+      "",
+      `Read from ${reading.link} at ${reading.fetchedAt}; licence ${view.preview!.license}.`,
+      ...keptEntries(draft.content).map((e) => `- ${e.id}: ${e.name}`),
+      "",
+      `Ingest draft ${draft.id} revision ${draft.revision}.`,
+      `Approved by ${approval.by.name} at ${approval.at}.`,
+    ].join("\n");
+    return { files, branch: `youi/library/ingest-${ingestSlug(draft.content)}-${draft.id.slice(2, 8)}`, message };
   }
 
   async discard(actor: Actor, id: string): Promise<DraftView> {

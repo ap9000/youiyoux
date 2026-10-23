@@ -8,7 +8,7 @@ import type { ApiError, DraftContent, DraftView, LibraryDraftContent, LibraryDra
 import type { RequestDoc, RequestStatus, RequestTarget, StatusReport } from "@youiyoux/core";
 import { sessionKey } from "./session-key.ts";
 
-export type { CheckCapability, DraftContent, DraftView, LibraryDraftContent, LibraryDraftView, Preview, PreviewFinding, PublishedRules, RuleDraftView, RuleFields, StyleContrast, StyleDraftContent, StyleDraftView, StylePreview, StyleSite, WorkflowInfo } from "@youiyoux/workflow/api";
+export type { CheckCapability, DraftContent, DraftView, IngestDraftView, LibraryDraftContent, LibraryDraftView, Preview, PreviewFinding, PublishedRules, RuleDraftView, RuleFields, StyleContrast, StyleDraftContent, StyleDraftView, StylePreview, StyleSite, WorkflowInfo } from "@youiyoux/workflow/api";
 
 const API = `${import.meta.env.BASE_URL}api`;
 
@@ -73,6 +73,10 @@ export const workflowApi = {
   /** Discover's Save to Library (`save`) and Add to my project (`adopt`): a draft for a person to approve, never an install. */
   createLibrary: (content: LibraryDraftContent) => call<LibraryDraftView>("POST", "/drafts", { kind: "library", content }),
   save: (id: string, revision: number, content: DraftContent | StyleDraftContent) => call<DraftView>("PUT", `/drafts/${id}`, { revision, content }),
+  /** An ingest draft: everything a link holds, read by the service, for a person to keep or drop. */
+  ingest: (link: string) => call<DraftView>("POST", "/drafts", { kind: "ingest", link }),
+  /** An ingest draft's save: only which of its items are kept. */
+  saveKept: (id: string, revision: number, keep: readonly string[]) => call<DraftView>("PUT", `/drafts/${id}`, { revision, content: { keep } }),
   preview: (id: string) => call<DraftView>("POST", `/drafts/${id}/preview`),
   /** `acknowledgeContrast`: a style draft's new WCAG AA failures (their keys), confirmed in the approval dialog. */
   approve: (id: string, revision: number, previewId: string, acknowledgeContrast?: readonly string[]) => call<DraftView>("POST", `/drafts/${id}/approve`, { revision, previewId, ...(acknowledgeContrast ? { acknowledgeContrast } : {}) }),

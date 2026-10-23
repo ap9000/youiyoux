@@ -197,7 +197,8 @@ export function nameSlug(name: string): string {
   return slug || "item";
 }
 
-function summaryOf(...texts: Array<string | null | undefined>): string {
+/** The first of these that says something, cleaned, at most 200 characters. */
+export function summaryOf(...texts: Array<string | null | undefined>): string {
   const text = texts.map((t) => cleanText(t ?? "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()).find((t) => t.length > 0) ?? "";
   return text.length > 200 ? `${text.slice(0, 199)}…` : text;
 }
