@@ -45,7 +45,8 @@ export function Segmented<T extends string>({ value, options, onChange, label, w
             data-value={option.value}
             onClick={() => onChange(option.value)}
             className={clsx(
-              "inline-flex h-6 items-center gap-1.5 rounded-sm px-2 text-small font-medium transition-colors duration-100",
+              // An option keeps its label on one line: too many to fit scroll (or wrap, with `wrap`), never squeeze.
+              "inline-flex h-6 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-sm px-2 text-small font-medium transition-colors duration-100",
               touch && "max-md:h-11 max-md:px-3",
               active ? "bg-surface text-ink shadow-raise" : "text-muted hover:text-ink",
             )}
