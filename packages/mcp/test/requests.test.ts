@@ -1,5 +1,5 @@
 /** The request tools: what an agent reads about a request, and that it can reply and mark addressed but never close. */
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -17,6 +17,9 @@ beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), "youi-mcp-requests-"));
   await mkdir(join(root, ".youi/screens"), { recursive: true });
   await writeFile(join(root, ".youi/screens/settings.light.webp"), "RIFF");
+  // The picture was taken well before the requests are filed (a file's mtime can run ahead of the clock).
+  const earlier = new Date(Date.now() - 60_000);
+  await utimes(join(root, ".youi/screens/settings.light.webp"), earlier, earlier);
   const store = new RequestStore(root, "acme");
   const person = { kind: "person", name: "captain" } as const;
   change = (await store.create(person, { kind: "change", body: "Use the primary button here", target: { route: "/settings", scope: "here", name: "Button", element: "youi:demo/component/button", lookalike: true, file: "app/settings.tsx", line: 12, box: { x: 10, y: 20, width: 80, height: 32 }, page: { width: 1440, height: 900 } } })).id;
