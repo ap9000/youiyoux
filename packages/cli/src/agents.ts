@@ -143,7 +143,8 @@ function frontmatter(project: Project, build: TokenBuild): Record<string, unknow
     if (dark !== colors[key(t)]) colors[`${key(t)}-dark`] = dark;
   }
   const typography: Record<string, Record<string, string | number>> = {};
-  for (const t of byGroup("typography")) {
+  // Type styles only: a style's parts (`typography.label-font-size`, a dimension) are tokens of their own.
+  for (const t of byGroup("typography").filter((t) => t.type === "typography")) {
     const v = t.light as { fontFamily: string[] | string; fontSize: { value: number; unit: string }; fontWeight: number; lineHeight: number; letterSpacing?: { value: number; unit: string } };
     typography[key(t)] = {
       fontFamily: cssValue("fontFamily", v.fontFamily),

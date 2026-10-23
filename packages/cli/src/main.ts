@@ -1,7 +1,7 @@
 /** `youi`: the YouIyouX command line. */
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { appendFile, readFile } from "node:fs/promises";
+import { appendFile, readFile, rm, rmdir } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { parseArgs, promisify, type ParseArgsConfig } from "node:util";
 import { parse as parseYaml } from "yaml";
@@ -630,9 +630,21 @@ async function cmdAdopt(values: Values): Promise<number> {
     else print([...adoptLines(plan, true), "", style.dim(`dry run: nothing written; would write ${plan.files.map((f) => f.path).join(", ")}${plan.stylesheet ? ` and change ${plan.stylesheet.path}` : ""}`)].join("\n"));
     return 0;
   }
-  for (const file of plan.files) await writeFileAtomic(join(root, file.path), file.content);
-  if (plan.stylesheet) await writeFileAtomic(join(root, plan.stylesheet.path), plan.stylesheet.content);
-  await initProject({ root, design: root, schemaDir: join(TOOL_ROOT, "schema"), system: plan.system.id, componentsDir: plan.componentsDir, outputs: { ...plan.outputs, targets: [...plan.outputs.targets], dark: [...plan.outputs.dark] }, tokenSources: plan.tokenSources });
+  const stylesheet = plan.stylesheet ? await readFile(join(root, plan.stylesheet.path), "utf8") : null;
+  try {
+    for (const file of plan.files) await writeFileAtomic(join(root, file.path), file.content);
+    if (plan.stylesheet) await writeFileAtomic(join(root, plan.stylesheet.path), plan.stylesheet.content);
+    await initProject({ root, design: root, schemaDir: join(TOOL_ROOT, "schema"), system: plan.system.id, componentsDir: plan.componentsDir, outputs: { ...plan.outputs, targets: [...plan.outputs.targets], dark: [...plan.outputs.dark] }, tokenSources: plan.tokenSources });
+    // Everything sync would do, written nowhere: if the new System cannot be synced, adopt is undone before sync touches a file.
+    await syncProject(await loadProject(root), { dryRun: true });
+  } catch (error: unknown) {
+    for (const file of [...plan.files.map((f) => f.path), PROJECT_FILE]) await rm(join(root, file), { force: true });
+    for (const folder of [...new Set(plan.files.map((f) => dirname(f.path)))].sort((a, b) => b.length - a.length)) await rmdir(join(root, folder)).catch(() => undefined);
+    await rmdir(join(root, "design/components")).catch(() => undefined);
+    await rmdir(join(root, "design")).catch(() => undefined);
+    if (plan.stylesheet && stylesheet !== null) await writeFileAtomic(join(root, plan.stylesheet.path), stylesheet);
+    throw new Error(`adopt was undone, nothing kept: ${error instanceof Error ? error.message : String(error)}`);
+  }
   if (!values.json) print([...adoptLines(plan), ""].join("\n"));
   const synced = await cmdSync({ ...values, project: root, components: undefined, css: undefined, system: undefined });
   if (!values.json) print(`Next: describe each component in design/components/<name>/<name>.contract.json (its summary, guidance and examples; agents read them), see what is left with youiyoux check, and when a second app needs this System, youiyoux system extract <dir> moves it into its own repo`);
