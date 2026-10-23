@@ -51,7 +51,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { splitInventory, type SplitSpecimens } from "../src/data/inventory-split.ts";
 import { screenSlug } from "../src/data/screens.ts";
@@ -90,6 +90,8 @@ type TokensModule = typeof import("@youiyoux/tokens");
 /** The scanner calls used here, typed locally so the hub's typecheck never pulls in the scanner's sources. */
 interface ScannerModule {
   loadProject(root: string, options: LoadOptions): Promise<ScannedProject>;
+  /** The design repo a config's source names: its path, or its installed package. */
+  designRootOf(source: import("@youiyoux/core").ProjectConfig["source"], configFile: string, productRoot: string): Promise<string>;
   /** How youiyoux check executes a rule; the scanner compiles ast-grep bodies, which the browser cannot. */
   ruleCapability(rule: import("@youiyoux/core").RuleSpec): unknown;
   scanProject(project: ScannedProject, options?: { cache?: unknown }): Promise<{ report: unknown; identity: import("@youiyoux/core").CheckIdentity }>;
@@ -256,7 +258,8 @@ export async function readSource(values: { design?: string; project?: string; co
   if (values.config) {
     const configFile = resolve(values.config);
     const config = core.ProjectConfig.parse(JSON.parse(readFileSync(configFile, "utf8")));
-    const designRoot = values.design ? resolve(values.design) : isAbsolute(config.source.path) ? config.source.path : resolve(dirname(configFile), config.source.path);
+    const productRoot = values.root !== undefined ? resolve(values.root) : resolve(dirname(configFile), config.root ?? ".");
+    const designRoot = values.design ? resolve(values.design) : await scanner.designRootOf(config.source, configFile, productRoot);
     return { designRoot, systemId: config.system, output: config.outputs, usage: null };
   }
   return { designRoot: resolve(values.design!), output: core.OutputConfig.parse({}), usage: null };

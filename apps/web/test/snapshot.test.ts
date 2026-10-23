@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, test } from "vitest";
@@ -27,6 +27,20 @@ describe("snapshot source", () => {
       for (const site of source.usage!.usages) expect(existsSync(join(DEMO_APP, site.file)), site.file).toBe(true);
       // Without --root the config alone gives the system and no usage map, as before.
       expect((await readSource({ config: join(dir, "youi.project.json") }, libs.core, libs.scanner)).usage).toBeNull();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("--config whose source is a package finds the design system installed for the product", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "youi-package-"));
+    try {
+      const config = { ...(JSON.parse(await readFile(join(DEMO_APP, "youi.project.json"), "utf8")) as Record<string, unknown>), source: { package: "@acme/design" } };
+      await writeFile(join(dir, "youi.project.json"), JSON.stringify(config));
+      await mkdir(join(dir, "node_modules/@acme"), { recursive: true });
+      await symlink(DEMO_DESIGN, join(dir, "node_modules/@acme/design"), "dir");
+      const libs = await libraries();
+      expect((await readSource({ config: join(dir, "youi.project.json") }, libs.core, libs.scanner)).designRoot).toBe(await realpath(DEMO_DESIGN));
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

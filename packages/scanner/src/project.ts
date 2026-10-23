@@ -1,5 +1,5 @@
 /** A consumer project: its youi.project.json, its root, and the design system it uses. */
-import { stat } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import { dirname, join, posix, resolve } from "node:path";
 import { getSystem, loadDesignRepo, normalizeProjectConfig, ProjectConfig, readDefinition, type DesignRepo, type LoadedSystem } from "@youiyoux/core";
 
@@ -45,9 +45,24 @@ export async function loadProject(root: string, options: LoadProjectOptions = {}
   const fromConfig = (path: string): string => resolve(dirname(configFile), path);
   const productRoot = options.productRoot !== undefined ? resolve(options.productRoot || ".") : config.root ? fromConfig(config.root) : resolve(root);
   if (!(await isDirectory(productRoot))) throw new ProjectRootError(`product root ${productRoot} is not a directory (config ${configFile}); ${ROOT_HINT}`);
-  const designRoot = options.designRoot ? resolve(options.designRoot) : fromConfig(config.source.path);
+  const designRoot = options.designRoot ? resolve(options.designRoot) : await designRootOf(config.source, configFile, productRoot);
   const repo = await loadDesignRepo(designRoot);
   return { root: productRoot, config, repo, system: getSystem(repo, config.system), configFile, designOverride: Boolean(options.designRoot), rootOverride: options.productRoot !== undefined };
+}
+
+/**
+ * The design repo a config's `source` names: a `path` beside the config file, or a `package`
+ * installed for the product (its node_modules, then each parent's, as Node finds packages; a
+ * workspace link is followed to the package's own folder).
+ */
+export async function designRootOf(source: ProjectConfig["source"], configFile: string, productRoot: string): Promise<string> {
+  if ("path" in source) return resolve(dirname(configFile), source.path);
+  for (let dir = resolve(productRoot); ; dir = dirname(dir)) {
+    const candidate = join(dir, "node_modules", ...source.package.split("/"));
+    if (await isDirectory(candidate)) return realpath(candidate);
+    if (dirname(dir) === dir) break;
+  }
+  throw new Error(`the design system package ${source.package} is not installed for ${productRoot} (config ${configFile}): add it as a dependency and install, or set source.path to its checkout`);
 }
 
 async function isDirectory(path: string): Promise<boolean> {

@@ -21,6 +21,9 @@ const RelPath = z
   .min(1)
   .refine((p) => !p.startsWith("/") && !normalizeRelPath(p).split("/").includes(".."), "expected a path relative to its root, without ..");
 const IsoTime = z.string().datetime({ offset: true });
+/** An npm package name (`design`, `@acme/design`): never `..`, a path or a URL, so it is safe to look up in node_modules. */
+export const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/;
+const PackageName = z.string().regex(PACKAGE_NAME, "expected an npm package name such as @acme/design");
 
 /* ---------------------------------------------------------------- youi.config/v1 */
 
@@ -112,8 +115,13 @@ export const ProjectConfig = z.object({
   schema: z.literal("youi.project/v1"),
   id: z.string().regex(/^[a-z][a-z0-9-]*$/),
   system: z.string(),
-  /** Path to the design repo checkout (the directory holding youi.config.json), relative to this config file or absolute. */
-  source: z.object({ path: z.string().min(1) }),
+  /**
+   * Where the design system is: `path`, its checkout (the directory holding youi.config.json),
+   * relative to this config file or absolute; or `package`, an npm package that holds
+   * youi.config.json, found in the product's node_modules (a published design package, or a
+   * monorepo's workspace package), so the config names no machine's folders.
+   */
+  source: z.union([z.object({ path: z.string().min(1) }).strict(), z.object({ package: PackageName }).strict()]),
   /** The product root, relative to this config file or absolute; for a config kept outside the product. Default: the --project directory. */
   root: z.string().min(1).optional(),
   tsconfig: RelPath.default("tsconfig.json"),

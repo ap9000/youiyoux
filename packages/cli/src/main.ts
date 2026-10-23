@@ -5,11 +5,11 @@ import { appendFile, readFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { parseArgs, promisify, type ParseArgsConfig } from "node:util";
 import { parse as parseYaml } from "yaml";
-import { DefinitionError, DESIGN_CONFIG_FILE, findUp, getSystem, loadDesignRepo, loadLibrary, MigrationSpec, OutputConfig, renderJsonSchemas, safeId, writeFileAtomic, InventoryReport, type ScanReport } from "@youiyoux/core";
+import { DefinitionError, DESIGN_CONFIG_FILE, findUp, getSystem, loadDesignRepo, loadLibrary, MigrationSpec, OutputConfig, PACKAGE_NAME, renderJsonSchemas, safeId, writeFileAtomic, InventoryReport, type ScanReport } from "@youiyoux/core";
 import { buildGaps, candidateSource, declaredPackages, expandAll, MissingIndexError, selectSources, discoverCacheDir, discoverIndexPath, ingestCatalog, readCatalog, searchCatalog, sharedStore, showFromCatalog, syncIndex, type Fetcher } from "@youiyoux/discover";
 import { indexHome, storeLocation } from "@youiyoux/store";
 import { buildTokens, compareParity } from "@youiyoux/tokens";
-import { adoptionRequest, buildInventory, captureScreens, captureText, chosenSession, openLoginBrowser, recordSession, sessionFile, type LoginBrowser, type LoginPage, within, RenderUnavailableError, renderShots, shotsNext, type ShotsOptions, checkCapabilities, componentCard, describeIdentity, evaluateRule, findContract, loadProject, planChange, PROJECT_FILE, type LoadProjectOptions, ProjectWatcher, ruleCapability, runMigration, scanProject, screenBom, searchLibrary, whereUsed, type CacheStats, type PlanInput, type Project, type WatchUpdate } from "@youiyoux/scanner";
+import { adoptionRequest, buildInventory, captureScreens, captureText, chosenSession, openLoginBrowser, recordSession, sessionFile, type LoginBrowser, type LoginPage, within, RenderUnavailableError, renderShots, shotsNext, type ShotsOptions, checkCapabilities, componentCard, describeIdentity, designRootOf, evaluateRule, findContract, loadProject, planChange, PROJECT_FILE, type LoadProjectOptions, ProjectWatcher, ruleCapability, runMigration, scanProject, screenBom, searchLibrary, whereUsed, type CacheStats, type PlanInput, type Project, type WatchUpdate } from "@youiyoux/scanner";
 import { baselinePath, diffExitCodeOf, exitCodeOf, runCheck, writeBaseline, type CheckResult } from "./check.ts";
 import { configured, loadCheckProject, runRepoCheck } from "./check-repo.ts";
 import { workingTreeChange, type ChangeProject } from "./check-diff.ts";
@@ -88,7 +88,8 @@ ${style.bold("Anywhere")}  ${style.dim("no design system needed")}
                            an unchanged component comes from the cache (YOUI_SPECIMEN_CACHE)
 
 ${style.bold("In a product repo")}
-  init --design <dir>      write youi.project.json pointing at a design repo checkout, then sync
+  init --design <dir|package>   write youi.project.json pointing at a design repo checkout, or at
+                           the npm package that holds it (named, so no machine's folder), then sync
   sync [--dry-run] [--adopt]   tokens, DESIGN.md, skill, AGENTS.md block, owned components (3-way merge), lockfile
   scan [--out file]        build the usage map (default .youi/usage.json)
   mcp [--cache dir]        stdio MCP server: system_* tools (build with), library_* tools (browse, request),
@@ -195,8 +196,8 @@ ${style.bold("Options")}
   --root <dir>      product root, for a config kept outside the product
                     (default: "root" in the config, relative to it; else --project)
   --design <dir>    design repo checkout, the directory holding youi.config.json
-                    (default: source.path from the project config; for build and parity, the nearest
-                    folder upward holding youi.config.json)
+                    (default: the project config's source, a path or an installed package; for build and
+                    parity, the nearest folder upward holding youi.config.json)
   --json            machine-readable output`;
 
 const OPTIONS = {
@@ -579,15 +580,24 @@ async function cmdSync(values: Values): Promise<number> {
 }
 
 async function cmdInit(values: Values): Promise<number> {
-  if (!values.design) throw new UsageError("youiyoux init --design <dir>   (a design repo checkout, the directory holding youi.config.json)");
+  if (!values.design) throw new UsageError("youiyoux init --design <dir|package>   (a design repo checkout, the directory holding youi.config.json, or the npm package that holds it)");
   const root = values.project ?? process.cwd();
-  const result = await initProject({ root, design: values.design, schemaDir: join(TOOL_ROOT, "schema"), ...(values.system ? { system: values.system } : {}), ...(values.components ? { componentsDir: values.components } : {}), force: values.force });
+  const design = await designArg(values.design, root);
+  const result = await initProject({ root, ...design, schemaDir: join(TOOL_ROOT, "schema"), ...(values.system ? { system: values.system } : {}), ...(values.components ? { componentsDir: values.components } : {}), force: values.force });
   if (!values.json) {
     print(`${style.ok("created")} ${result.file}`);
     for (const note of result.notes) print(style.dim(`  · ${note}`));
     print("");
   }
-  return cmdSync({ ...values, project: root });
+  // A package is found again through the config's source; a --design folder is passed on as given.
+  const { design: _named, ...rest } = values;
+  return cmdSync({ ...(design.package ? rest : values), project: root });
+}
+
+/** init's --design: a folder when one is there, else an npm package installed for the product (written to the config by name). */
+async function designArg(value: string, root: string): Promise<{ design: string; package?: string }> {
+  if (existsSync(resolve(value)) || !PACKAGE_NAME.test(value)) return { design: value };
+  return { design: await designRootOf({ package: value }, join(resolve(root), PROJECT_FILE), root), package: value };
 }
 
 async function cmdBuild(values: Values): Promise<number> {

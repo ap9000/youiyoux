@@ -127,7 +127,7 @@ describe("youi", () => {
       await cp(join(FIXTURE, "tsconfig.json"), join(dir, "tsconfig.json"));
       await (await import("node:fs/promises")).writeFile(join(dir, "package.json"), JSON.stringify({ name: "@acme/mobile", dependencies: { "expo-router": "6.0.0" } }));
       expect(await main(["init", "--project", dir])).toBe(2);
-      expect(err).toContain("youiyoux init --design <dir>");
+      expect(err).toContain("youiyoux init --design <dir|package>");
       expect(await main(["init", "--project", dir, "--design", DEMO])).toBe(0);
       const config = JSON.parse(await readFile(join(dir, "youi.project.json"), "utf8")) as Record<string, unknown>;
       expect(config).toMatchObject({ id: "mobile", system: "demo", source: { path: relative(dir, DEMO) }, componentsDir: "components/ui", importFrom: "@/components/ui", routes: { strategy: "expo-router", appDir: "app" } });

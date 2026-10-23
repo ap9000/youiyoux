@@ -1,12 +1,16 @@
-/** Finding the project without flags: commands run from anywhere inside a product (or a design repo), as git does. */
+/**
+ * Finding the project and the design system without flags: commands run from anywhere inside a
+ * product (or a design repo), as git does, and a config names its design system by package.
+ */
 import { execFile } from "node:child_process";
-import { cp, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { findUp } from "@youiyoux/core";
-import { located } from "../src/index.ts";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { findUp, ProjectConfig } from "@youiyoux/core";
+import { loadProject } from "@youiyoux/scanner";
+import { located, main } from "../src/index.ts";
 
 const EXAMPLES = join(import.meta.dirname, "../../../examples");
 const BIN = join(import.meta.dirname, "../bin/youi.js");
@@ -66,4 +70,63 @@ describe("finding the project from where you are", () => {
     const built = await run(process.execPath, [BIN, "build", "--json"], { cwd: join(design, "components") });
     expect(JSON.parse(built.stdout).out).toBe(join(design, "build/demo"));
   }, 60_000);
+});
+
+describe("a design system named by package", () => {
+  const withSource = async (root: string, source: unknown): Promise<void> => {
+    const config = JSON.parse(await readFile(join(app, "youi.project.json"), "utf8")) as Record<string, unknown>;
+    await writeFile(join(root, "youi.project.json"), JSON.stringify({ ...config, source }));
+  };
+
+  test("it is found in the product's node_modules, through a workspace link, or in a parent's node_modules as a monorepo hoists it", async () => {
+    const product = join(dir, "pkg-app");
+    await cp(app, product, { recursive: true });
+    await withSource(product, { package: "@acme/design" });
+    await mkdir(join(product, "node_modules/@acme"), { recursive: true });
+    await symlink(design, join(product, "node_modules/@acme/design"), "dir");
+    const project = await loadProject(product);
+    expect(project.repo.root).toBe(design);
+    expect(project.system.config.id).toBe("demo");
+
+    const mono = join(dir, "mono");
+    const web = join(mono, "apps/web");
+    await cp(app, web, { recursive: true });
+    await withSource(web, { package: "design" });
+    await mkdir(join(mono, "node_modules"), { recursive: true });
+    await symlink(design, join(mono, "node_modules/design"), "dir");
+    expect((await loadProject(web)).repo.root).toBe(design);
+  });
+
+  test("not installed, it says so and what to do; never another folder", async () => {
+    const product = join(dir, "missing-app");
+    await cp(app, product, { recursive: true });
+    await withSource(product, { package: "@acme/not-installed" });
+    await expect(loadProject(product)).rejects.toThrow(/the design system package @acme\/not-installed is not installed for .*add it as a dependency and install, or set source.path/);
+  });
+
+  test("a package name is a name: no path, no .., not both forms at once", () => {
+    const base = { schema: "youi.project/v1", id: "app", system: "demo", include: ["**/*.tsx"], componentsDir: "components/ui" };
+    for (const name of ["../design", "@acme/../../etc", "/abs/design", "./design", "https://x.test/d", "@acme", "Design"]) expect(ProjectConfig.safeParse({ ...base, source: { package: name } }).success, name).toBe(false);
+    expect(ProjectConfig.safeParse({ ...base, source: { path: "../d", package: "d" } }).success).toBe(false);
+    expect(ProjectConfig.safeParse({ ...base, source: { package: "@acme/design.system" } }).success).toBe(true);
+    expect(ProjectConfig.safeParse({ ...base, source: { path: "../design" } }).success).toBe(true);
+  });
+
+  test("init --design <package> writes the package, not this machine's folder, and syncs", async () => {
+    const product = join(dir, "init-app");
+    await mkdir(join(product, "node_modules/@acme"), { recursive: true });
+    await cp(join(app, "app"), join(product, "app"), { recursive: true });
+    await cp(join(app, "tsconfig.json"), join(product, "tsconfig.json"));
+    await writeFile(join(product, "package.json"), JSON.stringify({ name: "init-app", dependencies: { "expo-router": "6.0.0", "@acme/design": "workspace:*" } }));
+    await symlink(design, join(product, "node_modules/@acme/design"), "dir");
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      expect(await main(["init", "--project", product, "--design", "@acme/design"])).toBe(0);
+    } finally {
+      vi.restoreAllMocks();
+    }
+    const config = JSON.parse(await readFile(join(product, "youi.project.json"), "utf8")) as Record<string, unknown>;
+    expect(config.source).toEqual({ package: "@acme/design" });
+    expect(await readFile(join(product, "components/ui/button.tsx"), "utf8")).toContain("buttonVariants");
+  });
 });

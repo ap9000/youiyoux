@@ -10,6 +10,8 @@ interface InitOptions {
   readonly root: string;
   /** The design repo checkout (the directory holding youi.config.json). */
   readonly design: string;
+  /** The npm package `design` was found as: the config then names the package, not the folder. */
+  readonly package?: string;
   /** This tool's published JSON Schemas, for the config's `$schema`. */
   readonly schemaDir: string;
   /** Defaults to the design repo's first system. */
@@ -68,7 +70,7 @@ export async function initProject(options: InitOptions): Promise<InitResult> {
   if (!options.force && (await exists(file))) throw new Error(`${PROJECT_FILE} already exists; use --force to replace it`);
   const design = resolve(options.design);
   const system = getSystem(await loadDesignRepo(design), options.system).config;
-  const notes: string[] = [`design repo: ${design} (system ${system.id})`];
+  const notes: string[] = [`design repo: ${options.package ? `the package ${options.package}, at ` : ""}${design} (system ${system.id})`];
   const pkg = await readJson(join(root, "package.json"));
   const deps = { ...(pkg?.dependencies as Record<string, string> | undefined), ...(pkg?.devDependencies as Record<string, string> | undefined) };
 
@@ -112,7 +114,7 @@ export async function initProject(options: InitOptions): Promise<InitResult> {
     schema: "youi.project/v1",
     id: (String(pkg?.name ?? "app").replace(/^@[^/]+\//, "").toLowerCase().replace(/[^a-z0-9-]/g, "-").replace(/^[^a-z]+/, "") || "app"),
     system: system.id,
-    source: { path: relative(root, design) || "." },
+    source: options.package ? { package: options.package } : { path: relative(root, design) || "." },
     include: include.length > 0 ? include : ["**/*.{ts,tsx,css}"],
     exclude: ["**/*.test.*", "**/*.spec.*", "**/*.d.ts"],
     componentsDir,
