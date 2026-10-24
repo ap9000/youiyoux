@@ -290,12 +290,20 @@ Without `--write` it prints that plan: the files the sync changes, each migratio
 | --- | --- | --- |
 | A GitHub repository (`github:owner/repo`, `#ref`, or its https URL, `/tree/<ref>/<folder>` for one folder) | Through GitHub's API, at one commit: a shadcn `registry.json` (its components and blocks, with their files' digests and dependencies, installable from the built item when the repository serves one); else a youiyoux design repo's component contracts; else the component files under a components folder, by name | The one GitHub detects in the licence file, with that file as the evidence; none, or one GitHub cannot name, is unknown |
 | A published Storybook (its https URL) | Its `index.json` (Storybook 7 and later) or `stories.json` (6): one item per component title with its stories, linked to its docs; a title under Pages, Templates, Layouts or Patterns is a pattern | Unknown: a Storybook does not say |
-| A Figma file (`figma.com/design/<key>/…`) | Through Figma's API with `FIGMA_TOKEN`: a component set (a Button and its variants) or a component outside one is an item; styles are one token item per kind | Unknown |
+| A Figma file (`figma.com/design/<key>/…`) | Through Figma's API, signed in with `youiyoux figma login` (or `FIGMA_TOKEN`): a component set (a Button and its variants) or a component outside one is an item; styles are one token item per kind | Unknown |
 | A DESIGN.md (an https URL, a file on GitHub, or a path: the CLI only) | A token item per frontmatter group (colors, typography, rounded, spacing, …), a component item per component it names (a variant folded into its base) | Unknown |
 
 - **Reviewed before it lands.** One draft per link. A person keeps or drops each item (a save changes only that; no item, source or licence can be edited), previews, approves, and the kept items are written on a review branch as references at stage `library`: never System elements, never installed. Each is requested for adoption on its own, which needs a known licence.
 - **Said, never dropped.** What a reader saw but could not read (a registry's styles and examples, a contract that is not one) is listed with why; at most 300 items come from one link, and the rest are counted.
-- **The network.** Public https only, through Discover's polite client. `GITHUB_TOKEN` (sent to api.github.com only) raises GitHub's limit of 60 requests an hour; a repository needs four or so. `FIGMA_TOKEN` is sent to api.figma.com only. A local DESIGN.md is read by the CLI only, and its path is written into no item.
+- **The network.** Public https only, through Discover's polite client. `GITHUB_TOKEN` (sent to api.github.com only) raises GitHub's limit of 60 requests an hour; a repository needs four or so. A Figma token is sent to api.figma.com only, and neither token follows a redirect to another site. A local DESIGN.md is read by the CLI only, and its path is written into no item.
+
+### Signing in to Figma
+
+`youiyoux figma login` signs a person in once; `youiyoux figma status` says how, and `youiyoux figma logout` removes it. `FIGMA_TOKEN` in the environment still wins over both.
+
+- **Through the browser**, when a team has its own Figma app. Someone registers a *private* OAuth app in Figma (no review by Figma; it works for the team or organisation) with the redirect URL `http://127.0.0.1:47823/callback` and the scopes File content, Library content and Current user (read), then gives people its `FIGMA_CLIENT_ID` and `FIGMA_CLIENT_SECRET`. Login opens Figma, the person approves, and a one-off callback on this machine (127.0.0.1 only) takes Figma's answer: PKCE and a random state, so only the answer to this sign-in is taken. The access token lasts 90 days and is renewed by itself the day before. `--port` uses another port (register that URL instead). The secret is the team's: it cannot ship inside a package everyone installs.
+- **With a personal access token**, otherwise (or with `--paste`). Login opens Figma's settings, says which read-only scopes to give it and to set an expiry, reads the token without showing it, and checks it with Figma.
+- **Kept** in the macOS Keychain (written through the security tool's stdin, never its arguments), else in a file only its owner can read (`$XDG_CONFIG_HOME/youiyoux/figma.json`, mode 0600). The CLI and the hub's Ingest field both use it. No token is ever printed.
 
 ## The hosted hub
 

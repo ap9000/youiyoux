@@ -4,8 +4,8 @@
  * one ingest draft in the product's changes queue, where a person keeps or drops each item and
  * approves the rest (`youiyoux ui`, Changes). Nothing is written to the Library here.
  *
- * GITHUB_TOKEN (api.github.com only) raises GitHub's limit of 60 requests an hour; FIGMA_TOKEN
- * (api.figma.com only) is needed to read a Figma file. Both are read from the environment only.
+ * GITHUB_TOKEN (api.github.com only) raises GitHub's limit of 60 requests an hour. A Figma file
+ * needs FIGMA_TOKEN or this person's sign-in (`youiyoux figma login`), sent to api.figma.com only.
  */
 import { userInfo } from "node:os";
 import type { IngestReading } from "@youiyoux/workflow";
@@ -17,9 +17,10 @@ export async function readLink(link: string, options: { readonly allowLocal: boo
   const { githubBuckets, ingestLink, PoliteClient } = await import("@youiyoux/discover");
   const env = options.env ?? process.env;
   const token = env.GITHUB_TOKEN || undefined;
-  const figmaToken = env.FIGMA_TOKEN || undefined;
-  const client = new PoliteClient({ buckets: githubBuckets(token), ...(token ? { token } : {}), ...(figmaToken ? { figmaToken } : {}) });
-  const result = await ingestLink(link, { client, allowLocal: options.allowLocal, figma: Boolean(figmaToken) });
+  // FIGMA_TOKEN, else this person's Figma sign-in (youiyoux figma login), read only for a Figma link.
+  const figma = /figma\.com\//i.test(link) ? await (await import("./figma-auth.ts")).figmaAccess({ env }) : null;
+  const client = new PoliteClient({ buckets: githubBuckets(token), ...(token ? { token } : {}), ...(figma ? { figmaToken: figma.token, figmaBearer: figma.bearer } : {}) });
+  const result = await ingestLink(link, { client, allowLocal: options.allowLocal, figma: Boolean(figma) });
   return { link: result.link, source: result.source, license: result.license, fetchedAt: result.fetchedAt, entries: result.entries, skipped: result.skipped, notes: result.notes };
 }
 

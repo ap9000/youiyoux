@@ -77,6 +77,8 @@ export interface PoliteOptions {
   readonly token?: string;
   /** FIGMA_TOKEN, read from the environment by the caller; sent to api.figma.com only (X-Figma-Token). */
   readonly figmaToken?: string;
+  /** The Figma token is an OAuth access token (youiyoux figma login): sent as Authorization: Bearer, still to api.figma.com only. */
+  readonly figmaBearer?: boolean;
   readonly cache?: Map<string, CachedResponse>;
   readonly now?: () => Date;
   readonly random?: () => number;
@@ -227,7 +229,10 @@ export class PoliteClient {
     if (cached?.etag) headers["if-none-match"] = cached.etag;
     if (cached?.lastModified) headers["if-modified-since"] = cached.lastModified;
     if (this.options.token && parsed.hostname === "api.github.com") headers.authorization = `Bearer ${this.options.token}`;
-    if (this.options.figmaToken && parsed.hostname === "api.figma.com") headers["x-figma-token"] = this.options.figmaToken;
+    if (this.options.figmaToken && parsed.hostname === "api.figma.com") {
+      if (this.options.figmaBearer) headers.authorization = `Bearer ${this.options.figmaToken}`;
+      else headers["x-figma-token"] = this.options.figmaToken;
+    }
     this.stats.sent++;
     this.inFlight++;
     this.stats.maxInFlight = Math.max(this.stats.maxInFlight, this.inFlight);

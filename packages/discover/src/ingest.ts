@@ -186,7 +186,7 @@ export async function ingestLink(link: string, options: IngestOptions): Promise<
     : target.kind === "storybook"
       ? readStorybook(target, options.client, fetchedAt)
       : target.kind === "figma"
-        ? (options.figma ? readFigma(target, options.client, fetchedAt) : Promise.reject(new IngestError("a Figma file is read through Figma's API: set FIGMA_TOKEN to a personal access token that can read the file (Figma > Settings > Security > Personal access tokens)")))
+        ? (options.figma ? readFigma(target, options.client, fetchedAt) : Promise.reject(new IngestError("a Figma file is read through Figma's API: sign in with youiyoux figma login (or set FIGMA_TOKEN)")))
         : readDesignMd(target, options.client, fetchedAt, (path) => readFile(path, "utf8")));
   const over = result.entries.length - INGEST_CAP;
   // Every string a source served (a title, a name, a path, a reason) without terminal controls, as Discover keeps its listings.

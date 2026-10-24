@@ -205,7 +205,7 @@ describe("a Figma file", () => {
 
   test("needs FIGMA_TOKEN, sent to api.figma.com only; a component set is one item, its variants are not; styles by kind", async () => {
     const { fetcher, asked } = served(routes);
-    await expect(ingestLink(`https://www.figma.com/design/${key}/Acme-UI`, { client: client(fetcher) })).rejects.toThrow("set FIGMA_TOKEN");
+    await expect(ingestLink(`https://www.figma.com/design/${key}/Acme-UI`, { client: client(fetcher) })).rejects.toThrow("sign in with youiyoux figma login (or set FIGMA_TOKEN)");
     expect(asked).toEqual([]);
     const result = await ingestLink(`https://www.figma.com/design/${key}/Acme-UI`, { client: client(fetcher, { figmaToken: "figd_secret" }), figma: true, now: () => NOW });
     expect(result.entries.map((e) => [e.kind, e.name, e.source.url])).toEqual([

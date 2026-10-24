@@ -100,7 +100,7 @@ Node 20 or later.
 | `system extract <dir>` | Move an adopted System into a design repo of its own. `--package` |
 | `init --design <dir>`, `sync`, `check`, `show`, `where`, `plan`, `migrate` | With a design system repo |
 | `record`, `hub serve` | A team's hosted hub, read-only and fed by CI: every repository's products and each System's adoption by version. `hooks install --record` wires CI |
-| `library ingest <link>` | Read a GitHub repo, a Storybook, a Figma file or a DESIGN.md into Library items, sorted by role; `--draft` files them for a person to keep, drop and approve |
+| `library ingest <link>` | Read a GitHub repo, a Storybook, a Figma file or a DESIGN.md into Library items, sorted by role; `--draft` files them for a person to keep, drop and approve. `figma login` signs in to Figma once |
 | `upgrade` | Move to the design system's new release: the sync and its migrations, previewed and gated; `--write` applies all of it or nothing. `--to <tag>` for a git source |
 
 Full reference: [docs/commands.md](docs/commands.md).

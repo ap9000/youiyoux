@@ -189,8 +189,13 @@ ${style.bold("System")}  ${style.dim("approved elements: build only with these")
 ${style.bold("Library")}  ${style.dim("ingested references: browse and request adoption, never build with")}
   library search <query>   Library items (lib: ids) and the System elements each could swap in for
   library request <id> --reason <text>   draft an adoption request for a person to approve
+  figma login [--paste] [--port n] | logout | status
+                           sign in to Figma once, for Figma links: through the browser with your team's
+                           private Figma app (FIGMA_CLIENT_ID, FIGMA_CLIENT_SECRET), else with a personal
+                           access token you paste; kept in the macOS Keychain (else a file only you can
+                           read). FIGMA_TOKEN still wins
   library ingest <link> [--draft] [--json]
-                           read what a GitHub repository, a Storybook, a Figma file (FIGMA_TOKEN) or a
+                           read what a GitHub repository, a Storybook, a Figma file (youiyoux figma login) or a
                            DESIGN.md holds into Library items, each sorted into a role, and show them;
                            --draft files them as one draft in the changes queue, where a person keeps or
                            drops each and approves the rest (youiyoux ui > Changes). GITHUB_TOKEN raises
@@ -312,6 +317,7 @@ const OPTIONS = {
   db: { type: "string" },
   record: { type: "boolean", default: false },
   draft: { type: "boolean", default: false },
+  paste: { type: "boolean", default: false },
   cache: { type: "string" },
   role: { type: "string" },
   license: { type: "string" },
@@ -681,6 +687,50 @@ async function cmdRecord(values: Values): Promise<number> {
   const sentTo = values.send ? await sendRecord(record, hub!, { token, github }) : null;
   if (values.json) json(record);
   else print([renderRecord(record, sentTo), ...(values.out ? [style.dim(`  written to ${values.out}`)] : []), ...(!values.send && !values.out ? [style.dim(`  youiyoux record --send posts it to the hub in ${HUB_URL_ENV}; --out <file> writes it; --json prints it`)] : [])].join("\n"));
+  return 0;
+}
+
+/** `youiyoux figma login [--paste] [--port n] | logout | status`: this person's Figma sign-in, for Figma links. */
+async function cmdFigma(values: Values, positionals: string[]): Promise<number> {
+  const [action, ...extra] = positionals;
+  const auth = await import("./figma-auth.ts");
+  const store = auth.credentialStore();
+  if (extra.length > 0 || !["login", "logout", "status"].includes(action ?? "")) throw new UsageError("youiyoux figma login [--paste] [--port n]   or   youiyoux figma logout   or   youiyoux figma status");
+  if (action === "status") {
+    const stored = await store.get();
+    const lines = process.env.FIGMA_TOKEN ? [`${style.ok("FIGMA_TOKEN")} is set: it is used, before any sign-in`] : [];
+    if (!stored) lines.push(process.env.FIGMA_TOKEN ? style.dim("no sign-in kept") : `${style.warn("not signed in")} to Figma: youiyoux figma login`);
+    else if (stored.kind === "token") lines.push(`${style.ok("signed in")}${stored.handle ? ` as ${stored.handle}` : ""} with a personal access token, kept in ${store.where} since ${stored.savedAt.slice(0, 10)}`);
+    else lines.push(`${style.ok("signed in")}${stored.handle ? ` as ${stored.handle}` : ""} through your team's Figma app, kept in ${store.where}; renewed before ${stored.expiresAt.slice(0, 10)}${auth.oauthAppOf(process.env) ? "" : style.warn(" (renewing needs FIGMA_CLIENT_ID and FIGMA_CLIENT_SECRET)")}`);
+    print(lines.join("\n"));
+    return stored || process.env.FIGMA_TOKEN ? 0 : 1;
+  }
+  if (action === "logout") {
+    const removed = await store.delete();
+    print(removed ? `${style.ok("signed out")}: the Figma sign-in is removed from ${store.where}. To end it in Figma as well, remove the token or the app in Figma > Settings > Security` : style.dim("not signed in: nothing to remove"));
+    return 0;
+  }
+  const app = values.paste ? null : auth.oauthAppOf(process.env);
+  if (app) {
+    const port = values.port ? Number(values.port) : auth.DEFAULT_CALLBACK_PORT;
+    if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new UsageError(`--port ${JSON.stringify(values.port)}: expected a port from 1024 to 65535`);
+    const credential = await auth.browserLogin({ app, port, say: (line) => print(style.dim(line)) });
+    await store.set(credential);
+    print(`${style.ok("signed in")} to Figma${credential.handle ? ` as ${credential.handle}` : ""} through your team's app; kept in ${store.where}, renewed by itself`);
+    return 0;
+  }
+  print([
+    "Sign in with a Figma personal access token:",
+    "  1. Figma > Settings > Security > Personal access tokens > Generate new token (opening it now)",
+    "  2. Give it an expiry, and these scopes, read-only: File content, Library content, and Current user (to check it)",
+    "  3. Paste it here; it is not shown",
+    style.dim(`  (A team can sign in through the browser instead: register a private Figma OAuth app with the redirect URL ${auth.callbackUrl(auth.DEFAULT_CALLBACK_PORT)}, then set FIGMA_CLIENT_ID and FIGMA_CLIENT_SECRET.)`),
+  ].join("\n"));
+  if (process.stdin.isTTY) auth.openBrowser("https://www.figma.com/settings");
+  const token = await auth.readSecret("Token: ");
+  const { credential, checked } = await auth.tokenLogin(token);
+  await store.set(credential);
+  print(`${style.ok("signed in")} to Figma${credential.handle ? ` as ${credential.handle}` : ""}; kept in ${store.where}${checked ? "" : style.warn(" (not checked: give the token Current user: Read to let youiyoux check it)")}`);
   return 0;
 }
 
@@ -1305,7 +1355,7 @@ async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Pr
 type Command = (values: Values, positionals: string[], io: CliIo) => Promise<number>;
 
 const COMMANDS: Record<string, Command> = {
-  adopt: cmdAdopt, status: cmdStatus, system: cmdSystem, link: cmdLink, unlink: cmdUnlink, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, upgrade: cmdUpgrade, record: cmdRecord, hub: cmdHubServe, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, screens: cmdScreens, requests: cmdRequests, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+  adopt: cmdAdopt, status: cmdStatus, system: cmdSystem, link: cmdLink, unlink: cmdUnlink, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, upgrade: cmdUpgrade, record: cmdRecord, hub: cmdHubServe, figma: cmdFigma, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, screens: cmdScreens, requests: cmdRequests, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
 
 /** Every command name, for a front end that runs one by default (the youiyoux bin runs report). */
