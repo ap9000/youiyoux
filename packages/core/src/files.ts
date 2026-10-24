@@ -79,8 +79,19 @@ export function globRegExp(pattern: string): RegExp {
 
 const matchesGlob = nativeMatch ?? ((path: string, pattern: string): boolean => globRegExp(pattern).test(path));
 
+/**
+ * What makes a pattern a glob: `*`, `?`, `[…]`, `{…}`, an escape, an extglob (`@(…)`, `!(…)`,
+ * `+(…)`) or a leading `!`. A Next.js route group's `(ee)` is plain text. Without these, a
+ * pattern names one path.
+ */
+export const GLOB_SYNTAX = /[*?[{\\]|[@!+]\(|^!/;
+
+/** A glob of `**`, `*`, `{a,b}` and plain characters: the shape globRegExp is proven to match as Node does (files.test.ts), compiled once. */
+const SIMPLE_GLOB = /^(?:[\w.\-/{},]|\*)+$/;
+
 export function matchesAny(path: string, patterns: readonly string[]): boolean {
-  return patterns.some((pattern) => path === pattern || matchesGlob(path, pattern));
+  // A plain path matches only itself, and a simple glob is a cached expression: a file walk asks for every entry it meets.
+  return patterns.some((pattern) => path === pattern || (GLOB_SYNTAX.test(pattern) && (SIMPLE_GLOB.test(pattern) ? globRegExp(pattern).test(path) : matchesGlob(path, pattern))));
 }
 
 /** fs.glob's files, for Node without it: a walk that never enters an excluded directory. */

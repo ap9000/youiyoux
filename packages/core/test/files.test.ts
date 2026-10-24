@@ -16,6 +16,12 @@ test("globRegExp matches what path.matchesGlob matches", () => {
   for (const pattern of PATTERNS) for (const path of PATHS) expect([pattern, path, globRegExp(pattern).test(path)]).toEqual([pattern, path, matchesGlob(path, pattern)]);
 });
 
+test("matchesAny answers as path.matchesGlob does, plain paths and simple globs without compiling a glob for each (Next.js route groups are plain text)", () => {
+  const patterns = [...PATTERNS, "**/dist/**", "**/.youi/**", "src/{a,b}/*.ts", "apps/web/app/(ee)/page.tsx", "app/(dashboard)/**", "app/@(a|b)/x.ts", "!src/**", "a/**/b.ts", "a\\*.ts"];
+  const paths = [...PATHS, "dist/x.js", "a/dist/b/c.js", ".youi/x", "src/a/x.ts", "src/c/x.ts", "apps/web/app/(ee)/page.tsx", "app/(dashboard)/x/page.tsx", "app/a/x.ts", "a/x/y/b.ts", "a/b.ts", "a*.ts"];
+  for (const pattern of patterns) for (const path of paths) expect([pattern, path, matchesAny(path, [pattern])]).toEqual([pattern, path, path === pattern || matchesGlob(path, pattern)]);
+});
+
 const dir = mkdtempSync(join(tmpdir(), "youi-files-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 

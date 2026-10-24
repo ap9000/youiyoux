@@ -4,7 +4,7 @@
  * route file reaches it through imports; otherwise it is `unrouted`, which a
  * reader sees, rather than a guess.
  */
-import { matchesAny, type RouteAttribution, type RouteConfig } from "@youiyoux/core";
+import { GLOB_SYNTAX, matchesAny, type RouteAttribution, type RouteConfig } from "@youiyoux/core";
 import type { ModuleGraph } from "./graph.ts";
 import type { ModuleInfo } from "./parse.ts";
 
@@ -28,6 +28,13 @@ interface Entry {
 
 function routeEntries(files: readonly string[], config: RouteConfig): Map<string, Entry> {
   const entries = new Map<string, Entry>();
+  // A map entry naming one file is looked up; only the globs are matched against every file.
+  const exact = new Map<string, string[]>();
+  const globs: RouteConfig["map"] = [];
+  for (const m of config.strategy === "map" ? config.map : []) {
+    if (GLOB_SYNTAX.test(m.file)) globs.push(m);
+    else exact.set(m.file, [...(exact.get(m.file) ?? []), ...m.routes]);
+  }
   for (const file of files) {
     if (matchesAny(file, config.shell)) {
       entries.set(file, { routes: [SHELL_ROUTE], shell: true });
@@ -43,7 +50,7 @@ function routeEntries(files: readonly string[], config: RouteConfig): Map<string
       }
     }
     if (config.strategy === "map") {
-      const routes = config.map.filter((m) => matchesAny(file, [m.file])).flatMap((m) => m.routes);
+      const routes = [...(exact.get(file) ?? []), ...globs.filter((m) => matchesAny(file, [m.file])).flatMap((m) => m.routes)];
       if (routes.length > 0) entries.set(file, { routes: [...new Set(routes)], shell: false });
     }
   }
