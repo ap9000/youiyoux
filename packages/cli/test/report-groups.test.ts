@@ -89,7 +89,7 @@ function handStyledFiles(shared: boolean): Record<string, string> {
 /** Every near-duplicate fix: its keeper file is not a file it applies to, and every import it suggests resolves to the keeper. */
 function expectSoundFixes(model: ReportModel, dir: string): void {
   for (const group of model.projects.flatMap((p) => p.nearDuplicates)) {
-    const keeper = /^(?:Keep (?:one )?\S+ \(([^)]+)\)|Create \S+ in (\S+) \(a new file)/.exec(group.next);
+    const keeper = /^(?:(?:Keep (?:one )?|Give |Render )\S+ \(([^)]+)\)|Create \S+ in (\S+) \(a new file)/.exec(group.next);
     expect(keeper, group.next).not.toBeNull();
     const keeperFile = (keeper![1] ?? keeper![2]!).split(", ").at(-1)!;
     const steps = (group.steps ?? []).join("\n");
@@ -156,7 +156,8 @@ test("hand-styled groups name an existing shared component, or a new file to ext
   const shared = fixture("hand-shared", handStyledFiles(true));
   const withShared = await buildReportModel(shared.dir);
   const named = withShared.projects[0]!.nearDuplicates.find((g) => g.title.includes("button"));
-  expect(named?.next).toMatch(/^Keep Button \(src\/components\/ui\/button\.tsx\)/);
+  // The shared Button is 36px; these are 28px: it gets their size, never swapped in as it is.
+  expect(named?.next).toMatch(/^Give Button \(src\/components\/ui\/button\.tsx\) this shape as a size or variant, then use it/);
   expect(named?.next).toContain('import { Button } from "@/components/ui/button"');
   expectSoundFixes(withShared, shared.dir);
 });
@@ -318,4 +319,97 @@ test("the card and summary headline count only groups of 2+ exported components;
   // The rule fits the card on one line at its smallest size, so it is never cut.
   expect(textWidth(DUPLICATE_RULE, 2)).toBeLessThanOrEqual(CARD_WIDTH - 2 * 72);
   expect(renderHtml(model)).toContain("PriceRow is defined in 2 files");
+});
+
+/** A site styled by its own stylesheets: a general .button with sizes, and a .copy class of the same shape; a layout class on divs. */
+function stylesheetFiles(): Record<string, string> {
+  const files: Record<string, string> = {
+    "package.json": JSON.stringify({ name: "sheets", private: true, dependencies: { react: "19.3.0", "react-dom": "19.3.0" } }),
+    "tsconfig.json": JSON.stringify({ compilerOptions: { jsx: "react-jsx" } }),
+    "src/styles/ui.css": ".button { display: inline-flex; height: 40px; padding: 0 16px; border-radius: 8px; font-size: 14px; }\n.button-sm { height: 36px; padding: 0 12px; border-radius: 7px; font-size: 13px; }\n",
+    "src/styles/feature.css": ".copy { display: inline-flex; height: 36px; padding: 0 12px; border-radius: 7px; font-size: 13px; }\n.sheet { padding: 24px; border-radius: 12px; }\n",
+    "src/save.tsx": 'export function Save() {\n  return <button className="button button-sm">Save</button>;\n}\n',
+  };
+  for (const name of ["one", "two", "three"]) files[`src/${name}.tsx`] = `export function ${name[0]!.toUpperCase()}${name.slice(1)}() {\n  return <div className="sheet"><button className="copy" type="button">Copy</button></div>;\n}\n`;
+  return files;
+}
+
+test("a stylesheet class used on many buttons is one way, not one per button; the kept class is named with the size its buttons use; a layout class is no component", async () => {
+  const repo = fixture("sheets", stylesheetFiles());
+  const model = await buildReportModel(repo.dir);
+  const group = model.projects[0]!.nearDuplicates.find((g) => g.title.includes("36px high"));
+  expect(group?.title).toBe("4 buttons look the same (36px high, 12px side padding, 7px corners, 13px text) but are built 2 ways");
+  expect(group?.next).toBe("Keep .button.button-sm (src/styles/ui.css). In src/styles/feature.css, .copy copies .button.button-sm's shape: use .button.button-sm where .copy is used (3 places)");
+  expect(group?.next).not.toContain("hand-styled");
+  const { buildInventory } = await import("@youiyoux/scanner");
+  const inventory = await buildInventory([repo.dir]);
+  const classes = inventory.definitions.filter((d) => d.kind === "class").map((d) => [d.name, d.role]);
+  // .copy names no element but styles buttons: a button style. .sheet styles only divs: not counted.
+  expect(classes).toContainEqual([".copy", "button"]);
+  expect(classes.some(([name]) => name === ".sheet")).toBe(false);
+});
+
+/** A component, and pages that write out its markup (exact, with a variant class, without the optional part) or only look like it. */
+function copiedMarkupFiles(): Record<string, string> {
+  const command = '<div class="command"><span class="prompt">$</span><code>{command}</code><button class="copy" type="button"><svg viewBox="0 0 16 16"><rect /></svg><span>Copy</span></button></div>';
+  return {
+    "package.json": JSON.stringify({ name: "copied", private: true, dependencies: { react: "19.3.0", "react-dom": "19.3.0", astro: "5.0.0" } }),
+    "tsconfig.json": JSON.stringify({ compilerOptions: { jsx: "react-jsx" } }),
+    "src/components/Command.astro": `---\nconst { command } = Astro.props;\n---\n${command}\n`,
+    "src/pages/index.astro": [
+      "---",
+      'import Command from "../components/Command.astro";',
+      "---",
+      '<main>',
+      '<div class="command"><span class="prompt">$</span><code>npx app up</code><button class="copy" type="button"><svg viewBox="0 0 16 16"><rect /></svg><span>Copy</span></button></div>',
+      '<div class="command command-lg"><code>npx app demo</code><button class="copy" type="button"><svg viewBox="0 0 16 16"><rect /></svg><span>Copy</span></button></div>',
+      '<Command command="npx app ok" />',
+      // Same root class, nothing alike inside: not a copy.
+      '<div class="command"><p>Run it in a terminal</p></div>',
+      "</main>",
+    ].join("\n"),
+    // Rooted in another component: its inner block, shared with a sibling card, is not its markup.
+    "src/components/MediaCard.astro": '<article class="media"><slot name="media" /><slot /></article>\n',
+    "src/components/VideoCard.astro": '---\nimport MediaCard from "./MediaCard.astro";\n---\n<MediaCard><iframe slot="media" /><div class="meta"><p class="title">{Astro.props.title}</p><p class="description">x</p></div></MediaCard>\n',
+    "src/pages/themes.astro": '---\nimport MediaCard from "../components/MediaCard.astro";\n---\n<MediaCard><img slot="media" /><div class="meta"><p class="title">Theme</p><p class="description">y</p></div></MediaCard>\n',
+    "src/components/card.tsx": 'export function Card({ title, children }) {\n  return <section className="card"><h2 className="card-title">{title}</h2><div className="card-body">{children}</div></section>;\n}\n',
+    "src/features/billing.tsx": 'export function Billing() {\n  return <div><section className="card"><h2 className="card-title">Billing</h2><div className="card-body">Paid</div></section><section className="card">Other</section></div>;\n}\n',
+  };
+}
+
+test("markup a component renders, written out by hand elsewhere, is reported with where to render the component instead: Astro and React; a look-alike root with other insides is not", async () => {
+  const repo = fixture("copied", copiedMarkupFiles());
+  const model = await buildReportModel(repo.dir);
+  const titles = model.projects[0]!.nearDuplicates.map((g) => g.title);
+  const command = model.projects[0]!.nearDuplicates.find((g) => g.title.includes("Command"));
+  expect(command?.title).toBe("src/pages/index.astro writes out Command's markup 2 times instead of rendering <Command>");
+  expect(command?.next).toBe('Render Command (src/components/Command.astro) where its markup is copied. In src/pages/index.astro, render <Command> at lines 5, 6 instead of writing out its markup (import Command from "../components/Command.astro")');
+  const card = model.projects[0]!.nearDuplicates.find((g) => g.title.includes("Card's markup"));
+  expect(card?.title).toBe("src/features/billing.tsx writes out Card's markup 1 time instead of rendering <Card>");
+  expect(card?.next).toMatch(/In src\/features\/billing\.tsx, render <Card> at line 2 instead of writing out its markup \(import \{ Card \} from "\.\.\/components\/card"\)/);
+  expect(titles.filter((t) => t.includes("markup"))).toHaveLength(2);
+  expect(titles.some((t) => t.includes("VideoCard"))).toBe(false);
+});
+
+/** A shared Button used at its own size, and small icon buttons hand-styled the same way in three files. */
+function iconButtonFiles(): Record<string, string> {
+  const files: Record<string, string> = {
+    "package.json": JSON.stringify({ name: "icons", private: true, dependencies: TAILWIND }),
+    "tsconfig.json": JSON.stringify({ compilerOptions: { jsx: "react-jsx", baseUrl: ".", paths: { "@/*": ["./src/*"] } } }),
+    "src/styles.css": '@import "tailwindcss";\n',
+    "src/components/ui/button.tsx": 'export function Button({ className = "", ...props }) {\n  return <button className={`inline-flex h-10 items-center rounded-md px-4 text-sm ${className}`} {...props} />;\n}\n',
+    "src/app/page.tsx": 'import { Button } from "@/components/ui/button";\nexport default function Page() {\n  return <div><Button>Save</Button><Button>Send</Button></div>;\n}\n',
+  };
+  for (const name of ["toolbar", "field", "panel"]) files[`src/editor/${name}.tsx`] = `export function ${name[0]!.toUpperCase()}${name.slice(1)}() {\n  return <div><button type="button" className="rounded-sm p-1.5 text-gray-400">x</button><button type="button" className="rounded-sm p-1.5 text-gray-400">y</button></div>;\n}\n`;
+  return files;
+}
+
+test("a shared component used only at another size is never swapped in as it is: the fix gives it this shape as a size, then uses it", async () => {
+  const repo = fixture("icons", iconButtonFiles());
+  const model = await buildReportModel(repo.dir);
+  const group = model.projects[0]!.nearDuplicates.find((g) => g.title.includes("6px side padding"));
+  expect(group?.next).toMatch(/^Give Button \(src\/components\/ui\/button\.tsx\) this shape as a size or variant, then use it\. In src\/editor\/field\.tsx, replace the hand-styled <button>s at lines 2, 2 with Button in that size/);
+  expect(group?.next).not.toContain("Keep Button");
+  // Six buttons with the same classes pasted in: one way, copied, not six.
+  expect(group?.title).toBe("6 buttons look the same (6px side padding, 4px corners) but are built one way, copied by hand");
 });

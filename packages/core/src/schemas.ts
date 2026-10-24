@@ -654,6 +654,10 @@ export const InventoryFlag = z.discriminatedUnion("kind", [
 ]);
 export type InventoryFlag = z.infer<typeof InventoryFlag>;
 
+/** An element that writes out a component's markup (its root, its classes, most of what is inside it) instead of rendering it. */
+export const InventoryCopy = ProjectPosition.extend({ column: z.number().int().positive(), component: z.string() });
+export type InventoryCopy = z.infer<typeof InventoryCopy>;
+
 export const InventoryReport = z.object({
   $schema: z.string().optional(),
   schema: z.literal("youi.inventory/v1"),
@@ -669,6 +673,8 @@ export const InventoryReport = z.object({
   looks: z.array(InventoryLook),
   families: z.array(InventoryFamily),
   flags: z.array(InventoryFlag),
+  /** Elements that write out a component's markup instead of rendering it. */
+  copies: z.array(InventoryCopy).optional(),
   summary: z.object({
     looks: z.number().int(),
     clustered: z.number().int(),

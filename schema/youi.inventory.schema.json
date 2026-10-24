@@ -1229,6 +1229,40 @@
         ]
       }
     },
+    "copies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "column": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "component": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "project",
+          "file",
+          "line",
+          "column",
+          "component"
+        ]
+      }
+    },
     "summary": {
       "type": "object",
       "properties": {

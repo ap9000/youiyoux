@@ -21,6 +21,8 @@ export interface TemplateTag {
   readonly firstChild: string | null;
   /** The plain text right inside it (`<Badge>New</Badge>` → `New`); null when none or an expression. */
   readonly text: string | null;
+  /** The tag it sits in, by its place in the file's tag list; null at the top of the template. */
+  readonly parent: number | null;
 }
 
 export interface AstroFile {
@@ -82,6 +84,8 @@ interface Opened {
   readonly tag: string;
   readonly index: number;
   firstChild: string | null;
+  /** Its place in the tag list. */
+  readonly at: number;
 }
 
 /** Text from `start` to the next tag, collapsed; null when empty or it holds an expression. */
@@ -94,7 +98,7 @@ function textAt(source: string, start: number): string | null {
 /** Tags in an Astro template; `offset` is where the template starts in the file. */
 export function readTemplate(source: string, offset: number): { tags: TemplateTag[]; styles: Array<{ css: string; line: number }>; problems: string[] } {
   const starts = lineStarts(source);
-  const found: Array<{ tag: string; index: number; attributes: TemplateAttribute[]; opened: Opened | null; text: string | null }> = [];
+  const found: Array<{ tag: string; index: number; attributes: TemplateAttribute[]; opened: Opened | null; text: string | null; parent: number | null }> = [];
   const styles: Array<{ css: string; line: number }> = [];
   const problems: string[] = [];
   const stack: Opened[] = [];
@@ -188,21 +192,22 @@ export function readTemplate(source: string, offset: number): { tags: TemplateTa
     }
     const parent = stack.at(-1);
     if (parent && parent.firstChild === null) parent.firstChild = tag;
+    const inside = parent ? parent.at : null;
     const lower = tag.toLowerCase();
     if (RAW_TEXT.has(lower) && !selfClosing) {
       const close = source.indexOf(`</${lower}`, j);
       const end = close < 0 ? source.length : close;
       if (lower === "style") styles.push({ css: source.slice(j, end), line: positionAt(starts, j).line });
-      found.push({ tag, index: i, attributes, opened: null, text: null });
+      found.push({ tag, index: i, attributes, opened: null, text: null, parent: inside });
       i = close < 0 ? source.length : source.indexOf(">", close) + 1 || source.length;
       continue;
     }
-    const opened: Opened | null = selfClosing ? null : { tag, index: i, firstChild: null };
+    const opened: Opened | null = selfClosing ? null : { tag, index: i, firstChild: null, at: found.length };
     if (opened) stack.push(opened);
-    found.push({ tag, index: i, attributes, opened, text: opened ? textAt(source, j) : null });
+    found.push({ tag, index: i, attributes, opened, text: opened ? textAt(source, j) : null, parent: inside });
     i = j;
   }
-  const tags = found.map(({ tag, index, attributes, opened, text }) => ({ tag, ...positionAt(starts, index), attributes, firstChild: opened?.firstChild ?? null, text }));
+  const tags = found.map(({ tag, index, attributes, opened, text, parent }) => ({ tag, ...positionAt(starts, index), attributes, firstChild: opened?.firstChild ?? null, text, parent }));
   return { tags, styles, problems };
 }
 

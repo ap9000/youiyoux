@@ -193,6 +193,7 @@ export async function buildInventory(dirs: readonly string[], options: Inventory
     looks: allLooks,
     families,
     flags: flagsOf(projects),
+    copies: projects.flatMap((p) => p.copies),
     summary: {
       looks: uses.length,
       clustered: uses.filter((l) => l.family !== null).length,

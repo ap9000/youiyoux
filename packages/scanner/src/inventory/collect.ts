@@ -7,7 +7,7 @@
 import { readFile } from "node:fs/promises";
 import { join, posix } from "node:path";
 import type { SgNode } from "@ast-grep/napi";
-import { matchesAny, type InventoryDefinition, type InventoryKit, type InventoryLook, type InventoryPrimitive, type InventoryProject, type InventoryRecipe, type InventoryRecipeWrapper, type InventoryRole, type PropValue } from "@youiyoux/core";
+import { matchesAny, type InventoryCopy, type InventoryDefinition, type InventoryKit, type InventoryLook, type InventoryPrimitive, type InventoryProject, type InventoryRecipe, type InventoryRecipeWrapper, type InventoryRole, type PropValue } from "@youiyoux/core";
 import { readRules, splitTopLevel } from "@youiyoux/tokens";
 import { ModuleGraph, type ResolvedSymbol } from "../graph.ts";
 import { gitState } from "../identity.ts";
@@ -79,6 +79,8 @@ export interface ProjectInventory {
   readonly kitImports: Map<string, ImportedKit[]>;
   /** Its Storybook stories, when it has any (their looks are in `looks`, with `story`). */
   readonly stories: StoriesRead | null;
+  /** Elements that write out a component's markup instead of rendering it. */
+  readonly copies: InventoryCopy[];
 }
 
 export type StoriesRead = NonNullable<InventoryProject["stories"]>;
@@ -116,6 +118,37 @@ export async function pathAliases(root: string, tsconfig: string): Promise<Array
 }
 
 const position = (node: SgNode): { line: number; column: number } => ({ line: node.range().start.line + 1, column: node.range().start.column + 1 });
+
+/** An element as markup: its tag, its certain classes, and the elements inside it, each a tag with its classes. */
+interface Markup {
+  readonly tag: string;
+  readonly classes: readonly string[];
+  readonly inside: ReadonlySet<string>;
+}
+
+/** How much of a component's insides an element must repeat to be a copy of it. */
+const COPY_OVERLAP = 0.6;
+
+const markupToken = (tag: string, classes: readonly string[]): string => (classes.length > 0 ? `${tag}.${[...new Set(classes)].sort().join(".")}` : tag);
+
+/** Shared elements over all elements of either (Jaccard). */
+function overlap(a: ReadonlySet<string>, b: ReadonlySet<string>): number {
+  const shared = [...a].filter((t) => b.has(t)).length;
+  return shared / (a.size + b.size - shared || 1);
+}
+
+/** A JSX element's markup, from its opening (or self-closing) element. */
+function jsxMarkup(element: SgNode): Markup | null {
+  const tag = element.field("name")?.text();
+  if (!tag || !/^[a-z]/.test(tag)) return null;
+  const container = element.kind() === "jsx_opening_element" ? element.parent() : null;
+  const inside = new Set<string>();
+  for (const child of container?.findAll({ rule: { any: [{ kind: "jsx_opening_element" }, { kind: "jsx_self_closing_element" }] } }) ?? []) {
+    if (child.id() === element.id()) continue;
+    inside.add(markupToken(child.field("name")?.text() ?? "", classValueOf(jsxClassAttribute(child)).certain));
+  }
+  return { tag, classes: [...new Set(classValueOf(jsxClassAttribute(element)).certain)].sort(), inside };
+}
 const pascal = (text: string): string => text.split(/[^A-Za-z0-9]+/).filter(Boolean).map((w) => w[0]!.toUpperCase() + w.slice(1)).join("");
 export const packageOf = (specifier: string): string => (specifier.startsWith("@") ? specifier.split("/").slice(0, 2).join("/") : specifier.split("/")[0]!);
 const literalOf = (value: PropValue | undefined): string | null => (value && "literal" in value ? String(value.literal) : null);
@@ -196,6 +229,11 @@ export class ProjectPass {
   readonly target: InventoryTarget;
   readonly modules = new Map<string, ModuleInfo | null>();
   readonly astro = new Map<string, AstroFile>();
+  /** Shaped plain classes not named for an element: members only once a look of a known role uses them (settleProvisional). */
+  readonly provisional = new Set<string>();
+  /** A React definition's root element, for inlineCopies. */
+  private readonly reactRoots = new Map<string, SgNode>();
+  readonly copies: InventoryCopy[] = [];
   readonly sheets: Stylesheet[] = [];
   readonly failed: Array<{ file: string; reason: string }> = [];
   readonly definitions = new Map<string, Definition>();
@@ -286,7 +324,7 @@ export class ProjectPass {
   classKits(): void {
     for (const sheet of this.sheets) {
       const blocks = new Map<string, { line: number; modifiers: Set<string> }>();
-      // Plain classes named for an element (`.badge`, `.btn--ghost`) and whether a rule gives them a shape.
+      // Plain classes (`.badge`, `.btn--ghost`, `.copy`) and whether a rule gives them a shape.
       const plain = new Map<string, { line: number; modifiers: Set<string>; shaped: boolean }>();
       for (const rule of sheet.rules) {
         if (rule.preludes.slice(0, -1).some((p) => !p.startsWith("@"))) continue;
@@ -301,7 +339,7 @@ export class ProjectPass {
         const shaped = rule.declarations.some((d) => SHAPE_PROPERTIES.test(d.property));
         for (const selector of splitTopLevel(prelude, ",")) {
           const match = /^\.([a-z][a-z0-9]*(?:-[a-z0-9]+)*)(?:--([a-z0-9-]+))?$/.exec(selector.trim());
-          if (!match || !roleOfClass(match[1]!)) continue;
+          if (!match) continue;
           const [, name, modifier] = match as unknown as [string, string, string | undefined];
           const entry = plain.get(name) ?? { line: rule.declarations[0]?.line ?? 1, modifiers: new Set<string>(), shaped: false };
           if (modifier) entry.modifiers.add(modifier);
@@ -324,8 +362,14 @@ export class ProjectPass {
         prefixes.push(prefix);
         for (const block of names) found.push({ name: block, role: roleOfBlock(block, prefix), ...blocks.get(block)! });
       }
-      // A plain class is a member on its own when it is named for an element and sets a shape.
-      for (const [name, entry] of plain) if (entry.shaped && !found.some((f) => f.name === name)) found.push({ name, role: roleOfClass(name), line: entry.line, modifiers: entry.modifiers });
+      // A plain class is a member on its own when it sets a shape: at once when named for an element
+      // (`.badge`), else provisionally (`.copy`), kept only if it styles an element of a known role.
+      for (const [name, entry] of plain) {
+        if (!entry.shaped || found.some((f) => f.name === name)) continue;
+        const role = roleOfClass(name);
+        if (!role) this.provisional.add(name);
+        found.push({ name, role, line: entry.line, modifiers: entry.modifiers });
+      }
       if (found.length === 0) continue;
       const members: InventoryKit["members"] = [];
       for (const { name, role, line, modifiers } of found.sort((a, b) => a.name.localeCompare(b.name))) {
@@ -340,11 +384,39 @@ export class ProjectPass {
     }
   }
 
+  /**
+   * Keep a provisional class only when it styles an element of a known role, with that role (the
+   * one most of its looks have); drop the rest, so a layout class never counts as a component.
+   */
+  settleProvisional(): void {
+    for (const name of this.provisional) {
+      const definition = this.blocks.get(name);
+      if (!definition) continue;
+      const roles = this.looks.filter((l) => l.definition === definition.entry.id).map((l) => l.role);
+      const kit = this.kits.find((k) => k.id === definition.entry.kit);
+      if (roles.length === 0) {
+        this.definitions.delete(definition.entry.id);
+        this.blocks.delete(name);
+        if (kit) kit.members = kit.members.filter((m) => m.name !== definition.entry.name);
+        continue;
+      }
+      const counts = new Map<InventoryRole, number>();
+      for (const r of roles) counts.set(r, (counts.get(r) ?? 0) + 1);
+      const role = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]![0];
+      definition.entry.role = role;
+      const member = kit?.members.find((m) => m.name === definition.entry.name);
+      if (member) member.role = role;
+    }
+    this.provisional.clear();
+    for (let i = this.kits.length - 1; i >= 0; i--) if (this.kits[i]!.members.length === 0) this.kits.splice(i, 1);
+  }
+
   /* ---------------------------------------------------------- definitions */
 
   private kitOfClasses(classes: readonly string[]): string | null {
     for (const name of classes) {
-      const block = this.blocks.get(name);
+      // A provisional class may not stay: no component is put in its kit.
+      const block = this.provisional.has(name) ? undefined : this.blocks.get(name);
       if (block) return block.entry.kit;
     }
     return null;
@@ -440,6 +512,7 @@ export class ProjectPass {
         }
         const range = declaration.node.range();
         this.definitions.set(`${module.file}#${entry.name}`, { entry: def, recipe: found?.recipe ?? null, range: { start: range.start.index, end: range.end.index }, rootId: found?.root.id() ?? null });
+        if (found) this.reactRoots.set(def.id, found.root);
       }
     }
     for (const folder of [...cvaFolders].sort()) {
@@ -476,6 +549,74 @@ export class ProjectPass {
       const entry: InventoryDefinition = { id: `${this.id}:${file}#default`, project: this.id, name, file, line: 1, kind: "astro", kit: classes ? this.kitOfClasses(classes.certain) : null, role: roleOfName(name), variants: {} };
       this.definitions.set(`${file}#default`, { entry, recipe, range: null, rootId: root ? root.line * 100_000 + root.column : null });
     }
+  }
+
+  /* -------------------------------------------------------- inline copies */
+
+  /**
+   * Elements that write out a component's markup instead of rendering it: in another file, the
+   * component's root tag with at least its root classes, and inside it at least COPY_OVERLAP of the
+   * same elements (each a tag with its classes). A component whose root has no class, or holds
+   * fewer than two elements, has no markup distinct enough to recognise.
+   */
+  async inlineCopies(): Promise<void> {
+    const components: Array<{ id: string; file: string; markup: Markup }> = [];
+    for (const definition of this.definitions.values()) {
+      const { entry } = definition;
+      if (entry.kind === "react") {
+        const root = this.reactRoots.get(entry.id);
+        const markup = root ? jsxMarkup(root) : null;
+        if (markup) components.push({ id: entry.id, file: entry.file, markup });
+      } else if (entry.kind === "astro") {
+        // The template's one top-level element: one rooted in another component (<MediaCard>), or with several, has no markup of its own to repeat.
+        const astro = this.astro.get(entry.file);
+        const top = astro?.tags.flatMap((t, i) => (t.parent === null && !["style", "script", "slot", "fragment"].includes(t.tag.toLowerCase()) ? [i] : [])) ?? [];
+        const at = top.length === 1 && /^[a-z]/.test(astro!.tags[top[0]!]!.tag) ? top[0]! : -1;
+        const markup = astro && at >= 0 ? await this.astroMarkup(astro, at) : null;
+        if (markup) components.push({ id: entry.id, file: entry.file, markup });
+      }
+    }
+    const usable = components.filter((c) => c.markup.classes.length > 0 && c.markup.inside.size >= 2);
+    if (usable.length === 0) return;
+    const byTag = new Map<string, typeof usable>();
+    for (const c of usable) byTag.set(c.markup.tag, [...(byTag.get(c.markup.tag) ?? []), c]);
+    const consider = (file: string, at: { line: number; column: number }, tag: string, classes: readonly string[], markup: () => Promise<Markup | null> | Markup | null): Promise<void> | void => {
+      const candidates = (byTag.get(tag) ?? []).filter((c) => c.file !== file && c.markup.classes.every((k) => classes.includes(k)));
+      if (candidates.length === 0) return;
+      return (async () => {
+        const found = await markup();
+        if (!found) return;
+        const best = candidates.map((c) => ({ c, score: overlap(c.markup.inside, found.inside) })).filter((m) => m.score >= COPY_OVERLAP).sort((a, b) => b.score - a.score)[0];
+        if (best) this.copies.push({ project: this.id, component: best.c.id, file, ...at });
+      })();
+    };
+    for (const module of this.sortedModules()) {
+      if (module.lang !== "tsx") continue;
+      for (const element of module.root.root().findAll({ rule: { any: [{ kind: "jsx_opening_element" }, { kind: "jsx_self_closing_element" }] } })) {
+        const tag = element.field("name")?.text() ?? "";
+        if (!/^[a-z]/.test(tag)) continue;
+        await consider(module.file, position(element), tag, classValueOf(jsxClassAttribute(element)).certain, () => jsxMarkup(element));
+      }
+    }
+    for (const [file, astro] of [...this.astro].sort(([a], [b]) => a.localeCompare(b))) {
+      for (let i = 0; i < astro.tags.length; i++) {
+        const tag = astro.tags[i]!;
+        if (!/^[a-z]/.test(tag.tag)) continue;
+        await consider(file, { line: tag.line, column: tag.column }, tag.tag, (await this.templateClasses(tag)).certain, () => this.astroMarkup(astro, i));
+      }
+    }
+  }
+
+  private async astroMarkup(astro: AstroFile, at: number): Promise<Markup | null> {
+    const root = astro.tags[at];
+    if (!root) return null;
+    const inside = new Set<string>();
+    for (let j = at + 1; j < astro.tags.length; j++) {
+      let up = astro.tags[j]!.parent;
+      while (up !== null && up !== at) up = astro.tags[up]!.parent;
+      if (up === at) inside.add(markupToken(astro.tags[j]!.tag, (await this.templateClasses(astro.tags[j]!)).certain));
+    }
+    return { tag: root.tag, classes: [...new Set((await this.templateClasses(root)).certain)].sort(), inside };
   }
 
   /* ------------------------------------------------------------------ looks */
@@ -593,7 +734,9 @@ export class ProjectPass {
 
   private intrinsicLook(file: string, at: { line: number; column: number }, tag: string, props: Readonly<Record<string, PropValue>>, site: ClassValue, inside: InventoryRole | null, label: string | null): void {
     let role = roleOfIntrinsic(tag, props);
-    const block = site.certain.map((c) => this.blocks.get(c)).find(Boolean) ?? null;
+    // A class named for an element before a provisional one: `button copy` is a .button.
+    const named = site.certain.filter((c) => this.blocks.has(c));
+    const block = this.blocks.get(named.find((c) => !this.provisional.has(c)) ?? named[0] ?? "") ?? null;
     role ??= block?.entry.role ?? null;
     if (!role || role === inside) return;
     const recipe: InventoryRecipe = { kind: "class", tag, classes: [...new Set(site.certain)], label: /^(?:input|img|hr|br)$/.test(tag) ? null : label };
@@ -855,8 +998,10 @@ export async function readProject(target: InventoryTarget, options: CollectOptio
   pass.classKits();
   await pass.reactDefinitions();
   await pass.astroDefinitions();
+  await pass.inlineCopies();
   await pass.collectLooks();
   await pass.storyLooks();
+  pass.settleProvisional();
   return pass;
 }
 
@@ -866,5 +1011,5 @@ export async function collectProject(target: InventoryTarget, options: CollectOp
   const definitions = [...pass.definitions.values()].map((d) => d.entry).sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.name.localeCompare(b.name));
   const primitives = [...pass.primitives].map(([pkg, p]) => ({ package: pkg, project: target.id, exports: [...p.exports].sort(), count: p.count, sites: p.sites.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column) })).sort((a, b) => a.package.localeCompare(b.package));
   const looks = pass.looks.sort(byPosition);
-  return { id: target.id, target, commit: git.commit, failed: pass.failed.sort((a, b) => a.file.localeCompare(b.file)), warnings: pass.theme.warnings, definitions, kits: pass.kits.sort((a, b) => a.id.localeCompare(b.id)), primitives, looks, kitImports: pass.kitImports, stories: pass.stories };
+  return { id: target.id, target, commit: git.commit, failed: pass.failed.sort((a, b) => a.file.localeCompare(b.file)), warnings: pass.theme.warnings, definitions, kits: pass.kits.sort((a, b) => a.id.localeCompare(b.id)), primitives, looks, kitImports: pass.kitImports, stories: pass.stories, copies: pass.copies.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column) };
 }

@@ -280,16 +280,21 @@ export async function nearDuplicateGroups(input: GroupInput): Promise<GroupFindi
     return { id: `${l.project}:${l.file}:${l.line}:${l.column}`, facts: f, file: l.file, line: l.line, name: `<${l.tag}>`, kind: "element", tag: l.tag, def: null };
   };
   const looksOf = new Map<string, Array<{ look: InventoryLook; version: Version }>>();
+  // The families each definition's own looks fall in: a keeper whose looks are all another shape does not fit a group.
+  const familiesOfVersion = new Map<string, Set<string>>();
   for (const look of production) {
     const version = versionOf(look);
     if (!version) continue;
-    if (version.kind !== "element") usage.set(version.id, (usage.get(version.id) ?? 0) + (look.recipe?.kind === "component" ? 1 : 0));
+    if (look.family) familiesOfVersion.set(version.id, (familiesOfVersion.get(version.id) ?? new Set()).add(look.family));
+    // A component's uses and a stylesheet class's uses both count: seven `.copy` buttons are seven uses of .copy.
+    if (version.kind !== "element") usage.set(version.id, (usage.get(version.id) ?? 0) + (look.recipe?.kind === "component" || version.kind === "class" ? 1 : 0));
     if (look.family) looksOf.set(look.family, [...(looksOf.get(look.family) ?? []), { look, version }]);
   }
   // An icon named for what it pictures (nucleo's TextArea, UiCard) is not that component.
   const isIcon = (d: Def): boolean => ICON_FOLDER.test(d.def.file) || [...(d.facts.jsxCounts.get(d.def.file)?.keys() ?? [])].every((tag) => SVG_TAGS.has(tag));
   const kindOf = (role: InventoryRole, v: Version): Kind => (v.kind === "element" ? kindOfTag(role, v.tag) : kindOfName(role, v.name));
-  const generic = (kind: Kind, name: string): number => Number(GENERIC[kind].test(name));
+  // A class reads as the name it would have as a component: `.button` is the general Button.
+  const generic = (kind: Kind, name: string): number => Number(GENERIC[kind].test(name.startsWith(".") ? name.slice(1).replace(/(?:^|-)([a-z])/g, (_, c: string) => c.toUpperCase()) : name));
   const shared = (v: Version): number => Number((v.def?.tier ?? 0) >= 2);
   // One stable rank: shared before app-local, the general name before a feature's, then the most used.
   const rank = (kind: Kind) => (a: Version, b: Version): number =>
@@ -373,9 +378,12 @@ export async function nearDuplicateGroups(input: GroupInput): Promise<GroupFindi
   const assigned = new Set<string>();
   for (const { family, kind, members, sides, keeper: kept } of plans) {
     const extract = kept ? null : extractTarget(kind, sides);
+    // A kept component used only in other shapes (a 40px Button for 28px icon buttons) gets this shape as a size; it is never swapped in as it is.
+    const resize = kept !== null && !members.some((m) => m.version.id === kept.id) && (familiesOfVersion.get(kept.id)?.size ?? 0) > 0;
     const keeperFacts = kept?.facts ?? extract!.facts;
     const keeperFile = repoPath(keeperFacts.project.dir, kept?.file ?? extract!.file);
-    const keeperName = kept?.name ?? extract!.name;
+    // A kept class is named with the modifiers its looks here use (`.button.button-ink.button-sm`), so the fix matches their size.
+    const keeperName = kept?.kind === "class" ? classWithModifiers(kept.name, members.filter((m) => m.version.id === kept.id).map((m) => m.look.recipe)) : (kept?.name ?? extract!.name);
     const path = (v: Version): string => repoPath(v.facts.project.dir, v.file);
     const keeperPackage = keeperFacts.packageOf(kept?.file ?? extract!.file);
     const copies = sides.filter((v) => v.id !== kept?.id && !assigned.has(v.id) && !reported.has(v.id) && path(v) !== keeperFile && (v.kind === "element" || !keepers.has(v.id)) && canImport(v.facts, keeperFacts) && (v.facts !== keeperFacts || v.facts.packageOf(v.file) === keeperPackage));
@@ -389,7 +397,7 @@ export async function nearDuplicateGroups(input: GroupInput): Promise<GroupFindi
       const actions: string[] = [];
       for (const tag of new Set(list.filter((v) => v.kind === "element").map((v) => v.name))) {
         const at = list.filter((v) => v.kind === "element" && v.name === tag).map((v) => v.line);
-        actions.push(`replace the hand-styled ${tag}${at.length > 1 ? "s" : ""} at line${at.length > 1 ? "s" : ""} ${at.join(", ")} with ${keeperName}`);
+        actions.push(`replace the hand-styled ${tag}${at.length > 1 ? "s" : ""} at line${at.length > 1 ? "s" : ""} ${at.join(", ")} with ${keeperName}${resize ? " in that size" : ""}`);
       }
       for (const v of list.filter((c) => c.kind === "component")) {
         // A differently named copy keeps what it does and stops restyling its own element.
@@ -397,22 +405,62 @@ export async function nearDuplicateGroups(input: GroupInput): Promise<GroupFindi
         actions.push(v.name === keeperName ? `remove its own ${v.name} and use the kept one` : `build ${named} on ${keeperName} instead of restyling its own element`);
       }
       if (actions.length > 0) steps.push(`In ${file}, ${actions.join("; ")} (${use})`);
-      for (const v of list.filter((c) => c.kind === "class")) steps.push(`In ${file}, ${v.name} copies ${keeperName}'s shape: use ${keeperName} where ${v.name} is used`);
+      for (const v of list.filter((c) => c.kind === "class")) {
+        const uses = members.filter((m) => m.version.id === v.id).length;
+        steps.push(`In ${file}, ${v.name} copies ${keeperName}'s shape: use ${keeperName} where ${v.name} is used (${plural(uses, "place")})`);
+      }
     }
     for (const copy of copies) assigned.add(copy.id);
     const copyIds = new Set(copies.map((v) => v.id));
     const counted = members.filter((m) => copyIds.has(m.version.id));
     const home = [...counted.reduce((n, m) => n.set(m.version.facts, (n.get(m.version.facts) ?? 0) + 1), new Map<ProjectFacts, number>())].sort((a, b) => b[1] - a[1])[0]?.[0] ?? keeperFacts;
     const where = keeperFacts.project.name && importedBy(keeperFacts) > 0 ? `${keeperFacts.project.name}, ${keeperFile}` : keeperFile;
-    const lead = kept ? `Keep ${keeperName} (${where})` : `Create ${keeperName} in ${keeperFile} (a new file in ${extract!.where}) with this shape`;
+    const lead = resize ? `Give ${keeperName} (${where}) this shape as a size or variant, then use it` : kept ? `Keep ${keeperName} (${where})` : `Create ${keeperName} in ${keeperFile} (a new file in ${extract!.where}) with this shape`;
     const [one, many] = KIND_WORDS[kind];
     // A component Version is an exported one (an inventory definition or a recipe's export); elements and classes are not.
     const components = new Set([kept, ...copies].flatMap((v) => (v?.kind === "component" ? [v.id] : []))).size;
-    findings.push(finding(home.project.dir, `${plural(members.length, one, many)} look the same (${shapeWords(family.shape)}) but are built ${sides.length} ways`, counted.length,
+    // A way is a distinct build: the same classes pasted into many elements are one way, copied.
+    const ways = new Set(members.map((m) => (m.version.kind === "element" ? `${m.look.tag}|${m.look.recipe?.kind === "class" ? [...m.look.recipe.classes].sort().join(" ") : m.version.id}` : m.version.id))).size;
+    findings.push(finding(home.project.dir, `${plural(members.length, one, many)} look the same (${shapeWords(family.shape)}) but are built ${ways === 1 ? "one way, copied by hand" : `${ways} ways`}`, counted.length,
       [...copies].sort((a, b) => path(a).localeCompare(path(b)) || a.line - b.line).slice(0, SITES_PER_FINDING).map((v) => ({ at: `${path(v)}:${v.line}`, file: path(v), line: v.line })), lead, steps, components));
   }
   findings.push(...sameNamed.map((g) => g.finding));
+  // Markup a component already renders, written out by hand: render the component instead.
+  for (const [component, copies] of Map.groupBy((inventory.copies ?? []).filter((c) => byId.has(c.project) && !isShowcase(c.file)), (c) => c.component)) {
+    const d = defs.get(component);
+    if (!d) continue;
+    const f = d.facts;
+    const name = d.def.name;
+    const home = repoPath(f.project.dir, d.def.file);
+    const steps: string[] = [];
+    for (const [file, list] of Map.groupBy(copies, (c) => c.file)) {
+      const lines = list.map((c) => c.line);
+      const use = d.def.kind === "astro" ? `import ${name} from "${relativeImport(file, d.def.file)}"` : await importText({ id: d.def.id, facts: f, file: d.def.file, line: d.def.line, name, kind: "component", tag: name, def: d }, byId.get(list[0]!.project)!, file);
+      steps.push(`In ${repoPath(f.project.dir, file)}, render <${name}> at line${lines.length > 1 ? "s" : ""} ${lines.join(", ")} instead of writing out its markup (${use})`);
+    }
+    const files = new Set(copies.map((c) => c.file));
+    const title = files.size === 1 ? `${repoPath(f.project.dir, copies[0]!.file)} writes out ${name}'s markup ${plural(copies.length, "time")} instead of rendering <${name}>` : `${name}'s markup is written out ${plural(copies.length, "time")} in ${plural(files.size, "file")} instead of rendering <${name}>`;
+    findings.push(finding(f.project.dir, title, copies.length, copies.slice(0, SITES_PER_FINDING).map((c) => ({ at: `${repoPath(f.project.dir, c.file)}:${c.line}`, file: repoPath(f.project.dir, c.file), line: c.line })), `Render ${name} (${home}) where its markup is copied`, steps, 1));
+  }
   return findings.sort((a, b) => b.count - a.count || a.title.localeCompare(b.title));
+}
+
+/** How `from` imports `to` by path, both project-relative: `../components/Command.astro`. */
+function relativeImport(from: string, to: string): string {
+  const up = from.split("/").slice(0, -1);
+  const target = to.split("/");
+  let shared = 0;
+  while (shared < up.length && shared < target.length - 1 && up[shared] === target[shared]) shared++;
+  const path = [...up.slice(shared).map(() => ".."), ...target.slice(shared)].join("/");
+  return path.startsWith(".") ? path : `./${path}`;
+}
+
+/** `.button` with the modifier classes (`button-sm`, `button--ghost`) most of its looks carry beside it. */
+function classWithModifiers(name: string, recipes: ReadonlyArray<InventoryLook["recipe"]>): string {
+  const base = name.replace(/^\./, "");
+  const sets = recipes.flatMap((r) => (r && r.kind === "class" ? [[...new Set(r.classes.filter((c) => c.startsWith(`${base}-`)))].sort().join(".")] : []));
+  const common = [...Map.groupBy(sets, (s) => s)].sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))[0]?.[0];
+  return common ? `.${base}.${common}` : `.${base}`;
 }
 
 function finding(project: string, title: string, count: number, sites: GroupFinding["sites"], lead: string, steps: readonly string[], exported: number): GroupFinding {
