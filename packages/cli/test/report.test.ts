@@ -50,7 +50,8 @@ describe("youiyoux report: the shadcn-style fixture", () => {
       "Components: 6 defined, 11 buttons, inputs, cards and other UI elements in use; most used: Button (5 uses).",
       "Near-duplicates: 1 group of UI that looks the same but is built more than once; 1 of them between exported components.",
       "Hardcoded values: 3 colours, spacings and radii a theme token already holds; off-library imports: 1.",
-      expect.stringMatching(/^Top fix: Colour #dc2626 is hardcoded in 2 places; .*use var\(--color-danger\)/),
+      // One colour used two ways in Tailwind: each place's own token class.
+      "Top fix: Colour #dc2626 is hardcoded in 2 places; the theme already has it as color.danger; use border-danger for border-[#dc2626], text-danger for text-[#dc2626] (color.danger).",
     ]);
     expect(lines.slice(5, 9).map((l) => l.split(/\s+/).at(-1)!.split("/").at(-1))).toEqual(["", "youiyoux-report.html", "youiyoux-card.png", "youiyoux-summary.md"]);
     expect(lines.at(-1)).toMatch(/^Next: open .*youiyoux-report\.html .*npx youiyoux agents install/);
@@ -74,7 +75,8 @@ describe("youiyoux report: the shadcn-style fixture", () => {
     expect(findingsOf(hardcoded)).toHaveLength(2);
     expect(hardcoded).toContain("Colour #dc2626 is hardcoded in 2 places");
     expect(hardcoded).toContain("<code>src/app/page.tsx:13</code>");
-    expect(hardcoded).toContain('Use <span class="mono">var(--color-danger)</span>');
+    expect(hardcoded).toContain('Use border-danger for border-[#dc2626], text-danger for text-[#dc2626] (<span class="mono">color.danger</span>).');
+    expect(hardcoded).toContain('Use bg-primary (<span class="mono">color.primary</span>) in each place.');
     const off = section("off-library", project);
     expect(off).toContain("Imports a dialog from Headless UI (@headlessui/react); this project&#39;s dialogs come from shadcn/ui");
     expect(off).toContain("<code>src/components/promo-modal.tsx:1</code>");

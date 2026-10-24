@@ -140,14 +140,17 @@ export class Theme {
   /** Project declarations only: excludes implicit Tailwind defaults. */
   readonly declared: ReadonlyMap<string, string>;
   readonly forms: FormsPlugin;
+  /** Declared variables Tailwind makes utilities from (`--color-muted` → `text-muted`): an `@theme` block's, or the Tailwind config's. */
+  readonly utilities: ReadonlySet<string>;
   private readonly vars: Map<string, string>;
 
-  constructor(vars: Map<string, string>, tailwind: 3 | 4 | null, warnings: string[], declared: ReadonlyMap<string, string> = new Map(), forms: FormsPlugin = null) {
+  constructor(vars: Map<string, string>, tailwind: 3 | 4 | null, warnings: string[], declared: ReadonlyMap<string, string> = new Map(), forms: FormsPlugin = null, utilities: ReadonlySet<string> = new Set()) {
     this.vars = vars;
     this.declared = declared;
     this.tailwind = tailwind;
     this.warnings = warnings;
     this.forms = forms;
+    this.utilities = utilities;
   }
 
   variable(name: string): string | undefined {
@@ -352,16 +355,19 @@ export async function buildTheme(root: string, sheets: readonly Stylesheet[], us
   const version = v4 ? 4 : v3 || usesTailwindPackage ? 3 : null;
   const vars = version ? defaults(version) : new Map<string, string>();
   const declared = new Map(config.vars);
+  const utilities = new Set(version ? config.vars.keys() : []);
   for (const [name, value] of config.vars) vars.set(name, value);
   for (const sheet of sheets) {
     for (const rule of sheet.rules) {
       // Only top-level theme scopes: a dark-mode or media override is a different context.
-      if (rule.preludes.length !== 1 || !THEME_SCOPES.has(rule.preludes[0]!.replace(/\s+/g, " "))) continue;
+      const scope = rule.preludes.length === 1 ? rule.preludes[0]!.replace(/\s+/g, " ") : null;
+      if (!scope || !THEME_SCOPES.has(scope)) continue;
       for (const declaration of rule.declarations) if (declaration.property.startsWith("--")) {
         vars.set(declaration.property, declaration.value);
         declared.set(declaration.property, declaration.value);
+        if (version === 4 && scope.startsWith("@theme")) utilities.add(declaration.property);
       }
     }
   }
-  return new Theme(vars, version, config.warnings, declared, version ? await formsPluginOf(root, sheets, config.file) : null);
+  return new Theme(vars, version, config.warnings, declared, version ? await formsPluginOf(root, sheets, config.file) : null, utilities);
 }

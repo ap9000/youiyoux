@@ -4,7 +4,8 @@
  * added and supplies the inventory, the token index and the library each element comes from.
  *
  * - near-duplicate: a new component that draws a look the project already has (same role,
- *   every shape dimension within the inventory's tolerance) → reuse the existing one.
+ *   every shape dimension within the inventory's tolerance) → reuse the existing one; or a new
+ *   hand-styled element that looks like an existing component → render that component.
  * - hardcoded-value: a colour, spacing or radius literal that a token already holds → the token.
  *   A value no token has is not reported here (the raw-color rule still is).
  * - off-library: an import that brings an element in from a library other than the one the
@@ -175,13 +176,14 @@ export function reuseOf(look: Look, definitions: ReadonlyMap<string, Definition>
 /**
  * New definitions (on an added line) whose looks match an existing look of the same role from
  * outside the change. Definitions composing existing components are reuse, not duplicates.
- * One finding per new definition, at its definition, naming what to reuse.
+ * One finding per new definition, at its definition, naming what to reuse. Then each hand-styled
+ * element on an added line (a `<button className=…>` in a page) that looks like a use of an
+ * existing component, at the element, naming the component to render.
  */
 export function nearDuplicates(input: NearDuplicateInput): DriftFinding[] {
   const { inventory, added, importOf } = input;
   const definitions = new Map(inventory.definitions.map((d) => [d.id, d]));
   const fresh = inventory.definitions.filter((d) => added(d.file, d.line));
-  if (fresh.length === 0) return [];
   const freshIds = new Set(fresh.map((d) => d.id));
   // A definition's body runs to the next definition in its file.
   const ends = new Map<string, number>();
@@ -203,10 +205,12 @@ export function nearDuplicates(input: NearDuplicateInput): DriftFinding[] {
       root = definitions.get(root.id)?.root;
     }
     if (root?.kind === "primitive" || (root?.kind === "definition" && definitions.has(root.id) && !freshIds.has(root.id))) continue;
-    // Compare its own root before nested elements or sites that render it.
+    // Compare its own root before sites that render it.
     const own = inventory.looks.filter((l) => hasShape(l.shape) && inside(l, definition) && l.definition !== definition.id);
     const roots = inventory.looks.filter((l) => hasShape(l.shape) && inside(l, definition) && l.definition === definition.id);
-    const looks = roots.length > 0 ? roots : own.length > 0 ? own : inventory.looks.filter((l) => hasShape(l.shape) && l.definition === definition.id);
+    // A container (a page, a toolbar) is not the element it holds: each element inside is checked below.
+    if (roots.length === 0 && own.length > 0) continue;
+    const looks = roots.length > 0 ? roots : inventory.looks.filter((l) => hasShape(l.shape) && l.definition === definition.id);
     let best: { look: Look; mine: Look; rank: number[] } | null = null;
     for (const mine of looks) {
       const shape = clusterShapeOf(mine);
@@ -227,6 +231,44 @@ export function nearDuplicates(input: NearDuplicateInput): DriftFinding[] {
       column: 1,
       text: definition.name,
       message: `${definition.name} is a new ${best.mine.role} that looks like the existing ${reuse.name} (${best.look.file}:${best.look.line}): ${describeShape(best.mine)}. Confirm it is the same role; if so, reuse the existing one instead of adding a component.`,
+      fix: reuse.fix,
+    });
+  }
+
+  // A new definition already reported covers the elements inside it.
+  const reported = fresh.filter((d) => findings.some((f) => f.file === d.file && f.line === d.line));
+  // Only a shared component (rendered outside its own file) is offered, the most used first.
+  const componentOf = (look: Look): string | null => (look.recipe?.kind === "component" ? `${look.recipe.file}#${look.recipe.export}` : null);
+  const uses = new Map<string, number>();
+  for (const look of inventory.looks) if (look.recipe?.kind === "component" && look.file !== look.recipe.file && !look.story) uses.set(componentOf(look)!, (uses.get(componentOf(look)!) ?? 0) + 1);
+  const components = inventory.looks.filter((l) => hasShape(l.shape) && uses.has(componentOf(l) ?? "") && !(l.definition !== null && freshIds.has(l.definition)));
+  // A link renders a navigation, a button an action: neither stands in for the other.
+  const linkRoot = (look: Look): boolean => {
+    const root = definitions.get(look.definition ?? "")?.root;
+    return root?.kind === "intrinsic" ? root.tag === "a" : root?.kind === "primitive" ? /link/i.test(root.name === "default" ? root.module : root.name) : false;
+  };
+  for (const mine of inventory.looks) {
+    if (mine.source !== "intrinsic" || mine.definition !== null || mine.story || !hasShape(mine.shape) || !added(mine.file, mine.line)) continue;
+    // Two dimensions alike (32px square, 8px corners) is a coincidence, not a copy: no side padding says nothing.
+    if ([mine.shape.height, mine.shape.paddingX || null, mine.shape.radius, mine.shape.fontSize].filter((v) => v !== null).length < 3) continue;
+    if (reported.some((d) => inside(mine, d))) continue;
+    const shape = clusterShapeOf(mine);
+    const mineClasses = classesOf(mine.recipe);
+    let best: { look: Look; rank: number[] } | null = null;
+    for (const other of components) {
+      if (other.role !== mine.role || (mine.tag === "a") !== linkRoot(other) || !compatible(shape, clusterShapeOf(other))) continue;
+      const rank = [shapeDistance(shape, clusterShapeOf(other)), -uses.get(componentOf(other)!)!, -overlap(mineClasses, classesOf(other.recipe))];
+      if (!best || before(rank, best.rank)) best = { look: other, rank };
+    }
+    if (!best) continue;
+    const reuse = reuseOf(best.look, definitions, importOf, mine.file);
+    findings.push({
+      kind: "near-duplicate",
+      file: mine.file,
+      line: mine.line,
+      column: mine.column,
+      text: `<${mine.tag}>`,
+      message: `A hand-styled <${mine.tag}> that looks like the existing ${reuse.name} (${best.look.file}:${best.look.line}): ${describeShape(mine)}. Confirm it is the same role; if so, render ${reuse.name} instead.`,
       fix: reuse.fix,
     });
   }

@@ -119,15 +119,15 @@ test("a token is suggested only when value and group match, the general scale be
   const hardcoded = model.projects[0]!.hardcoded;
   const at = (file: string) => hardcoded.filter((f) => f.sites.some((s) => s.at.startsWith(file)));
   const list = JSON.stringify(at("src/components/list.tsx"));
-  expect(list).toContain("spacing.spacing-2");
-  expect(list).toContain("radius.radius-lg");
+  expect(list).toContain("spacing.2");
+  expect(list).toContain("radius.lg");
   expect(list).not.toMatch(/button-gap|radius-card|badge-bg|9px/);
   const css = JSON.stringify(at("src/app/list.css"));
-  expect(css).toContain("spacing.spacing-2");
-  expect(css).toContain("radius.radius-lg");
+  expect(css).toContain("spacing.2");
+  expect(css).toContain("radius.lg");
   expect(css).not.toMatch(/button-gap|radius-card/);
   // No general token holds 20px; the dialog's own token fits a dialog file.
-  expect(JSON.stringify(at("src/components/dialog-frame.tsx"))).toContain("radius.radius-dialog");
+  expect(JSON.stringify(at("src/components/dialog-frame.tsx"))).toContain("radius.dialog");
   expect(at("src/components/hue-strip.tsx")).toEqual([]);
   for (const finding of hardcoded) expect(finding.next).toMatch(/^Use /);
 });

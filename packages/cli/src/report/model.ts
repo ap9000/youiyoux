@@ -196,17 +196,25 @@ async function modulesOf(project: ReportProject, target: InventoryTarget, failed
 }
 
 /** Group drift findings by what fixes them, each group one finding with its places. */
-async function grouped(project: ReportProject, found: readonly DriftFinding[], lines: Lines, describe: (first: DriftFinding, count: number) => { title: string; next: string }): Promise<Finding[]> {
+/** One hardcoded value and its tokens, however each place uses it (`text-[#dc2626]`, `border-[#dc2626]`). */
+function groupKey(finding: DriftFinding): string {
+  if (finding.kind === "off-library") return finding.message;
+  if (finding.kind !== "hardcoded-value") return finding.fix;
+  const { word, value, tokens } = hardcodedValue(finding);
+  return `${word}\0${value}\0${tokens}`;
+}
+
+async function grouped(project: ReportProject, found: readonly DriftFinding[], lines: Lines, describe: (first: DriftFinding, count: number, list: readonly DriftFinding[]) => { title: string; next: string }): Promise<Finding[]> {
   const groups = new Map<string, DriftFinding[]>();
   for (const finding of found) {
-    const key = `${finding.kind}\0${finding.kind === "off-library" ? finding.message : finding.fix}`;
+    const key = `${finding.kind}\0${groupKey(finding)}`;
     groups.set(key, [...(groups.get(key) ?? []), finding]);
   }
   const findings: Finding[] = [];
   for (const list of groups.values()) {
     const first = list[0]!;
     const sites = await Promise.all(list.slice(0, SITES_PER_FINDING).map((f) => lines.site(`${repoPath(project.dir, f.file)}:${f.line}`, repoPath(project.dir, f.file), f.line)));
-    const { title, next } = describe(first, list.length);
+    const { title, next } = describe(first, list.length, list);
     findings.push({ kind: first.kind, project: project.dir, count: list.length, sites, title, detail: null, next });
   }
   return findings.sort((a, b) => b.count - a.count || a.title.localeCompare(b.title));
@@ -282,9 +290,15 @@ async function analyseProject(project: ReportProject, index: number, inventory: 
       if (tokens.tokens.length === 0) notes.push("No theme variables (CSS custom properties or Tailwind @theme) were found, so hardcoded values had nothing to be compared with");
       const usage = tokenUsage(modules);
       const found = (await Promise.all(modules.map((module) => reportTokens(module, tokens, usage)))).flat();
-      hardcoded = await grouped(project, found, lines, (first, count) => {
+      hardcoded = await grouped(project, found, lines, (first, count, list) => {
         const { word, value, tokens: names } = hardcodedValue(first);
-        return { title: `${sentence(word)} ${value} is hardcoded in ${plural(count, "place")}; the theme already has it as ${names}`, next: `${sentence(first.fix)} in each place` };
+        // Each utility has its own token class: text-danger for text-[#dc2626], border-danger for border-[#dc2626].
+        const fixes = [...new Map(list.map((f) => [f.fix, f.text]))];
+        const tail = / \([^()]*\)$/.exec(first.fix)?.[0] ?? "";
+        const shared = tail !== "" && fixes.every(([fix]) => fix.endsWith(tail));
+        const each = fixes.slice(0, 3).map(([fix, text], i) => `${(shared ? fix.slice(0, -tail.length) : fix).replace(i > 0 ? /^use / : /^$/, "")} for ${text}`);
+        const next = fixes.length === 1 ? `${sentence(first.fix)} in each place` : `${sentence(each.join(", "))}${fixes.length > 3 ? ", …" : ""}${shared ? tail : ""}`;
+        return { title: `${sentence(word)} ${value} is hardcoded in ${plural(count, "place")}; the theme already has it as ${names}`, next };
       });
     } catch (error: unknown) {
       incomplete.push(`Hardcoded values were not checked (${errorText(error)}); run ${NPX} check --diff to see why`);

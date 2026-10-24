@@ -37,6 +37,8 @@ export async function themeTokens(root: string, modules: readonly ModuleInfo[]):
   const theme = await buildTheme(root, sheets, false);
   const tokens: ResolvedToken[] = [];
   const byVar = new Map<string, ResolvedToken>();
+  const themeKeys = new Map<string, string[]>();
+  const ids = new Set<string>();
   for (const [name, raw] of theme.declared) {
     const value = substituteVars(raw, (key) => theme.variable(key));
     if (value === null) continue;
@@ -45,11 +47,18 @@ export async function themeTokens(root: string, modules: readonly ModuleInfo[]):
     const px = kind ? theme.length(value) : null;
     if (!color && px === null) continue;
     const light = color ?? { value: px, unit: "px" };
-    const token: ResolvedToken = { id: `${color ? "color" : kind}.${name.slice(2)}`, type: color ? "color" : "dimension", cssName: name.slice(2), light, dark: light };
+    // `--color-muted` is color.muted, unless another variable already has that id.
+    const group = color ? "color" : kind!;
+    const short = `${group}.${name.slice(2).replace(new RegExp(`^${group}-`), "")}`;
+    const id = ids.has(short) ? `${group}.${name.slice(2)}` : short;
+    ids.add(id);
+    const token: ResolvedToken = { id, type: color ? "color" : "dimension", cssName: name.slice(2), light, dark: light };
     tokens.push(token);
     byVar.set(name, token);
+    // A Tailwind theme variable is used as its utility (text-muted), not as var(--color-muted).
+    if (theme.utilities.has(name)) themeKeys.set(id, [name.slice(2)]);
   }
-  return { prefix: "", tokens, byVar, themeKeys: new Map() };
+  return { prefix: "", tokens, byVar, themeKeys };
 }
 
 export async function runRepoCheck(project: ChangeProject, change: ChangeSet): Promise<DiffCheckResult> {

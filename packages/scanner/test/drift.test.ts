@@ -72,3 +72,50 @@ test("nearDuplicates ignores composition of an existing component but flags an i
     expect(findings.map((f) => f.text)).toEqual(["QuietBadgeButton", "QuietButton"]);
   } finally { await rm(root, {recursive: true, force: true}); }
 });
+
+describe("nearDuplicates: a hand-styled element the change adds", () => {
+  type Report = Parameters<typeof nearDuplicates>[0]["inventory"];
+  const shape = (height: number | null, paddingX: number | null, radius: number | null, fontSize: number | null) => ({ height, paddingX, paddingY: null, radius, fontSize, fontWeight: null });
+  const definition = (name: string, file: string, root: object) => ({ id: `p:${file}#${name}`, name, file, line: 1, kind: "react", root, variants: {} });
+  const use = (name: string, file: string, at: string, line: number, s: ReturnType<typeof shape>) => ({ file: at, line, column: 5, role: "button", tag: name, source: "component", definition: `p:${file}#${name}`, shape: s, derived: [], recipe: { kind: "component", file, export: name, props: {}, label: null, wrappers: [], tag: "button", classes: [] } });
+  const hand = (tag: string, line: number, s: ReturnType<typeof shape>) => ({ file: "app/new.tsx", line, column: 7, role: "button", tag, source: "intrinsic", definition: null, shape: s, derived: [], recipe: { kind: "class", tag, classes: [], label: null } });
+  const BUTTON = shape(40, 16, 6, 14);
+  const LINKISH = shape(48, 24, 8, 16);
+  const TINY = shape(28, 8, 9999, 12);
+  const SQUARE = shape(40, 0, 6, null);
+  const inventory = {
+    definitions: [
+      definition("Button", "ui/button.tsx", { kind: "intrinsic", tag: "button" }),
+      definition("LinkButton", "ui/link-button.tsx", { kind: "primitive", module: "next/link", name: "default" }),
+      definition("TinyButton", "ui/tiny.tsx", { kind: "intrinsic", tag: "button" }),
+      definition("IconButton", "ui/icon.tsx", { kind: "intrinsic", tag: "button" }),
+    ],
+    looks: [
+      use("Button", "ui/button.tsx", "app/a.tsx", 3, BUTTON),
+      use("LinkButton", "ui/link-button.tsx", "app/b.tsx", 3, LINKISH),
+      // Used twice, but only in its own file: a helper, not the project's component.
+      use("TinyButton", "ui/tiny.tsx", "ui/tiny.tsx", 6, TINY),
+      use("TinyButton", "ui/tiny.tsx", "ui/tiny.tsx", 7, TINY),
+      use("IconButton", "ui/icon.tsx", "app/c.tsx", 3, SQUARE),
+      hand("button", 2, BUTTON),
+      hand("button", 3, LINKISH),
+      hand("a", 4, LINKISH),
+      hand("button", 5, TINY),
+      hand("button", 6, SQUARE),
+    ],
+  } as unknown as Report;
+  const found = nearDuplicates({ inventory, added: (file) => file === "app/new.tsx", importOf: (file) => `@/${file.replace(/\.tsx$/, "")}` });
+
+  test("a copy of a shared component is reported at the element, naming the component and its import", () => {
+    expect(found.find((f) => f.line === 2)).toMatchObject({ kind: "near-duplicate", column: 7, text: "<button>", fix: 'use <Button> from "@/ui/button"' });
+  });
+
+  test("a link component is offered for a hand-styled link, never for a button", () => {
+    expect(found.find((f) => f.line === 3)).toBeUndefined();
+    expect(found.find((f) => f.line === 4)?.fix).toBe('use <LinkButton> from "@/ui/link-button"');
+  });
+
+  test("not a helper used only in its own file, and not a plain square: no side padding is too little to call a copy", () => {
+    expect(found.map((f) => f.line)).toEqual([2, 4]);
+  });
+});

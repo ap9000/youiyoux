@@ -94,16 +94,19 @@ from props the drawing could not supply. The CLI form is `npx youiyoux render <f
 ## `check --diff`
 
 Checks only what your change adds: the working tree against `HEAD`, or against the merge base with a
-ref (`check --diff main`). New, untracked files count too.
+ref (`check --diff main`). New, untracked files count too. A new component that looks like an
+existing one is reported at the component; a hand-styled element (a `<button className=…>` in a
+page) that looks like a component used elsewhere is reported at the element, with that component's
+import.
 
 ```text
 $ npx -y youiyoux check --diff
 youiyoux check --diff against HEAD: 1 changed file
 src/browser/components/save-button.tsx
-  1:1  near-duplicate  SaveButton is a new button that looks like the existing Button (src/browser/components/ui/button.tsx:33): 32px high, 12px side padding, 8px radius, 13px text. Confirm it is the same role; if so, reuse the existing one instead of adding a component.
+  1:1  near-duplicate  SaveButton is a new button that looks like the existing Button (src/browser/app.tsx:761): 32px high, 12px side padding, 8px radius, 13px text. Confirm it is the same role; if so, reuse the existing one instead of adding a component.
       → use <Button> from "./ui/button"
-  3:84  hardcoded value  Hardcoded spacing gap-[8px]: the token spacing.spacing-phone-row or spacing.so-space-sm has this value.
-      → use gap-[var(--spacing-phone-row)] (spacing.spacing-phone-row or spacing.so-space-sm)
+  3:84  hardcoded value  Hardcoded spacing gap-[8px]: the token spacing.phone-row or spacing.so-space-sm has this value.
+      → use gap-phone-row (spacing.phone-row or spacing.so-space-sm, var(--spacing-phone-row))
 note: Repository inference uses existing components, library imports and declared theme variables. Run `youiyoux init --design <dir>` to add design-system rules.
 
 ✖ 2 findings in this change: apply each fix (→), then run `youiyoux check --diff` again

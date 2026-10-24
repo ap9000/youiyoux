@@ -349,3 +349,58 @@ describe("youiyoux check --diff on a change", () => {
     expect(errors.join("")).toContain("needs a git checkout");
   });
 });
+
+describe("youiyoux check --diff on an agent's page, in a Tailwind 4 repo with no project config", () => {
+  let repo = "";
+  const BUTTON = 'import { cva } from "class-variance-authority";\n\nexport const buttonVariants = cva("inline-flex items-center rounded-md font-medium", {\n  variants: { size: { md: "h-10 px-4 text-sm" }, tone: { primary: "bg-primary text-white" } },\n  defaultVariants: { size: "md", tone: "primary" },\n});\n\nexport function Button({ className, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {\n  return <button className={buttonVariants({ className })} {...props} />;\n}\n';
+  const HAND_BUILT = 'className="inline-flex items-center rounded-md font-medium h-10 px-4 text-sm bg-primary text-white"';
+  beforeEach(async () => {
+    repo = await mkdtemp(join(tmpdir(), "youi-page-"));
+    const files: Record<string, string> = {
+      "package.json": JSON.stringify({ name: "acme-app", private: true, dependencies: { react: "19.0.0", tailwindcss: "4.1.0", "class-variance-authority": "0.7.1" } }),
+      "tsconfig.json": JSON.stringify({ compilerOptions: { jsx: "preserve", paths: { "@/*": ["./src/*"] } } }),
+      "src/app/globals.css": '@import "tailwindcss";\n@theme {\n  --color-primary: #4f46e5;\n  --color-muted: #6b7280;\n  --radius-md: 6px;\n}\n',
+      "src/components/ui/button.tsx": BUTTON,
+      "src/app/settings/page.tsx": 'import { Button } from "@/components/ui/button";\n\nexport default function Settings() {\n  return <form><Button>Save</Button></form>;\n}\n',
+    };
+    for (const [file, text] of Object.entries(files)) {
+      await mkdir(join(repo, file, ".."), { recursive: true });
+      await writeFile(join(repo, file), text);
+    }
+    const g = (...args: string[]) => run("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", ...args], { cwd: repo });
+    await g("init", "-q", "-b", "main");
+    await g("add", "-A");
+    await g("commit", "-qm", "init");
+  });
+  afterEach(async () => {
+    await rm(repo, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  });
+  const check = async () => JSON.parse((await cli(["check", "--diff", "--json", "--project", repo])).out) as DiffJson;
+
+  test("a hand-styled <button> in a page that looks like Button is caught at the element, with Button's import; a different shape is not", async () => {
+    await mkdir(join(repo, "src/app/team"), { recursive: true });
+    await writeFile(join(repo, "src/app/team/page.tsx"), `export default function Team() {\n  return (\n    <section>\n      <h1>Team</h1>\n      <button ${HAND_BUILT}>Invite</button>\n      <button className="inline-flex h-6 px-1 text-xs">Copy link</button>\n    </section>\n  );\n}\n`);
+    const near = (await check()).findings.filter((f) => f.kind === "near-duplicate");
+    expect(near).toEqual([expect.objectContaining({ file: "src/app/team/page.tsx", line: 5, column: 7, fix: 'use <Button> from "@/components/ui/button"' })]);
+    expect(near[0]!.message).toBe("A hand-styled <button> that looks like the existing Button (src/app/settings/page.tsx:4): 40px high, 16px side padding, 6px radius, 14px text. Confirm it is the same role; if so, render Button instead.");
+  });
+
+  test("a new component built on the same hand-styled root is one finding, at the component", async () => {
+    await writeFile(join(repo, "src/components/invite-button.tsx"), `export function InviteButton() {\n  return <button ${HAND_BUILT}>Invite</button>;\n}\n`);
+    const near = (await check()).findings.filter((f) => f.kind === "near-duplicate");
+    expect(near).toEqual([expect.objectContaining({ file: "src/components/invite-button.tsx", line: 1, fix: 'use <Button> from "@/components/ui/button"' })]);
+  });
+
+  test("a component that holds the copy (a toolbar) is not itself a button: the copy is reported where it is", async () => {
+    await writeFile(join(repo, "src/components/save-bar.tsx"), `export function SaveBar() {\n  return (\n    <div className="flex gap-2">\n      <button ${HAND_BUILT}>Save</button>\n    </div>\n  );\n}\n`);
+    const near = (await check()).findings.filter((f) => f.kind === "near-duplicate");
+    expect(near).toEqual([expect.objectContaining({ file: "src/components/save-bar.tsx", line: 4, fix: 'use <Button> from "@/components/ui/button"' })]);
+    expect(near[0]!.message).toMatch(/^A hand-styled <button> that looks like the existing Button/);
+  });
+
+  test("a colour an @theme variable holds is fixed with its Tailwind class, named without the repeated group", async () => {
+    await writeFile(join(repo, "src/app/settings/note.tsx"), 'export const Note = () => <p className="text-[#6b7280]">Billed monthly.</p>;\n');
+    const values = (await check()).findings.filter((f) => f.kind === "hardcoded-value");
+    expect(values).toEqual([expect.objectContaining({ file: "src/app/settings/note.tsx", fix: "use text-muted (color.muted)", message: "Hardcoded colour #6b7280: the token color.muted has this value. Check it plays that role." })]);
+  });
+});
