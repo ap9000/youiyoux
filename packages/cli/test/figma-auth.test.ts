@@ -40,6 +40,20 @@ const freePort = (): Promise<number> =>
     });
   });
 
+/**
+ * A sign-in on a port free a moment ago: another test may take it in between, so a taken port is
+ * tried again with a new one (never any other failure).
+ */
+async function onFreePort<T>(login: (port: number) => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await login(await freePort());
+    } catch (error: unknown) {
+      if (attempt === 5 || !(error instanceof Error && /^port \d+ is taken/.test(error.message))) throw error;
+    }
+  }
+}
+
 /** Figma's token, refresh and me endpoints, recording what they were sent. */
 function figma(handle = "ada") {
   const sent: Array<{ url: string; init: RequestInit }> = [];
@@ -61,20 +75,23 @@ function figma(handle = "ada") {
 
 describe("signing in through the browser, with the team's private app", () => {
   test("PKCE and a random state; the callback on 127.0.0.1 takes the code, which is exchanged with the app's secret and the verifier", async () => {
-    const port = await freePort();
     const { fetcher, sent } = figma();
     let authorize: URL | null = null;
     let page = "";
-    const credential = await browserLogin({
-      app: APP,
-      port,
-      fetcher,
-      now: () => NOW,
-      open: (url) => {
-        authorize = new URL(url);
-        // The browser comes back to the callback with Figma's code and the same state.
-        void fetch(`${callbackUrl(port)}?code=the-code&state=${authorize.searchParams.get("state")}`).then(async (r) => (page = await r.text()));
-      },
+    let port = 0;
+    const credential = await onFreePort((free) => {
+      port = free;
+      return browserLogin({
+        app: APP,
+        port,
+        fetcher,
+        now: () => NOW,
+        open: (url) => {
+          authorize = new URL(url);
+          // The browser comes back to the callback with Figma's code and the same state.
+          void fetch(`${callbackUrl(port)}?code=the-code&state=${authorize.searchParams.get("state")}`).then(async (r) => (page = await r.text()));
+        },
+      });
     });
     const asked = authorize!;
     expect(asked.origin + asked.pathname).toBe("https://www.figma.com/oauth");
@@ -91,12 +108,10 @@ describe("signing in through the browser, with the team's private app", () => {
   });
 
   test("an answer with another sign-in's state is refused, and nothing is exchanged", async () => {
-    const port = await freePort();
     const { fetcher, sent } = figma();
-    await expect(browserLogin({ app: APP, port, fetcher, open: () => void fetch(`${callbackUrl(port)}?code=planted&state=not-ours`) })).rejects.toThrow("another sign-in's state; nothing was kept");
+    await expect(onFreePort((port) => browserLogin({ app: APP, port, fetcher, open: () => void fetch(`${callbackUrl(port)}?code=planted&state=not-ours`) }))).rejects.toThrow("another sign-in's state; nothing was kept");
     expect(sent).toEqual([]);
-    const denied = await freePort();
-    await expect(browserLogin({ app: APP, port: denied, fetcher, open: (url) => void fetch(`${callbackUrl(denied)}?error=access_denied&state=${new URL(url).searchParams.get("state")}`) })).rejects.toThrow("Figma did not sign you in: access_denied");
+    await expect(onFreePort((port) => browserLogin({ app: APP, port, fetcher, open: (url) => void fetch(`${callbackUrl(port)}?error=access_denied&state=${new URL(url).searchParams.get("state")}`) }))).rejects.toThrow("Figma did not sign you in: access_denied");
   });
 });
 
