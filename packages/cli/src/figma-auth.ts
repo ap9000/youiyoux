@@ -49,15 +49,16 @@ const parse = (text: string | null): FigmaCredential | null => {
   }
 };
 
-/** A file only its owner can read: written atomically, then narrowed to 0600. */
+/** A file only its owner can read: created 0600 and renamed into a 0700 folder. */
 export function fileStore(path: string): CredentialStore {
   return {
     where: path,
     get: async () => parse(await readFile(path, "utf8").catch(() => null)),
     set: async (credential) => {
+      // The folder only its owner can enter, even one that was there before; the file created owner-only, never narrowed afterwards.
       await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-      await writeFileAtomic(path, `${JSON.stringify(credential)}\n`);
-      await chmod(path, 0o600);
+      await chmod(dirname(path), 0o700);
+      await writeFileAtomic(path, `${JSON.stringify(credential)}\n`, { mode: 0o600 });
     },
     delete: async () => rm(path).then(() => true, () => false),
   };

@@ -5,7 +5,7 @@
  * sent to api.figma.com only. Figma's endpoints are stood in for here.
  */
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -111,12 +111,15 @@ describe("signing in with a personal access token", () => {
 });
 
 describe("the kept sign-in", () => {
-  test("a file only its owner can read", async () => {
+  test("a file only its owner can read, in a folder only its owner can enter, even one that was there before", async () => {
+    await mkdir(join(dir, "nested"), { mode: 0o755 });
+    await chmod(join(dir, "nested"), 0o755);
     const path = join(dir, "nested", "figma.json");
     const store = fileStore(path);
     const credential: FigmaCredential = { kind: "token", token: PAT, savedAt: NOW.toISOString(), handle: null };
     await store.set(credential);
     expect((await stat(path)).mode & 0o777).toBe(0o600);
+    expect((await stat(join(dir, "nested"))).mode & 0o777).toBe(0o700);
     expect(await store.get()).toEqual(credential);
     expect(await store.delete()).toBe(true);
     expect(await store.get()).toBeNull();

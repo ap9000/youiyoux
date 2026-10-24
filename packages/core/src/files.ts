@@ -163,10 +163,15 @@ export function findUp(start: string, file: string, owner = process.getuid?.()):
 }
 
 /** Write via a temp file and rename, so a reader never sees a half-written file. */
-export async function writeFileAtomic(file: string, content: string): Promise<void> {
+/**
+ * Write through a temporary file beside the target, then rename it into place. `mode` creates
+ * the file with those permissions from its first byte (a secret is never readable by others,
+ * even for a moment), and the temporary file is always a new one (`wx`).
+ */
+export async function writeFileAtomic(file: string, content: string, options: { readonly mode?: number } = {}): Promise<void> {
   await mkdir(dirname(file), { recursive: true });
   const temp = join(dirname(file), `.${process.pid}.${randomBytes(6).toString("hex")}.tmp`);
-  await writeFile(temp, content, "utf8");
+  await writeFile(temp, content, { encoding: "utf8", flag: "wx", ...(options.mode !== undefined ? { mode: options.mode } : {}) });
   await rename(temp, file);
 }
 
