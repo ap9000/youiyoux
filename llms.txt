@@ -6,6 +6,7 @@ Set up a repo with `npx youiyoux agents install` (a rule in AGENTS.md and CLAUDE
 
 ## Docs
 
+- [Getting started](https://raw.githubusercontent.com/ap9000/youiyoux/main/docs/getting-started.md): the report, the top fix, agent setup, check --diff and CI, with real output
 - [Agent reference](https://raw.githubusercontent.com/ap9000/youiyoux/main/docs/agents.md): when to call each MCP tool, real example output, reading check --diff, hooks, exit codes, JSON output
 - [README](https://raw.githubusercontent.com/ap9000/youiyoux/main/README.md): what youiyoux is, quickstart, use cases
 - [Command reference](https://raw.githubusercontent.com/ap9000/youiyoux/main/docs/commands.md): every command and flag in detail

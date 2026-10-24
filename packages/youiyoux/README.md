@@ -16,6 +16,8 @@ No config, no account. You get:
 - `youiyoux-card.png`: a 1200×630 card with the headline numbers.
 - `youiyoux-summary.md`: paste it into a PR or issue.
 
+New to it? [Getting started](https://github.com/ap9000/youiyoux/blob/main/docs/getting-started.md): the report, the top fix, your agent and CI, in five steps.
+
 ## For your agent
 
 ```sh

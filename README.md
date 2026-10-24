@@ -27,6 +27,8 @@ In any repo. No config, no account. You get three files:
 
 <img src="docs/images/report.png" width="720" alt="The top of a youiyoux report: five summary lines and four headline numbers">
 
+New to it? [Getting started](docs/getting-started.md): the report, the top fix, your agent and CI, in five steps.
+
 ## Use cases
 
 - **Audit before a refactor.** Every near-duplicate, which copy to keep, and the files to change.
