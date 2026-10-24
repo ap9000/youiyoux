@@ -41,20 +41,28 @@ interface SafetyOptions {
 
 const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+/** Placeholder files people commit: their plain names (often the project's own) are not secrets. */
+const PLACEHOLDERS = /\.env\.(?:example|sample|template)$/i;
+/** A plain name: letters, digits, `.`, `_` and `-`, starting with a letter (`documenso`, `my-app`). */
+const PLAIN_NAME = /^[A-Za-z][A-Za-z0-9_.-]*$/;
+
 /**
- * Values in the repo's `.env`, `.env.local`, `apps/web/.env.production` … (never node_modules).
- * Not `.env.example` and its kin: committed placeholders, which often hold the project's own name.
+ * Values in the repo's `.env`, `.env.local`, `.env.dist`, `apps/web/.env.production` … (never
+ * node_modules). From `.env.example` and its kin, every value too except a plain name that does
+ * not look like a key: a key pasted into an example by mistake is still redacted.
  */
 async function dotenvValues(root: string): Promise<string[]> {
-  const files = (await findFiles(root, [".env", ".env.*", "**/.env", "**/.env.*"]).catch(() => [])).filter((f) => !/\.env\.(?:example|sample|template|dist|defaults)$/i.test(f));
+  const files = await findFiles(root, [".env", ".env.*", "**/.env", "**/.env.*"]).catch(() => []);
   const values: string[] = [];
   for (const file of files) {
     const text = await readFile(join(root, file), "utf8").catch(() => "");
+    const placeholders = PLACEHOLDERS.test(file);
     for (const line of text.split(/\r?\n/)) {
       const match = /^\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_.-]*\s*=\s*(.*)$/.exec(line);
       if (!match) continue;
       const value = match[1]!.trim().replace(/^(['"`])(.*)\1$/, "$2").replace(/\s+#.*$/, "");
-      if (value.length >= MIN_VALUE) values.push(value);
+      if (value.length < MIN_VALUE || (placeholders && PLAIN_NAME.test(value) && !looksSecret(value))) continue;
+      values.push(value);
     }
   }
   return values;

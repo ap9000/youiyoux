@@ -132,15 +132,17 @@ describe("the Redactor's repo root", () => {
 });
 
 describe("the Redactor's .env values", () => {
-  test("a real .env's values are redacted; an .env.example's placeholders, often the project's own name, are not", async () => {
+  test("a real .env's values are redacted; an .env.example's plain names, often the project's own, are not, but a key pasted into one is, and so is everything in .env.dist", async () => {
     const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const root = mkdtempSync(join(tmpdir(), "youi-dotenv-"));
     try {
       writeFileSync(join(root, ".env"), "API_SECRET=sk-real-value-123456\n");
-      writeFileSync(join(root, ".env.example"), "POSTGRES_USER=acmecorp\nDATABASE_URL=postgres://acmecorp:password@localhost/acmecorp\n");
+      writeFileSync(join(root, ".env.example"), "POSTGRES_USER=acmecorp\nDATABASE_URL=postgres://acmecorp:password@localhost/acmecorp\nSTRIPE_KEY=sk_live_51HxQe2ExampleKeyAbc123\n");
+      writeFileSync(join(root, ".env.dist"), "MAILER_USER=mailbot\n");
       const redactor = await Redactor.forRepo(root, { home: "/nowhere", username: "", env: {} });
       expect(redactor.text("@acmecorp/ui uses sk-real-value-123456")).toBe("@acmecorp/ui uses [redacted]");
+      expect(redactor.text("key sk_live_51HxQe2ExampleKeyAbc123 for mailbot")).toBe("key [redacted] for [redacted]");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
