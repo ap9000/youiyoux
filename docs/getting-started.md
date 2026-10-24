@@ -152,7 +152,7 @@ jobs:
 
 `--format github` puts each finding on its line in the pull request. Leave out `--strict` to get the
 notes without ever failing the build (every note is then a warning). Pin a version
-(`npx -y youiyoux@0.1.20`) so a new release never changes what fails your build.
+(`npx -y youiyoux@0.1.21`) so a new release never changes what fails your build.
 
 ## Where next
 
