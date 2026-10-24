@@ -41,9 +41,12 @@ interface SafetyOptions {
 
 const escapeRegExp = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/** Values in the repo's `.env`, `.env.local`, `apps/web/.env.production` … (never node_modules). */
+/**
+ * Values in the repo's `.env`, `.env.local`, `apps/web/.env.production` … (never node_modules).
+ * Not `.env.example` and its kin: committed placeholders, which often hold the project's own name.
+ */
 async function dotenvValues(root: string): Promise<string[]> {
-  const files = await findFiles(root, [".env", ".env.*", "**/.env", "**/.env.*"]).catch(() => []);
+  const files = (await findFiles(root, [".env", ".env.*", "**/.env", "**/.env.*"]).catch(() => [])).filter((f) => !/\.env\.(?:example|sample|template|dist|defaults)$/i.test(f));
   const values: string[] = [];
   for (const file of files) {
     const text = await readFile(join(root, file), "utf8").catch(() => "");

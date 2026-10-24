@@ -130,3 +130,19 @@ describe("the Redactor's repo root", () => {
     expect(redactor.text("/home/runner/work/app.old/x")).toBe("[path outside the repo]");
   });
 });
+
+describe("the Redactor's .env values", () => {
+  test("a real .env's values are redacted; an .env.example's placeholders, often the project's own name, are not", async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const root = mkdtempSync(join(tmpdir(), "youi-dotenv-"));
+    try {
+      writeFileSync(join(root, ".env"), "API_SECRET=sk-real-value-123456\n");
+      writeFileSync(join(root, ".env.example"), "POSTGRES_USER=acmecorp\nDATABASE_URL=postgres://acmecorp:password@localhost/acmecorp\n");
+      const redactor = await Redactor.forRepo(root, { home: "/nowhere", username: "", env: {} });
+      expect(redactor.text("@acmecorp/ui uses sk-real-value-123456")).toBe("@acmecorp/ui uses [redacted]");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
