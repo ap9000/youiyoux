@@ -4,8 +4,8 @@
  * `tailwind.config.*` (never executed), then `@theme` and `:root` variables in the project's CSS.
  * Lengths resolve through var() and calc() to px.
  */
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { readdir, readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { Lang, parseAsync, type SgNode } from "@ast-grep/napi";
 import { readRules, splitTopLevel, type CssRule } from "@youiyoux/tokens";
 import { unquote } from "../parse.ts";
@@ -127,18 +127,27 @@ export const round = (n: number): number => Math.round(n * 100) / 100;
 
 /* -------------------------------------------------------------- the theme */
 
+/**
+ * @tailwindcss/forms: `base` styles every text input, select and textarea; `class` only those with
+ * a form-* class; `unknown` when it is in the repository but this project's use of it cannot be
+ * read (a form control's unstyled padding is then unknown, never 0); null when it is not there.
+ */
+export type FormsPlugin = "base" | "class" | "unknown" | null;
+
 export class Theme {
   readonly tailwind: 3 | 4 | null;
   readonly warnings: string[];
   /** Project declarations only: excludes implicit Tailwind defaults. */
   readonly declared: ReadonlyMap<string, string>;
+  readonly forms: FormsPlugin;
   private readonly vars: Map<string, string>;
 
-  constructor(vars: Map<string, string>, tailwind: 3 | 4 | null, warnings: string[], declared: ReadonlyMap<string, string> = new Map()) {
+  constructor(vars: Map<string, string>, tailwind: 3 | 4 | null, warnings: string[], declared: ReadonlyMap<string, string> = new Map(), forms: FormsPlugin = null) {
     this.vars = vars;
     this.declared = declared;
     this.tailwind = tailwind;
     this.warnings = warnings;
+    this.forms = forms;
   }
 
   variable(name: string): string | undefined {
@@ -196,6 +205,78 @@ function literal(node: SgNode | null): string | null {
 
 function pairsOf(object: SgNode): Array<{ key: string | null; value: SgNode | null; node: SgNode }> {
   return object.children().filter((c) => c.kind() === "pair" || c.kind() === "spread_element" || c.kind() === "method_definition" || c.kind() === "shorthand_property_identifier").map((node) => ({ key: node.kind() === "pair" ? keyText(node.field("key")) : null, value: node.kind() === "pair" ? node.field("value") : null, node }));
+}
+
+const FORMS = "@tailwindcss/forms";
+const formsMode = (text: string): "base" | "class" => (/strategy\s*:\s*["']?class/.test(text.slice(text.indexOf(FORMS))) ? "class" : "base");
+
+/**
+ * Whether @tailwindcss/forms styles this project's form controls, read without running anything:
+ * `@plugin` in its CSS (Tailwind 4), or its Tailwind config, or a preset that config imports (a
+ * file beside it, or a workspace package found by name up to the repository's top).
+ */
+export async function formsPluginOf(root: string, sheets: readonly Stylesheet[], configFile: string | null): Promise<FormsPlugin> {
+  for (const sheet of sheets) {
+    const at = sheet.source.search(/@plugin\s+["']@tailwindcss\/forms["']/);
+    if (at >= 0) return formsMode(sheet.source.slice(at, at + 200));
+  }
+  const configSource = configFile ? await readFile(join(root, configFile), "utf8").catch(() => null) : null;
+  const texts = configSource ? [configSource, ...(await presetSources(root, configSource))] : [];
+  const found = texts.find((t) => t.includes(FORMS));
+  if (found) return formsMode(found);
+  // In the repository, but not read as this project's: unknown, never assumed absent.
+  for (let dir = root, up = 0; up < 6; dir = dirname(dir), up++) {
+    const pkg = await readFile(join(dir, "package.json"), "utf8").catch(() => null);
+    if (pkg?.includes(`"${FORMS}"`)) return "unknown";
+    if (await readFile(join(dir, ".git", "HEAD"), "utf8").then(() => true, () => false)) break;
+    if (dirname(dir) === dir) break;
+  }
+  return null;
+}
+
+/** The sources of presets a Tailwind config imports: relative files, and workspace packages found by name in a packages folder above. */
+async function presetSources(root: string, config: string): Promise<string[]> {
+  const sources: string[] = [];
+  const specifiers = [...config.matchAll(/(?:from\s+|require\()\s*["']([^"']+)["']/g)].map((m) => m[1]!).filter((s) => !s.startsWith("tailwindcss") && s !== FORMS);
+  const read = async (base: string): Promise<string | null> => {
+    for (const ext of ["", ".ts", ".js", ".mjs", ".cjs", ".mts", "/tailwind.config.ts", "/tailwind.config.js", "/index.ts", "/index.js"]) {
+      const text = await readFile(base + ext, "utf8").catch(() => null);
+      if (text !== null) return text;
+    }
+    return null;
+  };
+  for (const specifier of specifiers.slice(0, 10)) {
+    if (specifier.startsWith(".")) {
+      const text = await read(join(root, specifier));
+      if (text) sources.push(text);
+      continue;
+    }
+    const parts = specifier.split("/");
+    const name = specifier.startsWith("@") ? parts.slice(0, 2).join("/") : parts[0]!;
+    const rest = parts.slice(specifier.startsWith("@") ? 2 : 1).join("/");
+    for (let dir = root, up = 0; up < 6; dir = dirname(dir), up++) {
+      let found: string | null = null;
+      for (const folder of ["packages", "libs", "config", "tooling"]) {
+        for (const entry of await readdir(join(dir, folder)).catch(() => [] as string[])) {
+          const pkg = await readFile(join(dir, folder, entry, "package.json"), "utf8").catch(() => null);
+          let named: unknown = null;
+          try {
+            named = pkg ? (JSON.parse(pkg) as { name?: unknown }).name : null;
+          } catch {
+            named = null;
+          }
+          if (named === name) found = join(dir, folder, entry);
+        }
+      }
+      if (found) {
+        const text = await read(rest ? join(found, rest) : found);
+        if (text) sources.push(text);
+        break;
+      }
+      if (dirname(dir) === dir) break;
+    }
+  }
+  return sources;
 }
 
 /** Read `theme` and `theme.extend` from a Tailwind config without running it. */
@@ -282,5 +363,5 @@ export async function buildTheme(root: string, sheets: readonly Stylesheet[], us
       }
     }
   }
-  return new Theme(vars, version, config.warnings, declared);
+  return new Theme(vars, version, config.warnings, declared, version ? await formsPluginOf(root, sheets, config.file) : null);
 }

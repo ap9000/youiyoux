@@ -35,9 +35,13 @@ export class StyleAccumulator {
   private preflight: boolean;
   private readonly tag: string | null;
 
-  constructor(tag: string | null, preflight: boolean) {
+  /** A form control whose unstyled padding a plugin may set, unread: unknown, never 0. */
+  private readonly unsetUnknown: boolean;
+
+  constructor(tag: string | null, preflight: boolean, unsetUnknown = false) {
     this.tag = tag;
     this.preflight = preflight;
+    this.unsetUnknown = unsetUnknown;
   }
 
   /** Whether any declaration applied at all; an element nothing styles has no known padding or radius. */
@@ -76,7 +80,7 @@ export class StyleAccumulator {
   finish(): ResolvedStyle {
     const derived: ShapeDimension[] = [];
     // Unset padding and radius are 0 (CSS initial values, or Tailwind's preflight on form controls).
-    const zero = this.touched && (this.preflight || !FORM_CONTROLS.has(this.tag ?? "")) ? 0 : null;
+    const zero = this.touched && !this.unsetUnknown && (this.preflight || !FORM_CONTROLS.has(this.tag ?? "")) ? 0 : null;
     const axis = (a: Prop, b: Prop): number | null => {
       const x = this.known(a);
       const y = this.known(b);
@@ -430,8 +434,23 @@ function applyDeclaration(style: StyleAccumulator, declaration: CssDeclaration, 
 }
 
 /** Resolve a look's classes (in precedence order) for an element whose root tag is `tag`. */
+/** Form controls @tailwindcss/forms styles: text inputs (checkboxes and radios are never input looks), selects and text areas. */
+const FORMS_CONTROLS = new Set(["input", "select", "textarea"]);
+
 export function resolveClasses(classes: readonly string[], tag: string | null, theme: Theme, rules: ClassRules): ResolvedStyle & { tailwindClasses: number } {
-  const style = new StyleAccumulator(tag, false);
+  const forms = FORMS_CONTROLS.has(tag ?? "") ? (theme.forms === "base" || (theme.forms === "class" && classes.some((c) => /^form-(?:input|select|textarea|multiselect)$/.test(c))) ? "styled" : theme.forms === "unknown" ? "unknown" : null) : null;
+  const style = new StyleAccumulator(tag, false, forms === "unknown");
+  // The plugin's own base, which the project's rules and utilities then override: 8px by 12px padding (a select keeps room for its arrow), 16px text on a 24px line, a 1px border, square corners.
+  if (forms === "styled") {
+    style.set("paddingTop", 8);
+    style.set("paddingBottom", 8);
+    style.set("paddingLeft", 12);
+    style.set("paddingRight", tag === "select" ? 40 : 12);
+    style.set("fontSize", 16);
+    style.set("lineHeight", 24);
+    style.set("border", 1);
+    style.set("radius", 0);
+  }
   rules.apply(style, classes, theme);
   let tailwindClasses = 0;
   if (theme.tailwind) for (const name of classes) if (applyUtility(style, name, theme)) tailwindClasses++;
