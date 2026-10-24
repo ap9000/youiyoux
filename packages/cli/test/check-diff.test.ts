@@ -212,9 +212,14 @@ describe("youiyoux check --diff on a change", () => {
     expect(text.out).toMatch(/✖ \d+ findings in this change: apply each fix/);
     expect(text.out).toContain('→ use <Button variant="ghost"> from "@/components/ui"');
     expect((await check("--strict")).code).toBe(1);
-    const github = await check("--format", "github");
-    expect(github.out).toMatch(/::error file=components\/promo\.tsx,line=6,col=\d+,title=youi hardcoded value/);
-    expect(github.out).toContain("::warning file=components/quiet-button.tsx,line=3");
+    const strict = await check("--strict", "--format", "github");
+    expect(strict.out).toMatch(/::error file=components\/promo\.tsx,line=6,col=\d+,title=youi hardcoded value/);
+    expect(strict.out).toContain("::warning file=components/quiet-button.tsx,line=3");
+    // Advisory (no --strict) passes, so none of its notes is marked an error.
+    const advisory = await check("--format", "github");
+    expect(advisory.code).toBe(0);
+    expect(advisory.out).toMatch(/::warning file=components\/promo\.tsx,line=6,col=\d+,title=youi hardcoded value/);
+    expect(advisory.out).not.toContain("::error");
   });
 
   test("off-library fixes prefer the existing owned wrapper and its alias", async () => {
@@ -333,6 +338,10 @@ describe("youiyoux check --diff on a change", () => {
     // Against HEAD the committed change is no longer new.
     expect(JSON.parse((await check("--json")).out)).toMatchObject({ files: [], findings: [] });
     expect((await cli(["check", "--diff=main", "--json", "--project", fixture.app])).out).toContain("near-duplicate");
+    // Nothing changed: against HEAD it suggests a branch; against a branch it already is one.
+    expect((await check()).out).toContain("nothing to check. Compare with a branch: youiyoux check --diff main");
+    await fixture.git("checkout", "-qb", "docs-only", "main");
+    expect((await check("main")).out).toMatch(/✓ No checked files changed against main \(merge-base [0-9a-f]{7}\): nothing to check$/m);
   });
 
   test("without git it stops and says why, never a pass", async () => {
@@ -402,5 +411,21 @@ describe("youiyoux check --diff on an agent's page, in a Tailwind 4 repo with no
     await writeFile(join(repo, "src/app/settings/note.tsx"), 'export const Note = () => <p className="text-[#6b7280]">Billed monthly.</p>;\n');
     const values = (await check()).findings.filter((f) => f.kind === "hardcoded-value");
     expect(values).toEqual([expect.objectContaining({ file: "src/app/settings/note.tsx", fix: "use text-muted (color.muted)", message: "Hardcoded colour #6b7280: the token color.muted has this value. Check it plays that role." })]);
+  });
+
+  test("a token named for phones is offered only in phone code: a media query, a selector or a variant; elsewhere a general one, or none", async () => {
+    await writeFile(join(repo, "src/app/globals.css"), '@import "tailwindcss";\n@custom-variant phone (@media (max-width: 760px));\n@theme {\n  --color-primary: #4f46e5;\n  --spacing-phone-row: 8px;\n  --spacing-phone-card: 12px;\n}\n:root {\n  --space-sm: 8px;\n}\n');
+    await run("git", ["-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qam", "tokens"], { cwd: repo });
+    await writeFile(join(repo, "src/app/composer.css"), ".composer { padding: 8px 12px; }\n@media (max-width: 760px) {\n  .composer { padding: 8px 12px; }\n}\nhtml[data-mobile-keyboard] .composer { padding-bottom: 12px; }\n");
+    await writeFile(join(repo, "src/app/row.tsx"), 'export const Row = () => <div className="flex gap-[8px] phone:gap-[8px] p-[12px]" />;\n');
+    const fixes = (await check()).findings.filter((f) => f.kind === "hardcoded-value").map((f) => [f.file, f.line, f.fix]);
+    expect(fixes).toEqual([
+      // Desktop: 8px is the general --space-sm; 12px only a phone token has, so it stays.
+      ["src/app/composer.css", 1, "use padding: var(--space-sm) 12px (spacing.space-sm)"],
+      ["src/app/composer.css", 3, "use padding: var(--spacing-phone-row) var(--spacing-phone-card) (spacing.phone-row, spacing.phone-card)"],
+      ["src/app/composer.css", 5, "use padding-bottom: var(--spacing-phone-card) (spacing.phone-card)"],
+      ["src/app/row.tsx", 1, "use gap-[var(--space-sm)] (spacing.space-sm)"],
+      ["src/app/row.tsx", 1, "use phone:gap-phone-row (spacing.phone-row or spacing.space-sm, var(--spacing-phone-row))"],
+    ]);
   });
 });

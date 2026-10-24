@@ -122,7 +122,7 @@ export function renderDiffText(result: DiffCheckResult): string {
   lines.push("");
   if (diff.findings.length > 0) lines.push(style.error(`✖ ${plural(diff.findings.length, "finding")} in this change: apply each fix (→), then run \`youiyoux check --diff\` again`));
   else if (gaps.length > 0) lines.push(style.warn("! Not a pass: parts of this change could not be checked (above). Fix what could not be read, then run `youiyoux check --diff` again"));
-  else if (diff.files.length === 0) lines.push(style.ok(`✓ No checked files changed against ${diff.base}: nothing to check. Compare with a branch: youiyoux check --diff main`));
+  else if (diff.files.length === 0) lines.push(style.ok(`✓ No checked files changed against ${diff.base}: nothing to check${diff.base === "HEAD" ? ". Compare with a branch: youiyoux check --diff main" : ""}`));
   else lines.push(style.ok(`✓ No drift in this change: ${plural(diff.files.length, "file")} checked against ${diff.base}. Nothing to fix`));
   return lines.join("\n");
 }
@@ -143,10 +143,14 @@ export function diffJson(result: DiffCheckResult): Record<string, unknown> {
   };
 }
 
-/** PR annotations for `youiyoux check --diff --format github`: one per finding on its added line, plus what could not be checked. */
-export function githubDiffAnnotations(result: DiffCheckResult, prefix: string): string[] {
-  const lines = (result.diff?.findings ?? []).map((f) => command(f.severity === "error" ? "error" : "warning", `${f.message} Fix: ${f.fix}`, { file: `${prefix}${f.file}`, line: f.line, col: f.column, title: `youi ${kindOf(f)}` }));
-  for (const gap of diffGaps(result)) lines.push(command("error", `${gap}; a clean result here is not a pass`, { title: "youi incomplete" }));
+/**
+ * PR annotations for `youiyoux check --diff --format github`: one per finding on its added line, plus what could not be
+ * checked. Without --strict the check never fails, so nothing is marked an error on a check that passes.
+ */
+export function githubDiffAnnotations(result: DiffCheckResult, prefix: string, strict: boolean): string[] {
+  const level = (severity: string) => (strict && severity === "error" ? "error" : "warning");
+  const lines = (result.diff?.findings ?? []).map((f) => command(level(f.severity), `${f.message} Fix: ${f.fix}`, { file: `${prefix}${f.file}`, line: f.line, col: f.column, title: `youi ${kindOf(f)}` }));
+  for (const gap of diffGaps(result)) lines.push(command(level("error"), `${gap}; a clean result here is not a pass`, { title: "youi incomplete" }));
   return lines;
 }
 

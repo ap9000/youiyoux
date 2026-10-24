@@ -552,7 +552,7 @@ async function cmdCheckDiff(values: Values, positionals: string[], p: ChangeProj
   const result = configured(p) ? await runCheck(p, { ...checkScope(values, positionals), diff: change }) : await runRepoCheck(p, change);
   if (format === "json") json(diffJson(result));
   else if (format === "github") {
-    for (const line of githubDiffAnnotations(result, await repoPrefix(p.root))) print(line);
+    for (const line of githubDiffAnnotations(result, await repoPrefix(p.root), values.strict)) print(line);
     print(renderDiffText(result));
     if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, githubDiffSummary(result));
   } else print(renderDiffText(result));

@@ -42,6 +42,46 @@ export type IsAdded = (file: string, line: number) => boolean;
 const cssVar = (token: ResolvedToken, index: TokenIndex): string => `var(${[...index.byVar].find(([, t]) => t === token)?.[0] ?? cssVariable(index.prefix, token.cssName)})`;
 const tokenList = (tokens: readonly ResolvedToken[]): string => tokens.slice(0, 3).map((t) => t.id).join(" or ");
 
+/*
+ * A token named for a screen size (`spacing.phone-row`, `space.desktop-gutter`) is that size's
+ * value. It is offered only in code written for that size: a media query, a selector naming it,
+ * or a Tailwind variant (`phone:`, `max-md:`, `lg:`); there it comes first. Elsewhere a general
+ * token is offered, or none.
+ */
+type Viewport = "narrow" | "wide";
+const viewportOfWord = (word: string): Viewport | null => (/^(phone|mobile|handset)$/.test(word) ? "narrow" : /^(tablet|desktop)$/.test(word) ? "wide" : null);
+const tokenViewport = (token: ResolvedToken): Viewport | null => token.id.split(/[.-]/).map(viewportOfWord).find((v) => v !== null) ?? null;
+
+/** The screen sizes CSS rule preludes (outer to inner) are written for. */
+function preludeViewports(preludes: readonly string[]): Set<Viewport> {
+  const found = new Set<Viewport>();
+  for (const prelude of preludes) {
+    if (/^@media\b/.test(prelude) && /max-width|width\s*<=?/.test(prelude)) found.add("narrow");
+    if (/^@media\b/.test(prelude) && /min-width|width\s*>=?/.test(prelude)) found.add("wide");
+    for (const word of prelude.toLowerCase().match(/[a-z]+/g) ?? []) {
+      const viewport = viewportOfWord(word);
+      if (viewport) found.add(viewport);
+    }
+  }
+  return found;
+}
+
+/** The screen sizes Tailwind variants (`phone`, `max-md`, `lg`) are written for. */
+function variantViewports(variants: readonly string[]): Set<Viewport> {
+  const found = new Set<Viewport>();
+  for (const variant of variants) {
+    const viewport = viewportOfWord(variant) ?? (/^max-/.test(variant) ? "narrow" : /^(min-|@)?(sm|md|lg|xl|[2-9]xl)$/.test(variant) ? "wide" : null);
+    if (viewport) found.add(viewport);
+  }
+  return found;
+}
+
+/** The tokens that fit code written for `viewports`: that size's own first, then general ones. */
+function fitting(tokens: readonly ResolvedToken[], viewports: ReadonlySet<Viewport>): ResolvedToken[] {
+  const own = tokens.filter((t) => { const v = tokenViewport(t); return v !== null && viewports.has(v); });
+  return [...own, ...tokens.filter((t) => tokenViewport(t) === null)];
+}
+
 /** `text-` in `text-[#c62828]`: the utility a literal at `column` sits in, or null. */
 function utilityBefore(lineText: string, column: number): string | null {
   return /(?:^|[\s"'`:])!?(-?[a-z][a-z0-9]*(?:-[a-z][a-z0-9]*)*)-\[$/.exec(lineText.slice(0, column - 1))?.[1] ?? null;
@@ -75,11 +115,13 @@ function arbitraryFindings(module: ModuleInfo, index: TokenIndex, added: IsAdded
       const offset = match.index! + whole.indexOf(`${utility}-[`);
       const at = offsetToPosition(text, offset, start);
       if (!added(module.file, at.line)) continue;
-      const tokens = arbitraryTokens(utility, value, index);
+      // `phone:` in `phone:gap-[8px]`: the fix keeps it.
+      const variants = whole.slice(0, whole.indexOf(`${utility}-[`));
+      const tokens = fitting(arbitraryTokens(utility, value, index), variantViewports(variants.split(":")));
       if (tokens.length === 0) continue;
-      const utilities = tokenUtilities(utility, tokens, index);
+      const utilities = tokenUtilities(utility, tokens, index).map((u) => `${variants}${u}`);
       const kind = /^-?rounded/.test(utility) ? "radius" : utility === "text" ? "type" : "spacing";
-      const fix = utilities.length > 0 ? `use ${utilities.slice(0, 2).join(" or ")} (${tokenList(tokens)}, ${cssVar(tokens[0]!, index)})` : `use ${utility}-[${cssVar(tokens[0]!, index)}] (${tokenList(tokens)})`;
+      const fix = utilities.length > 0 ? `use ${utilities.slice(0, 2).join(" or ")} (${tokenList(tokens)}, ${cssVar(tokens[0]!, index)})` : `use ${variants}${utility}-[${cssVar(tokens[0]!, index)}] (${tokenList(tokens)})`;
       findings.push({ kind: "hardcoded-value", file: module.file, ...at, text: `${utility}-[${value}]`, message: `Hardcoded ${kind} ${utility}-[${value}]: the token ${tokenList(tokens)} has this value.`, fix });
     }
   }
@@ -99,9 +141,10 @@ function cssDimensionFindings(module: ModuleInfo, index: TokenIndex, isTokenSour
       if (!added(module.file, declaration.line) || (isTokenSource && declaration.property.startsWith("--"))) continue;
       const kind = CSS_DIMENSIONS.find(([pattern]) => pattern.test(declaration.property))?.[1];
       if (!kind) continue;
+      const viewports = preludeViewports(rule.preludes);
       const matched: ResolvedToken[] = [];
       const value = declaration.value.replace(/(^|[\s(,])(-?)(\d*\.?\d+)px\b/g, (whole, lead: string, sign: string, n: string) => {
-        const token = dimensionTokens(kind, Number(n), index)[0];
+        const token = fitting(dimensionTokens(kind, Number(n), index), viewports)[0];
         if (!token || Number(n) === 0) return whole;
         matched.push(token);
         return `${lead}${sign ? `calc(-1 * ${cssVar(token, index)})` : cssVar(token, index)}`;
