@@ -37,7 +37,8 @@ function Drawing({ answer, failure, scheme, onEscape }: { answer: PreviewAnswer;
   const html = useDrawn(answer.id);
   const error = answer.error ?? failure;
   if (error) {
-    const site = answer.entry.kind === "pattern" ? siteOf(answer.entry.source.url) : null;
+    // A block, or a paid item: its registry's own site shows it, as its authors made it.
+    const site = answer.entry.kind === "pattern" || /paid or private/i.test(error) ? siteOf(answer.entry.source.url) : null;
     return (
       <p className="rounded-md border border-dashed border-line-strong p-3 text-small text-muted" data-preview-error>
         {`No drawing: ${error.replace(/\.$/, "")}.`}

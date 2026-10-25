@@ -566,6 +566,35 @@ describe("an opened block, drawn as the page it is", () => {
     expect([link.href, link.target, link.rel]).toEqual(["https://coss.com/ui", "_blank", "noreferrer noopener"]);
   });
 
+  test("a paid or private component says so and links to its registry's site; one that fails otherwise does not", async () => {
+    const component = "lib:coss/component/button";
+    // Preview answers are kept per candidate, so the one that fails otherwise is another.
+    const failing = "lib:coss/component/toast";
+    const paid = "button is paid or private: its registry asks for an account or a licence before it gives its code (HTTP 403)";
+    const base = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input), "http://localhost:5173/");
+      if (url.pathname !== "/__youi/discover-preview") return base(input, init);
+      const id = url.searchParams.get("id")!;
+      return json(answerFor(await entryOf(id), { script: null, error: id === component ? paid : "It failed when it ran (boom)" }));
+    }));
+    show(`?q=button&open=${encodeURIComponent(component)}`);
+    const shown = await waitFor(() => {
+      const element = document.querySelector<HTMLElement>("[data-preview-error]");
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    expect(text(shown)).toBe(`No drawing: ${paid}. Find button on coss.com, drawn as its authors made it.`);
+    cleanup();
+    show(`?q=toast&open=${encodeURIComponent(failing)}`);
+    const other = await waitFor(() => {
+      const element = document.querySelector<HTMLElement>("[data-preview-error]");
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    expect(other.querySelector("a[data-site-link]")).toBeNull();
+  });
+
   test("the site link is https only", () => {
     expect(siteOf("https://ui.shadcn.com")).toEqual({ href: "https://ui.shadcn.com/", host: "ui.shadcn.com" });
     expect(siteOf("http://ui.example.com")).toBeNull();

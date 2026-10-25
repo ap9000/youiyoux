@@ -46,7 +46,7 @@ export function renderRegistries(result: Awaited<ReturnType<typeof listRegistrie
       const state = STATES[r.state];
       return `  ${padEnd(r.name, width)}  ${compact(r.itemCount).padStart(5)} items  ${truncate((r.description ?? "").replace(/\s+/g, " "), 72)}${state ? style.dim(` · ${state}`) : ""}`;
     }),
-    ...(result.left || result.icons ? [style.dim(`  ${[result.left ? `${result.left} left out (hidden, unavailable or not public https)` : "", result.icons ? `${plural(result.icons, "icon set")} left out (--icons lists them)` : ""].filter(Boolean).join(" · ")}`)] : []),
+    ...(result.left || result.icons ? [style.dim(`  ${[result.left ? `${result.left} left out (hidden, unavailable or not public https)` : "", result.icons ? `${plural(result.icons, "icon or logo set")} left out (--icons lists them)` : ""].filter(Boolean).join(" · ")}`)] : []),
     ...(last < result.total ? [style.dim(`  …${result.total - last} more: --offset ${last}`)] : []),
     style.dim(result.every ? "Next: youiyoux discover \"<need>\" --all searches every registry's items; youiyoux discover sources add <name>, then youiyoux discover sync, makes one of your sources" : "Next: youiyoux discover \"<need>\" --all fetches every registry's item list once (names and descriptions, no code) and searches it; youiyoux discover sources add <name>, then youiyoux discover sync, makes one of your sources"),
   ];

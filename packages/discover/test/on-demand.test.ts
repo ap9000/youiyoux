@@ -2,7 +2,7 @@ import { mkdtemp, readFile, readdir, rm, mkdir, stat, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { candidateSource, catalogBytes, CURATED, readAllIndex, dedupe, expandAll, listRegistries, loadIndex, registryItemAt, readSources, registryEntry, parseRegistryItems, searchIndex, selectSources, SHADCN, syncIndex, writeJson } from "../src/index.ts";
+import { candidateSource, catalogBytes, CURATED, readAllIndex, dedupe, expandAll, isDrawableListing, listRegistries, loadIndex, registryItemAt, readSources, registryEntry, parseRegistryItems, searchIndex, selectSources, SHADCN, syncIndex, writeJson } from "../src/index.ts";
 import * as text from "../src/text.ts";
 import { fixtureFetcher } from "./fixture-fetcher.ts";
 
@@ -103,6 +103,41 @@ test("an item by URL is fetched only from public https, and only when it is the 
   for (const url of ["http://extra.test/r/command.json", "https://localhost/r/command.json", "https://10.0.0.1/r/command.json", "file:///etc/passwd"]) await expect(registryItemAt(dir, url, "command", { fetcher }), url).rejects.toThrow(/public https/);
   expect(await registryItemAt(dir, "https://extra.test/r/command.json", "command", { fetcher: fixtures().fetcher })).toMatchObject({ files: [{ content: SOURCE }] });
   await expect(registryItemAt(dir, "https://extra.test/r/registry.json", "other", { fetcher: fixtures().fetcher })).rejects.toThrow(/different or invalid/);
+});
+
+test("every registry lists only what Discover could draw: no other framework's components, hooks or sounds", async () => {
+  await syncIndex({ ...options, cacheDir: dir, fetcher: fixtures().fetcher });
+  const items = [
+    { name: "command", type: "registry:ui", files: [{ path: "command.tsx" }] },
+    { name: "blur-text", type: "registry:component", files: [{ path: "BlurText/BlurText.js" }, { path: "BlurText/BlurText.css" }] },
+    { name: "vue-icon", type: "registry:ui", files: [{ path: "icon.vue" }, { path: "index.ts" }] },
+    { name: "use-sound", type: "registry:hook", files: [{ path: "hooks/use-sound.ts" }, { path: "lib/sound-engine.ts" }] },
+    { name: "theme", type: "registry:style" },
+  ];
+  const network = fixtureFetcher({ override: (url) => (url === SHADCN.directory ? { inline: JSON.stringify(rows) } : url === "https://extra.test/r/registry.json" ? { inline: JSON.stringify({ items }) } : undefined) });
+  expect(await expandAll(dir, { fetcher: network.fetcher })).toMatchObject({ registries: 1, listings: 2 });
+  expect((await readAllIndex(dir))!.entries.map((e) => e.source.ref).sort()).toEqual(["@extra/blur-text", "@extra/command"]);
+  // From file names alone; a listing that names none is kept, and opening it says.
+  const listing = (...paths: string[]) => ({ provenance: { files: paths.map((path) => ({ path, sha256: "0".repeat(64) })) } }) as unknown as Parameters<typeof isDrawableListing>[0];
+  expect(isDrawableListing(listing("a.tsx", "b.ts"))).toBe(true);
+  expect(isDrawableListing(listing("a.mjs"))).toBe(true);
+  expect(isDrawableListing(listing())).toBe(true);
+  for (const paths of [["a.svelte"], ["A.astro", "b.tsx"], ["a.ts", "b.mts"]]) expect(isDrawableListing(listing(...paths)), paths.join()).toBe(false);
+});
+
+test("icon and logo sets are left out of the registries list unless asked for", async () => {
+  const health = { status: "healthy", score: 99, checkedAt: null, hidden: false };
+  const row = (name: string, description: string) => ({ name, homepage: null, template: `https://${name.slice(1)}.test/r/{name}.json`, description, health, itemCount: 10 });
+  await writeFile(join(dir, "directory.json"), JSON.stringify([row("@svgl", "A beautiful library with SVG logos."), row("@forge", "900+ brand logos for developers"), row("@chain", "Web3 components: wallets, token logos, balances"), row("@glyphs", "Animated icons for React")]));
+  expect(await listRegistries(dir)).toMatchObject({ icons: 3, rows: [{ name: "@shadcn" }, { name: "@chain" }] });
+  expect((await listRegistries(dir, { icons: true })).total).toBe(5);
+});
+
+test("a paid or private item says so, in a sentence", async () => {
+  for (const status of [401, 402, 403]) {
+    const network = fixtureFetcher({ override: (url) => (url === "https://paid.test/r/hero.json" ? { status, inline: "{}" } : undefined) });
+    await expect(registryItemAt(dir, "https://paid.test/r/hero.json", "hero", { fetcher: network.fetcher })).rejects.toThrow(`hero is paid or private: its registry asks for an account or a licence before it gives its code (HTTP ${status})`);
+  }
 });
 
 test("mirror URLs normalize host, query, template and trailing slash before content fallback", () => {

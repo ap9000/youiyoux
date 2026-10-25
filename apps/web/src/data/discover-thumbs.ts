@@ -77,5 +77,6 @@ export function shortReason(reason: string): string {
   if (/draws nothing visible/i.test(reason)) return "Draws nothing on its own";
   if (/did not draw within|took over/i.test(reason)) return "Timed out drawing";
   if (/exports no component/i.test(reason)) return "Nothing to draw";
+  if (/paid or private/i.test(reason)) return "Paid or private";
   return "Not drawn on its own";
 }

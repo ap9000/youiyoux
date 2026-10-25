@@ -113,6 +113,7 @@ describe("the hub's thumbnail endpoints", () => {
 
 test("a missing picture's reason in the few words a card has room for", () => {
   expect(shortReason("it needs recharts, which is installed in neither your project nor the hub")).toBe("Needs recharts");
+  expect(shortReason("auth53 is paid or private: its registry asks for an account or a licence before it gives its code (HTTP 403)")).toBe("Paid or private");
   expect(shortReason("it needs radix-ui's Accordion (@radix-ui/react-accordion), installed in neither your project nor the hub")).toBe("Needs Accordion");
   expect(shortReason("it needs @/registry/new-york-v4/ui/collapsible, which your project does not have")).toBe("Needs its collapsible part");
   expect(shortReason("It failed when it ran (`AccordionHeader` must be used within `AccordionItem`); the listing stands")).toBe("Fails when drawn alone");

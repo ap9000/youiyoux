@@ -116,7 +116,7 @@ export function RegistriesScreen() {
                 <p className="min-w-0 flex-1 text-small text-muted" data-registries-summary>
                   {q ? `For “${q}”: ` : ""}
                   {state.page.total} {state.page.total === 1 ? "registry" : "registries"}
-                  {state.page.left + state.page.icons > 0 && <span className="text-faint max-sm:hidden"> · {[state.page.left ? `${state.page.left} hidden or unavailable` : "", state.page.icons ? `${state.page.icons} icon sets` : ""].filter(Boolean).join(" and ")} left out</span>}
+                  {state.page.left + state.page.icons > 0 && <span className="text-faint max-sm:hidden"> · {[state.page.left ? `${state.page.left} hidden or unavailable` : "", state.page.icons ? `${state.page.icons} icon and logo sets` : ""].filter(Boolean).join(" and ")} left out</span>}
                 </p>
                 <label className="flex items-center gap-1.5 text-small text-muted">
                   Sort
@@ -146,8 +146,8 @@ export function RegistriesScreen() {
 
 /**
  * One registry. With every registry's listings fetched (`fetched`), one with none of them to show
- * (a mirror whose items are listed under their own registries, or none Discover can draw) says so
- * instead of offering an empty page.
+ * (a mirror whose items are listed under their own registries, or one with no React components:
+ * Vue, sounds, hooks) says so instead of offering an empty page.
  */
 function RegistryCard({ row, fetched }: { row: RegistryRow; fetched: boolean }) {
   const label = STATE_LABEL[row.state];
@@ -160,7 +160,7 @@ function RegistryCard({ row, fetched }: { row: RegistryRow; fetched: boolean }) 
       </div>
       <p className="line-clamp-3 min-h-[3lh] text-small text-ink-2">{row.description ?? <span className="text-faint">It says nothing about itself.</span>}</p>
       <p className="tabular text-caption text-muted" data-count>
-        {row.listed !== null ? `${compact(row.listed)} to browse` : empty ? "Nothing of its own to browse here" : row.itemCount !== null ? `${compact(row.itemCount)} ${row.itemCount === 1 ? "item" : "items"}` : "Items not counted"}
+        {row.listed !== null ? `${compact(row.listed)} to browse` : empty ? "Nothing to browse here (a mirror, or no React components)" : row.itemCount !== null ? `${compact(row.itemCount)} ${row.itemCount === 1 ? "item" : "items"}` : "Items not counted"}
       </p>
       <div className="mt-auto flex flex-wrap items-center gap-2">
         {!empty && (

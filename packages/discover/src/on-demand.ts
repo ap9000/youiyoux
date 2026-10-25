@@ -1,6 +1,6 @@
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { sha256, writeFileAtomic } from "@youiyoux/core";
+import { sha256, writeFileAtomic, type LibraryEntry } from "@youiyoux/core";
 import { PoliteClient, type PoliteOptions } from "./http.ts";
 import { isIconEntry, showCandidate } from "./search.ts";
 import { SHADCN, isCandidate, parseRegistryItems, registryEntry, registryUrl, skipReason, type DirectoryRegistry } from "./sources.ts";
@@ -46,8 +46,21 @@ export interface RegistryRow {
 export const REGISTRY_SORTS = ["items", "name"] as const;
 export type RegistrySort = (typeof REGISTRY_SORTS)[number];
 
-/** A registry the directory describes as an icon set: Discover leaves those out unless asked (`--icons`). */
-const isIconRegistry = (r: DirectoryRegistry): boolean => /\bicons?\b/i.test(`${r.name} ${r.description ?? ""}`);
+/** A registry the directory describes as an icon or logo set: Discover leaves those out unless asked (`--icons`). */
+const isIconRegistry = (r: DirectoryRegistry): boolean => /\bicons?\b|\b(?:svg|brand) logos\b/i.test(`${r.name} ${r.description ?? ""}`);
+
+/**
+ * Whether a listing from every registry is a React component Discover could draw, from its file
+ * names alone: not when it is another framework's (a `.vue`, `.svelte` or `.astro` file), nor
+ * when its only scripts are TypeScript without JSX (`.ts`: a hook, a sound, a helper; `.js` may
+ * hold JSX, so it stays). A listing that names no files is kept: opening it says.
+ */
+export function isDrawableListing(entry: Pick<LibraryEntry, "provenance">): boolean {
+  const files = (entry.provenance?.files ?? []).map((file) => file.path.toLowerCase());
+  if (files.some((path) => /\.(?:vue|svelte|astro)$/.test(path))) return false;
+  const scripts = files.filter((path) => /\.(?:[cm]?[jt]sx?)$/.test(path));
+  return scripts.length === 0 || scripts.some((path) => !/\.[cm]?ts$/.test(path));
+}
 
 /**
  * The directory's registries, for someone who does not know their names: the ones a sync could
@@ -109,7 +122,8 @@ export async function expandAll(cacheDir: string, options: PoliteOptions & { ico
     const response = hit ? { ok: true as const, value: JSON.parse(hit.body) as unknown, result: hit } : await client.json(url);
     options.onProgress?.(++done, asked.length);
     if (!response.ok) return (failed++, []);
-    const entries = parseRegistryItems(response.value).items.filter(isCandidate).map((item) => registryEntry({ name: r.name, homepage: r.homepage, url, fetchedAt: response.result.fetchedAt, official: false, health: r.health }, item, categories));
+    // Only what Discover could draw: not another framework's components, a hook or a sound.
+    const entries = parseRegistryItems(response.value).items.filter(isCandidate).map((item) => registryEntry({ name: r.name, homepage: r.homepage, url, fetchedAt: response.result.fetchedAt, official: false, health: r.health }, item, categories)).filter(isDrawableListing);
     return !options.icons && entries.length && entries.filter(isIconEntry).length / entries.length >= 0.8 ? [] : entries.map((entry) => applySignals(entry, signals));
   }));
   await writeHttpCache(cacheDir, cache);
@@ -178,6 +192,8 @@ export async function registryItemAt(cacheDir: string, url: string, name: string
   const response = await client.json(url, false);
   if (!response.ok) {
     if (response.status === 404 || response.status === 410) return "missing";
+    // A pro item: the registry wants an account or a licence first.
+    if (response.status === 401 || response.status === 402 || response.status === 403) throw new Error(`${name} is paid or private: its registry asks for an account or a licence before it gives its code (HTTP ${response.status})`);
     throw new Error(response.message);
   }
   const item = parseRegistryItems([response.value]).items[0];
