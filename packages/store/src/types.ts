@@ -35,6 +35,10 @@ export interface DiscoverItem {
   readonly builtAt: string;
 }
 
+/** How browsed listings are ordered: official first then by downloads (recommended), by name, by registry then name, or by downloads alone. */
+export type DiscoverSort = "recommended" | "name" | "registry" | "downloads";
+export const DISCOVER_SORTS: readonly DiscoverSort[] = ["recommended", "name", "registry", "downloads"];
+
 export interface DiscoverFilter {
   readonly scopes: readonly DiscoverScope[];
   /** Any of these roles. */
@@ -242,7 +246,7 @@ export interface Store {
   /** The bounded candidate set for a search: items with any term, filtered, best text rank first per source class. */
   matchDiscover(query: DiscoverMatchQuery): Promise<DiscoverRow[]>;
   /** Listings without a need, filtered and paged: official first, then by downloads, then id. */
-  listDiscover(filter: DiscoverFilter, page?: Page): Promise<DiscoverPage>;
+  listDiscover(filter: DiscoverFilter, page?: Page & { readonly sort?: DiscoverSort }): Promise<DiscoverPage>;
   countDiscover(filter: DiscoverFilter): Promise<number>;
   discoverFacets(filter: DiscoverFilter): Promise<Facets>;
   /** By lib: id, else by ref; null when neither is listed in these scopes. */

@@ -12,12 +12,14 @@
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { LibraryEntry } from "@youiyoux/core";
-import { nodeId, openStore, pageInteger, searchTerms, type DiscoverFilter, type DiscoverItem, type DiscoverScope, type GraphEdge, type GraphNode, type Signal, type SourceClass, type Store } from "@youiyoux/store";
+import { nodeId, openStore, pageInteger, searchTerms, type DiscoverFilter, type DiscoverItem, type DiscoverScope, type DiscoverSort, type GraphEdge, type GraphNode, type Signal, type SourceClass, type Store } from "@youiyoux/store";
 import { CONCEPTS, conceptForRole, normalize, readNeed } from "./aliases.ts";
 import { conceptScore, DISCOVER_RULE, fieldsOf, hitOf, licenceOf, rankEntries, registryName, styleOf, type DiscoverFacets, type DiscoverSearch, type DiscoverShow, type SearchOptions } from "./search.ts";
 import { SHADCN } from "./sources.ts";
 import { ALL_INDEX_FILE, INDEX_FILE, MissingIndexError, readAllIndex, readIndex, readSignals } from "./store.ts";
 import { cleanText } from "./text.ts";
+
+export { DISCOVER_SORTS, type DiscoverSort } from "@youiyoux/store";
 
 /** The most listings of one source class a search scores. */
 export const CANDIDATES_PER_CLASS = 400;
@@ -164,6 +166,22 @@ export interface CatalogSearchOptions extends SearchOptions {
   readonly all?: boolean;
   readonly offset?: number;
   readonly facets?: boolean;
+  /** How matches are ordered; recommended (the default) keeps the best match first. */
+  readonly sort?: DiscoverSort;
+}
+
+/** Listings in a browse order other than recommended, as the store orders them (store.ts DISCOVER_ORDER). */
+export function sortEntries<T extends LibraryEntry>(entries: readonly T[], sort: DiscoverSort | undefined): T[] {
+  if (!sort || sort === "recommended") return [...entries];
+  const title = (e: LibraryEntry): string => (e.title ?? e.name).toLowerCase();
+  const downloads = (e: LibraryEntry): number => e.signals?.weeklyDownloads ?? e.signals?.via?.weeklyDownloads ?? -1;
+  const by = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+  return [...entries].sort((a, b) =>
+    (sort === "registry" ? by(registryName(a).toLowerCase(), registryName(b).toLowerCase()) : 0) ||
+    (sort === "downloads" ? downloads(b) - downloads(a) : 0) ||
+    by(title(a), title(b)) ||
+    by(a.id, b.id),
+  );
 }
 
 function scopesOf(all: boolean | undefined): DiscoverScope[] {
@@ -215,7 +233,9 @@ export async function searchCatalog(store: Store, need: string, options: Catalog
   const rows = await store.matchDiscover({ ...filter, terms: needTerms(need), perClass: CANDIDATES_PER_CLASS });
   const ranked = rankEntries(rows.map((r) => r.entry as LibraryEntry), need, options);
   const offset = pageInteger(options.offset, 0, 2_147_483_647);
-  const page = ranked.scored.slice(offset, offset + pageInteger(options.limit, 10));
+  const order = new Map(sortEntries(ranked.scored.map((s) => s.entry), options.sort).map((e, i) => [e.id, i]));
+  const sorted = options.sort && options.sort !== "recommended" ? [...ranked.scored].sort((a, b) => order.get(a.entry.id)! - order.get(b.entry.id)!) : ranked.scored;
+  const page = sorted.slice(offset, offset + pageInteger(options.limit, 10));
   let facets: DiscoverFacets | undefined;
   if (options.facets) {
     const entries = ranked.scored.map((s) => s.entry);
@@ -246,7 +266,7 @@ export async function showFromCatalog(store: Store, query: string, options: { re
 }
 
 /** The listings a filter selects without a need, paged (official first, then by downloads): what the hub browses. */
-export async function browseCatalog(store: Store, filter: Omit<DiscoverFilter, "scopes"> & { readonly all?: boolean }, page: { readonly limit?: number; readonly offset?: number } = {}) {
+export async function browseCatalog(store: Store, filter: Omit<DiscoverFilter, "scopes"> & { readonly all?: boolean }, page: { readonly limit?: number; readonly offset?: number; readonly sort?: DiscoverSort } = {}) {
   const { all, ...rest } = filter;
   const scoped = { ...rest, scopes: scopesOf(all) };
   const listed = await store.listDiscover(scoped, page);

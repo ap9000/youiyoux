@@ -6,7 +6,7 @@
 import type { CiRecord } from "@youiyoux/core";
 import { pageInteger, Lock, type Adapter, type Param, type Row } from "./driver.ts";
 import { MIGRATIONS, SCHEMA_VERSION } from "./migrations.ts";
-import type { Ambiguous, ProjectScope, DiscoverFilter, DiscoverItem, DiscoverMatchQuery, DiscoverPage, DiscoverRow, DiscoverScope, EdgeKind, Facets, FamilyRecord, Graph, GraphNode, InventoryRun, Licence, LookRecord, NodeKind, Page, Reached, RuleCovers, ScanRecord, Signal, SourceClass, Store, StoreStats, SwapImpact, WhereUsed } from "./types.ts";
+import type { Ambiguous, ProjectScope, DiscoverFilter, DiscoverItem, DiscoverSort, DiscoverMatchQuery, DiscoverPage, DiscoverRow, DiscoverScope, EdgeKind, Facets, FamilyRecord, Graph, GraphNode, InventoryRun, Licence, LookRecord, NodeKind, Page, Reached, RuleCovers, ScanRecord, Signal, SourceClass, Store, StoreStats, SwapImpact, WhereUsed } from "./types.ts";
 
 /** The tables a rebuild empties: everything derived from git. ci_records is what CI sent, kept across rebuilds. */
 const TABLES = ["meta", "discover_items", "discover_roles", "signals", "licences", "scans", "families", "looks", "nodes", "edges"] as const;
@@ -15,6 +15,13 @@ const MAX_PARAMS = 30_000;
 const MAX_DEPTH = 6;
 const RECORDS_KEPT = 100;
 const SOURCE_CLASSES: readonly SourceClass[] = ["official", "community", "npm", "other"];
+/** Each browse order as SQL; the id last, so a page boundary never moves. */
+const DISCOVER_ORDER: Readonly<Record<DiscoverSort, string>> = {
+  recommended: "CASE d.source_class WHEN 'official' THEN 0 ELSE 1 END, COALESCE(d.downloads, -1) DESC, d.id",
+  name: "LOWER(COALESCE(d.title, d.name)), d.id",
+  registry: "LOWER(COALESCE(d.registry, '')), LOWER(COALESCE(d.title, d.name)), d.id",
+  downloads: "COALESCE(d.downloads, -1) DESC, LOWER(COALESCE(d.title, d.name)), d.id",
+};
 
 const json = (value: unknown): string => JSON.stringify(value);
 /** JSON comes back as text from SQLite and parsed from Postgres. */
@@ -193,12 +200,12 @@ export class SqlStore implements Store {
     return ranked.map((r) => ({ id: r.id, sourceClass: r.source_class, entry: parse(entries.get(r.id)) }));
   }
 
-  async listDiscover(filter: DiscoverFilter, page: Page = {}): Promise<DiscoverPage> {
+  async listDiscover(filter: DiscoverFilter, page: Page & { readonly sort?: DiscoverSort } = {}): Promise<DiscoverPage> {
     const where = this.filterSql(filter);
     const limit = pageInteger(page.limit, 20);
     const offset = pageInteger(page.offset, 0, 2_147_483_647);
     const rows = await this.db.all<{ id: string; source_class: SourceClass; entry: unknown }>(
-      `SELECT d.id, d.source_class, d.entry FROM discover_items d WHERE ${where.sql} ORDER BY CASE d.source_class WHEN 'official' THEN 0 ELSE 1 END, COALESCE(d.downloads, -1) DESC, d.id LIMIT ? OFFSET ?`,
+      `SELECT d.id, d.source_class, d.entry FROM discover_items d WHERE ${where.sql} ORDER BY ${DISCOVER_ORDER[page.sort ?? "recommended"] ?? DISCOVER_ORDER.recommended} LIMIT ? OFFSET ?`,
       [...where.params, limit, offset],
     );
     return { rows: rows.map((r) => ({ id: r.id, sourceClass: r.source_class, entry: parse(r.entry) })), total: await this.countDiscover(filter) };

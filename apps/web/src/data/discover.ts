@@ -41,11 +41,23 @@ export interface DiscoverQuery {
   readonly open: string | null;
   /** How results are laid out; null: the gallery when there are pictures, else the list. */
   readonly view: "gallery" | "list" | null;
+  /** How results are ordered; null: recommended (the best match first; browsing, official first). */
+  readonly sort: DiscoverSort | null;
+  /** Listings per page (PER_PAGE); PAGE_SIZE unless chosen. */
+  readonly per: number;
   readonly offset: number;
 }
 
-export const EMPTY_QUERY: DiscoverQuery = { q: "", role: null, source: null, licence: null, style: null, family: null, open: null, view: null, offset: 0 };
+/** The orders a person can choose; recommended is the default and has no value in the address. */
+export const SORTS = ["name", "registry", "downloads"] as const;
+export type DiscoverSort = (typeof SORTS)[number];
+export const SORT_LABELS: Readonly<Record<DiscoverSort | "recommended", string>> = { recommended: "Recommended", name: "Name A–Z", registry: "Registry", downloads: "Most downloaded" };
+/** How the results line names a chosen order: `By name, A–Z: 1–20 of 1283`. */
+export const SORT_SUMMARIES: Readonly<Record<DiscoverSort, string>> = { name: "By name, A–Z", registry: "By registry, then name", downloads: "Most downloaded first" };
 export const PAGE_SIZE = 20;
+export const PER_PAGE = [20, 50, 100] as const;
+
+export const EMPTY_QUERY: DiscoverQuery = { q: "", role: null, source: null, licence: null, style: null, family: null, open: null, view: null, sort: null, per: PAGE_SIZE, offset: 0 };
 
 export interface DiscoverPage {
   readonly hits: readonly DiscoverHit[];
@@ -73,6 +85,7 @@ export function parseQuery(search: string): DiscoverQuery {
     return value === null || (allowed && !allowed.includes(value as T)) ? null : (value as T);
   };
   const offset = Number(params.get("offset") ?? 0);
+  const per = Number(params.get("per") ?? PAGE_SIZE);
   return {
     q: (params.get("q") ?? "").slice(0, 200),
     role: pick("role"),
@@ -82,6 +95,8 @@ export function parseQuery(search: string): DiscoverQuery {
     family: pick("family"),
     open: pick("open"),
     view: pick("view", ["gallery", "list"] as const),
+    sort: pick("sort", SORTS),
+    per: (PER_PAGE as readonly number[]).includes(per) ? per : PAGE_SIZE,
     offset: Number.isSafeInteger(offset) && offset > 0 ? offset : 0,
   };
 }
@@ -89,7 +104,8 @@ export function parseQuery(search: string): DiscoverQuery {
 export function queryToSearch(query: DiscoverQuery): string {
   const params = new URLSearchParams();
   if (query.q.trim()) params.set("q", query.q);
-  for (const key of ["role", "source", "licence", "style", "family", "open", "view"] as const) if (query[key]) params.set(key, query[key]!);
+  for (const key of ["role", "source", "licence", "style", "family", "open", "view", "sort"] as const) if (query[key]) params.set(key, query[key]!);
+  if (query.per !== PAGE_SIZE) params.set("per", String(query.per));
   if (query.offset > 0) params.set("offset", String(query.offset));
   const text = params.toString();
   return text ? `?${text}` : "";
@@ -112,6 +128,16 @@ export function signalLines(hit: Pick<DiscoverHit, "signals">): string[] {
   if (s.stars != null) lines.push(`★ ${compact(s.stars)}`);
   if (s.archived) lines.push("archived");
   return lines;
+}
+
+/**
+ * A listing's own description, or null when its registry gives none: the sync then fills in
+ * `<name> from <registry>` (or the title), which says nothing the card does not already.
+ */
+export function descriptionOf(hit: Pick<DiscoverHit, "name" | "title" | "summary">): string | null {
+  const text = hit.summary.trim();
+  if (!text || text === hit.title || text === hit.name || text.startsWith(`${hit.name} from `)) return null;
+  return text;
 }
 
 /** The registry or `npm` a listing comes from. */
@@ -147,7 +173,7 @@ const tally = (values: Iterable<string>): Record<string, number> => {
  * name counts most), ties keep the file's order (official first, then by downloads). Facets
  * count the matches before paging, as the server's do.
  */
-export function searchListings(file: ListingsFile, query: DiscoverQuery, limit = PAGE_SIZE): DiscoverPage {
+export function searchListings(file: ListingsFile, query: DiscoverQuery, limit = query.per): DiscoverPage {
   const need = words(query.q);
   const scored: Array<{ listing: Listing; score: number; order: number }> = [];
   file.entries.forEach((listing, order) => {
@@ -167,7 +193,7 @@ export function searchListings(file: ListingsFile, query: DiscoverQuery, limit =
     if (score > 0) scored.push({ listing, score, order });
   });
   scored.sort((a, b) => b.score - a.score || a.order - b.order);
-  const matches = scored.map((s) => s.listing);
+  const matches = sortListings(scored.map((s) => s.listing), query.sort);
   const strip = ({ registry: _r, roles: _ro, style: _s, text: _t, ...hit }: Listing): DiscoverHit => hit;
   return {
     hits: matches.slice(query.offset, query.offset + limit).map(strip),
@@ -177,6 +203,15 @@ export function searchListings(file: ListingsFile, query: DiscoverQuery, limit =
     from: "snapshot",
     capped: file.capped,
   };
+}
+
+/** Listings in a chosen order, as the hub's server orders them (packages/discover sortEntries). */
+export function sortListings<T extends Pick<DiscoverHit, "id" | "name" | "title" | "signals" | "source">>(listings: readonly T[], sort: DiscoverSort | null): T[] {
+  if (!sort) return [...listings];
+  const title = (l: T): string => (l.title ?? l.name).toLowerCase();
+  const downloads = (l: T): number => l.signals.weeklyDownloads ?? l.signals.via?.weeklyDownloads ?? -1;
+  const by = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+  return [...listings].sort((a, b) => (sort === "registry" ? by(sourceOf(a).toLowerCase(), sourceOf(b).toLowerCase()) : 0) || (sort === "downloads" ? downloads(b) - downloads(a) : 0) || by(title(a), title(b)) || by(a.id, b.id));
 }
 
 /* ------------------------------------------------------------------------ search */
@@ -191,7 +226,8 @@ let listings: Promise<ListingsFile | null> | null = null;
 let staticHost = false;
 
 function endpointUrl(query: DiscoverQuery): string {
-  const params = new URLSearchParams({ kind: "discover", limit: String(PAGE_SIZE) });
+  const params = new URLSearchParams({ kind: "discover", limit: String(query.per) });
+  if (query.sort) params.set("sort", query.sort);
   if (query.q.trim()) params.set("q", query.q.trim());
   if (query.role) params.set("role", discoverRole(query.role));
   if (query.source) params.set("source", query.source);

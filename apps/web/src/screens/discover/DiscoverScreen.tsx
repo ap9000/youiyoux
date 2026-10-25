@@ -14,7 +14,10 @@
  * each candidate as it draws in the project's theme, in the hub's scheme, with a type strip to
  * browse by when nothing is searched; `view=list` keeps the plain list.
  *
- * The query, the facets, the pinned family, the open candidate and the view live in the URL. The page
+ * Everything matching can be paged through, in a chosen order (recommended, name, registry or most
+ * downloaded) and 20, 50 or 100 to a page; numbered pages jump anywhere.
+ *
+ * The query, the facets, the order, the pinned family, the open candidate and the view live in the URL. The page
  * paints from nothing but its own shell (search, facets, result cards); listings arrive after.
  * What exists only once something is opened or pinned (the drawer, the specimen tiles, the
  * sandboxed frames, the compare cards) is its own chunk (Opened.tsx), and its frames mount only
@@ -25,7 +28,7 @@ import { ArrowLeft, ArrowRight, Compass, LayoutGrid, List } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useSearch } from "wouter";
 import { type Scheme, useTheme } from "../../app/theme.tsx";
-import { PAGE_SIZE, parseQuery, queryToSearch, searchDiscover, signalLines, sourceOf, type DiscoverHit, type DiscoverPage, type DiscoverQuery } from "../../data/discover.ts";
+import { descriptionOf, parseQuery, PER_PAGE, queryToSearch, searchDiscover, signalLines, SORT_LABELS, SORT_SUMMARIES, SORTS, sourceOf, type DiscoverHit, type DiscoverPage, type DiscoverQuery, type DiscoverSort } from "../../data/discover.ts";
 import { hasPictures, shortReason, useThumbs, type Thumbs } from "../../data/discover-thumbs.ts";
 import type { InventorySource } from "../../data/inventory-source.ts";
 import type { Resource } from "../../data/store.ts";
@@ -33,6 +36,7 @@ import { Badge } from "../../ui/Badge.tsx";
 import { Button } from "../../ui/Button.tsx";
 import { CopyButton } from "../../ui/CopyButton.tsx";
 import { EmptyState } from "../../ui/EmptyState.tsx";
+import { Select } from "../../ui/Field.tsx";
 import { PaneHeader } from "../../ui/Pane.tsx";
 import { SearchField } from "../../ui/SearchField.tsx";
 import { LicenceBadge } from "./LicenceBadge.tsx";
@@ -147,7 +151,7 @@ export function DiscoverView({ inventory }: { inventory?: Resource<InventorySour
                 <h2 id="discover-results" className="sr-only">
                   Results
                 </h2>
-                <Results listings={listings} query={query} onOpen={open} onPage={(offset) => setQuery({ ...query, offset, open: null })} gallery={gallery} thumbs={thumbs ?? null} scheme={scheme} onView={(view) => setQuery({ ...query, view, open: null })} onRole={(role) => set({ role })} />
+                <Results listings={listings} query={query} onOpen={open} onPage={(offset) => setQuery({ ...query, offset, open: null })} gallery={gallery} thumbs={thumbs ?? null} scheme={scheme} onView={(view) => setQuery({ ...query, view, open: null })} onRole={(role) => set({ role })} onSort={(sort) => setQuery({ ...query, sort, offset: 0, open: null })} onPer={(per) => setQuery({ ...query, per, offset: 0, open: null })} />
               </section>
             </div>
 
@@ -239,9 +243,11 @@ interface ResultsProps {
   scheme: Scheme;
   onView: (view: "gallery" | "list") => void;
   onRole: (role: string) => void;
+  onSort: (sort: DiscoverSort | null) => void;
+  onPer: (per: number) => void;
 }
 
-function Results({ listings, query, onOpen, onPage, gallery, thumbs, scheme, onView, onRole }: ResultsProps) {
+function Results({ listings, query, onOpen, onPage, gallery, thumbs, scheme, onView, onRole, onSort, onPer }: ResultsProps) {
   if (listings.status === "loading")
     return (
       <p aria-busy="true" className="text-small text-faint">
@@ -263,20 +269,22 @@ function Results({ listings, query, onOpen, onPage, gallery, thumbs, scheme, onV
     );
   const last = Math.min(page.offset + page.hits.length, page.matched);
   const types = Object.entries(page.facets.role).slice(0, ROLE_FACETS);
-  // Nothing searched, no type chosen, on the gallery's first page: browse it by type instead.
-  const shelves = gallery && hasPictures(thumbs) && !query.q && !query.role && page.offset === 0 && types.length > 0;
+  // Nothing searched, filtered or ordered, on the gallery's first page: browse it by type instead.
+  const browsing = !query.q && !query.role && !query.source && !query.licence && !query.style && !query.sort;
+  const shelves = gallery && hasPictures(thumbs) && browsing && page.offset === 0 && types.length > 0;
   return (
     <>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <p className="min-w-0 flex-1 text-small text-muted" data-results-summary>
           {shelves ? `Browsing by type: the ${Math.min(SHELVES, types.length)} commonest of ${page.matched}` : (
             <>
-              {query.q ? `For “${query.q}”: ` : query.role ? `${query.role.replace(/-/g, " ")}: ` : "Browsing, official first: "}
+              {query.q ? `For “${query.q}”: ` : query.role ? `${query.role.replace(/-/g, " ")}: ` : query.sort ? `${SORT_SUMMARIES[query.sort]}: ` : "Browsing, official first: "}
               {page.offset + 1}–{last} of {page.matched}
             </>
           )}
           {page.from === "snapshot" ? ` · from this snapshot's listings${page.capped ? " (the first of more)" : ""}` : ""}
         </p>
+        <Order query={query} onSort={onSort} onPer={onPer} />
         {hasPictures(thumbs) && <ViewSwitch gallery={gallery} onView={onView} />}
       </div>
       {shelves ? (
@@ -298,17 +306,73 @@ function Results({ listings, query, onOpen, onPage, gallery, thumbs, scheme, onV
           ))}
         </ul>
       )}
-      {!shelves && (page.offset > 0 || last < page.matched) && (
-        <nav aria-label="Pages" className="flex items-center gap-2">
-          <Button disabled={page.offset === 0} onClick={() => onPage(Math.max(0, page.offset - PAGE_SIZE))} className="max-md:h-11">
-            <ArrowLeft /> Previous
-          </Button>
-          <Button disabled={last >= page.matched} onClick={() => onPage(page.offset + PAGE_SIZE)} className="max-md:h-11">
-            Next <ArrowRight />
-          </Button>
-        </nav>
-      )}
+      {!shelves && (page.offset > 0 || last < page.matched) && <Pages offset={page.offset} per={query.per} matched={page.matched} onPage={onPage} />}
     </>
+  );
+}
+
+/** The order and the page size, as two small selects. */
+function Order({ query, onSort, onPer }: { query: DiscoverQuery; onSort: (sort: DiscoverSort | null) => void; onPer: (per: number) => void }) {
+  return (
+    <div className="flex items-center gap-2" data-order>
+      <label className="flex items-center gap-1.5 text-small text-muted">
+        Sort
+        <Select value={query.sort ?? "recommended"} onChange={(event) => onSort(event.target.value === "recommended" ? null : (event.target.value as DiscoverSort))} className="w-auto max-md:h-11" data-sort>
+          {(["recommended", ...SORTS] as const).map((sort) => (
+            <option key={sort} value={sort}>
+              {SORT_LABELS[sort]}
+            </option>
+          ))}
+        </Select>
+      </label>
+      <label className="flex items-center gap-1.5 text-small text-muted">
+        <span className="sr-only">Per page</span>
+        <Select value={query.per} onChange={(event) => onPer(Number(event.target.value))} className="w-auto max-md:h-11" aria-label="Per page" data-per>
+          {PER_PAGE.map((per) => (
+            <option key={per} value={per}>
+              {per} a page
+            </option>
+          ))}
+        </Select>
+      </label>
+    </div>
+  );
+}
+
+/** The page numbers around the current one, the first and the last, with gaps between: `1 … 4 5 6 … 65`. */
+export function pageNumbers(current: number, count: number): Array<number | "gap"> {
+  const shown = [...new Set([1, current - 1, current, current + 1, count])].filter((n) => n >= 1 && n <= count).sort((a, b) => a - b);
+  const out: Array<number | "gap"> = [];
+  shown.forEach((n, i) => {
+    if (i > 0 && n - shown[i - 1]! > 1) out.push(n - shown[i - 1]! === 2 ? n - 1 : "gap");
+    out.push(n);
+  });
+  return out;
+}
+
+function Pages({ offset, per, matched, onPage }: { offset: number; per: number; matched: number; onPage: (offset: number) => void }) {
+  const count = Math.max(1, Math.ceil(matched / per));
+  const current = Math.min(count, Math.floor(offset / per) + 1);
+  return (
+    <nav aria-label="Pages" className="flex flex-wrap items-center gap-1.5" data-pages>
+      <Button disabled={current === 1} onClick={() => onPage((current - 2) * per)} className="max-md:h-11">
+        <ArrowLeft /> Previous
+      </Button>
+      {pageNumbers(current, count).map((n, i) =>
+        n === "gap" ? (
+          <span key={`gap-${i}`} aria-hidden className="px-1 text-faint">
+            …
+          </span>
+        ) : (
+          <Button key={n} variant={n === current ? "primary" : "ghost"} aria-current={n === current ? "page" : undefined} aria-label={`Page ${n} of ${count}`} onClick={() => onPage((n - 1) * per)} className="min-w-8 tabular-nums max-md:h-11 max-md:min-w-11">
+            {n}
+          </Button>
+        ),
+      )}
+      <Button disabled={current === count} onClick={() => onPage(current * per)} className="max-md:h-11">
+        Next <ArrowRight />
+      </Button>
+    </nav>
   );
 }
 
@@ -323,7 +387,7 @@ function ResultCard({ hit, onOpen }: { hit: DiscoverHit; onOpen: (hit: DiscoverH
         </div>
         <LicenceBadge licence={hit.license} />
       </div>
-      <p className="line-clamp-2 text-small text-ink-2">{hit.summary}</p>
+      {descriptionOf(hit) && <p className="line-clamp-2 text-small text-ink-2">{descriptionOf(hit)}</p>}
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-caption text-muted">
         <span>{sourceOf(hit)}</span>
         {signals.map((s) => (

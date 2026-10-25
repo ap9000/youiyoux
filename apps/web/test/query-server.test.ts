@@ -97,6 +97,28 @@ describe("/__youi/query", () => {
     expect(await ok("/__youi/query?kind=discover&q=command&limit=500")).toMatchObject({ limit: 100 });
   });
 
+  test("discover in an order: by name, by registry then name, or by downloads, browsing or on a need, paged without moving", async () => {
+    type Hit = { id: string; name: string; title: string | null; source: { kind: string; name: string; ref: string | null }; signals: { weeklyDownloads: number | null; via?: { weeklyDownloads: number } } };
+    const hits = (body: Record<string, unknown>) => body.hits as Hit[];
+    const title = (h: Hit) => (h.title ?? h.name).toLowerCase();
+    const registry = (h: Hit) => (h.source.kind === "npm" ? "npm" : (h.source.ref ?? "").split("/")[0]!).toLowerCase();
+    const sorted = (values: readonly string[]) => [...values].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    for (const q of ["", "&q=dialog"]) {
+      const byName = hits(await ok(`/__youi/query?kind=discover${q}&sort=name&limit=100`)).map(title);
+      expect(byName.length, q).toBeGreaterThan(3);
+      expect(byName, q).toEqual(sorted(byName));
+      const byRegistry = hits(await ok(`/__youi/query?kind=discover${q}&sort=registry&limit=100`)).map(registry);
+      expect(byRegistry, q).toEqual(sorted(byRegistry));
+      const downloads = hits(await ok(`/__youi/query?kind=discover${q}&sort=downloads&limit=100`)).map((h) => h.signals.weeklyDownloads ?? h.signals.via?.weeklyDownloads ?? -1);
+      expect(downloads, q).toEqual([...downloads].sort((a, b) => b - a));
+    }
+    const ids = (body: Record<string, unknown>) => hits(body).map((h) => h.id);
+    const whole = ids(await ok("/__youi/query?kind=discover&sort=name&limit=10"));
+    expect([...ids(await ok("/__youi/query?kind=discover&sort=name&limit=5")), ...ids(await ok("/__youi/query?kind=discover&sort=name&limit=5&offset=5"))]).toEqual(whole);
+    // An order it does not know is the recommended one.
+    expect(ids(await ok("/__youi/query?kind=discover&sort=newest&limit=5"))).toEqual(ids(await ok("/__youi/query?kind=discover&limit=5")));
+  });
+
   test("discover facets: licence known or unknown, headless or styled, on a need and when browsing", async () => {
     const licences = (body: Record<string, unknown>) => (body.hits as Array<{ license: string }>).map((h) => h.license);
     // Browsing holds both; on a need, command menus are all known (coss's is AGPL-3.0) and Aceternity's spotlight is not

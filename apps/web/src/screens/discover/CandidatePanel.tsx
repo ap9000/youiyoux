@@ -7,7 +7,7 @@
 import { CircleAlert, CircleCheck } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Scheme } from "../../app/theme.tsx";
-import { signalLines, sourceOf, type DiscoverHit } from "../../data/discover.ts";
+import { descriptionOf, signalLines, sourceOf, type DiscoverHit } from "../../data/discover.ts";
 import { useDrawn, type PreviewAnswer, type PreviewState } from "../../data/discover-preview.ts";
 import { LARGE_TILE_HEIGHT, SpecimenTile, StateStrip } from "../inventory/Specimens.tsx";
 import { CandidateActions } from "./Actions.tsx";
@@ -113,7 +113,7 @@ export function CandidatePanel({ hit, state, scheme, family, failure }: { hit: D
             </span>
           ))}
         </div>
-        <p className="text-small text-ink-2">{hit.summary}</p>
+        {descriptionOf(hit) ? <p className="text-small text-ink-2">{descriptionOf(hit)}</p> : <p className="text-small text-muted">{sourceOf(hit)} gives no description for it.</p>}
         <p className="text-caption text-muted">An outside reference from {sourceOf(hit)}: not in your system and not approved.</p>
       </section>
 

@@ -18,7 +18,7 @@ import { buildInventory } from "../../../packages/scanner/src/inventory/inventor
 import { discoverFixture } from "../scripts/discover-fixture.ts";
 import { queryMiddleware } from "../scripts/query-server.ts";
 import { writeDiscover } from "../scripts/snapshot.ts";
-import { compact, parseQuery, queryToSearch, resetDiscoverSource, searchListings, signalLines, type ListingsFile } from "../src/data/discover.ts";
+import { compact, descriptionOf, parseQuery, queryToSearch, resetDiscoverSource, searchListings, signalLines, sortListings, type ListingsFile } from "../src/data/discover.ts";
 import { cleanMarkup, onlyCustomProperties, previewRequests, setDrawn, type PreviewAnswer } from "../src/data/discover-preview.ts";
 import { resetThumbs, type Thumbs } from "../src/data/discover-thumbs.ts";
 import { memorySource, type InventorySource } from "../src/data/inventory-source.ts";
@@ -26,7 +26,7 @@ import type { Resource } from "../src/data/store.ts";
 import { siteOf } from "../src/screens/discover/CandidatePanel.tsx";
 import { pageScale } from "../src/screens/discover/PagePreview.tsx";
 import { pinnedRows } from "../src/screens/discover/PinnedCompare.tsx";
-import { DiscoverView } from "../src/screens/discover/DiscoverScreen.tsx";
+import { DiscoverView, pageNumbers } from "../src/screens/discover/DiscoverScreen.tsx";
 import { SpecimenCapture } from "../src/screens/discover/SpecimenCapture.tsx";
 import { InventoryView } from "../src/screens/inventory/InventoryScreen.tsx";
 
@@ -138,6 +138,58 @@ function show(search: string, source: Resource<InventorySource | null> = NONE) {
   return render(<DiscoverView inventory={source} />);
 }
 
+describe("everything, in an order and by page", () => {
+  test("the order and the page size live in the URL; anything else is the default", () => {
+    expect(parseQuery("?sort=name&per=50")).toMatchObject({ sort: "name", per: 50 });
+    expect(parseQuery("?sort=newest&per=7")).toMatchObject({ sort: null, per: 20 });
+    expect(queryToSearch(parseQuery("?sort=registry&per=100&source=%40coss"))).toBe("?source=%40coss&sort=registry&per=100");
+    expect(queryToSearch(parseQuery("?per=20"))).toBe("");
+  });
+
+  test("numbered pages: the first, the last and the ones around this one, a gap only where pages are skipped", () => {
+    expect(pageNumbers(1, 1)).toEqual([1]);
+    expect(pageNumbers(1, 3)).toEqual([1, 2, 3]);
+    expect(pageNumbers(2, 5)).toEqual([1, 2, 3, 4, 5]);
+    expect(pageNumbers(5, 65)).toEqual([1, "gap", 4, 5, 6, "gap", 65]);
+    expect(pageNumbers(65, 65)).toEqual([1, "gap", 64, 65]);
+  });
+
+  test("sorted by name, by registry then name, or by downloads; a filler summary is no description", () => {
+    const hit = (id: string, name: string, ref: string | null, downloads: number | null, title: string | null = null) => ({ id, name, title, source: { kind: ref ? "shadcn-registry" : "npm", name: ref ? ref.split("/")[0]! : name, ref }, signals: { weeklyDownloads: downloads } }) as never as Parameters<typeof sortListings>[0][number];
+    const listings = [hit("a", "tabs", "@shadcn/tabs", null), hit("b", "accordion", "@coss/accordion", null), hit("c", "sonner", null, 9_000_000), hit("d", "button", "@coss/button", null, "Button")];
+    expect(sortListings(listings, "name").map((l) => l.id)).toEqual(["b", "d", "c", "a"]);
+    expect(sortListings(listings, "registry").map((l) => l.id)).toEqual(["b", "d", "a", "c"]);
+    expect(sortListings(listings, "downloads")[0]!.id).toBe("c");
+    expect(sortListings(listings, null).map((l) => l.id)).toEqual(["a", "b", "c", "d"]);
+    expect(descriptionOf({ name: "accordion", title: null, summary: "accordion from @coss" })).toBeNull();
+    expect(descriptionOf({ name: "card", title: "Card", summary: "Card" })).toBeNull();
+    expect(descriptionOf({ name: "aurora-text", title: "Aurora Text", summary: "A beautiful aurora text effect" })).toBe("A beautiful aurora text effect");
+  });
+
+  test("choosing an order and a page size asks the index for them, and a page number jumps to that page", async () => {
+    // The index answers each change; under a full parallel run that can take past the default second.
+    const WAIT = { timeout: 5000 };
+    show("?view=list");
+    await waitFor(() => expect(document.querySelectorAll("[data-hit]").length).toBeGreaterThan(0), WAIT);
+    fireEvent.change(document.querySelector<HTMLSelectElement>("[data-sort]")!, { target: { value: "name" } });
+    await waitFor(() => expect(window.location.search).toContain("sort=name"), WAIT);
+    await waitFor(() => expect(text(document.querySelector("[data-results-summary]")!)).toMatch(/^By name, A–Z: 1–\d+ of \d+/), WAIT);
+    await waitFor(() => expect(calls.some((c) => c.startsWith("/__youi/query") && c.includes("sort=name"))).toBe(true), WAIT);
+    await waitFor(() => {
+      const titles = [...document.querySelectorAll<HTMLElement>("[data-hit] h3")].map((h) => text(h).toLowerCase());
+      expect(titles.length).toBeGreaterThan(1);
+      expect(titles).toEqual([...titles].sort());
+    }, WAIT);
+    fireEvent.change(document.querySelector<HTMLSelectElement>("[data-per]")!, { target: { value: "50" } });
+    await waitFor(() => expect(calls.some((c) => c.startsWith("/__youi/query") && c.includes("limit=50"))).toBe(true), WAIT);
+    fireEvent.change(document.querySelector<HTMLSelectElement>("[data-per]")!, { target: { value: "20" } });
+    const second = await screen.findByRole("button", { name: /^Page 2 of / }, WAIT);
+    fireEvent.click(second);
+    await waitFor(() => expect(window.location.search).toContain("offset=20"), WAIT);
+    await waitFor(() => expect(screen.getByRole("button", { name: /^Page 2 of / }).getAttribute("aria-current")).toBe("page"), WAIT);
+  });
+});
+
 describe("search by need (c1)", () => {
   test("'command menu' lists candidates with licence or 'licence unknown', signals and the install command, and fetches nothing for any of them", async () => {
     show("?q=command%20menu");
@@ -169,7 +221,7 @@ describe("search by need (c1)", () => {
     expect(window.location.search).toContain("licence=unknown");
     expect([...document.querySelectorAll<HTMLElement>("[data-hit]")].every((hit) => text(hit).includes("licence unknown"))).toBe(true);
     expect(calls.some((c) => c.includes("licence=unknown"))).toBe(true);
-    expect(parseQuery("?q=x&role=button&source=%40shadcn&licence=known&style=styled&family=button-1&open=lib%3Ax&offset=20")).toEqual({ q: "x", role: "button", source: "@shadcn", licence: "known", style: "styled", family: "button-1", open: "lib:x", view: null, offset: 20 });
+    expect(parseQuery("?q=x&role=button&source=%40shadcn&licence=known&style=styled&family=button-1&open=lib%3Ax&offset=20")).toEqual({ q: "x", role: "button", source: "@shadcn", licence: "known", style: "styled", family: "button-1", open: "lib:x", view: null, sort: null, per: 20, offset: 20 });
     expect(queryToSearch(parseQuery("?licence=bogus&style=nope&q=a"))).toBe("?q=a");
   });
 
@@ -494,6 +546,17 @@ describe("the gallery (pictures from youiyoux discover previews)", () => {
     await waitFor(() => expect(document.querySelector("[data-shelves]")).toBeNull());
     expect(window.location.search).toContain("role=command");
     expect(document.querySelector("[data-gallery]")).not.toBeNull();
+  });
+
+  test("one registry chosen, or an order: every candidate in pages, never shelves", async () => {
+    thumbs = pictures();
+    for (const search of ["?source=%40shadcn", "?sort=name"]) {
+      cleanup();
+      show(search);
+      await waitFor(() => expect(document.querySelector("[data-gallery]"), search).not.toBeNull());
+      expect(document.querySelector("[data-shelves]"), search).toBeNull();
+      expect(text(document.querySelector("[data-results-summary]")!), search).toMatch(/\d+–\d+ of \d+/);
+    }
   });
 
   test("the layout switches to the list and back, and stays in the URL; without pictures there is only the list", async () => {

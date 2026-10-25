@@ -4,7 +4,8 @@
  * The dev and preview servers (vite.config.ts) answer `GET /__youi/query?kind=<kind>&…` with
  * one page of JSON:
  *
- *   kind=discover  q (a need; without one, listings browse official first), role, source,
+ *   kind=discover  q (a need; without one, listings browse official first), sort (recommended,
+ *                  name, registry or downloads), role, source,
  *                  licence (SPDX ids, `unknown`, or `known` for any known licence), style
  *                  (headless|styled), all=1 (the --all listings too)
  *   kind=families  role, run (default: the newest inventory run)
@@ -116,6 +117,8 @@ export function queryMiddleware(options: QueryOptions = {}, base = "/", load: ()
       const store = await d.readCatalog(cache, path, env);
       const need = params.get("q")?.trim();
       const all = params.get("all") === "1";
+      const asked = params.get("sort");
+      const sort = d.DISCOVER_SORTS.find((s) => s === asked) ?? "recommended";
       const role = params.get("role") ?? undefined;
       const licences = list(params.get("licence"));
       const sources = list(params.get("source"));
@@ -124,7 +127,7 @@ export function queryMiddleware(options: QueryOptions = {}, base = "/", load: ()
       const known = licences?.length === 1 && (licences[0] === "known" || licences[0] === "unknown") ? licences[0] === "known" : undefined;
       if (need) {
         const licence = known !== undefined ? { licenseKnown: known } : licences ? { licenses: licences.filter((l) => l !== "unknown"), allowUnknownLicense: licences.includes("unknown") } : {};
-        const result = await d.searchCatalog(store, need, { ...(role ? { role } : {}), constraints: { ...licence, ...(sources ? { registries: sources } : {}), ...(styles?.length ? { styles } : {}) }, all, limit, offset, facets: true });
+        const result = await d.searchCatalog(store, need, { ...(role ? { role } : {}), constraints: { ...licence, ...(sources ? { registries: sources } : {}), ...(styles?.length ? { styles } : {}) }, all, limit, offset, facets: true, sort });
         return { kind, limit, ...result, offset };
       }
       const concept = role ? d.conceptForRole(role) : undefined;
@@ -133,7 +136,7 @@ export function queryMiddleware(options: QueryOptions = {}, base = "/", load: ()
       const held = known === true ? Object.keys((await store.discoverFacets({ ...scope, scopes: all ? ["chosen", "all"] : ["chosen"] })).licence).filter((l) => l !== "unknown") : [];
       if (known === true && held.length === 0) return { kind, limit, offset, total: 0, hits: [], facets: { role: {}, source: {}, licence: {}, style: {} }, indexBuiltAt: "", note: "" };
       const named = known === true ? held : known === false ? ["unknown"] : licences;
-      return { kind, limit, ...(await d.browseCatalog(store, { ...scope, ...(named ? { licences: named } : {}) }, { limit, offset })) };
+      return { kind, limit, ...(await d.browseCatalog(store, { ...scope, ...(named ? { licences: named } : {}) }, { limit, offset, sort })) };
     }
     if (!env.DATABASE_URL && !existsSync(path)) throw new NotFound("no local index yet: run youiyoux inventory, youiyoux scan or youiyoux index rebuild");
     const store = await d.sharedStore(path, env, { readOnly: true });
