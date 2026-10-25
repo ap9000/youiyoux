@@ -44,7 +44,26 @@ test("the item bundles with the project's cn and React; an import that leaves th
   const refused = await bundlePreview({ root: CONSOLE, tsconfig: "tsconfig.json", dir: evil, main: "ui/x.tsx", compose: { export: "X", props: {}, children: [] }, fallback: null });
   expect(refused).toEqual({ error: expect.stringMatching(/resolves outside the preview, your project.s aliased source, the project components it was given and the installed packages/) });
   const missing = previewDir("missing", { "ui/y.tsx": 'import { motion } from "motion/react";\nexport function Y() { return <motion.div />; }\n' });
-  expect(await bundlePreview({ root: CONSOLE, tsconfig: "tsconfig.json", dir: missing, main: "ui/y.tsx", compose: { export: "Y", props: {}, children: [] }, fallback: null })).toEqual({ error: "it needs motion, which is installed in neither your project nor the hub" });
+  expect(await bundlePreview({ root: CONSOLE, tsconfig: "tsconfig.json", dir: missing, main: "ui/y.tsx", compose: { export: "Y", props: {}, children: [] }, fallback: null })).toEqual({ error: "it needs motion, which is installed in neither your project nor the hub", missing: ["motion"] });
+}, 60_000);
+
+test("a package fetched for previews draws what neither the project nor the hub has, and says so; nothing else in that folder is reachable", async () => {
+  const store = join(scratch, "preview-packages");
+  for (const [file, text] of Object.entries({
+    "node_modules/motion/package.json": JSON.stringify({ name: "motion", version: "12.0.0", exports: { "./react": "./react.js" } }),
+    "node_modules/motion/react.js": 'import { createElement } from "react";\nexport const motion = { div: (props) => createElement("div", props) };\n',
+    "secret.js": "export const secret = 1;\n",
+  })) {
+    mkdirSync(join(store, file, ".."), { recursive: true });
+    writeFileSync(join(store, file), text);
+  }
+  const dir = previewDir("fetched", { "ui/y.tsx": 'import { motion } from "motion/react";\nexport function Y() { return <motion.div />; }\n' });
+  const job = { root: CONSOLE, tsconfig: "tsconfig.json", dir, main: "ui/y.tsx", compose: { export: "Y", props: {}, children: [] }, fallback: null };
+  const built = await bundlePreview({ ...job, packages: store });
+  expect("hash" in built && built.notes).toEqual(["motion: not installed in your project, so a copy fetched from npm for previews draws it (install it to use it for real)"]);
+  expect(await bundlePreview(job)).toMatchObject({ missing: ["motion"] });
+  const climb = previewDir("fetched-climb", { "ui/z.tsx": `import { secret } from ${JSON.stringify(join(store, "secret.js"))};\nexport function Z() { return <b>{secret}</b>; }\n` });
+  expect(await bundlePreview({ ...job, dir: climb, main: "ui/z.tsx", compose: { export: "Z", props: {}, children: [] }, packages: store })).toEqual({ error: expect.stringMatching(/refused import .*secret\.js.*resolves outside/) });
 }, 60_000);
 
 test("radix-ui parts come from the @radix-ui packages there are; a part nobody has is a reason, not a crash when it runs", async () => {

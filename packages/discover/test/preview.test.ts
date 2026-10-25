@@ -126,3 +126,22 @@ test("a block is drawn from its page, as a page, with up to 16 parts and its own
   // A component is still a component.
   expect((await preparePreview(dir, "@shadcn/command", { fetcher: fixtureFetcher().fetcher })).page).toBe(false);
 });
+
+test("another registry's item: its own lib/utils is cn, and shadcn's components it imports undeclared are shadcn's, whose own parts are shadcn's too", async () => {
+  const item = {
+    name: "button",
+    type: "registry:ui",
+    files: [{ path: "registry/default/ui/button.tsx", type: "registry:ui", content: 'import { cn } from "@/registry/default/lib/utils";\nimport { Command } from "@/components/ui/command";\nexport function Button() { return <Command className={cn("a")} />; }' }],
+  };
+  const fixtures = fixtureFetcher({ override: (url) => (url === "https://coss.com/ui/r/button.json" ? { inline: JSON.stringify(item) } : undefined) });
+  const prepared = await preparePreview(dir, "@coss/button", { fetcher: fixtures.fetcher });
+  const text = await readFile(join(prepared.dir, "registry/default/ui/button.tsx"), "utf8");
+  expect(text).toContain('from "cn"');
+  // shadcn's command, and the dialog it imports from shadcn's registry, never coss's (which has none).
+  expect(prepared.parts.slice(0, 2).map((p) => [p.name, p.from, p.detail])).toEqual([
+    ["command", "fetched", "command: the registry's own @shadcn/command, fetched (your project has none)"],
+    ["dialog", "fetched", "dialog: the registry's own @shadcn/dialog, fetched (your project has none)"],
+  ]);
+  expect(fixtures.requests.map((r) => r.url)).not.toContain("https://coss.com/ui/r/dialog.json");
+});
+

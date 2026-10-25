@@ -136,6 +136,10 @@ export function importedNames(source: string, spec: string): string[] {
 
 /** `@/registry/new-york-v4/ui/dialog` → `dialog`. */
 const partName = (spec: string): string => spec.split("/").at(-1)!.replace(/\.(?:tsx?|jsx?)$/, "");
+/** shadcn's own path for one of its components (`@/components/ui/button`), which items of other registries import without declaring it. */
+const SHADCN_UI = /^@\/components\/ui\/[a-z0-9][a-z0-9-]*$/;
+/** A registry's own copy of shadcn's utils (`@/registry/default/lib/utils`): it stands for `cn`. */
+const REGISTRY_UTILS = /^@\/registry\/.*\/lib\/utils$/;
 
 function relativeSpec(fromFile: string, toFile: string): string {
   const rel = posix.relative(posix.dirname(fromFile), toFile).replace(/\.(?:tsx?|jsx?)$/, "");
@@ -150,7 +154,9 @@ function mainFile(files: readonly string[], types: ReadonlyMap<string, string | 
 
 /**
  * Write one opened candidate's source (and the registry parts it imports) under the preview
- * cache, with `@/registry/…` imports pointed at the local copies. Throws a plain sentence when
+ * cache, with `@/registry/…` imports pointed at the local copies: a part the project has is its
+ * own, else the registry's, and `@/components/ui/<name>` (imported undeclared) is shadcn's; a
+ * registry's own `lib/utils` becomes `cn`, which the bundler supplies. Throws a plain sentence when
  * the item cannot be previewed (not a registry item, no code, an unsafe path).
  */
 export async function preparePreview(cacheDir: string, id: string, options: PreviewOptions = {}): Promise<PreparedPreview> {
@@ -191,12 +197,21 @@ export async function preparePreview(cacheDir: string, id: string, options: Prev
   /** What the fetched parts declare: their packages are the install's too. */
   const partDeps: string[] = [];
   const queue = [...own];
+  /** The registry each part's files came from: a shadcn part's own `@/registry/…` imports are shadcn's. */
+  const registryOf = new Map<string, string>();
   while (queue.length > 0) {
     const file = queue.shift()!;
+    const from = registryOf.get(file) ?? registry;
     const text = texts.get(file)!;
     for (const match of text.matchAll(SPECIFIER)) {
       const spec = match[3]!;
-      if (!spec.startsWith("@/registry/") || resolved.has(spec)) continue;
+      const shadcnUi = SHADCN_UI.test(spec);
+      if ((!spec.startsWith("@/registry/") && !shadcnUi) || resolved.has(spec)) continue;
+      // The bundler supplies cn: the project's own, else shadcn's.
+      if (REGISTRY_UTILS.test(spec)) {
+        resolved.set(spec, "cn");
+        continue;
+      }
       const local = [...texts.keys()].find((f) => f.replace(/\.(?:tsx?|jsx?)$/, "") === spec.slice(2) || f.replace(/\/index\.(?:tsx?|jsx?)$/, "") === spec.slice(2));
       if (local) {
         resolved.set(spec, local);
@@ -217,7 +232,8 @@ export async function preparePreview(cacheDir: string, id: string, options: Prev
         parts.push({ name, from: "not-fetched", detail: `${name}: not fetched (${why}; at most ${max} parts are fetched for one preview)` });
         continue;
       }
-      const partRef = `${registry}/${name}`;
+      // Undeclared, `@/components/ui/<name>` is shadcn's component of that name, whatever the item's registry.
+      const partRef = shadcnUi ? `@shadcn/${name}` : `${from}/${name}`;
       try {
         const part = await candidateSource(cacheDir, partRef, options);
         fetched++;
@@ -226,6 +242,7 @@ export async function preparePreview(cacheDir: string, id: string, options: Prev
         const partMain = mainFile(written, types);
         if (!partMain) throw new Error("it has no script files");
         resolved.set(spec, partMain);
+        for (const at of written) registryOf.set(at, partRef.slice(0, partRef.indexOf("/")));
         queue.push(...written);
         parts.push({ name, from: "fetched", detail: `${name}: the registry's own ${partRef}, fetched (${why})` });
       } catch (error: unknown) {
@@ -240,6 +257,7 @@ export async function preparePreview(cacheDir: string, id: string, options: Prev
     rewritten.set(file, text.replace(SPECIFIER, (all, lead: string, quote: string, spec: string) => {
       const target = resolved.get(spec);
       if (!target || target === spec) return all;
+      if (target === "cn") return `${lead}${quote}cn${quote}`;
       // A project file by its absolute path; a local copy relative to the importer.
       const next = target.startsWith("/") || /^[a-z]:[\\/]/i.test(target) ? target : relativeSpec(file, target);
       return `${lead}${quote}${next}${quote}`;

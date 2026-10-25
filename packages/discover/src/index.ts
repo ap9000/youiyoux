@@ -12,3 +12,4 @@ export * from "./catalog.ts";
 export * from "./preview.ts";
 export * from "./gaps.ts";
 export * from "./ingest.ts";
+export * from "./preview-packages.ts";

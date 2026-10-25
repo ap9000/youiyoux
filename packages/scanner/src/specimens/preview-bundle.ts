@@ -8,7 +8,9 @@
  * The fence of client.ts, widened by exactly that one directory. A module may come from the
  * preview directory, the project root, or an installed package; a bare import from the preview
  * resolves in the project's node_modules first, then in a fallback node_modules (the hub's own,
- * so a candidate built on cmdk still draws when the project has no cmdk), which is noted. React
+ * so a candidate built on cmdk still draws when the project has no cmdk), then in the packages
+ * fetched for previews (`packages`: motion, say, fetched by @youiyoux/discover's
+ * fetchPreviewPackages), each noted; a package in none of them is named in `missing`. React
  * always comes from the project, so there is one React. `cn` (shadcn's utility, as a package) is
  * the project's own `cn` when it has one, and `radix-ui` (the meta-package) is its primitives
  * from `@radix-ui/react-*` where those are installed; both are noted. Anything else that
@@ -53,12 +55,14 @@ export interface PreviewJob {
   readonly compose: ComposeNode;
   /** A node_modules-holding directory to fall back to for packages the project lacks (the hub's). */
   readonly fallback?: string | null;
+  /** The node_modules-holding directory of packages fetched for previews, tried after `fallback`. */
+  readonly packages?: string | null;
   /** The project's own components the preview's imports were pointed at (absolute): fetched files may import exactly these too. */
   readonly projectParts?: readonly string[];
 }
 
 /** A bundle with what was substituted for it (packages from the hub, the project's cn), or why there is none. */
-export type PreviewResult = (Extract<BrowserResult, { hash: string }> & { readonly notes: readonly string[] }) | { readonly error: string; readonly busy?: true };
+export type PreviewResult = (Extract<BrowserResult, { hash: string }> & { readonly notes: readonly string[] }) | { readonly error: string; readonly busy?: true; readonly missing?: readonly string[] };
 
 const NAMESPACE = "youi-preview";
 const GUARDED = "youiPreviewGuarded";
@@ -230,7 +234,7 @@ function projectCn(root: string, tsconfig: string): string | null {
  * one preview directory. Resolves to the bundle and its notes, or a sentence saying why not.
  */
 export async function bundlePreview(job: PreviewJob, options: { readonly bundleTimeoutMs?: number; readonly signal?: AbortSignal } = {}): Promise<PreviewResult> {
-  const { root, dir, fallback = null } = job;
+  const { root, dir, fallback = null, packages = null } = job;
   try {
     if (!packageUnderRoot(root, "react") || !packageUnderRoot(root, "react-dom")) return { error: "react and react-dom are not installed in your project's node_modules, so nothing can be drawn" };
     if (!existsSync(join(dir, job.main))) return { error: "the preview's files are missing; open it again" };
@@ -239,18 +243,20 @@ export async function bundlePreview(job: PreviewJob, options: { readonly bundleT
     const notes = new Set<string>();
     const refusals = new Set<string>();
     const fromHub = new Set<string>();
+    const fetched = new Set<string>();
+    const missing = new Set<string>();
     const radix = new Map<string, string>();
     const cnFile = projectCn(root, job.tsconfig);
     /** Where a fetched file's imports may land: the preview, the project's alias targets, and the project's or the hub's installed packages. */
     const partFiles = new Set((job.projectParts ?? []).filter((file) => within(root, file)).map(realOf));
-    const codeRoots = [dir, ...aliases.map(([, target]) => join(root, target)), join(root, "node_modules"), ...(fallback ? [join(fallback, "node_modules")] : [])];
+    const codeRoots = [dir, ...aliases.map(([, target]) => join(root, target)), join(root, "node_modules"), ...[fallback, packages].flatMap((base) => (base ? [join(base, "node_modules")] : []))];
     const previewRoot = realOf(dir);
     const previewRefusal = (spec: string, path: string): string | null => {
       // A block's own data (dashboard-01's data.json) is part of what was fetched; JSON from anywhere else stays out.
       if (/\.json$/i.test(path) && within(previewRoot, realOf(path))) return null;
       if (!PREVIEW_CODE.test(path)) return `a preview may import code only (.ts, .tsx, .js, .jsx, .mjs, .cjs, .css, or its own .json), not ${basename(path)}`;
       const name = packageName(spec);
-      if (name) for (const base of [root, fallback]) {
+      if (name) for (const base of [root, fallback, packages]) {
         const pkg = base ? packageUnderRoot(base, name) : null;
         if (pkg && within(pkg, path)) return null;
       }
@@ -258,7 +264,8 @@ export async function bundlePreview(job: PreviewJob, options: { readonly bundleT
       if (partFiles.has(realOf(path))) return null;
       return "it resolves outside the preview, your project's aliased source, the project components it was given and the installed packages";
     };
-    const where = (spec: string): { base: string; hub: boolean } | null => (packageUnderRoot(root, spec) ? { base: root, hub: false } : fallback && packageUnderRoot(fallback, spec) ? { base: fallback, hub: true } : null);
+    const where = (spec: string): { base: string; from: "project" | "hub" | "fetched" } | null =>
+      packageUnderRoot(root, spec) ? { base: root, from: "project" } : fallback && packageUnderRoot(fallback, spec) ? { base: fallback, from: "hub" } : packages && packageUnderRoot(packages, spec) ? { base: packages, from: "fetched" } : null;
 
     const fence: Plugin = {
       name: "youi-preview-fence",
@@ -288,8 +295,8 @@ export async function bundlePreview(job: PreviewJob, options: { readonly bundleT
           }
           const wanted = args.path.slice("radix-ui#".length).split(",").filter(Boolean);
           const parts = Object.entries(RADIX_PARTS).filter(([name, pkg]) => wanted.includes(name) && where(`@radix-ui/react-${pkg}`));
-          const missing = wanted.filter((name) => !parts.some(([n]) => n === name));
-          if (missing.length > 0) refusals.add(`it needs radix-ui's ${missing.join(", ")} (${missing.map((n) => `@radix-ui/react-${RADIX_PARTS[n]}`).join(", ")}), installed in neither your project nor the hub`);
+          const absent = wanted.filter((name) => !parts.some(([n]) => n === name));
+          if (absent.length > 0) refusals.add(`it needs radix-ui's ${absent.join(", ")} (${absent.map((n) => `@radix-ui/react-${RADIX_PARTS[n]}`).join(", ")}), installed in neither your project nor the hub`);
           for (const [name, pkg] of parts) radix.set(name, `@radix-ui/react-${pkg}`);
           return { contents: parts.map(([name, pkg]) => `export * as ${name} from "@radix-ui/react-${pkg}";`).join("\n"), loader: "js", resolveDir: root };
         });
@@ -328,9 +335,11 @@ export async function bundlePreview(job: PreviewJob, options: { readonly bundleT
               const found = where(spec);
               if (!found) {
                 refusals.add(`it needs ${name}, which is installed in neither your project nor the hub`);
+                missing.add(name);
                 return { errors: [{ text: `missing ${name}` }] };
               }
-              if (found.hub) fromHub.add(name);
+              if (found.from === "hub") fromHub.add(name);
+              if (found.from === "fetched") fetched.add(name);
               result = await again(spec, realOf(found.base));
             } else result = await again(spec, args.resolveDir || dir);
           } else result = await again(spec, args.resolveDir);
@@ -387,14 +396,15 @@ export async function bundlePreview(job: PreviewJob, options: { readonly bundleT
       );
     } catch (error: unknown) {
       if (options.signal?.aborted) return { error: "the preview was stopped before it bundled" };
-      if (refusals.size > 0) return { error: [...refusals][0]! };
+      if (refusals.size > 0) return { error: [...refusals][0]!, ...(missing.size > 0 ? { missing: [...missing].sort() } : {}) };
       const message = bundleError(error);
       if (message.startsWith("esbuild timed out")) return { error: `bundling took over ${limitOf(timeoutMs)} and was stopped` };
       return { error: `it did not bundle: ${message}` };
     }
     // A radix-ui part nobody has bundles to nothing, and would only fail once it runs: say why now.
-    if (refusals.size > 0) return { error: [...refusals][0]! };
+    if (refusals.size > 0) return { error: [...refusals][0]!, ...(missing.size > 0 ? { missing: [...missing].sort() } : {}) };
     if (radix.size > 0) notes.add(`radix-ui is not installed: its ${[...radix.keys()].sort().join(", ")} ${radix.size === 1 ? "comes" : "come"} from ${[...new Set(radix.values())].sort().join(", ")}`);
+    if (fetched.size > 0) notes.add(`${[...fetched].sort().join(", ")}: not installed in your project, so ${fetched.size === 1 ? "a copy" : "copies"} fetched from npm for previews ${fetched.size === 1 ? "draws it" : "draw them"} (install ${fetched.size === 1 ? "it" : "them"} to use it for real)`);
     if (fromHub.size > 0) notes.add(`${[...fromHub].sort().join(", ")}: not installed in your project, so the hub's own ${fromHub.size === 1 ? "copy draws it" : "copies draw them"}`);
     const inputs: BundleInput[] = [];
     for (const input of built.inputs) {

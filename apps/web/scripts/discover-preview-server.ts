@@ -62,7 +62,7 @@ interface ComposeNode {
   readonly props: Readonly<Record<string, unknown>>;
   readonly children: ReadonlyArray<ComposeNode | string>;
 }
-type Built = { hash: string; code: string; notes: readonly string[] } | { error: string; busy?: true };
+type Built = { hash: string; code: string; notes: readonly string[] } | { error: string; busy?: true; missing?: readonly string[] };
 interface Fit {
   readonly themed: readonly string[];
   readonly unthemed: readonly string[];
@@ -73,7 +73,7 @@ interface Scanner {
   loadInventoryTarget(root: string): Promise<{ files: readonly string[]; templates: readonly string[]; tsconfig: string; specimenCss: readonly string[] | null }>;
   composeOf(name: string, exports: readonly string[], label: string): ComposeNode | null;
   tsconfigAliases(root: string, tsconfig?: string): Array<[string, string]>;
-  bundlePreview(job: { root: string; tsconfig: string; dir: string; main: string; compose: ComposeNode; fallback?: string | null; projectParts?: readonly string[] }, options?: { signal?: AbortSignal }): Promise<Built>;
+  bundlePreview(job: { root: string; tsconfig: string; dir: string; main: string; compose: ComposeNode; fallback?: string | null; packages?: string | null; projectParts?: readonly string[] }, options?: { signal?: AbortSignal }): Promise<Built>;
   buildProjectCss(root: string, files: readonly string[], stats: unknown, options: { tsconfig?: string; templates?: readonly string[]; override?: readonly string[] | null; extraSources?: readonly string[]; signal?: AbortSignal }): Promise<{ light: string | null; dark: string | null; warnings: string[] }>;
   newStats(): unknown;
   forcedStates(css: string): string;
@@ -122,6 +122,10 @@ export interface PreviewOptions {
   readonly maxQueued?: number;
   /** Where packages the project lacks come from (default: the hub's own). */
   readonly fallback?: string | null;
+  /** Fetch from npm the packages a candidate needs that neither the project nor the hub has (default: true). */
+  readonly fetchPackages?: boolean;
+  /** How npm is run (tests pass their own: never the network). */
+  readonly npm?: import("../../../packages/discover/src/index.ts").NpmRunner;
 }
 
 /** A lib: id or a registry ref; never a path. */
@@ -234,11 +238,22 @@ export function discoverPreviewMiddleware(snapshot: string, base = "/", options:
     const compose = scanner.composeOf(entry.name, prepared.exports, entry.title ?? entry.name);
     const common = { id: entry.id, name: entry.name, entry, project: projectId, page: prepared.page, html: "", compose, fit, parts: prepared.parts.map(({ name, from, detail }) => ({ name, from, detail })), implicitDeps: prepared.implicit, install, license, fetched: requests > 0 };
     if (!compose) return { ...common, script: null, css: null, notes: [], error: `${entry.name} exports no component to draw`, ms: Math.round(performance.now() - started) };
-    const [built, sheet] = await Promise.all([
-      bundles.get(`${projectId}\0${prepared.key}\0${root}`, () => scanner.bundlePreview({ root, tsconfig, dir: prepared.dir, main: prepared.main, compose, fallback, projectParts: prepared.parts.flatMap((part) => (part.file ? [part.file] : [])) }, { signal })),
-      scanner.buildProjectCss(root, target.files, scanner.newStats(), { tsconfig: target.tsconfig, templates: target.templates, override: target.specimenCss, extraSources: [prepared.dir], signal }),
-    ]);
+    const packages = join(cache, discover.PREVIEW_PACKAGES_DIR);
+    const bundle = (): Promise<Built> => bundles.get(`${projectId}\0${prepared.key}\0${root}`, () => scanner.bundlePreview({ root, tsconfig, dir: prepared.dir, main: prepared.main, compose, fallback, packages, projectParts: prepared.parts.flatMap((part) => (part.file ? [part.file] : [])) }, { signal }));
+    let [built, sheet] = await Promise.all([bundle(), scanner.buildProjectCss(root, target.files, scanner.newStats(), { tsconfig: target.tsconfig, templates: target.templates, override: target.specimenCss, extraSources: [prepared.dir], signal })]);
     signal.throwIfAborted();
+    // Packages nobody here has (motion, say): fetched once from npm into the Discover cache, then bundled again.
+    if ("error" in built && built.missing?.length && options.fetchPackages !== false) {
+      const missing = built.missing;
+      try {
+        await discover.fetchPreviewPackages(cache, missing, { declared: install?.npm ?? [], signal, ...(options.npm ? { run: options.npm } : {}) });
+        built = await bundle();
+      } catch (error: unknown) {
+        signal.throwIfAborted();
+        built = { error: `it needs ${missing.join(", ")}, which ${missing.length === 1 ? "is" : "are"} installed in neither your project nor the hub, and fetching ${missing.length === 1 ? "it" : "them"} failed: ${sentence(error)}` };
+      }
+      signal.throwIfAborted();
+    }
     const styles = sheet.light !== null && sheet.dark !== null ? { light: keepCss(scanner.forcedStates(sheet.light)), dark: keepCss(scanner.forcedStates(sheet.dark)) } : null;
     const ms = Math.round(performance.now() - started);
     if ("error" in built) return { ...common, script: null, css: styles, notes: [], error: built.error, ms };

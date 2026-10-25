@@ -15,6 +15,10 @@ import type { Fetcher } from "../../../packages/discover/src/index.ts";
 import { discoverPreviewMiddleware, projectParts, uiDirOf, type PreviewAnswer } from "../scripts/discover-preview-server.ts";
 
 const SNAPSHOT = resolve(import.meta.dirname, "../snapshot");
+/** No test reaches npm: a preview that would fetch a package fails with this instead. */
+const noNpm = async (): Promise<never> => {
+  throw new Error("no test reaches npm");
+};
 const ITEM = (name: string) => `https://ui.shadcn.com/r/styles/new-york-v4/${name}.json`;
 let cache: string;
 
@@ -49,7 +53,7 @@ describe("Discover previews (c1, c2)", () => {
 
   test("opening shadcn's command fetches it and the part it needs, bundles it in the console's setting and says what could not be themed", async () => {
     const fixtures = fixtureFetcher();
-    const middleware = discoverPreviewMiddleware(SNAPSHOT, "/", { cache, fetcher: fixtures.fetcher });
+    const middleware = discoverPreviewMiddleware(SNAPSHOT, "/", { npm: noNpm, cache, fetcher: fixtures.fetcher });
     const { status, body } = json(await call(middleware, "/__youi/discover-preview?id=%40shadcn%2Fcommand&project=console"));
     expect(body.error).toBeNull();
     expect(status).toBe(200);
@@ -81,7 +85,7 @@ describe("Discover previews (c1, c2)", () => {
     expect(readdirSync(join(cache, "preview")).length).toBe(1);
     // Opened again: from the cache, nothing fetched.
     const again = fixtureFetcher();
-    const second = json(await call(discoverPreviewMiddleware(SNAPSHOT, "/", { cache, fetcher: again.fetcher }), "/__youi/discover-preview?id=lib%3Ashadcn%2Fcomponent%2Fcommand&project=console"));
+    const second = json(await call(discoverPreviewMiddleware(SNAPSHOT, "/", { npm: noNpm, cache, fetcher: again.fetcher }), "/__youi/discover-preview?id=lib%3Ashadcn%2Fcomponent%2Fcommand&project=console"));
     expect(again.requests).toEqual([]);
     expect(second.body.fetched).toBe(false);
   }, 60_000);
@@ -91,7 +95,7 @@ describe("Discover previews (c1, c2)", () => {
     const fresh = mkdtempSync(join(tmpdir(), "youi-discover-preview-once-"));
     try {
       await syncIndex({ sleep: async () => {}, cacheDir: fresh, fetcher: fixtureFetcher().fetcher, now: () => new Date("2026-10-12T12:00:00Z"), timeoutMs: 100 });
-      const middleware = discoverPreviewMiddleware(SNAPSHOT, "/", { cache: fresh, fetcher: fixtures.fetcher });
+      const middleware = discoverPreviewMiddleware(SNAPSHOT, "/", { npm: noNpm, cache: fresh, fetcher: fixtures.fetcher });
       const [a, b] = await Promise.all([call(middleware, "/__youi/discover-preview?id=%40shadcn%2Finput&project=console"), call(middleware, "/__youi/discover-preview?id=%40shadcn%2Finput&project=console")]);
       expect(json(a).body.script).toBe(json(b).body.script);
       expect(fixtures.requests.map((r) => r.url)).toEqual([ITEM("input")]);
@@ -101,7 +105,7 @@ describe("Discover previews (c1, c2)", () => {
   }, 60_000);
 
   test("an npm package is listed without a drawing, in a sentence", async () => {
-    const { status, body } = json(await call(discoverPreviewMiddleware(SNAPSHOT, "/", { cache, fetcher: fixtureFetcher().fetcher }), "/__youi/discover-preview?id=lib%3Anpm%2Fcomponent%2Fsonner&project=console"));
+    const { status, body } = json(await call(discoverPreviewMiddleware(SNAPSHOT, "/", { npm: noNpm, cache, fetcher: fixtureFetcher().fetcher }), "/__youi/discover-preview?id=lib%3Anpm%2Fcomponent%2Fsonner&project=console"));
     expect(status).toBe(200);
     expect(body.script).toBeNull();
     expect(body.error).toMatch(/npm package, not a registry item/);
@@ -109,13 +113,13 @@ describe("Discover previews (c1, c2)", () => {
 
   test("a preview that runs past its limit is stopped with a sentence", async () => {
     const slow = fixtureFetcher({ override: (url) => (url === ITEM("button") ? { behavior: "timeout" } : undefined) });
-    const { status, body } = json(await call(discoverPreviewMiddleware(SNAPSHOT, "/", { cache, fetcher: slow.fetcher, timeoutMs: 300 }), "/__youi/discover-preview?id=%40shadcn%2Fbutton&project=console"));
+    const { status, body } = json(await call(discoverPreviewMiddleware(SNAPSHOT, "/", { npm: noNpm, cache, fetcher: slow.fetcher, timeoutMs: 300 }), "/__youi/discover-preview?id=%40shadcn%2Fbutton&project=console"));
     expect(status).toBe(504);
     expect(body.error).toMatch(/took over .* and was stopped/);
   });
 
   test("this machine only, ids only, and projects the hub knows", async () => {
-    const middleware = discoverPreviewMiddleware(SNAPSHOT, "/", { cache, fetcher: fixtureFetcher().fetcher });
+    const middleware = discoverPreviewMiddleware(SNAPSHOT, "/", { npm: noNpm, cache, fetcher: fixtureFetcher().fetcher });
     expect(json(await call(middleware, "/__youi/discover-preview?id=%40shadcn%2Fcommand", "evil.example:5173")).status).toBe(403);
     for (const id of ["../../etc/passwd", "/etc/passwd", "lib:x/component/../../y"]) expect(json(await call(middleware, `/__youi/discover-preview?id=${encodeURIComponent(id)}`)).status, id).toBe(400);
     expect(json(await call(middleware, "/__youi/discover-preview?id=%40shadcn%2Fcommand&project=nope")).status).toBe(404);
@@ -125,7 +129,7 @@ describe("Discover previews (c1, c2)", () => {
 
   test("another site cannot ask for a build: a foreign or null Origin, or Sec-Fetch-Site cross-site, is refused; the hub's own page is not", async () => {
     const fixtures = fixtureFetcher();
-    const middleware = discoverPreviewMiddleware(SNAPSHOT, "/", { cache, fetcher: fixtures.fetcher });
+    const middleware = discoverPreviewMiddleware(SNAPSHOT, "/", { npm: noNpm, cache, fetcher: fixtures.fetcher });
     const ask = "/__youi/discover-preview?id=%40shadcn%2Fcommand&project=console";
     for (const headers of [{ origin: "https://evil.example" }, { origin: "null" }, { origin: "http://localhost.evil.example:5173" }, { "sec-fetch-site": "cross-site" }] as Array<Record<string, string>>) {
       const { status, body } = json(await call(middleware, ask, "localhost:5173", headers));
@@ -143,6 +147,32 @@ describe("Discover previews (c1, c2)", () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  }, 60_000);
+
+  test("a package nobody here has is fetched from npm once (install scripts off), then drawn; with fetching off it is named instead", async () => {
+    const badge = { name: "input", type: "registry:ui", files: [{ path: "registry/new-york-v4/ui/input.tsx", type: "registry:ui", content: 'import { motion } from "motion/react";\nexport function Input() { return <motion.span>New</motion.span>; }\n' }] };
+    const fetcher = fixtureFetcher({ override: (url) => (url === ITEM("input") ? { inline: JSON.stringify(badge) } : undefined) }).fetcher;
+    const ask = "/__youi/discover-preview?id=%40shadcn%2Finput&project=console";
+    const off = json(await call(discoverPreviewMiddleware(SNAPSHOT, "/", { npm: noNpm, cache, fetcher, fetchPackages: false }), ask));
+    expect(off.body.error).toBe("it needs motion, which is installed in neither your project nor the hub");
+    const runs: string[][] = [];
+    const npm = async (args: readonly string[], cwd: string) => {
+      runs.push([...args]);
+      // What npm would leave: the package in the folder it ran in.
+      mkdirSync(join(cwd, "node_modules/motion"), { recursive: true });
+      writeFileSync(join(cwd, "node_modules/motion/package.json"), JSON.stringify({ name: "motion", version: "12.0.0", exports: { "./react": "./react.js" } }));
+      writeFileSync(join(cwd, "node_modules/motion/react.js"), 'import { createElement } from "react";\nexport const motion = { span: (props) => createElement("span", props) };\n');
+      return { code: 0, stderr: "" };
+    };
+    const { status, body } = json(await call(discoverPreviewMiddleware(SNAPSHOT, "/", { cache, fetcher, npm }), ask));
+    expect(status).toBe(200);
+    expect(body.error).toBeNull();
+    expect(body.script).toMatch(/\.js$/);
+    expect(body.notes).toContain("motion: not installed in your project, so a copy fetched from npm for previews draws it (install it to use it for real)");
+    expect(runs).toEqual([["install", "--ignore-scripts", "--no-audit", "--no-fund", "--legacy-peer-deps", "--save-exact", "--loglevel=error", "motion"]]);
+    // Kept: the next preview needing it fetches nothing.
+    json(await call(discoverPreviewMiddleware(SNAPSHOT, "/", { cache, fetcher, npm }), ask));
+    expect(runs).toHaveLength(1);
   }, 60_000);
 
   describe("builds are bounded", () => {
@@ -177,7 +207,7 @@ describe("Discover previews (c1, c2)", () => {
 
     test("two build at once, four wait, and the next is answered 503", async () => {
       const network = heldNetwork();
-      const middleware = discoverPreviewMiddleware(SNAPSHOT, "/", { cache: fresh, fetcher: network.fetcher, maxBuilds: 2, maxQueued: 4 });
+      const middleware = discoverPreviewMiddleware(SNAPSHOT, "/", { npm: noNpm, cache: fresh, fetcher: network.fetcher, maxBuilds: 2, maxQueued: 4 });
       const refs = ["@shadcn/calendar", "@shadcn/popover", "@shadcn/sonner", "@shadcn/input-group", "@coss/toast", "@coss/autocomplete"];
       const answers = refs.map((ref) => call(middleware, `/__youi/discover-preview?id=${encodeURIComponent(ref)}&project=console`));
       // Only two reach the network; four wait for a slot.
@@ -194,7 +224,8 @@ describe("Discover previews (c1, c2)", () => {
 
     test("a build past its limit is aborted, not just abandoned: its request is cancelled and its slot frees", async () => {
       const network = heldNetwork();
-      const middleware = discoverPreviewMiddleware(SNAPSHOT, "/", { cache: fresh, fetcher: network.fetcher, timeoutMs: 1500, maxBuilds: 1, maxQueued: 0 });
+      // coss's button needs @base-ui/react: never fetched here (no test reaches npm).
+      const middleware = discoverPreviewMiddleware(SNAPSHOT, "/", { npm: noNpm, cache: fresh, fetcher: network.fetcher, timeoutMs: 1500, maxBuilds: 1, maxQueued: 0, fetchPackages: false });
       // Warm: the modules load once (an npm listing needs no network).
       expect(json(await call(middleware, "/__youi/discover-preview?id=lib%3Anpm%2Fcomponent%2Fsonner&project=console")).status).toBe(200);
       const { status, body } = json(await call(middleware, "/__youi/discover-preview?id=%40coss%2Fdialog&project=console"));
