@@ -28,6 +28,8 @@ test("a compound is drawn with the parts its kind needs; a plain component with 
   // Parts that must sit inside another: an accordion's triggers in its items, a menubar's in its menus.
   expect(composeOf("accordion", ["Accordion", "AccordionItem", "AccordionTrigger", "AccordionContent"], "Accordion")).toMatchObject({ export: "Accordion", props: { type: "single", defaultValue: "item-1" }, children: [{ export: "AccordionItem", props: { value: "item-1" }, children: [{ export: "AccordionTrigger" }, { export: "AccordionContent" }] }, { export: "AccordionItem" }] });
   expect(composeOf("menubar", ["Menubar", "MenubarMenu", "MenubarTrigger", "MenubarContent", "MenubarItem"], "Menubar")).toMatchObject({ export: "Menubar", children: [{ export: "MenubarMenu", children: [{ export: "MenubarTrigger", children: ["File"] }, { export: "MenubarContent" }] }, { export: "MenubarMenu" }, { export: "MenubarMenu" }] });
+  // A block's page has only its default export.
+  expect(composeOf("login-02", ["default"], "Login 02")).toEqual({ export: "default", props: {}, children: ["Login 02"] });
   // A dialog has a trigger and content but no items: still drawn open.
   expect(composeOf("alert-dialog", ["AlertDialog", "AlertDialogTrigger", "AlertDialogContent", "AlertDialogTitle"], "Alert Dialog")).toMatchObject({ props: { open: true } });
 });
@@ -114,6 +116,16 @@ describe("what a fetched file may read", () => {
     expect("hash" in (await bundlePreview({ ...job, projectParts: [card] }))).toBe(true);
     // Being given one file is not being given its neighbours.
     refused(await bundlePreview({ ...job, projectParts: [join(project, "secret.ts")] }), /the project components it was given/);
+  }, 60_000);
+
+  test("a block's own data file bundles; JSON from anywhere else still does not", async () => {
+    const dir = previewDir("read-data", { "blocks/x/page.tsx": 'import data from "./data.json";\nexport default function X() { return <i>{data.rows.length}</i>; }\n', "blocks/x/data.json": '{ "rows": [1, 2, 3] }\n' });
+    const built = await bundlePreview({ root: project, tsconfig: "tsconfig.json", dir, main: "blocks/x/page.tsx", compose: { export: "default", props: {}, children: [] }, fallback: null });
+    expect("hash" in built && built.code).toContain("rows");
+    // A file inside the preview may not reach out to the project's JSON (the creds test above), nor through a link.
+    symlinkSync(join(project, "creds.json"), join(dir, "blocks/x/linked.json"));
+    const linked = previewDir("read-data", { "blocks/x/leak.tsx": 'import creds from "./linked.json";\nexport const X = () => <i>{JSON.stringify(creds)}</i>;\n' });
+    refused(await bundlePreview({ root: project, tsconfig: "tsconfig.json", dir: linked, main: "blocks/x/leak.tsx", compose: { export: "X", props: {}, children: [] }, fallback: null }), /not linked\.json|not creds\.json/);
   }, 60_000);
 
   test("a normal component import still bundles: the project's component, React and the preview's own files", async () => {

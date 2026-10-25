@@ -19,10 +19,12 @@ import { discoverFixture } from "../scripts/discover-fixture.ts";
 import { queryMiddleware } from "../scripts/query-server.ts";
 import { writeDiscover } from "../scripts/snapshot.ts";
 import { compact, parseQuery, queryToSearch, resetDiscoverSource, searchListings, signalLines, type ListingsFile } from "../src/data/discover.ts";
-import { cleanMarkup, previewRequests, setDrawn, type PreviewAnswer } from "../src/data/discover-preview.ts";
+import { cleanMarkup, onlyCustomProperties, previewRequests, setDrawn, type PreviewAnswer } from "../src/data/discover-preview.ts";
 import { resetThumbs, type Thumbs } from "../src/data/discover-thumbs.ts";
 import { memorySource, type InventorySource } from "../src/data/inventory-source.ts";
 import type { Resource } from "../src/data/store.ts";
+import { siteOf } from "../src/screens/discover/CandidatePanel.tsx";
+import { pageScale } from "../src/screens/discover/PagePreview.tsx";
 import { pinnedRows } from "../src/screens/discover/PinnedCompare.tsx";
 import { DiscoverView } from "../src/screens/discover/DiscoverScreen.tsx";
 import { SpecimenCapture } from "../src/screens/discover/SpecimenCapture.tsx";
@@ -84,6 +86,8 @@ function answerFor(entry: LibraryEntry, extra: Partial<PreviewAnswer> = {}): Pre
     license,
     fetched: true,
     ms: 900,
+    // As the server says: a block is drawn as a page.
+    page: entry.kind === "pattern",
     ...extra,
   };
 }
@@ -241,6 +245,102 @@ describe("an opened candidate, in the project's theme (c2)", () => {
     expect(text(drawer.querySelector('[data-fit="unthemed"]')!)).toContain("16px type (text-base), project uses 14px (text-sm)");
     expect(text(drawer.querySelector("[data-implicit]")!)).toBe("Imports without declaring: lucide-react (an install would need it too)");
     expect(cleanMarkup('<img src="https://tracker.example/x.png" style="background:url(https://x)"><style>@import url(https://x)</style>')).toBe('<img src="">');
+  });
+});
+
+describe("an opened block, drawn as the page it is", () => {
+  const id = "lib:shadcn/pattern/dashboard-01";
+  test("one large frame at a desktop's size, then a phone's, light or dark, live on Try it and full size in a dialog; the hidden frame stays until the drawing settles", async () => {
+    // jsdom lays nothing out: the drawer is 640px wide here.
+    const width = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(640);
+    try {
+      show(`?open=${encodeURIComponent(id)}`);
+      const drawer = await screen.findByTestId("candidate-drawer");
+      // The page is laid out in a page-sized frame, at full width, not shrink-wrapped.
+      const probe = await waitFor(() => {
+        const frame = document.querySelector<HTMLIFrameElement>(`iframe[data-draw-probe="${id}"]`);
+        expect(frame).not.toBeNull();
+        return frame!;
+      });
+      expect([probe.style.width, probe.style.height]).toEqual(["1280px", "768px"]);
+      expect(probe.getAttribute("srcdoc")).toContain('id="youi-specimen" style="display:block;min-height:100vh"');
+      // A first drawing shows at once; the frame stays until the settled one (a chart still animating in).
+      act(() => setDrawn(id, '<main class="flex min-h-svh"><aside>Sidebar</aside><section>Cards</section></main>', false));
+      const frame = (): HTMLIFrameElement => drawer.querySelector<HTMLIFrameElement>("iframe[data-page-frame]")!;
+      await waitFor(() => expect(frame()).not.toBeNull());
+      expect(document.querySelector(`iframe[data-draw-probe="${id}"]`)).not.toBeNull();
+      act(() => setDrawn(id, '<main class="flex min-h-svh"><aside>Sidebar</aside><section>Cards, drawn</section></main>', true));
+      await waitFor(() => expect(document.querySelector(`iframe[data-draw-probe="${id}"]`)).toBeNull());
+      expect(frame().getAttribute("srcdoc")).toContain("Cards, drawn");
+      // One frame, no light-and-dark tiles or state strip; scaled to the drawer (640 / 1280).
+      expect(drawer.querySelectorAll("[data-tile]")).toHaveLength(0);
+      expect(drawer.querySelector("[data-strip]")).toBeNull();
+      expect(frame().dataset.pageFrame).toBe("desktop");
+      expect(frame().style.transform).toBe("scale(0.5)");
+      expect(frame().getAttribute("sandbox")).toBe("allow-same-origin");
+      expect(frame().getAttribute("srcdoc")).not.toContain("<script");
+      // A phone's width, then dark: the dark sheet.
+      fireEvent.click(within(drawer).getByRole("radio", { name: "Phone" }));
+      expect(frame().dataset.pageFrame).toBe("phone");
+      expect(frame().style.width).toBe("390px");
+      fireEvent.click(within(drawer).getByRole("radio", { name: "Dark" }));
+      expect(frame().getAttribute("srcdoc")).toContain(`/__youi/discover-preview/${"c".repeat(16)}.css`);
+      // Try it: the bundle, sandboxed allow-scripts only; Escape pressed inside it (the frame keeps the key) ends it.
+      fireEvent.click(within(drawer).getByRole("button", { name: "Try it" }));
+      expect(frame().getAttribute("sandbox")).toBe("allow-scripts");
+      expect(frame().getAttribute("srcdoc")).toMatch(/<script src="[^"]+\/__youi\/discover-preview\/a{16}\.js">/);
+      act(() => void window.dispatchEvent(new MessageEvent("message", { source: window, data: { youi: "try", type: "escape" } })));
+      expect(frame().dataset.live).toBe("true");
+      act(() => void window.dispatchEvent(new MessageEvent("message", { source: frame().contentWindow, data: { youi: "try", type: "escape" } })));
+      expect(frame().dataset.live).toBeUndefined();
+      // Full size: a dialog of its own; closing it gives focus back.
+      const open = within(drawer).getByRole("button", { name: "Show Dashboard 01 full size" });
+      fireEvent.click(open);
+      const full = await screen.findByTestId("page-fullscreen");
+      expect(within(full).getByRole("heading", { name: "Dashboard 01" })).toBeTruthy();
+      expect(full.querySelector("iframe[data-page-frame=phone]")).not.toBeNull();
+      fireEvent.click(within(full).getByRole("button", { name: "Close full size" }));
+      await waitFor(() => expect(screen.queryByTestId("page-fullscreen")).toBeNull());
+      await waitFor(() => expect(document.activeElement).toBe(open));
+    } finally {
+      width.mockRestore();
+    }
+  });
+
+  test("a block that cannot be drawn says why and links to its registry's own site", async () => {
+    const block = "lib:coss/pattern/p-command-2";
+    const base = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => (new URL(String(input), "http://localhost:5173/").pathname === "/__youi/discover-preview" ? json(answerFor(await entryOf(block), { script: null, error: "it needs @tabler/icons-react, which is installed in neither your project nor the hub" })) : base(input, init))));
+    show(`?q=command&open=${encodeURIComponent(block)}`);
+    const drawer = await screen.findByTestId("candidate-drawer");
+    const error = await waitFor(() => {
+      const element = drawer.querySelector<HTMLElement>("[data-preview-error]");
+      expect(element).not.toBeNull();
+      return element!;
+    });
+    expect(text(error)).toMatch(/^No drawing: it needs @tabler\/icons-react, which is installed in neither your project nor the hub\. Find p-command-2 on coss\.com, drawn as its authors made it\.$/);
+    const link = error.querySelector<HTMLAnchorElement>("a[data-site-link]")!;
+    expect([link.href, link.target, link.rel]).toEqual(["https://coss.com/ui", "_blank", "noreferrer noopener"]);
+  });
+
+  test("the site link is https only", () => {
+    expect(siteOf("https://ui.shadcn.com")).toEqual({ href: "https://ui.shadcn.com/", host: "ui.shadcn.com" });
+    expect(siteOf("http://ui.example.com")).toBeNull();
+    expect(siteOf("javascript:alert(1)")).toBeNull();
+    expect(siteOf(null)).toBeNull();
+  });
+
+  test("a page fits the space it has, never above full size", () => {
+    expect(pageScale("desktop", 640)).toBe(0.5);
+    expect(pageScale("phone", 640, 560)).toBeCloseTo(560 / 844);
+    expect(pageScale("phone", 2000, 2000)).toBe(1);
+  });
+
+  test("a drawing's style survives only when all it sets is custom properties, as a shadcn chart names its colours", () => {
+    const chart = "[data-chart=chart-r1] {\n  --color-desktop: var(--chart-1);\n  --color-mobile: var(--chart-2);\n}\n.dark [data-chart=chart-r1] {\n  --color-desktop: var(--chart-1)\n}\n";
+    expect(onlyCustomProperties(chart)).toBe(true);
+    for (const css of ["a { color: red }", "a { --x: 1 } b { display: none }", "a { --x: url(https://x) }", "@import 'x'; a { --x: 1 }", "a { --x: \\75rl(x) }", "</style><script>"]) expect(onlyCustomProperties(css), css).toBe(false);
+    expect(cleanMarkup(`<div data-chart="chart-r1"><style>${chart}</style><svg></svg></div><style>body { display: none }</style>`)).toBe(`<div data-chart="chart-r1"><style>${chart}</style><svg></svg></div>`);
   });
 });
 
@@ -433,12 +533,30 @@ describe("the capture page youiyoux discover previews photographs", () => {
     await waitFor(() => expect(capture().dataset.captureProject).toBe("console"));
     expect(capture().dataset.captureState).toBe("drawing");
     expect(previewCalls()).toEqual([`/__youi/discover-preview?id=${encodeURIComponent(id)}`]);
+    // A first drawing that may still be animating in is not photographed.
+    act(() => setDrawn(id, '<input class="rounded-md" placeholder="Em">', false));
+    expect(capture().dataset.captureState).toBe("drawing");
     act(() => setDrawn(id, '<input class="rounded-md" placeholder="Email">'));
     await waitFor(() => expect(capture().dataset.captureState).toBe("ready"));
     const page = capture();
     expect([...page.querySelectorAll<HTMLElement>("[data-capture-stage]")].map((stage) => stage.dataset.captureStage)).toEqual(["light", "dark"]);
     expect(page.dataset.captureProject).toBe("console");
     expect(page.dataset.captureSha).toBe((await entryOf(id)).provenance!.sha256);
+  });
+
+  test("a block is photographed as a page: its top, at a quarter of 1280 × 768, with room for the capture's cut", async () => {
+    const id = "lib:shadcn/pattern/dashboard-01";
+    window.history.replaceState(null, "", `/discover/specimen?id=${encodeURIComponent(id)}`);
+    render(<SpecimenCapture />);
+    const capture = (): HTMLElement => document.querySelector<HTMLElement>(`[data-capture="${id}"]`)!;
+    await waitFor(() => expect(capture()).not.toBeNull());
+    act(() => setDrawn(id, '<main class="flex min-h-svh">A dashboard</main>'));
+    await waitFor(() => expect(capture().dataset.captureState).toBe("ready"));
+    const stages = [...capture().querySelectorAll<HTMLElement>("[data-capture-stage]")];
+    expect(stages.map((stage) => [stage.dataset.captureStage, stage.style.padding])).toEqual([["light", "8px"], ["dark", "8px"]]);
+    const frame = stages[0]!.querySelector("iframe")!;
+    expect([frame.style.width, frame.style.height, frame.style.transform]).toEqual(["1280px", "768px", "scale(0.25)"]);
+    expect(frame.getAttribute("srcdoc")).toContain("display:block;min-height:100vh");
   });
 
   test("a candidate that cannot be drawn says so, with why, for the capture to record", async () => {

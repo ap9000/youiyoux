@@ -13,19 +13,53 @@ import { LARGE_TILE_HEIGHT, SpecimenTile, StateStrip } from "../inventory/Specim
 import { CandidateActions } from "./Actions.tsx";
 import { candidateTile } from "./candidate.tsx";
 import { LicenceBadge } from "./LicenceBadge.tsx";
+import { PagePreview } from "./PagePreview.tsx";
 
 /** Behind a scheme's tile whatever scheme the hub is in, for a page that paints no background of its own. */
 export const SCHEME_BACKDROP: Readonly<Record<Scheme, string>> = { light: "#fcfcfd", dark: "#0f1011" };
 
+/** A registry's own site, to look at a block that could not be drawn here: https only. */
+export function siteOf(url: string | null | undefined): { href: string; host: string } | null {
+  try {
+    const parsed = new URL(url ?? "");
+    return parsed.protocol === "https:" ? { href: parsed.href, host: parsed.host } : null;
+  } catch {
+    return null;
+  }
+}
+
 function Drawing({ answer, failure, scheme }: { answer: PreviewAnswer; failure: string | null; scheme: Scheme }) {
   const html = useDrawn(answer.id);
   const error = answer.error ?? failure;
-  if (error) return <p className="rounded-md border border-dashed border-line-strong p-3 text-small text-muted" data-preview-error>{`No drawing: ${error.replace(/\.$/, "")}.`}</p>;
+  if (error) {
+    const site = answer.entry.kind === "pattern" ? siteOf(answer.entry.source.url) : null;
+    return (
+      <p className="rounded-md border border-dashed border-line-strong p-3 text-small text-muted" data-preview-error>
+        {`No drawing: ${error.replace(/\.$/, "")}.`}
+        {site && (
+          <>
+            {" "}
+            <a href={site.href} target="_blank" rel="noreferrer noopener" className="text-accent underline underline-offset-2" data-site-link>
+              Find {answer.name} on {site.host}
+            </a>
+            , drawn as its authors made it.
+          </>
+        )}
+      </p>
+    );
+  }
   if (!html)
     return (
       <p aria-busy="true" className="grid place-items-center rounded-md border border-line bg-sunken text-small text-faint" style={{ height: LARGE_TILE_HEIGHT }}>
         Drawing it in your theme…
       </p>
+    );
+  // A block is a page: one large frame with its width and scheme to choose, not two small tiles.
+  if (answer.page && answer.css)
+    return (
+      <div data-drawn={answer.id}>
+        <PagePreview answer={answer} html={html} scheme={scheme} />
+      </div>
     );
   return (
     <div className="space-y-3" data-drawn={answer.id}>

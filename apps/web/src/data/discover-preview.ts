@@ -36,6 +36,8 @@ export interface PreviewAnswer {
   readonly css: { readonly light: string; readonly dark: string } | null;
   readonly html: string;
   readonly compose: ComposeNode | null;
+  /** A block's page: drawn at a page's size (desktop or phone) instead of as one component. */
+  readonly page?: boolean;
   readonly fit: ThemeFit;
   readonly notes: readonly string[];
   readonly parts: ReadonlyArray<{ readonly name: string; readonly from: string; readonly detail: string }>;
@@ -85,15 +87,30 @@ async function ask(id: string, project: string | null): Promise<PreviewState> {
 
 /* --------------------------------------------------------- the markup it drew */
 
-const DROP = "script, iframe, frame, frameset, object, embed, link, meta, base, style, noscript, template, portal";
+const DROP = "script, iframe, frame, frameset, object, embed, link, meta, base, noscript, template, portal";
+/** The most markup kept: a whole page (a dashboard block) runs to a few hundred kilobytes. */
+const MAX_MARKUP = 1_000_000;
+
+/**
+ * A `<style>` kept only when all it does is set custom properties (`--color-desktop: var(--chart-1)`, how a
+ * shadcn chart names its colours): no url(), @-rules, escapes or other properties. The frame's policy
+ * blocks remote fetches anyway; this keeps a drawing from restyling anything else.
+ */
+export function onlyCustomProperties(css: string): boolean {
+  if (/url\s*\(|expression\s*\(|[@\\<]/i.test(css)) return false;
+  // Each declaration ends at its `;` (the last may not), so the match never backtracks far.
+  return /^(?:\s*[^{}]+\{(?:\s*--[\w-]+\s*:[^;{}]*;)*(?:\s*--[\w-]+\s*:[^;{}]*)?\s*\})*\s*$/.test(css);
+}
+
 const URL_ATTRIBUTES = ["href", "src", "srcset", "action", "formaction", "xlink:href", "poster", "background", "ping"];
 
 /** The drawn markup, safe to put in a script-free frame: no active content, no remote fetches. */
 export function cleanMarkup(html: string): string {
   if (typeof document === "undefined") return "";
   const template = document.createElement("template");
-  template.innerHTML = html.slice(0, 200_000);
+  template.innerHTML = html.slice(0, MAX_MARKUP);
   for (const element of template.content.querySelectorAll(DROP)) element.remove();
+  for (const element of template.content.querySelectorAll("style")) if (!onlyCustomProperties(element.textContent ?? "")) element.remove();
   for (const element of template.content.querySelectorAll("*")) {
     for (const attribute of [...element.attributes]) {
       const name = attribute.name.toLowerCase();
@@ -108,14 +125,37 @@ export function cleanMarkup(html: string): string {
 }
 
 const drawn = new Map<string, string>();
+/** Candidates whose drawing has stopped changing (a chart done animating): their frame is no longer needed. */
+const settled = new Set<string>();
 const listeners = new Set<() => void>();
 
-/** Keep what a candidate's frame drew (cleaned), for its static frames. */
-export function setDrawn(id: string, html: string): void {
+/** Keep what a candidate's frame drew (cleaned), for its static frames; `final` once it has stopped changing. */
+export function setDrawn(id: string, html: string, final = true): void {
   const clean = cleanMarkup(html);
-  if (!clean.trim() || drawn.get(id) === clean) return;
-  drawn.set(id, clean);
+  const settling = final && !settled.has(id);
+  if (final) settled.add(id);
+  if ((!clean.trim() || drawn.get(id) === clean) && !settling) return;
+  if (clean.trim()) drawn.set(id, clean);
   listeners.forEach((listener) => listener());
+}
+
+/** Take what a candidate has drawn so far as final (it never stopped changing within the limit). */
+export function settleDrawn(id: string): void {
+  if (settled.has(id)) return;
+  settled.add(id);
+  listeners.forEach((listener) => listener());
+}
+
+/** Whether a candidate's drawing is final. */
+export function useSettled(id: string): boolean {
+  return useSyncExternalStore(
+    (listener) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    () => settled.has(id),
+    () => false,
+  );
 }
 
 /** The markup a candidate's frame drew, once it has. */

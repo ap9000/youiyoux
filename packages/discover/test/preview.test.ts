@@ -94,3 +94,35 @@ test("export and import names are read from the text", () => {
   expect(exportNames("export function A() {}\nexport const b = 1\nexport { C, D as E, type F }\nexport default G")).toEqual(["A", "b", "C", "E", "default"]);
   expect(importedNames('import { A, B as C } from "@/x"\nimport D, { E } from "@/x"', "@/x")).toEqual(["A", "B", "E", "default"]);
 });
+
+test("a block is drawn from its page, as a page, with up to 16 parts and its own data", async () => {
+  const page = [
+    'import { Input } from "@/registry/new-york-v4/ui/input";',
+    'import { Button } from "@/registry/new-york-v4/ui/button";',
+    'import { Dialog } from "@/registry/new-york-v4/ui/dialog";',
+    'import { Command } from "@/registry/new-york-v4/ui/command";',
+    'import { SectionCards } from "@/registry/new-york-v4/blocks/dashboard-01/components/section-cards";',
+    'import data from "./data.json";',
+    "export default function Page() { return <main><SectionCards /><Input /><Button /><Dialog /><Command />{data.length}</main>; }",
+  ].join("\n");
+  const block = {
+    name: "dashboard-01",
+    type: "registry:block",
+    files: [
+      { path: "registry/new-york-v4/blocks/dashboard-01/components/section-cards.tsx", type: "registry:component", content: "export function SectionCards() { return <section />; }" },
+      { path: "registry/new-york-v4/blocks/dashboard-01/page.tsx", type: "registry:page", content: page },
+      { path: "registry/new-york-v4/blocks/dashboard-01/data.json", type: "registry:file", content: "[1, 2, 3]" },
+    ],
+  };
+  const fixtures = fixtureFetcher({ override: (url) => (url === ITEM("dashboard-01") ? { inline: JSON.stringify(block) } : undefined) });
+  const prepared = await preparePreview(dir, "@shadcn/dashboard-01", { fetcher: fixtures.fetcher });
+  // The page, which puts the parts together, not the first component file.
+  expect(prepared.main).toBe("registry/new-york-v4/blocks/dashboard-01/page.tsx");
+  expect(prepared.page).toBe(true);
+  expect(prepared.exports).toContain("default");
+  // Four parts, past a component's cap of 3: a block may fetch up to 16.
+  expect(prepared.parts.map((p) => [p.name, p.from])).toEqual([["input", "fetched"], ["button", "fetched"], ["dialog", "fetched"], ["command", "fetched"]]);
+  expect(prepared.files).toContain("registry/new-york-v4/blocks/dashboard-01/data.json");
+  // A component is still a component.
+  expect((await preparePreview(dir, "@shadcn/command", { fetcher: fixtureFetcher().fetcher })).page).toBe(false);
+});

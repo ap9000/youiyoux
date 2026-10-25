@@ -22,6 +22,8 @@ import { importedPackages, packageName } from "./sources.ts";
 export const PREVIEW_DIR = "preview";
 /** Registry parts fetched for one preview besides the item itself. */
 export const MAX_FETCHED_PARTS = 3;
+/** The same for a block: a page is built from many parts (a sidebar, a card, a separator…). */
+export const MAX_BLOCK_PARTS = 16;
 
 /** One of the project's own components, by its registry name (`dialog`). */
 export interface ProjectPart {
@@ -56,6 +58,8 @@ export interface PreparedPreview {
   readonly dir: string;
   /** The item's main file, relative to `dir`. */
   readonly main: string;
+  /** Whether it is a block (a page, a chart card): drawn full width at a page's size rather than shrink-wrapped as a component. */
+  readonly page: boolean;
   readonly exports: readonly string[];
   /** Every file written, relative to `dir`. */
   readonly files: readonly string[];
@@ -140,7 +144,8 @@ function relativeSpec(fromFile: string, toFile: string): string {
 
 /** The item's main file: its first ui or component file, else its first script. */
 function mainFile(files: readonly string[], types: ReadonlyMap<string, string | undefined>): string | null {
-  return files.find((f) => /registry:(?:ui|component|hook|block)/.test(types.get(f) ?? "") && /\.(?:tsx|jsx|ts|js)$/.test(f)) ?? files.find((f) => /\.(?:tsx|jsx)$/.test(f)) ?? files.find((f) => /\.(?:ts|js)$/.test(f)) ?? null;
+  // A block's page puts its parts together (a sidebar inside its provider), so it is what to draw.
+  return files.find((f) => types.get(f) === "registry:page" && /\.(?:tsx|jsx)$/.test(f)) ?? files.find((f) => /registry:(?:ui|component|hook|block)/.test(types.get(f) ?? "") && /\.(?:tsx|jsx|ts|js)$/.test(f)) ?? files.find((f) => /\.(?:tsx|jsx)$/.test(f)) ?? files.find((f) => /\.(?:ts|js)$/.test(f)) ?? null;
 }
 
 /**
@@ -181,7 +186,7 @@ export async function preparePreview(cacheDir: string, id: string, options: Prev
 
   const parts: PreviewPart[] = [];
   const resolved = new Map<string, string>();
-  const max = options.maxParts ?? MAX_FETCHED_PARTS;
+  const max = options.maxParts ?? (entry.kind === "pattern" ? MAX_BLOCK_PARTS : MAX_FETCHED_PARTS);
   let fetched = 0;
   /** What the fetched parts declare: their packages are the install's too. */
   const partDeps: string[] = [];
@@ -254,6 +259,7 @@ export async function preparePreview(cacheDir: string, id: string, options: Prev
     key,
     dir,
     main,
+    page: entry.kind === "pattern",
     exports: exportNames(rewritten.get(main)!),
     files: [...rewritten.keys()],
     parts,

@@ -15,7 +15,8 @@
  * resolves elsewhere, or not at all, is refused with a sentence naming it.
  *
  * A fetched file is held tighter than the project's own code: it may import code only (.ts,
- * .tsx, .js, .jsx, .mjs, .cjs, and .css, which loads empty), without import attributes, and only
+ * .tsx, .js, .jsx, .mjs, .cjs, and .css, which loads empty) or a .json file of the preview's own
+ * (a block's data), without import attributes, and only
  * when it lands, by real path, in the preview, one of the project's alias targets, or the
  * project's or the hub's installed packages. So it cannot inline the project's .env, JSON or
  * text files, or another folder's node_modules, into the bundle.
@@ -79,7 +80,8 @@ const node = (name: string, props: Record<string, unknown> = {}, children: Array
  */
 export function composeOf(itemName: string, exports: readonly string[], label: string): ComposeNode | null {
   const components = exports.filter((e) => /^[A-Z]/.test(e));
-  const main = components.find((e) => e === PASCAL(itemName)) ?? components[0];
+  // A block's page has only its default export (`export default function Page`).
+  const main = components.find((e) => e === PASCAL(itemName)) ?? components[0] ?? (exports.includes("default") ? "default" : undefined);
   if (!main) return null;
   const has = (suffix: string): string | null => (components.includes(`${main}${suffix}`) ? `${main}${suffix}` : null);
   const [input, list, item, group, trigger, content, header, title, description, footer, menu] = ["Input", "List", "Item", "Group", "Trigger", "Content", "Header", "Title", "Description", "Footer", "Menu"].map(has);
@@ -123,6 +125,10 @@ export function composeOf(itemName: string, exports: readonly string[], label: s
   return node(main, {}, [label]);
 }
 
+/** The drawing is settled once nothing has changed for this long, or this long after it mounted at most. */
+export const QUIET_MS = 400;
+export const SETTLE_MAX_MS = 3000;
+
 const BOOTSTRAP = `
 const post = (message) => { try { parent.postMessage(Object.assign({ youi: "try" }, message), "*"); } catch (error) {} };
 const icon = () => React.createElement("svg", { xmlns: "http://www.w3.org/2000/svg", width: 16, height: 16, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 2, strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" }, React.createElement("path", { d: ${JSON.stringify(ICON_PATH)} }));
@@ -148,12 +154,14 @@ const measure = (() => {
     });
   };
 })();
-/** The markup it drew, portalled parts included, for the hub's static frames. */
-const snapshot = () => {
+/** The markup it drew, portalled parts included, for the hub's static frames; settled once it has stopped changing. */
+const snapshot = (settled) => {
   const parts = [container.innerHTML];
   for (const element of document.body.children) if (element !== container && element.tagName !== "SCRIPT") parts.push(element.outerHTML);
-  post({ type: "html", html: parts.join("") });
+  post({ type: "html", html: parts.join(""), settled: Boolean(settled) });
 };
+/** When the page last changed: a chart animating in, a list filling, keep it changing. */
+let changed = Date.now();
 function Live() {
   const [open, setOpen] = React.useState(true);
   const build = (part, key) => {
@@ -167,8 +175,11 @@ function Live() {
     post({ type: "ready" });
     measure();
     // Timers, not animation frames: a frame the hub keeps out of sight gets no animation frames.
-    setTimeout(snapshot, 60);
-    setTimeout(snapshot, 600);
+    // A first drawing at once, then the settled one: quiet for ${QUIET_MS} ms, or ${SETTLE_MAX_MS} ms on at most.
+    setTimeout(() => snapshot(false), 60);
+    const started = Date.now();
+    const settle = () => (Date.now() - changed >= ${QUIET_MS} || Date.now() - started >= ${SETTLE_MAX_MS} ? snapshot(true) : setTimeout(settle, 100));
+    setTimeout(settle, 100);
   }, []);
   React.useEffect(measure, [open]);
   return React.createElement(React.Fragment, null, build(COMPOSE, 0), COMPOSE.props.open === true && !open ? React.createElement("button", { type: "button", "data-youi-reopen": "", onClick: () => setOpen(true), style: { font: "inherit", padding: "6px 12px", border: "1px solid currentColor", borderRadius: 6, background: "transparent", color: "inherit", cursor: "pointer" } }, "Open again") : null);
@@ -179,7 +190,7 @@ class Boundary extends React.Component {
   componentDidCatch(error) { post({ type: "error", message: String((error && error.message) || error).split("\\n")[0] }); }
   render() { return this.state.failed ? null : this.props.children; }
 }
-new MutationObserver(measure).observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
+new MutationObserver(() => { changed = Date.now(); measure(); }).observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
 if (typeof ResizeObserver !== "undefined") new ResizeObserver(measure).observe(document.body);
 if (document.fonts) document.fonts.ready.then(measure, measure);
 addEventListener("keydown", (event) => { if (event.key === "Escape" && !event.defaultPrevented) post({ type: "escape" }); });
@@ -233,8 +244,11 @@ export async function bundlePreview(job: PreviewJob, options: { readonly bundleT
     /** Where a fetched file's imports may land: the preview, the project's alias targets, and the project's or the hub's installed packages. */
     const partFiles = new Set((job.projectParts ?? []).filter((file) => within(root, file)).map(realOf));
     const codeRoots = [dir, ...aliases.map(([, target]) => join(root, target)), join(root, "node_modules"), ...(fallback ? [join(fallback, "node_modules")] : [])];
+    const previewRoot = realOf(dir);
     const previewRefusal = (spec: string, path: string): string | null => {
-      if (!PREVIEW_CODE.test(path)) return `a preview may import code only (.ts, .tsx, .js, .jsx, .mjs, .cjs, .css), not ${basename(path)}`;
+      // A block's own data (dashboard-01's data.json) is part of what was fetched; JSON from anywhere else stays out.
+      if (/\.json$/i.test(path) && within(previewRoot, realOf(path))) return null;
+      if (!PREVIEW_CODE.test(path)) return `a preview may import code only (.ts, .tsx, .js, .jsx, .mjs, .cjs, .css, or its own .json), not ${basename(path)}`;
       const name = packageName(spec);
       if (name) for (const base of [root, fallback]) {
         const pkg = base ? packageUnderRoot(base, name) : null;

@@ -7,10 +7,10 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { Scheme } from "../../app/theme.tsx";
-import { requestPreview, setDrawn, useDrawn, type PreviewAnswer, type PreviewState } from "../../data/discover-preview.ts";
+import { requestPreview, setDrawn, settleDrawn, useDrawn, useSettled, type PreviewAnswer, type PreviewState } from "../../data/discover-preview.ts";
 import type { InventoryShape } from "../../data/types.ts";
 import { LIVE_SANDBOX, liveDocument } from "../inventory/try-live.tsx";
-import { DESK_WIDTH, FRAME_HEIGHT, type Tile } from "../inventory/Specimens.tsx";
+import { DESK_WIDTH, FRAME_HEIGHT, PAGE_HEIGHT, PAGE_WIDTH, type Tile } from "../inventory/Specimens.tsx";
 
 /** How long the hidden frame may take to draw before the preview says so. */
 const DRAW_TIMEOUT_MS = 15_000;
@@ -32,7 +32,7 @@ export function usePreview(id: string | null, project: string | null): PreviewSt
   return id && state?.id === id ? state.state : null;
 }
 
-type ProbeData = { youi?: unknown; type?: unknown; html?: unknown; message?: unknown };
+type ProbeData = { youi?: unknown; type?: unknown; html?: unknown; settled?: unknown; message?: unknown };
 
 /**
  * The candidate's bundle, run once in a hidden sandboxed frame (`allow-scripts`, no same origin)
@@ -43,7 +43,11 @@ export function DrawProbe({ answer, onFail }: { answer: PreviewAnswer; onFail: (
   const frameRef = useRef<HTMLIFrameElement>(null);
   const failed = useRef(onFail);
   failed.current = onFail;
-  const done = useDrawn(answer.id) !== null;
+  const drawn = useDrawn(answer.id);
+  const hasDrawn = useRef(false);
+  hasDrawn.current = drawn !== null;
+  // The frame stays until the drawing settles (a chart has finished animating in).
+  const done = useSettled(answer.id);
   useEffect(() => {
     if (done) return;
     const onMessage = (event: MessageEvent): void => {
@@ -51,11 +55,12 @@ export function DrawProbe({ answer, onFail }: { answer: PreviewAnswer; onFail: (
       if (!frame || event.source === null || event.source !== frame.contentWindow) return;
       const data = event.data as ProbeData | null;
       if (!data || data.youi !== "try") return;
-      if (data.type === "html" && typeof data.html === "string") setDrawn(answer.id, data.html);
+      if (data.type === "html" && typeof data.html === "string") setDrawn(answer.id, data.html, data.settled !== false);
       else if (data.type === "error") failed.current(`It failed when it ran (${typeof data.message === "string" ? data.message.slice(0, 200) : "an error"}); the listing stands.`);
     };
     window.addEventListener("message", onMessage);
-    const timer = setTimeout(() => failed.current(`It did not draw within ${DRAW_TIMEOUT_MS / 1000}s; the listing stands.`), DRAW_TIMEOUT_MS);
+    // Past the limit, a drawing that never settled is kept as it is; none at all is a failure.
+    const timer = setTimeout(() => (hasDrawn.current ? settleDrawn(answer.id) : failed.current(`It did not draw within ${DRAW_TIMEOUT_MS / 1000}s; the listing stands.`)), DRAW_TIMEOUT_MS);
     return () => {
       window.removeEventListener("message", onMessage);
       clearTimeout(timer);
@@ -69,10 +74,11 @@ export function DrawProbe({ answer, onFail }: { answer: PreviewAnswer; onFail: (
       aria-hidden
       tabIndex={-1}
       sandbox={LIVE_SANDBOX}
-      srcDoc={liveDocument("", answer.css.light, "light", answer.script)}
+      srcDoc={liveDocument("", answer.css.light, "light", answer.script, answer.page)}
       data-draw-probe={answer.id}
-      className="pointer-events-none fixed top-0 -left-[9999px] border-0 opacity-0"
-      style={{ width: DESK_WIDTH, height: FRAME_HEIGHT }}
+      // In the viewport, though unseen: a frame out of sight gets no animation frames, so a chart would never finish.
+      className="pointer-events-none fixed top-0 left-0 -z-10 border-0 opacity-0"
+      style={answer.page ? { width: PAGE_WIDTH, height: PAGE_HEIGHT } : { width: DESK_WIDTH, height: FRAME_HEIGHT }}
     />
   );
 }

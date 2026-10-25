@@ -56,6 +56,8 @@ describe("Discover previews (c1, c2)", () => {
     // Only the opened item, and the dialog it imports (the console's dialog lacks DialogHeader and others); its button is the console's own.
     expect(fixtures.requests.map((r) => r.url)).toEqual([ITEM("command"), ITEM("dialog")]);
     expect(body.fetched).toBe(true);
+    // A component, not a block: drawn as one, not as a page.
+    expect(body.page).toBe(false);
     expect(body.parts.map((p) => [p.name, p.from])).toEqual([["dialog", "fetched"], ["button", "project"]]);
     expect(body.license).toBe("MIT");
     expect(body.install?.command).toBe("npx shadcn add command");

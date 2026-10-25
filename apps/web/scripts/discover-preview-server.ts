@@ -88,6 +88,8 @@ export interface PreviewAnswer {
   readonly project: string;
   readonly script: string | null;
   readonly css: { readonly light: string; readonly dark: string } | null;
+  /** A block's page, drawn at a page's size rather than as one component. */
+  readonly page?: boolean;
   /** What the frame shows before its script draws: nothing yet. */
   readonly html: string;
   readonly compose: ComposeNode | null;
@@ -202,7 +204,7 @@ export function discoverPreviewMiddleware(snapshot: string, base = "/", options:
     signal.throwIfAborted();
     const fit = scanner.themeFit({ theme, item: prepared.sources, project: sources, cssVars: prepared.cssVars });
     const compose = scanner.composeOf(entry.name, prepared.exports, entry.title ?? entry.name);
-    const common = { id: entry.id, name: entry.name, entry, project: projectId, html: "", compose, fit, parts: prepared.parts.map(({ name, from, detail }) => ({ name, from, detail })), implicitDeps: prepared.implicit, install, license, fetched: requests > 0 };
+    const common = { id: entry.id, name: entry.name, entry, project: projectId, page: prepared.page, html: "", compose, fit, parts: prepared.parts.map(({ name, from, detail }) => ({ name, from, detail })), implicitDeps: prepared.implicit, install, license, fetched: requests > 0 };
     if (!compose) return { ...common, script: null, css: null, notes: [], error: `${entry.name} exports no component to draw`, ms: Math.round(performance.now() - started) };
     const [built, sheet] = await Promise.all([
       bundles.get(`${projectId}\0${prepared.key}\0${root}`, () => scanner.bundlePreview({ root, tsconfig, dir: prepared.dir, main: prepared.main, compose, fallback, projectParts: prepared.parts.flatMap((part) => (part.file ? [part.file] : [])) }, { signal })),

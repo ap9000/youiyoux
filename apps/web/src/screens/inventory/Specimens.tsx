@@ -288,9 +288,14 @@ export function documentHead(css: string, scheme: Scheme): string {
   return `<!doctype html><html lang="en"${dark ? ' class="dark"' : ""} data-theme="${scheme}" style="color-scheme:${scheme}"><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${framePolicy(css).replace(/"/g, "&quot;")}"><link rel="stylesheet" href="${escaped}">`;
 }
 
+/** A page (a Discover block) fills the frame as a page does; a component is wrapped to its own size. */
+export const PAGE_WIDTH = 1280;
+export const PAGE_HEIGHT = 768;
+export const specimenWrapper = (page = false): string => (page ? "display:block;min-height:100vh" : `display:inline-block;margin:${MARGIN}px`);
+
 /** The document a frame shows: static HTML and one stylesheet link, no script. */
-export function frameDocument(html: string, css: string, scheme: Scheme): string {
-  return `${documentHead(css, scheme)}</head><body><div id="youi-specimen" style="display:inline-block;margin:${MARGIN}px">${html}</div></body></html>`;
+export function frameDocument(html: string, css: string, scheme: Scheme, page = false): string {
+  return `${documentHead(css, scheme)}</head><body><div id="youi-specimen" style="${specimenWrapper(page)}">${html}</div></body></html>`;
 }
 
 /* ----------------------------------------------------------------- the state strip */
