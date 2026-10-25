@@ -33,7 +33,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createHash } from "node:crypto";
-import { join, resolve } from "node:path";
+import { dirname, join, posix, resolve } from "node:path";
 import { loadPackage } from "./packages.ts";
 import { isLocalHost, send } from "./query-server.ts";
 import { readTryIndex } from "./try-server.ts";
@@ -73,6 +73,7 @@ interface Fit {
 interface Scanner {
   loadInventoryTarget(root: string): Promise<{ files: readonly string[]; templates: readonly string[]; tsconfig: string; specimenCss: readonly string[] | null }>;
   composeOf(name: string, exports: readonly string[], label: string): ComposeNode | null;
+  tsconfigAliases(root: string, tsconfig?: string): Array<[string, string]>;
   bundlePreview(job: { root: string; tsconfig: string; dir: string; main: string; compose: ComposeNode; fallback?: string | null; projectParts?: readonly string[] }, options?: { signal?: AbortSignal }): Promise<Built>;
   buildProjectCss(root: string, files: readonly string[], stats: unknown, options: { tsconfig?: string; templates?: readonly string[]; override?: readonly string[] | null; extraSources?: readonly string[]; signal?: AbortSignal }): Promise<{ light: string | null; dark: string | null; warnings: string[] }>;
   newStats(): unknown;
@@ -137,10 +138,38 @@ class Refusal extends Error {
 
 const sentence = (error: unknown): string => (error instanceof Error ? error.message : String(error)).split("\n")[0]!;
 
-/** `parts/<name>` or a project component of that name: `src/components/ui/dialog.tsx`. */
-function projectParts(root: string, files: readonly string[], exportNames: (source: string) => string[]) {
+/** Whether a project file sits inside a package of its own (a package.json between it and the root): another package's code, not the project's. */
+function inNestedPackage(root: string, file: string): boolean {
+  for (let dir = dirname(file); dir !== "." && dir !== "/" && dir !== ""; dir = dirname(dir)) if (existsSync(join(root, dir, "package.json"))) return true;
+  return false;
+}
+
+/**
+ * Where the project keeps its ui components, as its components.json says (`aliases.ui`, through
+ * the tsconfig's paths): `src/components/ui`, or null when it says nothing usable.
+ */
+export function uiDirOf(root: string, aliases: ReadonlyArray<readonly [string, string]>): string | null {
+  let ui: unknown;
+  try {
+    ui = (JSON.parse(readFileSync(join(root, "components.json"), "utf8")) as { aliases?: { ui?: unknown } }).aliases?.ui;
+  } catch {
+    return null;
+  }
+  if (typeof ui !== "string") return null;
+  const alias = aliases.find(([key]) => ui.startsWith(key));
+  return alias ? posix.join(alias[1], ui.slice(alias[0].length)) : null;
+}
+
+/**
+ * The project's own component for a registry part (`button`): one in the folder its components.json
+ * names first, else any `components/[ui/]<name>`, never one inside a nested package (a design
+ * package of its own, say), which is not what the project's code imports.
+ */
+export function projectParts(root: string, files: readonly string[], exportNames: (source: string) => string[], uiDir: string | null = null) {
   return (name: string) => {
-    const file = files.find((f) => new RegExp(`(?:^|/)components/(?:ui/)?${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.(?:tsx|jsx|ts|js)$`).test(f));
+    const pattern = new RegExp(`(?:^|/)components/(?:ui/)?${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\.(?:tsx|jsx|ts|js)$`);
+    const found = files.filter((f) => pattern.test(f) && !inNestedPackage(root, f));
+    const file = (uiDir ? found.find((f) => posix.dirname(f) === uiDir) : undefined) ?? found[0];
     if (!file) return null;
     const absolute = join(root, file);
     try {
@@ -196,7 +225,7 @@ export function discoverPreviewMiddleware(snapshot: string, base = "/", options:
     };
     let prepared: Awaited<ReturnType<Discover["preparePreview"]>>;
     try {
-      prepared = await discover.preparePreview(cache, entry.id, { ...fetchOptions, projectPart: projectParts(root, target.files, discover.exportNames) });
+      prepared = await discover.preparePreview(cache, entry.id, { ...fetchOptions, projectPart: projectParts(root, target.files, discover.exportNames, uiDirOf(root, scanner.tsconfigAliases(root, target.tsconfig))) });
     } catch (error: unknown) {
       // An npm package, or an item that could not be fetched: the listing stands, without a drawing.
       return { id: entry.id, name: entry.name, entry, project: projectId, script: null, css: null, html: "", compose: null, fit: { themed: [], unthemed: [], type: { item: null, project: null }, radius: null }, notes: [], parts: [], implicitDeps: entry.install?.implicitDeps ?? [], error: sentence(error), install, license, fetched: requests > 0, ms: Math.round(performance.now() - started) };

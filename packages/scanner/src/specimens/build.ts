@@ -20,7 +20,7 @@ import { forcedStates } from "./states.ts";
 import { ICON_HTML, renderComponents, type ComponentRecipe, type RenderJob } from "./render.ts";
 
 export { SpecimenCache, defaultCacheDir, newStats, type SpecimenStats } from "./cache.ts";
-export { buildProjectCss, findStylesheets, forScheme, pageStylesheets, projectTailwind, SCHEMES, stylesheetLinks, tailwindCliBuilds, type Scheme, type SheetSource } from "./css.ts";
+export { buildProjectCss, findStylesheets, forScheme, pageStylesheets, projectTailwind, SCHEMES, stylesheetLinks, tailwindCliBuilds, tsconfigAliases, type Scheme, type SheetSource } from "./css.ts";
 export { escapingLinks, relativeInside, within } from "./contain.ts";
 export { BrowserBundleCache, BUNDLE_BUSY, BUNDLE_CACHE_LIMITS, bundleForBrowser, MAX_SIBLINGS, type BrowserBundle, type BrowserLook, type BrowserResult, type BundleCacheLimits, type TryMessage } from "./client.ts";
 export { forcedStates, STATE_CLASSES, STATES_MARKER, type ForcedState } from "./states.ts";

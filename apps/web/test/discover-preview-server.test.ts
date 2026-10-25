@@ -4,7 +4,7 @@
  * setting and drawn with its CSS, Tailwind's sources widened to the fetched files, and theme fit
  * says what could not be themed.
  */
-import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { syncIndex } from "../../../packages/discover/src/index.ts";
 import { fixtureFetcher } from "../../../packages/discover/test/fixture-fetcher.ts";
 import type { Fetcher } from "../../../packages/discover/src/index.ts";
-import { discoverPreviewMiddleware, type PreviewAnswer } from "../scripts/discover-preview-server.ts";
+import { discoverPreviewMiddleware, projectParts, uiDirOf, type PreviewAnswer } from "../scripts/discover-preview-server.ts";
 
 const SNAPSHOT = resolve(import.meta.dirname, "../snapshot");
 const ITEM = (name: string) => `https://ui.shadcn.com/r/styles/new-york-v4/${name}.json`;
@@ -199,5 +199,36 @@ describe("Discover previews (c1, c2)", () => {
       network.release();
       expect(json(await next).status).toBe(200);
     }, 60_000);
+  });
+});
+
+describe("the project's own component a preview borrows", () => {
+  test("never one inside a nested package; the folder components.json names first", () => {
+    const root = mkdtempSync(join(tmpdir(), "youi-project-parts-"));
+    try {
+      const write = (file: string, text: string): void => {
+        mkdirSync(join(root, file, ".."), { recursive: true });
+        writeFileSync(join(root, file), text);
+      };
+      write("package.json", "{}");
+      // A design package of its own, nested in the repository and not installed (as Toolroll's design/).
+      write("design/package.json", "{}");
+      write("design/src/components/ui/button.tsx", 'import { Slot } from "radix-ui";\nexport function Button() { return null; }\n');
+      write("src/legacy/components/button.tsx", "export function Button() { return null; }\n");
+      write("src/components/ui/button.tsx", "export function Button() { return null; }\nexport const buttonVariants = 1;\n");
+      write("components.json", JSON.stringify({ aliases: { ui: "@/components/ui" } }));
+      // In path order, the nested package's comes first.
+      const files = ["design/src/components/ui/button.tsx", "src/legacy/components/button.tsx", "src/components/ui/button.tsx"];
+      const names = (source: string): string[] => [...source.matchAll(/export (?:function|const) (\w+)/g)].map((m) => m[1]!);
+      const uiDir = uiDirOf(root, [["@/", "src/"]]);
+      expect(uiDir).toBe("src/components/ui");
+      expect(projectParts(root, files, names, uiDir)("button")).toMatchObject({ display: "src/components/ui/button.tsx", exports: ["Button", "buttonVariants"] });
+      // Without components.json: the first of the project's own, still never the nested package's.
+      expect(projectParts(root, files, names)("button")?.display).toBe("src/legacy/components/button.tsx");
+      expect(projectParts(root, ["design/src/components/ui/button.tsx"], names)("button")).toBeNull();
+      expect(uiDirOf(root, [])).toBeNull();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
