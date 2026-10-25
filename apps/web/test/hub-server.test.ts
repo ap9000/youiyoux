@@ -158,6 +158,14 @@ describe("the hub's own server", () => {
 
   test("only this machine is answered, and nothing outside the served directories", async () => {
     expect((await fetchFrom(port, "/", { host: "evil.example" })).status).toBe(403);
+    vi.stubEnv("YOUI_ALLOW_HOSTS", "my-mac.example.ts.net");
+    try {
+      // youiyoux ui --allow-host: that name, and only that name, besides this machine's.
+      expect((await fetchFrom(port, "/", { host: "my-mac.example.ts.net:8446" })).status).toBe(200);
+      expect((await fetchFrom(port, "/", { host: "my-mac.example.ts.net.evil.example" })).status).toBe(403);
+    } finally {
+      vi.unstubAllEnvs();
+    }
     expect((await fetchFrom(port, "/%2e%2e/%2e%2e/secret.ts")).body).not.toContain("export default");
     expect((await fetchFrom(port, "/kit/..%2f..%2fserved/secret.ts")).status).toBe(404);
   });

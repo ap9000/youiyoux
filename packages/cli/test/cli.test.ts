@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { loadProject } from "@youiyoux/scanner";
-import { builtHubPlan, generatedPrefix, hubPlan, loadOptions, main, previewsPlan, runHub } from "../src/index.ts";
+import { allowHosts, builtHubPlan, generatedPrefix, hubPlan, loadOptions, main, previewsPlan, runHub } from "../src/index.ts";
 
 const FIXTURE = join(import.meta.dirname, "../../scanner/test/fixtures/expo-app");
 const DEMO = join(import.meta.dirname, "../../../examples/demo-design");
@@ -228,6 +228,7 @@ describe("youi", () => {
     expect(builtHubPlan(tool, {}, "/tmp/hub-1")).toEqual({
       snapshot: null,
       server: ["/opt/pkg/dist/hub-server.js", "--dist", "/opt/pkg/dist/hub", "--kit", "/opt/pkg/dist/hub/kit", "--snapshot", "/opt/pkg/dist/hub-demo"],
+      env: {},
       watch: null,
     });
     const plan = builtHubPlan(tool, { design: "/data/acme-design", project: "/src/acme-app", port: "5180", api: "http://127.0.0.1:50123", watch: true }, "/tmp/hub-1");
@@ -237,6 +238,15 @@ describe("youi", () => {
     expect(plan.watch).toEqual([...plan.snapshot!, "--watch"]);
     // The package carries no demo project to watch.
     expect(() => builtHubPlan(tool, { watch: true }, "/tmp/hub-1")).toThrowError(/name it with --design or --project/);
+    // --allow-host reaches the hub's own server as the environment its endpoints read.
+    expect(builtHubPlan(tool, { allowHosts: ["my-mac.example.ts.net"] }, "/tmp/hub-1").env).toEqual({ YOUI_ALLOW_HOSTS: "my-mac.example.ts.net" });
+  });
+
+  test("ui --allow-host takes plain host names only, and passes them to the hub's servers", () => {
+    expect(allowHosts(["My-Mac.example.ts.net", "server"])).toEqual(["my-mac.example.ts.net", "server"]);
+    for (const bad of ["*", "*.ts.net", "https://my-mac.example.ts.net", "my-mac.example.ts.net:8446", "my-mac/x", "", "a..b", "-a.test"]) expect(() => allowHosts([bad]), bad).toThrowError(/--allow-host takes a host name/);
+    expect(hubPlan("/opt/youi", { project: "/src/acme-app", allowHosts: ["a.test", "b.test"] }).env).toEqual({ YOUI_HUB_SNAPSHOT: "/opt/youi/apps/web/.hub", YOUI_ALLOW_HOSTS: "a.test,b.test" });
+    expect(hubPlan("/opt/youi", {}).env).toEqual({});
   });
 
   test("ui runs the built hub when the tool's root has one, and removes the snapshot it made when the hub stops", async () => {

@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { syncIndex } from "../../../packages/discover/src/index.ts";
 import { fixtureFetcher } from "../../../packages/discover/test/fixture-fetcher.ts";
 import type { Fetcher } from "../../../packages/discover/src/index.ts";
@@ -134,6 +134,15 @@ describe("Discover previews (c1, c2)", () => {
     }
     expect(fixtures.requests).toEqual([]);
     expect(json(await call(middleware, ask, "localhost:5173", { origin: "http://localhost:5173", "sec-fetch-site": "same-origin" })).status).toBe(200);
+    // On a name given to youiyoux ui --allow-host, the hub's page there is its own; other sites still are not.
+    vi.stubEnv("YOUI_ALLOW_HOSTS", "my-mac.example.ts.net");
+    try {
+      expect(json(await call(middleware, ask, "my-mac.example.ts.net:8446", { origin: "https://my-mac.example.ts.net:8446", "sec-fetch-site": "same-origin" })).status).toBe(200);
+      expect(json(await call(middleware, ask, "my-mac.example.ts.net:8446", { origin: "https://evil.example" })).status).toBe(403);
+      expect(json(await call(middleware, ask, "evil.example:8446")).status).toBe(403);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   }, 60_000);
 
   describe("builds are bounded", () => {

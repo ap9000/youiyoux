@@ -22,7 +22,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { join, resolve } from "node:path";
 import { writeFileAtomic } from "@youiyoux/core";
 import { loadPackage } from "./packages.ts";
-import { isLocalHost, send } from "./query-server.ts";
+import { isHubHost, NOT_THIS_HOST, send } from "./query-server.ts";
 import { readTryIndex } from "./try-server.ts";
 
 export const THUMBS_PATH = "/__youi/discover-thumbs";
@@ -168,7 +168,7 @@ export function discoverThumbsMiddleware(snapshot: string, base = "/", options: 
   return async (req: IncomingMessage, res: ServerResponse, next: () => void): Promise<void> => {
     const url = new URL((req.url ?? "/").replace(base, "/"), "http://hub.local");
     if (!url.pathname.startsWith(THUMBS_PATH) || req.method !== "GET") return next();
-    if (!isLocalHost(req.headers.host)) return send(res, 403, { error: "Thumbnails answer this machine only (Host must be localhost)." });
+    if (!isHubHost(req.headers.host)) return send(res, 403, { error: `Thumbnails answer this machine only (${NOT_THIS_HOST}).` });
     const cache = resolve(options.cache ?? (await cacheDir()));
     const picture = /^\/__youi\/discover-thumbs\/([^/]+)\/([^/]+)$/.exec(url.pathname);
     if (picture) {

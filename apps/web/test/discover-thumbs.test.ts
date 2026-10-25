@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, describe, expect, test } from "vitest";
+import { afterAll, describe, expect, test, vi } from "vitest";
 import { currentThumbs, discoverThumbsMiddleware, emptyIndex, needsCapture, prunePictures, readThumbIndex, selectCandidates, thumbsDir, writeThumbIndex, type ThumbIndex } from "../scripts/discover-thumbs.ts";
 import { shortReason } from "../src/data/discover-thumbs.ts";
 
@@ -97,6 +97,14 @@ describe("the hub's thumbnail endpoints", () => {
 
   test("this machine only, and nothing but a picture's own name is read", async () => {
     expect((await ask("/__youi/discover-thumbs", "evil.example:5173")).status).toBe(403);
+    vi.stubEnv("YOUI_ALLOW_HOSTS", "my-mac.example.ts.net");
+    try {
+      // A name given to youiyoux ui --allow-host is answered; others still are not.
+      expect((await ask("/__youi/discover-thumbs?project=console", "my-mac.example.ts.net:8446")).status).toBe(200);
+      expect((await ask("/__youi/discover-thumbs", "evil.example:8446")).status).toBe(403);
+    } finally {
+      vi.unstubAllEnvs();
+    }
     for (const path of ["/__youi/discover-thumbs/console/..%2Ftry.json", "/__youi/discover-thumbs/..%2F..%2Fsnapshot/try.json", `/__youi/discover-thumbs/console/${KEY}.light.png`, "/__youi/discover-thumbs/console/index.json"]) expect((await ask(path)).status, path).toBe(400);
     expect((await ask("/__youi/discover-thumbs/console/ffffffffffffffff.dark.webp")).status).toBe(404);
     expect((await ask("/elsewhere")).body).toBe("next");

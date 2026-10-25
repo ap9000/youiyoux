@@ -2,15 +2,15 @@
  * /__youi/query: paged JSON over the local index on the hub's own server, for this machine only.
  */
 import { existsSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
-import type { IncomingMessage, ServerResponse } from "node:http";
+import { request, type IncomingMessage, type ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { closeSharedStores, ingestCatalog, syncIndex } from "../../../packages/discover/src/index.ts";
 import { fixtureFetcher } from "../../../packages/discover/test/fixture-fetcher.ts";
 import { inventoryRun, openSqlite } from "../../../packages/store/src/index.ts";
 import { inventory } from "../../../packages/store/test/fixtures.ts";
-import { isLocalHost, queryMiddleware } from "../scripts/query-server.ts";
+import { allowedHosts, isHubHost, isHubOrigin, queryMiddleware } from "../scripts/query-server.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "youi-query-server-"));
 const cache = join(scratch, "discover");
@@ -52,10 +52,28 @@ const ok = async (url: string) => {
 
 describe("/__youi/query", () => {
   test("only this machine: localhost, 127.0.0.1 and [::1] on any port; any other Host is a 403", async () => {
-    for (const host of ["localhost", "localhost:5173", "127.0.0.1:4173", "[::1]:5173", "LOCALHOST:1"]) expect(isLocalHost(host), host).toBe(true);
-    for (const host of [undefined, "", "evil.test", "localhost.evil.test", "127.0.0.1.nip.io:5173", "[::2]:5173", "localhost:5173:80"]) expect(isLocalHost(host), String(host)).toBe(false);
+    for (const host of ["localhost", "localhost:5173", "127.0.0.1:4173", "[::1]:5173", "LOCALHOST:1"]) expect(isHubHost(host, {}), host).toBe(true);
+    for (const host of [undefined, "", "evil.test", "localhost.evil.test", "127.0.0.1.nip.io:5173", "[::2]:5173", "localhost:5173:80"]) expect(isHubHost(host, {}), String(host)).toBe(false);
     const refused = await call("/__youi/query?kind=history", { host: "evil.test:5173" });
     expect(refused).toMatchObject({ status: 403 });
+  });
+
+  test("youiyoux ui --allow-host adds exactly the names it gave, and nothing that is not a plain host name", async () => {
+    const env = { YOUI_ALLOW_HOSTS: " My-Mac.example.ts.net,*,http://x.test,x.test:80,.,a..b" };
+    expect(allowedHosts(env)).toEqual(["my-mac.example.ts.net"]);
+    for (const host of ["my-mac.example.ts.net", "my-mac.example.ts.net:8446", "localhost:5173"]) expect(isHubHost(host, env), host).toBe(true);
+    for (const host of ["evil.test", "my-mac.example.ts.net.evil.test", "x.my-mac.example.ts.net", "x.test:80", "*"]) expect(isHubHost(host, env), host).toBe(false);
+    // The hub's own page, wherever it is answered; never another site, a null origin or a path.
+    for (const origin of ["http://localhost:5173", "https://my-mac.example.ts.net:8446", "https://my-mac.example.ts.net"]) expect(isHubOrigin(origin, env), origin).toBe(true);
+    for (const origin of ["https://evil.test", "null", "https://my-mac.example.ts.net.evil.test", "https://my-mac.example.ts.net/x", "ftp://my-mac.example.ts.net"]) expect(isHubOrigin(origin, env), origin).toBe(false);
+    expect(isHubOrigin("https://my-mac.example.ts.net", {})).toBe(false);
+    vi.stubEnv("YOUI_ALLOW_HOSTS", "my-mac.example.ts.net");
+    try {
+      expect(await call("/__youi/query?kind=history", { host: "my-mac.example.ts.net:8446" })).not.toMatchObject({ status: 403 });
+      expect(await call("/__youi/query?kind=history", { host: "evil.test:8446" })).toMatchObject({ status: 403 });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   test("other paths and methods pass through", async () => {
@@ -138,9 +156,10 @@ describe("/__youi/query", () => {
 
   test("the hub's dev server answers it, beside Try it", async () => {
     const { createServer } = await import("vite");
-    const previous = { YOUI_INDEX: process.env.YOUI_INDEX, YOUI_DISCOVER_CACHE: process.env.YOUI_DISCOVER_CACHE };
+    const previous = { YOUI_INDEX: process.env.YOUI_INDEX, YOUI_DISCOVER_CACHE: process.env.YOUI_DISCOVER_CACHE, YOUI_ALLOW_HOSTS: process.env.YOUI_ALLOW_HOSTS };
     process.env.YOUI_INDEX = index;
     process.env.YOUI_DISCOVER_CACHE = cache;
+    process.env.YOUI_ALLOW_HOSTS = "my-mac.example.ts.net";
     const server = await createServer({ configFile: resolve(import.meta.dirname, "../vite.config.ts"), logLevel: "silent", server: { port: 0, host: "127.0.0.1" }, optimizeDeps: { noDiscovery: true, include: [] } });
     try {
       await server.listen();
@@ -148,6 +167,19 @@ describe("/__youi/query", () => {
       const response = await fetch(`${origin}/__youi/query?kind=history&limit=1`);
       expect(response.status).toBe(200);
       expect(((await response.json()) as { rows: unknown[] }).rows).toHaveLength(1);
+      // Vite itself answers a name given to youiyoux ui --allow-host (as tailscale serve sends it), and no other.
+      const statusFor = (host: string): Promise<number> =>
+        new Promise((done, fail) => {
+          const { port } = new URL(origin);
+          request({ host: "127.0.0.1", port, path: "/", headers: { host } }, (res) => {
+            res.resume();
+            done(res.statusCode ?? 0);
+          })
+            .on("error", fail)
+            .end();
+        });
+      expect(await statusFor("my-mac.example.ts.net:8446")).toBe(200);
+      expect(await statusFor("evil.example:8446")).toBe(403);
     } finally {
       await server.close();
       for (const [key, value] of Object.entries(previous)) if (value === undefined) delete process.env[key]; else process.env[key] = value;

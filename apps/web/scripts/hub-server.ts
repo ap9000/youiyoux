@@ -1,6 +1,7 @@
 /**
  * The hub's own server for a built hub: what `youiyoux ui` runs from the npm package, where there
- * is no Vite. It serves, on this machine only (127.0.0.1, and a Host of this machine, else 403):
+ * is no Vite. It serves, on this machine only (127.0.0.1, and a Host of this machine or a name
+ * given to `youiyoux ui --allow-host` in YOUI_ALLOW_HOSTS, else 403):
  *
  * - the built hub (`--dist`: index.html, assets/), client routes falling back to index.html;
  * - the snapshot's public files (`--snapshot`: data/, previews/), which win over the build's;
@@ -23,7 +24,7 @@ import { discoverPreviewMiddleware } from "./discover-preview-server.ts";
 import { discoverThumbsMiddleware } from "./discover-thumbs.ts";
 import { buildFrame, FRAME_PATH, frameIsCurrent, KIT_PATH, type FrameBuild } from "./frame.ts";
 import { BASE_HEADERS, fileFor, IMMUTABLE, REVALIDATE, send, sendFile } from "./preview/server.ts";
-import { isLocalHost, queryMiddleware } from "./query-server.ts";
+import { isHubHost, NOT_THIS_HOST, queryMiddleware } from "./query-server.ts";
 import { tryMiddleware } from "./try-server.ts";
 
 export const EVENTS_PATH = "/__youi/events";
@@ -147,7 +148,7 @@ export async function createHubServer(options: HubServerOptions): Promise<{ serv
   };
 
   const server = createServer((req, res) => {
-    if (!isLocalHost(req.headers.host)) return send(res, 403, "this hub answers only on this machine");
+    if (!isHubHost(req.headers.host)) return send(res, 403, `this hub answers only on this machine (${NOT_THIS_HOST})`);
     let pathname: string;
     try {
       pathname = decodeURIComponent(new URL(req.url ?? "/", "http://hub.local").pathname);

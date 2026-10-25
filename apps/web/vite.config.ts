@@ -6,7 +6,7 @@ import type { Plugin } from "vite";
 import { defineConfig } from "vitest/config";
 import { discoverPreviewMiddleware } from "./scripts/discover-preview-server.ts";
 import { discoverThumbsMiddleware } from "./scripts/discover-thumbs.ts";
-import { queryMiddleware } from "./scripts/query-server.ts";
+import { allowedHosts, queryMiddleware } from "./scripts/query-server.ts";
 import { tryIndexDeny, tryMiddleware } from "./scripts/try-server.ts";
 
 const root = import.meta.dirname;
@@ -123,7 +123,9 @@ export default defineConfig({
   optimizeDeps: { entries: ["index.html", "preview.html"], include: ["@radix-ui/react-label", "@radix-ui/react-separator", "@radix-ui/react-slot", "@radix-ui/react-switch", "@radix-ui/react-tabs", "class-variance-authority", "clsx", "tailwind-merge", "lucide-react"] },
   // The rule editor's live API: `youiyoux ui --project` starts the service and sets YOUI_API to it.
   // try.json is for the Try it handler only, never served (scripts/try-server.ts).
-  server: { proxy: { "/api": { target: process.env.YOUI_API ?? "http://127.0.0.1:4417", changeOrigin: true } }, fs: { deny: tryIndexDeny(snapshot) } },
+  // Vite answers this machine's names only, plus those given to `youiyoux ui --allow-host`.
+  server: { allowedHosts: allowedHosts(), proxy: { "/api": { target: process.env.YOUI_API ?? "http://127.0.0.1:4417", changeOrigin: true } }, fs: { deny: tryIndexDeny(snapshot) } },
+  preview: { allowedHosts: allowedHosts() },
   build: {
     target: "es2022",
     modulePreload: { polyfill: false },

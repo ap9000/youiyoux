@@ -34,6 +34,8 @@ interface HubOptions {
   readonly inventory?: string;
   /** A `youiyoux detect` report (detect.json, screenshots beside it) for Library > Stack. */
   readonly detect?: string;
+  /** Names the hub answers to besides this machine's (`--allow-host`), as allowHosts checked them. */
+  readonly allowHosts?: readonly string[];
   /**
    * A workspace hub: the hub stays live, and this is given a way to snapshot another product of the
    * workspace into the open hub (the Workspace page opens one through /api/workspace).
@@ -55,6 +57,21 @@ const HUB_SNAPSHOT_DIR = ".hub";
 /** Vite's default; `youiyoux ui` pins it when it prints a link into the hub. */
 export const DEFAULT_HUB_PORT = "5173";
 
+/** A plain host name: labels of letters, digits and hyphens joined by dots (apps/web/scripts/query-server.ts reads the same). */
+const HOST_NAME = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
+
+/** `--allow-host` values, lowercased; anything but a plain host name (a scheme, a port, a wildcard, a path) is refused by name. */
+export function allowHosts(values: readonly string[]): string[] {
+  return values.map((value) => {
+    const name = value.trim().toLowerCase();
+    if (!HOST_NAME.test(name)) throw new Error(`--allow-host takes a host name, such as my-mac.example.ts.net, with no scheme, port or wildcard: ${JSON.stringify(value)} is not one`);
+    return name;
+  });
+}
+
+/** What tells the hub's servers the extra names (scripts/query-server.ts ALLOW_HOSTS_ENV). */
+const allowEnv = (options: HubOptions): Record<string, string> => (options.allowHosts?.length ? { YOUI_ALLOW_HOSTS: options.allowHosts.join(",") } : {});
+
 /** The system, product and reports named, as the snapshot script's arguments. */
 const named = (options: HubOptions): string[] => (["design", "project", "config", "root", "inventory", "detect"] as const).flatMap((key) => (options[key] ? [`--${key}`, resolve(options[key])] : []));
 
@@ -67,7 +84,7 @@ export function hubPlan(toolRoot: string, options: HubOptions): HubPlan {
   // --watch with nothing named keeps the demo project live (an inventory file or a detect report alone names no project).
   const watchesDemo = options.watch && !namesSystem(options);
   const flags = watchesDemo ? [...named(options), "--project", join(toolRoot, "examples/demo-app")] : named(options);
-  const api: Record<string, string> = options.api ? { YOUI_API: options.api } : {};
+  const api: Record<string, string> = { ...(options.api ? { YOUI_API: options.api } : {}), ...allowEnv(options) };
   if (flags.length === 0) return { web, snapshot: null, env: api, vite, watch: null };
   const out = join(web, HUB_SNAPSHOT_DIR);
   const snapshot = [join(web, "scripts/snapshot.ts"), "--out", out, ...flags];
@@ -84,6 +101,8 @@ interface BuiltHubPlan {
   readonly snapshot: readonly string[] | null;
   /** Arguments for the hub's own server. */
   readonly server: readonly string[];
+  /** The hub's own server's environment. */
+  readonly env: Readonly<Record<string, string>>;
   readonly watch: readonly string[] | null;
 }
 
@@ -94,7 +113,7 @@ export function builtHubPlan(toolRoot: string, options: HubOptions, out: string)
   const hub = join(toolRoot, BUILT_HUB);
   const snapshot = flags.length > 0 ? [join(toolRoot, "hub-snapshot.js"), "--out", out, ...flags] : null;
   const server = [join(toolRoot, "hub-server.js"), "--dist", hub, "--kit", join(hub, "kit"), "--snapshot", snapshot ? out : join(toolRoot, BUILT_DEMO), ...(snapshot ? ["--build-frame"] : []), ...(options.port ? ["--port", options.port] : []), ...(options.api ? ["--api", options.api] : []), ...(options.watch || options.workspace ? ["--live"] : [])];
-  return { snapshot, server, watch: options.watch && snapshot ? [...snapshot, "--watch"] : null };
+  return { snapshot, server, env: allowEnv(options), watch: options.watch && snapshot ? [...snapshot, "--watch"] : null };
 }
 
 function run(args: readonly string[], cwd: string, env: Readonly<Record<string, string>>, started?: (child: ChildProcess) => void): Promise<number> {
@@ -124,7 +143,7 @@ async function runBuiltHub(toolRoot: string, options: HubOptions): Promise<numbe
     }
     options.workspace?.((project) => run(builtHubPlan(toolRoot, { ...options, project }, out).snapshot!, process.cwd(), {}, (child) => children.add(child)));
     if (plan.watch) children.add(spawn(process.execPath, plan.watch, { cwd: process.cwd(), stdio: "inherit" }));
-    return await run(plan.server, process.cwd(), {}, (child) => children.add(child));
+    return await run(plan.server, process.cwd(), plan.env, (child) => children.add(child));
   } finally {
     stop();
     process.off("SIGINT", stop);

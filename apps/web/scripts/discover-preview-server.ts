@@ -35,7 +35,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createHash } from "node:crypto";
 import { dirname, join, posix, resolve } from "node:path";
 import { loadPackage } from "./packages.ts";
-import { isLocalHost, send } from "./query-server.ts";
+import { isHubHost, isHubOrigin, NOT_THIS_HOST, send } from "./query-server.ts";
 import { readTryIndex } from "./try-server.ts";
 
 const PREVIEW_PATH = "/__youi/discover-preview";
@@ -50,7 +50,6 @@ const MAX_BUILDS = 2;
 const MAX_QUEUED = 4;
 /** How long a stopped build may take to wind down before its 504 is sent anyway. */
 const STOP_GRACE_MS = 2_000;
-const LOOPBACK_ORIGIN = /^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/;
 
 /** The hub's own packages: what draws a candidate whose packages the project does not have. */
 const HUB_ROOT = resolve(import.meta.dirname, "..");
@@ -303,9 +302,9 @@ export function discoverPreviewMiddleware(snapshot: string, base = "/", options:
   return async (req: IncomingMessage, res: ServerResponse, next: () => void): Promise<void> => {
     const url = new URL((req.url ?? "/").replace(base, "/"), "http://hub.local");
     if (!url.pathname.startsWith(PREVIEW_PATH) || req.method !== "GET") return next();
-    if (!isLocalHost(req.headers.host)) return send(res, 403, { error: "Previews answer this machine only (Host must be localhost)." });
+    if (!isHubHost(req.headers.host)) return send(res, 403, { error: `Previews answer this machine only (${NOT_THIS_HOST}).` });
     const origin = req.headers.origin;
-    const crossSite = req.headers["sec-fetch-site"] === "cross-site" || (origin !== undefined && !LOOPBACK_ORIGIN.test(origin));
+    const crossSite = req.headers["sec-fetch-site"] === "cross-site" || (origin !== undefined && !isHubOrigin(origin));
     try {
       const asset = /^\/__youi\/discover-preview\/([0-9a-f]{16})\.(js|css)$/.exec(url.pathname);
       if (asset) {

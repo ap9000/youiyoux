@@ -21,7 +21,7 @@ import { installAgentRule, installClaudeMcp, installCodexMcp, mcpCommand, relati
 import { detectTarget, renderDetect } from "./detect.ts";
 import { renderDiscoverSearch, renderDiscoverShow, renderDiscoverSync } from "./discover.ts";
 import { startRuleEditor, type RuleEditor } from "./editor.ts";
-import { DEFAULT_HUB_PORT, runHub, runPreviews } from "./hub.ts";
+import { allowHosts, DEFAULT_HUB_PORT, runHub, runPreviews } from "./hub.ts";
 import { renderBrief, renderRequests } from "./requests.ts";
 import { exists, initProject } from "./init.ts";
 import { planAdoption, type AdoptPlan } from "./adopt.ts";
@@ -234,7 +234,7 @@ ${style.bold("Detect")}  ${style.dim("which UI libraries a repo or website uses 
                            (--out dir, default .youi/detect; the first run downloads Chromium, ~100 MB)
 
 ${style.bold("The hub")}
-  ui [--design dir] [--project dir] [--config file] [--root dir] [--port n] [--watch] [--state dir] [--inventory file] [--detect file]
+  ui [--design dir] [--project dir] [--config file] [--root dir] [--port n] [--watch] [--state dir] [--inventory file] [--detect file] [--allow-host name…]
                            open the web hub on a design system (default: the demo system; beside a
                            youi.workspace.json, its products, with Work > Workspace to switch);
                            --project adds that product's usage map (read-only scan) and the
@@ -243,6 +243,9 @@ ${style.bold("The hub")}
                            --watch re-scans on every save and updates the open hub;
                            --inventory shows a youiyoux inventory file on the Inventory page
                            --detect adds a youiyoux detect report to Library > Stack
+                           --allow-host (repeats) lets the hub also answer to that name, e.g. this
+                           machine's Tailscale name behind tailscale serve, to view it from another
+                           device; changes can still be made only on this machine
 
 ${style.bold("In a design repo")} ${style.dim("(the current directory, or --design)")}
   build [--out dir] [--prefix p]   build token outputs
@@ -301,6 +304,7 @@ const OPTIONS = {
   prefix: { type: "string" },
   light: { type: "string" },
   port: { type: "string" },
+  "allow-host": { type: "string", multiple: true },
   watch: { type: "boolean", default: false },
   expose: { type: "boolean", default: false },
   detect: { type: "string" },
@@ -1096,7 +1100,7 @@ async function startEditor(values: Values, port: string): Promise<RuleEditor | n
  * every product's status and opens another in the same hub. The rule editor is per product, so
  * Rules and Changes stay read-only here.
  */
-async function workspaceUi(values: Values): Promise<number | null> {
+async function workspaceUi(values: Values, hosts: { allowHosts?: string[] }): Promise<number | null> {
   if (values.design || values.project || values.config || values.root) return null;
   // Only a youi.workspace.json makes one: a repo holding products below (this tool's own, say) keeps its usual hub.
   const { roots, workspace } = await statusTargets(process.cwd());
@@ -1115,19 +1119,28 @@ async function workspaceUi(values: Values): Promise<number | null> {
   print(style.dim(`  ${plural(roots.length, "product")}; showing ${report.projects[first]!.root} first. Open the link: it carries this run's key, which switching needs`));
   print(style.dim("  Rules and Changes are read-only here; youiyoux ui --project <dir> opens the rule editor on one product"));
   try {
-    return await runHub(TOOL_ROOT, { project: roots[first]!, port, api: hub.url, workspace: (snapshot) => (open = snapshot), ...(values.inventory ? { inventory: values.inventory } : {}), ...(values.detect ? { detect: values.detect } : {}) });
+    return await runHub(TOOL_ROOT, { project: roots[first]!, port, api: hub.url, workspace: (snapshot) => (open = snapshot), ...(values.inventory ? { inventory: values.inventory } : {}), ...(values.detect ? { detect: values.detect } : {}), ...hosts });
   } finally {
     await hub.close();
   }
 }
 
+/** `--allow-host`, checked, and said once: who else can reach the hub, and what they cannot do. */
+function hostsOf(values: Values): { allowHosts?: string[] } {
+  if (!values["allow-host"]?.length) return {};
+  const names = allowHosts(values["allow-host"]);
+  print(style.dim(`  also answering to ${names.join(", ")}: whoever reaches this machine by that name can view the hub and open previews; changes can be made only on this machine`));
+  return { allowHosts: names };
+}
+
 async function cmdUi(values: Values): Promise<number> {
-  const workspace = await workspaceUi(values);
+  const hosts = hostsOf(values);
+  const workspace = await workspaceUi(values, hosts);
   if (workspace !== null) return workspace;
   const port = values.port ?? DEFAULT_HUB_PORT;
   const editor = await startEditor(values, port);
   try {
-    return await runHub(TOOL_ROOT, { ...(values.inventory ? { inventory: values.inventory } : {}), ...(values.design ? { design: values.design } : {}), ...(values.project ? { project: values.project } : {}), ...(values.config ? { config: values.config } : {}), ...(values.root ? { root: values.root } : {}), ...(values.detect ? { detect: values.detect } : {}), ...(values.port || editor ? { port } : {}), ...(editor ? { api: editor.url } : {}), watch: values.watch });
+    return await runHub(TOOL_ROOT, { ...(values.inventory ? { inventory: values.inventory } : {}), ...(values.design ? { design: values.design } : {}), ...(values.project ? { project: values.project } : {}), ...(values.config ? { config: values.config } : {}), ...(values.root ? { root: values.root } : {}), ...(values.detect ? { detect: values.detect } : {}), ...(values.port || editor ? { port } : {}), ...(editor ? { api: editor.url } : {}), watch: values.watch, ...hosts });
   } finally {
     await editor?.close();
   }

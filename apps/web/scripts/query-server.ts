@@ -12,9 +12,9 @@
  *   kind=history   project
  *
  * and `limit` (at most 100) and `offset` on every kind. Answers are read-only and never cached.
- * Only a request whose Host is this machine (localhost, 127.0.0.1, [::1], any port) is
- * answered; any other is a 403, so a page on another site cannot read the index through a
- * rebound DNS name. The store is the same one the CLI uses (YOUI_INDEX, DATABASE_URL, …); it
+ * Only a request whose Host is this machine (localhost, 127.0.0.1, [::1], any port), or a name
+ * given to `youiyoux ui --allow-host`, is answered; any other is a 403, so a page on another site
+ * cannot read the index through a rebound DNS name. The store is the same one the CLI uses (YOUI_INDEX, DATABASE_URL, …); it
  * is opened on the first request, never created by one. A static host has no such endpoint: the
  * hub's pages keep working from the snapshot's JSON chunks and never wait on this one.
  */
@@ -44,10 +44,38 @@ function hostName(host: string | undefined): string | null {
   return match ? match[1]! : null;
 }
 
-export function isLocalHost(host: string | undefined): boolean {
-  const name = hostName(host);
-  return name !== null && LOCAL_HOSTS.has(name);
+/** Where `youiyoux ui --allow-host` names the hosts the hub also answers to, comma-separated. */
+export const ALLOW_HOSTS_ENV = "YOUI_ALLOW_HOSTS";
+/** A plain host name: labels of letters, digits and hyphens joined by dots; no scheme, port or wildcard. */
+const HOST_NAME = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
+
+/** The names given to `youiyoux ui --allow-host` (YOUI_ALLOW_HOSTS); anything but a plain host name is ignored. */
+export function allowedHosts(env: NodeJS.ProcessEnv = process.env): string[] {
+  return (env[ALLOW_HOSTS_ENV] ?? "")
+    .split(",")
+    .map((name) => name.trim().toLowerCase())
+    .filter((name) => HOST_NAME.test(name));
 }
+
+/** Whether the hub answers a request with this Host: this machine, or a name given to `youiyoux ui --allow-host`. */
+export function isHubHost(host: string | undefined, env: NodeJS.ProcessEnv = process.env): boolean {
+  const name = hostName(host);
+  return name !== null && (LOCAL_HOSTS.has(name) || allowedHosts(env).includes(name));
+}
+
+/** Whether an Origin is the hub's own page: http(s) on a host isHubHost answers. */
+export function isHubOrigin(origin: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return false;
+  }
+  return (url.protocol === "http:" || url.protocol === "https:") && url.origin === origin && isHubHost(url.host, env);
+}
+
+/** The 403 sentence for a request to a host the hub does not answer. */
+export const NOT_THIS_HOST = "Host must be localhost, or a name given to youiyoux ui --allow-host";
 
 export interface QueryOptions {
   /** The store's SQLite file (default: as the CLI, from YOUI_INDEX / YOUI_DISCOVER_CACHE / XDG_CACHE_HOME). */
@@ -127,7 +155,7 @@ export function queryMiddleware(options: QueryOptions = {}, base = "/", load: ()
   return async (req: IncomingMessage, res: ServerResponse, next: () => void): Promise<void> => {
     const url = new URL((req.url ?? "/").replace(base, "/"), "http://hub.local");
     if (url.pathname !== QUERY_PATH || req.method !== "GET") return next();
-    if (!isLocalHost(req.headers.host)) return send(res, 403, { error: "the index answers this machine only (Host must be localhost)" });
+    if (!isHubHost(req.headers.host)) return send(res, 403, { error: `the index answers this machine only (${NOT_THIS_HOST})` });
     try {
       send(res, 200, await answer(url.searchParams.get("kind") ?? "", url.searchParams));
     } catch (error: unknown) {
