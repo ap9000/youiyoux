@@ -66,6 +66,15 @@ function Drawing({ answer, failure, scheme, onEscape }: { answer: PreviewAnswer;
     return (
       <div className="space-y-4">
         <Stage answer={{ ...answer, script, css }} scheme={scheme} onEscape={onEscape} />
+        <p className="-mt-2 text-caption text-muted" data-demo={answer.demo ?? undefined}>
+          {answer.demo ? (
+            <>
+              Its registry's own demo, <code className="font-mono">{answer.demo}</code>, in your theme.
+            </>
+          ) : (
+            `${answer.entry.source.ref?.split("/")[0] ?? "Its registry"} publishes no demo of it, so it is put together here from its own parts.`
+          )}
+        </p>
         {html && (
           <div className="space-y-1.5" data-drawn={answer.id}>
             <h4 className="text-small font-medium text-ink-2">Its states</h4>

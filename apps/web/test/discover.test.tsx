@@ -305,6 +305,8 @@ describe("an opened candidate, in the project's theme (c2)", () => {
     expect(stage().getAttribute("srcdoc")).toContain(`/__youi/discover-preview/${"b".repeat(16)}.css`);
     // Centred in the frame, not shrink-wrapped in its corner.
     expect(stage().getAttribute("srcdoc")).toMatch(/id="youi-specimen" style="display:flex;[^"]*justify-content:center/);
+    // Its registry publishes no demo of it (this answer has none): said, plainly.
+    expect(text(drawer)).toContain("@shadcn publishes no demo of it, so it is put together here from its own parts.");
     // Dark: the dark sheet, in a new document.
     fireEvent.click(within(drawer).getByRole("radio", { name: "Dark" }));
     expect(stage().dataset.stageFrame).toBe("dark");
@@ -348,6 +350,21 @@ describe("an opened candidate, in the project's theme (c2)", () => {
     act(() => void window.dispatchEvent(new MessageEvent("message", { source: stage().contentWindow, data: { youi: "try", type: "escape" } })));
     await waitFor(() => expect(screen.queryByTestId("candidate-drawer")).toBeNull());
     expect(window.location.search).not.toContain("open=");
+  });
+
+  test("drawn from its registry's own demo, it says so", async () => {
+    // An item no other test opens: previews are asked for once per candidate and page load.
+    const id = "lib:coss/component/command";
+    const base = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => (new URL(String(input), "http://localhost:5173/").pathname === "/__youi/discover-preview" ? json(answerFor(await entryOf(id), { demo: "@coss/p-command-1", compose: { export: "default", props: {}, children: [] } })) : base(input, init))));
+    show(`?q=command%20menu&open=${encodeURIComponent(id)}`);
+    const drawer = await screen.findByTestId("candidate-drawer");
+    const caption = await waitFor(() => {
+      const element = drawer.querySelector<HTMLElement>('[data-demo="@coss/p-command-1"]');
+      expect(element, text(drawer)).not.toBeNull();
+      return element!;
+    });
+    expect(text(caption)).toBe("Its registry's own demo, @coss/p-command-1, in your theme.");
   });
 
   test("a link to a candidate on no page shown still opens it: that one listing is asked for by id", async () => {

@@ -84,8 +84,17 @@ export async function candidateSource(cacheDir: string, id: string, options: Pol
   if (entry.source.kind !== "shadcn-registry") throw new Error("Source is available for registry items only");
   const ref = entry.source.ref!;
   const slash = ref.indexOf("/");
-  const name = ref.slice(slash + 1);
-  const registry = ref.slice(0, slash);
+  const source = await registryItemSource(cacheDir, ref.slice(0, slash), ref.slice(slash + 1), options);
+  if (source === "missing") throw new Error("HTTP 404");
+  return source;
+}
+
+/**
+ * One item of a registry by name, listed or not (a component's demo is never a listing): from its
+ * registry's item URL, cache-first under source/. "missing" when the registry answers that it has
+ * no such item (404 or 410); any other failure throws.
+ */
+export async function registryItemSource(cacheDir: string, registry: string, name: string, options: PoliteOptions = {}): Promise<CandidateSource | "missing"> {
   const template = registry === SHADCN.name ? "https://ui.shadcn.com/r/styles/new-york-v4/{name}.json" : (await directory(cacheDir)).find((r) => r.name === registry)?.template;
   if (!template) throw new Error("Registry URL is unavailable; run youiyoux discover sync");
   const url = registryUrl(template, name);
@@ -93,7 +102,10 @@ export async function candidateSource(cacheDir: string, id: string, options: Pol
   try { return JSON.parse(await readFile(file, "utf8")) as CandidateSource; } catch { /* fetch on first use */ }
   const client = new PoliteClient(options);
   const response = await client.json(url, false);
-  if (!response.ok) throw new Error(response.message);
+  if (!response.ok) {
+    if (response.status === 404 || response.status === 410) return "missing";
+    throw new Error(response.message);
+  }
   const item = parseRegistryItems([response.value]).items[0];
   if (!item || item.name !== name) throw new Error("Registry returned a different or invalid item");
   // What a preview needs besides the files: the declared packages, the parts it builds on and the theme variables it brings.

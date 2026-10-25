@@ -38,6 +38,8 @@ export interface PreviewAnswer {
   readonly compose: ComposeNode | null;
   /** A block's page: drawn at a page's size (desktop or phone) instead of as one component. */
   readonly page?: boolean;
+  /** The registry's own demo it is drawn from (`@magicui/animated-beam-demo`), or null. */
+  readonly demo?: string | null;
   readonly fit: ThemeFit;
   readonly notes: readonly string[];
   readonly parts: ReadonlyArray<{ readonly name: string; readonly from: string; readonly detail: string }>;

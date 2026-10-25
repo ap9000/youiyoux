@@ -5,8 +5,8 @@
  * The dev and preview servers (vite.config.ts) answer
  * `GET /__youi/discover-preview?id=<lib: id or ref>&project=<project id>` with
  *
- *   { id, project, script, css: { light, dark }, html, compose, fit, notes, parts, implicitDeps,
- *     missing, install, license, fetched }
+ *   { id, project, script, css: { light, dark }, html, compose, demo, fit, notes, parts,
+ *     implicitDeps, missing, install, license, fetched }
  *
  * or `{ error }` (a plain sentence). `script` and the two `css` are URLs under
  * `/__youi/discover-preview/<hash>.{js,css}`, served immutable. The request names ids only, never
@@ -15,7 +15,8 @@
  *
  * Opening a candidate is the one step that may use the network: its registry source is fetched
  * (cache-first, `show --source`'s path, each request timed out) into the Discover cache, with the
- * registry parts it imports (preparePreview). The fetched code never runs on this server: it is
+ * registry parts it imports (preparePreview), and for a component its registry's own demo when it
+ * has one (`demo`, drawn as written). The fetched code never runs on this server: it is
  * bundled (bundlePreview: fenced to the project root, its packages and that one preview
  * directory) and runs only in the hub's sandboxed frame. The project's CSS is built with
  * Tailwind's sources widened to the fetched files (so the classes they use exist in the project's
@@ -72,6 +73,7 @@ interface Fit {
 interface Scanner {
   loadInventoryTarget(root: string): Promise<{ files: readonly string[]; templates: readonly string[]; tsconfig: string; specimenCss: readonly string[] | null }>;
   composeOf(name: string, exports: readonly string[], label: string): ComposeNode | null;
+  composeDemo(demoName: string, exports: readonly string[]): ComposeNode | null;
   tsconfigAliases(root: string, tsconfig?: string): Array<[string, string]>;
   bundlePreview(job: { root: string; tsconfig: string; dir: string; main: string; compose: ComposeNode; fallback?: string | null; packages?: string | null; projectParts?: readonly string[] }, options?: { signal?: AbortSignal }): Promise<Built>;
   buildProjectCss(root: string, files: readonly string[], stats: unknown, options: { tsconfig?: string; templates?: readonly string[]; override?: readonly string[] | null; extraSources?: readonly string[]; signal?: AbortSignal }): Promise<{ light: string | null; dark: string | null; warnings: string[] }>;
@@ -90,6 +92,8 @@ export interface PreviewAnswer {
   readonly css: { readonly light: string; readonly dark: string } | null;
   /** A block's page, drawn at a page's size rather than as one component. */
   readonly page?: boolean;
+  /** The registry's own demo it is drawn from (`@magicui/animated-beam-demo`), or null. */
+  readonly demo?: string | null;
   /** What the frame shows before its script draws: nothing yet. */
   readonly html: string;
   readonly compose: ComposeNode | null;
@@ -235,8 +239,9 @@ export function discoverPreviewMiddleware(snapshot: string, base = "/", options:
     }
     signal.throwIfAborted();
     const fit = scanner.themeFit({ theme, item: prepared.sources, project: sources, cssVars: prepared.cssVars });
-    const compose = scanner.composeOf(entry.name, prepared.exports, entry.title ?? entry.name);
-    const common = { id: entry.id, name: entry.name, entry, project: projectId, page: prepared.page, html: "", compose, fit, parts: prepared.parts.map(({ name, from, detail }) => ({ name, from, detail })), implicitDeps: prepared.implicit, install, license, fetched: requests > 0 };
+    // Its registry's demo, as written, when it has one; else its own exports put together.
+    const compose = prepared.demo ? scanner.composeDemo(prepared.demo.slice(prepared.demo.indexOf("/") + 1), prepared.exports) : scanner.composeOf(entry.name, prepared.exports, entry.title ?? entry.name);
+    const common = { id: entry.id, name: entry.name, entry, project: projectId, page: prepared.page, demo: prepared.demo, html: "", compose, fit, parts: prepared.parts.map(({ name, from, detail }) => ({ name, from, detail })), implicitDeps: prepared.implicit, install, license, fetched: requests > 0 };
     if (!compose) return { ...common, script: null, css: null, notes: [], error: `${entry.name} exports no component to draw`, ms: Math.round(performance.now() - started) };
     const packages = join(cache, discover.PREVIEW_PACKAGES_DIR);
     const bundle = (): Promise<Built> => bundles.get(`${projectId}\0${prepared.key}\0${root}`, () => scanner.bundlePreview({ root, tsconfig, dir: prepared.dir, main: prepared.main, compose, fallback, packages, projectParts: prepared.parts.flatMap((part) => (part.file ? [part.file] : [])) }, { signal }));

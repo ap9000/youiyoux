@@ -57,8 +57,10 @@ describe("Discover previews (c1, c2)", () => {
     const { status, body } = json(await call(middleware, "/__youi/discover-preview?id=%40shadcn%2Fcommand&project=console"));
     expect(body.error).toBeNull();
     expect(status).toBe(200);
-    // Only the opened item, and the dialog it imports (the console's dialog lacks DialogHeader and others); its button is the console's own.
-    expect(fixtures.requests.map((r) => r.url)).toEqual([ITEM("command"), ITEM("dialog")]);
+    // Only the opened item, its demo by the names demos have (it has none here), and the dialog it imports (the console's
+    // dialog lacks DialogHeader and others); its button is the console's own.
+    expect(fixtures.requests.map((r) => r.url)).toEqual([ITEM("command"), ITEM("command-demo"), ITEM("command-demo-1"), ITEM("p-command-1"), ITEM("dialog")]);
+    expect(body.demo).toBeNull();
     expect(body.fetched).toBe(true);
     // A component, not a block: drawn as one, not as a page.
     expect(body.page).toBe(false);
@@ -98,7 +100,7 @@ describe("Discover previews (c1, c2)", () => {
       const middleware = discoverPreviewMiddleware(SNAPSHOT, "/", { npm: noNpm, cache: fresh, fetcher: fixtures.fetcher });
       const [a, b] = await Promise.all([call(middleware, "/__youi/discover-preview?id=%40shadcn%2Finput&project=console"), call(middleware, "/__youi/discover-preview?id=%40shadcn%2Finput&project=console")]);
       expect(json(a).body.script).toBe(json(b).body.script);
-      expect(fixtures.requests.map((r) => r.url)).toEqual([ITEM("input")]);
+      expect(fixtures.requests.map((r) => r.url)).toEqual([ITEM("input"), ITEM("input-demo"), ITEM("input-demo-1"), ITEM("p-input-1")]);
     } finally {
       rmSync(fresh, { recursive: true, force: true });
     }

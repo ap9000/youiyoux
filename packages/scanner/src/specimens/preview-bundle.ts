@@ -25,7 +25,8 @@
  *
  * What it renders: the item's main component built from its own exports (composeOf): a command
  * menu gets an input and a group of items, tabs get triggers and panels, a dialog opens, anything
- * else gets its title as its label. The bundle posts, by message, the same box, ready, escape and
+ * else gets its title as its label; a component drawn from its registry's demo is that demo, as
+ * written (composeDemo). The bundle posts, by message, the same box, ready, escape and
  * error as Try it, and once it has drawn, its markup (`html`), which the hub draws statically in
  * its own CSS for the light, dark and state frames.
  */
@@ -127,6 +128,17 @@ export function composeOf(itemName: string, exports: readonly string[], label: s
   }
   if (/input|textarea/i.test(main)) return node(main, { placeholder: label });
   return node(main, {}, [label]);
+}
+
+/**
+ * What to draw from a registry's demo of an item: the demo itself, as its authors wrote it, with no
+ * props or children of ours. Its default export, else the component named after it
+ * (`animated-beam-demo` → AnimatedBeamDemo), else one whose name ends in Demo, else its first.
+ */
+export function composeDemo(demoName: string, exports: readonly string[]): ComposeNode | null {
+  const components = exports.filter((e) => /^[A-Z]/.test(e));
+  const main = exports.includes("default") ? "default" : (components.find((e) => e === PASCAL(demoName)) ?? components.find((e) => e.endsWith("Demo")) ?? components[0]);
+  return main ? node(main) : null;
 }
 
 /** The drawing is settled once nothing has changed for this long, or this long after it mounted at most. */

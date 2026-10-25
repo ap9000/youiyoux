@@ -3,7 +3,7 @@ import { mkdtempSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, test } from "vitest";
-import { bundlePreview, composeOf } from "../src/index.ts";
+import { bundlePreview, composeDemo, composeOf } from "../src/index.ts";
 
 const CONSOLE = join(import.meta.dirname, "fixtures/inventory/console");
 const scratch = mkdtempSync(join(tmpdir(), "youi-preview-bundle-"));
@@ -23,6 +23,12 @@ test("a compound is drawn with the parts its kind needs; a plain component with 
   expect(composeOf("tabs", ["Tabs", "TabsList", "TabsTrigger", "TabsContent"], "Tabs")).toMatchObject({ props: { defaultValue: "account" }, children: [{ export: "TabsList" }, { export: "TabsContent" }, { export: "TabsContent" }] });
   expect(composeOf("dialog", ["Dialog", "DialogTrigger", "DialogContent", "DialogTitle"], "Dialog")).toMatchObject({ props: { open: true } });
   expect(composeOf("button", ["Button", "buttonVariants"], "Button")).toEqual({ export: "Button", props: {}, children: ["Button"] });
+  // A registry's demo is drawn as written: its default export, else the one named after it or ending in Demo; nothing of ours added.
+  expect(composeDemo("animated-beam-demo", ["default", "Circle"])).toEqual({ export: "default", props: {}, children: [] });
+  expect(composeDemo("command-demo", ["helper", "CommandDemo"])).toEqual({ export: "CommandDemo", props: {}, children: [] });
+  expect(composeDemo("3d-card-demo", ["ThreeDCardDemo"])).toEqual({ export: "ThreeDCardDemo", props: {}, children: [] });
+  expect(composeDemo("p-accordion-1", ["Particle"])).toEqual({ export: "Particle", props: {}, children: [] });
+  expect(composeDemo("x-demo", ["helper"])).toBeNull();
   expect(composeOf("input", ["Input"], "Email")).toEqual({ export: "Input", props: { placeholder: "Email" }, children: [] });
   expect(composeOf("x", ["helper"], "X")).toBeNull();
   // Parts that must sit inside another: an accordion's triggers in its items, a menubar's in its menus.

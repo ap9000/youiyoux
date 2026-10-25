@@ -11,12 +11,18 @@
  * part's own registry source, fetched the same way, at most MAX_FETCHED_PARTS per preview; a
  * part past the cap or missing from the index is listed as not fetched. Nothing here runs the
  * fetched code: it is only written, read and rewritten as text.
+ *
+ * A component is drawn from its registry's own demo when it has one (findDemo): the demo is what
+ * its authors wrote to show it working, with the props, data and neighbours it needs. Demos are
+ * not listings; they are found by the names registries give them (`<name>-demo` on shadcn, Magic
+ * UI and Aceternity, or `<name>-demo-1`; `p-<name>-1` on coss), and one is used only when it builds
+ * on the component.
  */
-import { lstat, rm } from "node:fs/promises";
+import { lstat, readFile, rm } from "node:fs/promises";
 import { join, posix } from "node:path";
 import { sha256, writeFileAtomic } from "@youiyoux/core";
 import type { PoliteOptions } from "./http.ts";
-import { candidateSource, findListing, type CandidateSource } from "./on-demand.ts";
+import { candidateSource, findListing, registryItemSource, type CandidateSource } from "./on-demand.ts";
 import { importedPackages, packageName } from "./sources.ts";
 
 export const PREVIEW_DIR = "preview";
@@ -24,6 +30,12 @@ export const PREVIEW_DIR = "preview";
 export const MAX_FETCHED_PARTS = 3;
 /** The same for a block: a page is built from many parts (a sidebar, a card, a separator…). */
 export const MAX_BLOCK_PARTS = 16;
+/** The same for a component drawn from its demo: a demo shows it among a few others (a card with a label and an input). */
+export const MAX_DEMO_PARTS = 8;
+/** Where what was learnt about each component's demo is kept: its name, or that it has none. */
+export const DEMOS_DIR = "demos";
+/** A component found to have no demo is asked about again after this long. */
+export const DEMO_RECHECK_MS = 7 * 24 * 60 * 60 * 1000;
 
 /** One of the project's own components, by its registry name (`dialog`). */
 export interface ProjectPart {
@@ -73,6 +85,58 @@ export interface PreparedPreview {
   readonly cssVars: CandidateSource["cssVars"] | null;
   /** The item's source text, for reading its classes (theme fit). */
   readonly sources: readonly string[];
+  /** The registry's own demo it is drawn from (`@magicui/animated-beam-demo`), or null when it has none. */
+  readonly demo: string | null;
+}
+
+/** The names registries give a component's demo, in the order they are tried. */
+export function demoNames(name: string): string[] {
+  return [`${name}-demo`, `${name}-demo-1`, `p-${name}-1`];
+}
+
+/** Whether a registry item builds on the component `name`: it lists it among its registry dependencies, or imports it. */
+export function buildsOn(source: Pick<CandidateSource, "files" | "registryDependencies">, name: string): boolean {
+  const last = (spec: string): string => (spec.split(/[?#]/)[0] ?? "").replace(/\/+$/, "").split("/").at(-1)!.replace(/\.json$/, "");
+  if ((source.registryDependencies ?? []).some((dep) => last(dep) === name)) return true;
+  return source.files.some((file) => typeof file.content === "string" && [...file.content.matchAll(SPECIFIER)].some((m) => m[3]!.startsWith("@/") && last(m[3]!) === name));
+}
+
+/**
+ * The registry's own demo of the component `registry/name`, fetched (cache-first) by the names
+ * demos are given, and kept only when it builds on the component. What was learnt is recorded
+ * under demos/, a demo or that there is none, so a second open asks nothing; "none" is asked
+ * again after DEMO_RECHECK_MS. A registry that cannot be reached is not recorded.
+ */
+export async function findDemo(cacheDir: string, registry: string, name: string, options: PoliteOptions = {}): Promise<{ name: string; source: CandidateSource } | null> {
+  const record = join(cacheDir, DEMOS_DIR, `${sha256(`${registry}/${name}`).slice(0, 32)}.json`);
+  const now = (options.now?.() ?? new Date()).getTime();
+  const known = JSON.parse(await readFile(record, "utf8").catch(() => "null")) as { demo: string | null; checkedAt: string } | null;
+  const fresh = known !== null && (known.demo !== null || now - Date.parse(known.checkedAt) < DEMO_RECHECK_MS);
+  for (const candidate of fresh ? (known?.demo ? [known.demo] : []) : demoNames(name)) {
+    let source: CandidateSource | "missing";
+    try {
+      source = await registryItemSource(cacheDir, registry, candidate, options);
+    } catch {
+      // Not reached, or not a registry item: drawn without a demo this time, and asked again next time.
+      return null;
+    }
+    if (source === "missing" || !buildsOn(source, name)) continue;
+    await assertNoLinks(cacheDir, `${DEMOS_DIR}/${record.slice(record.lastIndexOf("/") + 1)}`);
+    if (known?.demo !== candidate) await writeFileAtomic(record, `${JSON.stringify({ demo: candidate, checkedAt: new Date(now).toISOString() })}\n`);
+    return { name: candidate, source };
+  }
+  if (!fresh) {
+    await assertNoLinks(cacheDir, `${DEMOS_DIR}/${record.slice(record.lastIndexOf("/") + 1)}`);
+    await writeFileAtomic(record, `${JSON.stringify({ demo: null, checkedAt: new Date(now).toISOString() })}\n`);
+  }
+  return null;
+}
+
+/** A demo's own file to draw: the one named after it, else its first file that is not the component's. */
+function demoMain(files: readonly string[], demo: string, component: readonly string[]): string | null {
+  const base = (f: string): string => posix.basename(f).replace(/\.(?:tsx?|jsx?)$/, "");
+  const code = files.filter((f) => /\.(?:tsx|jsx)$/.test(f));
+  return code.find((f) => base(f) === demo) ?? code.find((f) => !component.includes(f)) ?? null;
 }
 
 /**
@@ -165,7 +229,9 @@ export async function preparePreview(cacheDir: string, id: string, options: Prev
   const ref = entry.source.ref;
   const registry = ref.slice(0, ref.indexOf("/"));
   const source = await candidateSource(cacheDir, id, options);
-  const key = sha256(source.url).slice(0, 16);
+  // A component is drawn from its registry's own demo when there is one; a block is a page already.
+  const demo = entry.kind === "pattern" ? null : await findDemo(cacheDir, registry, ref.slice(registry.length + 1), options);
+  const key = sha256(demo ? `${source.url}\n${demo.source.url}` : source.url).slice(0, 16);
   const root = join(cacheDir, PREVIEW_DIR);
   const dir = join(root, key);
   await assertNoLinks(cacheDir, `${PREVIEW_DIR}/${key}`);
@@ -187,16 +253,18 @@ export async function preparePreview(cacheDir: string, id: string, options: Prev
     return written;
   };
   const own = add(source.files, "");
-  const main = mainFile(own, types);
+  // The demo's files beside the component's, so its imports of the component resolve to this copy.
+  const shown = demo ? add(demo.source.files, "").filter((f) => !own.includes(f)) : [];
+  const main = demo ? demoMain([...shown, ...own], demo.name, own) : mainFile(own, types);
   if (!main) throw new Error(`${ref} has no component code to draw (its registry entry lists no script files)`);
 
   const parts: PreviewPart[] = [];
   const resolved = new Map<string, string>();
-  const max = options.maxParts ?? (entry.kind === "pattern" ? MAX_BLOCK_PARTS : MAX_FETCHED_PARTS);
+  const max = options.maxParts ?? (entry.kind === "pattern" ? MAX_BLOCK_PARTS : demo ? MAX_DEMO_PARTS : MAX_FETCHED_PARTS);
   let fetched = 0;
   /** What the fetched parts declare: their packages are the install's too. */
   const partDeps: string[] = [];
-  const queue = [...own];
+  const queue = [...own, ...shown];
   /** The registry each part's files came from: a shadcn part's own `@/registry/…` imports are shadcn's. */
   const registryOf = new Map<string, string>();
   while (queue.length > 0) {
@@ -269,7 +337,7 @@ export async function preparePreview(cacheDir: string, id: string, options: Prev
   }
 
   const packages = [...new Set([...rewritten.values()].flatMap((t) => importedPackages(t)))].sort();
-  const declared = [...new Set([...(source.dependencies ?? entry.install?.npm ?? []), ...partDeps].map(packageName))].sort();
+  const declared = [...new Set([...(source.dependencies ?? entry.install?.npm ?? []), ...(demo?.source.dependencies ?? []), ...partDeps].map(packageName))].sort();
   const sources = [...rewritten.entries()].filter(([f]) => /\.(?:tsx|jsx|ts|js)$/.test(f)).map(([, t]) => t);
   return {
     id: entry.id,
@@ -286,5 +354,6 @@ export async function preparePreview(cacheDir: string, id: string, options: Prev
     implicit: packages.filter((p) => !declared.includes(p)),
     cssVars: source.cssVars ?? null,
     sources,
+    demo: demo ? `${registry}/${demo.name}` : null,
   };
 }
