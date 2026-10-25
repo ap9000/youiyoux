@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readdir, readFile, realpath, rm, symlink, writeFile } f
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, test } from "vitest";
-import { buildSpecimens, configuredSpecimenCss, DISCOVER_LISTINGS_MAX, libraries, readInventory, readSource, sheetReport, usageFiles, writeDetect, writeDiscover, writeInventory, writeScreens } from "../scripts/snapshot.ts";
+import { buildSpecimens, configuredSpecimenCss, DISCOVER_LISTINGS_MAX, inventoryRoots, libraries, readInventory, readSource, sheetReport, usageFiles, writeDetect, writeDiscover, writeInventory, writeScreens } from "../scripts/snapshot.ts";
 import type { InventoryChunk, InventoryIndex } from "../src/data/types.ts";
 
 const TOOL = resolve(import.meta.dirname, "../../..");
@@ -225,6 +225,23 @@ describe("snapshot screens", () => {
       const written = await readdir(data);
       expect(written).toHaveLength(5);
       expect(new Set(usageFiles([{ project: "app", file: "app.usage.json", screens }]))).toEqual(new Set(["app.usage.json", ...written]));
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("snapshot --inventory: where its projects are", () => {
+  test("a root is found from the file's own directory first, even where the directory it is read in has a project too", async () => {
+    const dir = await realpath(await mkdtemp(join(tmpdir(), "youi-inventory-roots-")));
+    try {
+      await writeFile(join(dir, "package.json"), "{}");
+      await mkdir(join(dir, "app"));
+      await writeFile(join(dir, "app/package.json"), "{}");
+      const inventory = { projects: [{ id: "here", root: "." }, { id: "app", root: "app" }, { id: "gone", root: "nowhere" }] } as unknown as Parameters<typeof inventoryRoots>[0];
+      // The tests run in the tool's repository, which has a package.json of its own: "." must not land there.
+      expect(existsSync(join(process.cwd(), "package.json"))).toBe(true);
+      expect(Object.fromEntries(inventoryRoots(inventory, join(dir, "inventory.json")))).toEqual({ here: dir, app: join(dir, "app") });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

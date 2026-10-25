@@ -1,6 +1,6 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { InventoryReport } from "@youiyoux/core";
 import { hubPlan, main } from "../src/index.ts";
@@ -40,6 +40,21 @@ describe("youiyoux inventory", () => {
         expect(family!.examples.every((e) => e.file.length > 0 && e.line > 0)).toBe(true);
         expect(new Set(family!.examples.map((e) => e.project))).toEqual(new Set(["console", "site"]));
       }
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("a project's root is named from the file the inventory is written to, so it is found wherever the file is read", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "youi-inventory-root-"));
+    try {
+      const file = join(dir, "reports/inventory.json");
+      expect(await main(["inventory", "--project", CONSOLE, "--out", file])).toBe(0);
+      const root = InventoryReport.parse(JSON.parse(await readFile(file, "utf8"))).projects[0]!.root;
+      expect(root).toBe(relative(join(dir, "reports"), CONSOLE));
+      expect(resolve(join(dir, "reports"), root)).toBe(CONSOLE);
+      // The summary still names it from here.
+      expect(out).toContain(`in ${relative(process.cwd(), CONSOLE)}`);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

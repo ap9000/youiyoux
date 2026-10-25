@@ -391,8 +391,8 @@ const notRecorded = (error: unknown): string => style.warn(`! not recorded in th
 /** The projects `inventory` and `gaps` read: --project repeats; default: the current directory. */
 const inventoryDirs = (values: InventoryValues): string[] => (values.project?.length ? values.project : [process.cwd()]);
 
-/** Those projects' inventory, with --include and --exclude. */
-const scanInventory = (values: InventoryValues, dirs: readonly string[]): Promise<InventoryReport> => buildInventory(dirs, { ...(values.include ? { include: values.include } : {}), ...(values.exclude ? { exclude: values.exclude } : {}) });
+/** Those projects' inventory, with --include and --exclude; each project's root is named from `from` (the file it is written to). */
+const scanInventory = (values: InventoryValues, dirs: readonly string[], from = process.cwd()): Promise<InventoryReport> => buildInventory(dirs, { ...(values.include ? { include: values.include } : {}), ...(values.exclude ? { exclude: values.exclude } : {}), cwd: from });
 
 /** The store this run reads and records into (DATABASE_URL, else a SQLite file), and the directory its sources are noted in. */
 function indexOf(values: Pick<Values, "cache">): { path: string; home: string } {
@@ -423,12 +423,13 @@ async function cmdGaps(values: InventoryValues): Promise<number> {
 async function cmdInventory(values: InventoryValues): Promise<number> {
   if (values.history) return cmdHistory(values, []);
   const dirs = inventoryDirs(values);
-  const report = await scanInventory(values, dirs);
   const out = resolve(values.out ?? join(dirs[0]!, ".youi/inventory.json"));
+  // Roots are named from the file's own directory, so whoever reads the file finds the projects wherever it was made.
+  const report = await scanInventory(values, dirs, dirname(out));
   await writeFileAtomic(out, `${JSON.stringify(report, null, 2)}\n`);
   const recorded = await recordScan(values, report, out);
   if (values.json) json(report);
-  else print([renderInventory(report, relative(process.cwd(), out).startsWith("..") ? out : relative(process.cwd(), out)), recorded].join("\n"));
+  else print([renderInventory(report, relative(process.cwd(), out).startsWith("..") ? out : relative(process.cwd(), out), (root) => relative(process.cwd(), resolve(dirname(out), root)) || "."), recorded].join("\n"));
   return 0;
 }
 

@@ -450,10 +450,11 @@ export function writeInventory(dataDir: string, inventory: InventoryReport, spec
 
 /**
  * Where each inventoried project is on this machine: its root as the inventory names it, from
- * the directory the inventory was made in (the tool's root for the default) or the file's own.
+ * the file's own directory (where `youiyoux inventory` names it from), else the directory it is
+ * read in (an older file named roots from where it was made); the tool's root for the default.
  */
 export function inventoryRoots(inventory: InventoryReport, path: string | undefined): Map<string, string> {
-  const bases = path ? [process.cwd(), dirname(resolve(path))] : [TOOL];
+  const bases = path ? [dirname(resolve(path)), process.cwd()] : [TOOL];
   const roots = new Map<string, string>();
   for (const project of inventory.projects) {
     const root = bases.map((base) => resolve(base, project.root)).find((dir) => existsSync(join(dir, "package.json")));

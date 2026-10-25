@@ -54,7 +54,7 @@ function storyNext(report: InventoryReport, outFile: string): string | null {
   return `Next: see the stories beside their real uses with ${open}`;
 }
 
-export function renderInventory(report: InventoryReport, outFile: string): string {
+export function renderInventory(report: InventoryReport, outFile: string, rootLabel: (root: string) => string = (root) => root): string {
   const projects = report.projects.map((p) => p.id);
   // Stories are authored states, not uses: the counts are of real looks.
   const uses = report.looks.filter((l) => !l.story);
@@ -92,7 +92,7 @@ export function renderInventory(report: InventoryReport, outFile: string): strin
   );
   for (const project of report.projects) {
     const status = project.status === "complete" ? style.ok("complete") : style.warn(`partial: ${plural(project.failed.length, "file")} not fully read`);
-    lines.push(style.dim(`${project.id}: ${plural(project.files, "file")} in ${project.root}${project.commit ? ` at ${project.commit.slice(0, 12)}` : ""} · routes: ${project.routes} · `) + status);
+    lines.push(style.dim(`${project.id}: ${plural(project.files, "file")} in ${rootLabel(project.root)}${project.commit ? ` at ${project.commit.slice(0, 12)}` : ""} · routes: ${project.routes} · `) + status);
     for (const f of project.failed) lines.push(style.warn(`  ! ${f.file}: ${f.reason}`));
     for (const w of project.warnings) lines.push(style.warn(`  ! ${w}`));
   }
