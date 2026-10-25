@@ -24,11 +24,11 @@
  * near the screen.
  */
 import { clsx } from "clsx";
-import { ArrowLeft, ArrowRight, Compass, LayoutGrid, List } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronDown, Compass, LayoutGrid, List, SlidersHorizontal, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useSearch } from "wouter";
 import { type Scheme, useTheme } from "../../app/theme.tsx";
-import { descriptionOf, parseQuery, PER_PAGE, queryToSearch, searchDiscover, signalLines, SORT_LABELS, SORT_SUMMARIES, SORTS, sourceOf, type DiscoverHit, type DiscoverPage, type DiscoverQuery, type DiscoverSort } from "../../data/discover.ts";
+import { descriptionOf, findDiscoverHit, parseQuery, PER_PAGE, queryToSearch, searchDiscover, signalLines, SORT_LABELS, SORT_SUMMARIES, SORTS, sourceOf, type DiscoverHit, type DiscoverPage, type DiscoverQuery, type DiscoverSort } from "../../data/discover.ts";
 import { hasPictures, shortReason, useThumbs, type Thumbs } from "../../data/discover-thumbs.ts";
 import type { InventorySource } from "../../data/inventory-source.ts";
 import type { Resource } from "../../data/store.ts";
@@ -113,7 +113,25 @@ export function DiscoverView({ inventory }: { inventory?: Resource<InventorySour
     setOpened((list) => (list.includes(hit.id) ? list : [...list, hit.id]));
     setQuery({ ...query, open: hit.id });
   };
+  // A link that opens a candidate on no page shown (shared, or bookmarked): that one listing, asked for once the page has loaded.
+  const [, setLinked] = useState<string | null>(null);
+  useEffect(() => {
+    const id = query.open;
+    if (!id || listings.status === "loading" || seen.current.has(id)) return;
+    const controller = new AbortController();
+    findDiscoverHit(id, { signal: controller.signal }).then(
+      (hit) => {
+        if (!hit) return;
+        seen.current.set(hit.id, hit);
+        setLinked(hit.id);
+      },
+      () => undefined,
+    );
+    return () => controller.abort();
+  }, [query.open, listings.status]);
   const openHit = query.open ? (seen.current.get(query.open) ?? null) : null;
+  // On a phone the facets fold away behind one button, so the results are on the first screen.
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const closeHit = useCallback(() => setQuery({ ...latest.current, open: null }), [setQuery]);
 
   const set = (patch: Partial<DiscoverQuery>): void => setQuery({ ...query, ...patch, offset: 0, open: null });
@@ -146,7 +164,10 @@ export function DiscoverView({ inventory }: { inventory?: Resource<InventorySour
             )}
 
             <div className="grid gap-6 md:grid-cols-[13rem_minmax(0,1fr)]">
-              <Facets query={query} page={page} onChange={set} />
+              <div className="min-w-0 space-y-3">
+                <FilterToggle query={query} open={filtersOpen} onToggle={() => setFiltersOpen((o) => !o)} onChange={set} />
+                <Facets query={query} page={page} onChange={set} folded={!filtersOpen} />
+              </div>
               <section aria-labelledby="discover-results" className="min-w-0 space-y-3">
                 <h2 id="discover-results" className="sr-only">
                   Results
@@ -198,14 +219,57 @@ function FacetGroup({ label, value, options, onChange, disabled }: { label: stri
   );
 }
 
-function Facets({ query, page, onChange }: { query: DiscoverQuery; page: DiscoverPage | null; onChange: (patch: Partial<DiscoverQuery>) => void }) {
+type Filter = "role" | "source" | "licence" | "style";
+
+/** A filter that is on, in words: `button`, `@coss`, `Known licence`, `Headless`. */
+function filterLabel(key: Filter, value: string): string {
+  if (key === "licence") return value === "known" ? "Known licence" : "Unknown licence";
+  if (key === "style") return value === "headless" ? "Headless" : "Styled";
+  return key === "role" ? value.replace(/-/g, " ") : value;
+}
+
+/** On a phone: the one button the facets fold behind, with how many are on, and each one that is on, to take off without unfolding. */
+function FilterToggle({ query, open, onToggle, onChange }: { query: DiscoverQuery; open: boolean; onToggle: () => void; onChange: (patch: Partial<DiscoverQuery>) => void }) {
+  const on = (["role", "source", "licence", "style"] as const).flatMap((key) => (query[key] ? [{ key, value: query[key] }] : []));
+  return (
+    <div className="space-y-2 md:hidden" data-filter-toggle>
+      <Button variant="outline" size="sm" aria-expanded={open} aria-controls="discover-facets" onClick={onToggle} className="h-11 w-full justify-between">
+        <span className="flex items-center gap-2">
+          <SlidersHorizontal aria-hidden />
+          Filters
+          {on.length > 0 && (
+            <>
+              {" "}
+              <span className="tabular text-muted">· {on.length} on</span>
+            </>
+          )}
+        </span>
+        <ChevronDown aria-hidden className={clsx("transition-transform", open && "rotate-180")} />
+      </Button>
+      {!open && on.length > 0 && (
+        <ul className="flex flex-wrap gap-1.5" aria-label="Filters on">
+          {on.map(({ key, value }) => (
+            <li key={key}>
+              <button type="button" onClick={() => onChange({ [key]: null })} aria-label={`Take off ${filterLabel(key, value)}`} className="inline-flex min-h-11 items-center gap-1.5 rounded-sm border border-line px-2.5 text-small text-ink-2 hover:bg-raised">
+                {filterLabel(key, value)}
+                <X aria-hidden className="size-3.5 text-muted" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function Facets({ query, page, onChange, folded }: { query: DiscoverQuery; page: DiscoverPage | null; onChange: (patch: Partial<DiscoverQuery>) => void; folded: boolean }) {
   const facets = page?.facets ?? { role: {}, source: {}, licence: {}, style: {} };
   const entries = (record: Readonly<Record<string, number>>) => Object.entries(record);
   const keep = (list: Array<{ value: string; label: string; count: number | null }>, selected: string | null) => (selected && !list.some((o) => o.value === selected) ? [...list, { value: selected, label: selected.replace(/-/g, " "), count: null }] : list);
   const unknown = facets.licence.unknown ?? 0;
   const known = entries(facets.licence).reduce((n, [k, c]) => n + (k === "unknown" ? 0 : c), 0);
   return (
-    <aside aria-label="Facets" className="space-y-4 max-md:space-y-3" data-facets>
+    <aside id="discover-facets" aria-label="Facets" className={clsx("space-y-4 max-md:space-y-3", folded && "max-md:hidden")} data-facets data-folded={folded || undefined}>
       <FacetGroup label="Role" value={query.role} onChange={(role) => onChange({ role })} options={keep(entries(facets.role).slice(0, ROLE_FACETS).map(([value, count]) => ({ value, label: value.replace(/-/g, " "), count })), query.role)} />
       <FacetGroup label="Source" value={query.source} onChange={(source) => onChange({ source })} options={keep(entries(facets.source).map(([value, count]) => ({ value, label: value, count })), query.source)} />
       <FacetGroup

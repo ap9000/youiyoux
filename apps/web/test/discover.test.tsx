@@ -18,7 +18,7 @@ import { buildInventory } from "../../../packages/scanner/src/inventory/inventor
 import { discoverFixture } from "../scripts/discover-fixture.ts";
 import { queryMiddleware } from "../scripts/query-server.ts";
 import { writeDiscover } from "../scripts/snapshot.ts";
-import { compact, descriptionOf, parseQuery, queryToSearch, resetDiscoverSource, searchListings, signalLines, sortListings, type ListingsFile } from "../src/data/discover.ts";
+import { compact, descriptionOf, findDiscoverHit, parseQuery, queryToSearch, resetDiscoverSource, searchListings, signalLines, sortListings, type ListingsFile } from "../src/data/discover.ts";
 import { cleanMarkup, onlyCustomProperties, previewRequests, setDrawn, type PreviewAnswer } from "../src/data/discover-preview.ts";
 import { resetThumbs, type Thumbs } from "../src/data/discover-thumbs.ts";
 import { memorySource, type InventorySource } from "../src/data/inventory-source.ts";
@@ -225,6 +225,29 @@ describe("search by need (c1)", () => {
     expect(queryToSearch(parseQuery("?licence=bogus&style=nope&q=a"))).toBe("?q=a");
   });
 
+  test("on a phone the facets fold behind one Filters button that says how many are on; each one on comes off without unfolding", async () => {
+    show("?q=command%20menu&source=%40coss&licence=known");
+    await waitFor(() => expect(card("lib:coss/component/command")).not.toBeNull());
+    const facets = document.querySelector<HTMLElement>("[data-facets]")!;
+    const toggle = within(document.querySelector<HTMLElement>("[data-filter-toggle]")!).getByRole("button", { name: /^Filters/ });
+    // Folded below the md breakpoint (CSS), always shown above it.
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle.getAttribute("aria-controls")).toBe(facets.id);
+    expect(facets.className).toContain("max-md:hidden");
+    expect(text(toggle)).toBe("Filters · 2 on");
+    const on = screen.getByRole("list", { name: "Filters on" });
+    expect([...on.querySelectorAll("button")].map(text)).toEqual(["@coss", "Known licence"]);
+    fireEvent.click(within(on).getByRole("button", { name: "Take off Known licence" }));
+    await waitFor(() => expect(window.location.search).not.toContain("licence="));
+    expect(window.location.search).toContain("source=%40coss");
+    expect(text(toggle)).toBe("Filters · 1 on");
+    // Unfolded: the facets show, and the list of what is on gives way to them.
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(facets.className).not.toContain("max-md:hidden");
+    expect(screen.queryByRole("list", { name: "Filters on" })).toBeNull();
+  });
+
   test("a static host has no /__youi/query: the snapshot's listings are searched in memory, and still nothing is fetched for a candidate", async () => {
     const listings = JSON.parse(readFileSync(join(scratch, "data", listingsFile), "utf8")) as ListingsFile;
     vi.stubGlobal(
@@ -261,22 +284,47 @@ describe("search by need (c1)", () => {
 });
 
 describe("an opened candidate, in the project's theme (c2)", () => {
-  test("opening asks for that one item; it is drawn light and dark with the state strip and Try it, and says what could not be themed", async () => {
+  test("opening asks for that one item; it runs at once on a stage, light or dark, its states drawn still beneath, and says what could not be themed", async () => {
     show("?q=command%20menu");
     await waitFor(() => expect(card("lib:shadcn/component/command")).not.toBeNull());
     expect(previewCalls()).toEqual([]);
     fireEvent.click(within(card("lib:shadcn/component/command")).getByRole("button", { name: /^Preview Command in your theme/ }));
     const drawer = await screen.findByTestId("candidate-drawer");
+    expect(drawer.dataset.size).toBe("large");
     await waitFor(() => expect(previewCalls()).toEqual(["/__youi/discover-preview?id=lib%3Ashadcn%2Fcomponent%2Fcommand"]));
-    // The bundle runs only in a hidden frame sandboxed allow-scripts, never same origin.
+    // It runs on the stage at once, before anything is drawn still: the bundle, sandboxed allow-scripts only, never same origin.
+    const stage = (): HTMLIFrameElement => {
+      const frame = drawer.querySelector<HTMLIFrameElement>("iframe[data-stage-frame]");
+      expect(frame).not.toBeNull();
+      return frame!;
+    };
+    await waitFor(() => stage());
+    expect(drawer.querySelector("[data-drawn]")).toBeNull();
+    expect(stage().getAttribute("sandbox")).toBe("allow-scripts");
+    expect(stage().getAttribute("srcdoc")).toMatch(/<script src="[^"]+\/__youi\/discover-preview\/a{16}\.js">/);
+    expect(stage().getAttribute("srcdoc")).toContain(`/__youi/discover-preview/${"b".repeat(16)}.css`);
+    // Centred in the frame, not shrink-wrapped in its corner.
+    expect(stage().getAttribute("srcdoc")).toMatch(/id="youi-specimen" style="display:flex;[^"]*justify-content:center/);
+    // Dark: the dark sheet, in a new document.
+    fireEvent.click(within(drawer).getByRole("radio", { name: "Dark" }));
+    expect(stage().dataset.stageFrame).toBe("dark");
+    expect(stage().getAttribute("srcdoc")).toContain(`/__youi/discover-preview/${"c".repeat(16)}.css`);
+    // An error it hits is said, from that frame only; Run it again starts a fresh document and clears it.
+    act(() => void window.dispatchEvent(new MessageEvent("message", { source: window, data: { youi: "try", type: "error", message: "forged" } })));
+    expect(drawer.querySelector("[data-stage-error]")).toBeNull();
+    const first = stage();
+    act(() => void window.dispatchEvent(new MessageEvent("message", { source: first.contentWindow, data: { youi: "try", type: "error", message: "x is not a function" } })));
+    expect(text(drawer.querySelector("[data-stage-error]")!)).toMatch(/^It failed when it ran \(x is not a function\)/);
+    fireEvent.click(within(drawer).getByRole("button", { name: "Run it again" }));
+    expect(stage()).not.toBe(first);
+    expect(drawer.querySelector("[data-stage-error]")).toBeNull();
+    // The hidden frame learns what it draws; that comes back by message, from that frame only, and is cleaned before use.
     const probe = await waitFor(() => {
       const frame = document.querySelector<HTMLIFrameElement>('iframe[data-draw-probe="lib:shadcn/component/command"]');
       expect(frame).not.toBeNull();
       return frame!;
     });
     expect(probe.getAttribute("sandbox")).toBe("allow-scripts");
-    expect(probe.getAttribute("srcdoc")).toMatch(/<script src="[^"]+\/__youi\/discover-preview\/a{16}\.js">/);
-    // What it drew comes back by message, from that frame only, and is cleaned before use.
     act(() => void window.dispatchEvent(new MessageEvent("message", { source: window, data: { youi: "try", type: "html", html: "<button>forged</button>" } })));
     expect(drawer.querySelector("[data-drawn]")).toBeNull();
     act(() => setDrawn("lib:shadcn/component/command", '<div class="rounded-md bg-popover" onclick="alert(1)"><input placeholder="Type a command"><script>alert(2)</script><a href="javascript:alert(3)">x</a></div>'));
@@ -285,50 +333,95 @@ describe("an opened candidate, in the project's theme (c2)", () => {
       expect(element).not.toBeNull();
       return element!;
     });
-    const tiles = [...drawn.querySelectorAll<HTMLElement>("[data-tile]")];
-    expect(tiles.map((t) => t.dataset.tile)).toEqual(["lib:shadcn/component/command:light", "lib:shadcn/component/command:dark"]);
-    const light = tiles[0]!.querySelector("iframe")!.getAttribute("srcdoc")!;
-    expect(light).toContain(`/__youi/discover-preview/${"b".repeat(16)}.css`);
-    expect(light).not.toMatch(/<script|onclick|javascript:/);
-    expect(tiles[1]!.querySelector("iframe")!.getAttribute("srcdoc")).toContain(`/__youi/discover-preview/${"c".repeat(16)}.css`);
-    expect(within(tiles[0]!).getByRole("button", { name: /^Try / })).toBeTruthy();
-    expect(drawn.querySelector("[data-strip]")).not.toBeNull();
+    // Its states, drawn still: no script, nothing active from the markup; no second pair of light and dark tiles.
+    const strip = drawn.querySelector<HTMLElement>("[data-strip]")!;
+    expect(strip).not.toBeNull();
+    const still = strip.querySelector("iframe")!;
+    expect(still.getAttribute("sandbox")).not.toContain("allow-scripts");
+    expect(still.getAttribute("srcdoc")).not.toMatch(/<script|onclick|javascript:/);
+    expect(drawer.querySelectorAll("[data-tile]")).toHaveLength(0);
     expect(text(drawer.querySelector('[data-fit="themed"]')!)).toContain("rounded-md draws with your --radius-md: 8px");
     expect(text(drawer.querySelector('[data-fit="unthemed"]')!)).toContain("16px type (text-base), project uses 14px (text-sm)");
     expect(text(drawer.querySelector("[data-implicit]")!)).toBe("Imports without declaring: lucide-react (an install would need it too)");
     expect(cleanMarkup('<img src="https://tracker.example/x.png" style="background:url(https://x)"><style>@import url(https://x)</style>')).toBe('<img src="">');
+    // Escape pressed inside it (the frame keeps the key) closes the drawer, as Escape anywhere in it does.
+    act(() => void window.dispatchEvent(new MessageEvent("message", { source: stage().contentWindow, data: { youi: "try", type: "escape" } })));
+    await waitFor(() => expect(screen.queryByTestId("candidate-drawer")).toBeNull());
+    expect(window.location.search).not.toContain("open=");
+  });
+
+  test("a link to a candidate on no page shown still opens it: that one listing is asked for by id", async () => {
+    const id = "lib:shadcn/component/command";
+    show(`?q=date%20picker&open=${encodeURIComponent(id)}`);
+    const drawer = await screen.findByTestId("candidate-drawer", {}, { timeout: 5000 });
+    expect(within(drawer).getByRole("heading", { name: "Command" })).toBeTruthy();
+    expect(card(id)).toBeNull();
+    expect(calls.some((c) => c.startsWith("/__youi/query") && c.includes(`id=${encodeURIComponent(id)}`))).toBe(true);
+    // One the index does not have opens nothing, and says nothing wrong.
+    cleanup();
+    show(`?open=${encodeURIComponent("lib:nope/component/x")}`);
+    await waitFor(() => expect(calls.some((c) => c.includes("id=lib%3Anope"))).toBe(true));
+    expect(screen.queryByTestId("candidate-drawer")).toBeNull();
+  });
+
+  test("on a static host the link is found in the snapshot's listings", async () => {
+    const listings = JSON.parse(readFileSync(join(scratch, "data", listingsFile), "utf8")) as ListingsFile;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input), "http://localhost:5173/");
+        if (url.pathname === "/__youi/query") return new Response("<!doctype html>", { status: 200, headers: { "Content-Type": "text/html" } });
+        if (url.pathname === "/data/manifest.json") return json({ schema: "youiyoux.manifest/v1", source: { commit: null }, systems: [], discover: listingsFile });
+        if (url.pathname === `/data/${listingsFile}`) return json(listings);
+        return new Response("not found", { status: 404 });
+      }),
+    );
+    const hit = await findDiscoverHit("lib:coss/component/command");
+    expect(hit).toMatchObject({ id: "lib:coss/component/command", name: "command" });
+    expect(hit).not.toHaveProperty("text");
+    expect(await findDiscoverHit("lib:nope/component/x")).toBeNull();
   });
 });
 
 describe("an opened block, drawn as the page it is", () => {
   const id = "lib:shadcn/pattern/dashboard-01";
-  test("one large frame at a desktop's size, then a phone's, light or dark, live on Try it and full size in a dialog; the hidden frame stays until the drawing settles", async () => {
+  test("one large frame at a desktop's size, running at once; still on Live off, a phone's width, light or dark, and full size in a dialog; the hidden frame stays until the drawing settles", async () => {
     // jsdom lays nothing out: the drawer is 640px wide here.
     const width = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(640);
     try {
       show(`?open=${encodeURIComponent(id)}`);
       const drawer = await screen.findByTestId("candidate-drawer");
-      // The page is laid out in a page-sized frame, at full width, not shrink-wrapped.
+      const frame = (): HTMLIFrameElement => drawer.querySelector<HTMLIFrameElement>("iframe[data-page-frame]")!;
+      // It runs at once, before anything is drawn still: the bundle, sandboxed allow-scripts only, scaled to the drawer (640 / 1280).
+      await waitFor(() => expect(frame()).not.toBeNull());
+      expect(frame().dataset.live).toBe("true");
+      expect(frame().getAttribute("sandbox")).toBe("allow-scripts");
+      expect(frame().getAttribute("srcdoc")).toMatch(/<script src="[^"]+\/__youi\/discover-preview\/a{16}\.js">/);
+      expect(frame().dataset.pageFrame).toBe("desktop");
+      expect(frame().style.transform).toBe("scale(0.5)");
+      expect(within(drawer).getByRole("button", { name: "Live" }).getAttribute("aria-pressed")).toBe("true");
+      // The page is laid out in a page-sized hidden frame, at full width, not shrink-wrapped.
       const probe = await waitFor(() => {
-        const frame = document.querySelector<HTMLIFrameElement>(`iframe[data-draw-probe="${id}"]`);
-        expect(frame).not.toBeNull();
-        return frame!;
+        const element = document.querySelector<HTMLIFrameElement>(`iframe[data-draw-probe="${id}"]`);
+        expect(element).not.toBeNull();
+        return element!;
       });
       expect([probe.style.width, probe.style.height]).toEqual(["1280px", "768px"]);
       expect(probe.getAttribute("srcdoc")).toContain('id="youi-specimen" style="display:block;min-height:100vh"');
-      // A first drawing shows at once; the frame stays until the settled one (a chart still animating in).
+      // Live off: the still page, which waits for the drawing.
+      fireEvent.click(within(drawer).getByRole("button", { name: "Live" }));
+      expect(frame()).toBeNull();
+      expect(text(drawer)).toContain("Drawing the still page…");
+      // A first drawing shows at once; the hidden frame stays until the settled one (a chart still animating in).
       act(() => setDrawn(id, '<main class="flex min-h-svh"><aside>Sidebar</aside><section>Cards</section></main>', false));
-      const frame = (): HTMLIFrameElement => drawer.querySelector<HTMLIFrameElement>("iframe[data-page-frame]")!;
       await waitFor(() => expect(frame()).not.toBeNull());
       expect(document.querySelector(`iframe[data-draw-probe="${id}"]`)).not.toBeNull();
       act(() => setDrawn(id, '<main class="flex min-h-svh"><aside>Sidebar</aside><section>Cards, drawn</section></main>', true));
       await waitFor(() => expect(document.querySelector(`iframe[data-draw-probe="${id}"]`)).toBeNull());
       expect(frame().getAttribute("srcdoc")).toContain("Cards, drawn");
-      // One frame, no light-and-dark tiles or state strip; scaled to the drawer (640 / 1280).
+      // One frame, no light-and-dark tiles or state strip; still is script-free.
       expect(drawer.querySelectorAll("[data-tile]")).toHaveLength(0);
       expect(drawer.querySelector("[data-strip]")).toBeNull();
-      expect(frame().dataset.pageFrame).toBe("desktop");
-      expect(frame().style.transform).toBe("scale(0.5)");
       expect(frame().getAttribute("sandbox")).toBe("allow-same-origin");
       expect(frame().getAttribute("srcdoc")).not.toContain("<script");
       // A phone's width, then dark: the dark sheet.
@@ -337,14 +430,9 @@ describe("an opened block, drawn as the page it is", () => {
       expect(frame().style.width).toBe("390px");
       fireEvent.click(within(drawer).getByRole("radio", { name: "Dark" }));
       expect(frame().getAttribute("srcdoc")).toContain(`/__youi/discover-preview/${"c".repeat(16)}.css`);
-      // Try it: the bundle, sandboxed allow-scripts only; Escape pressed inside it (the frame keeps the key) ends it.
-      fireEvent.click(within(drawer).getByRole("button", { name: "Try it" }));
+      // Live on again: running.
+      fireEvent.click(within(drawer).getByRole("button", { name: "Live" }));
       expect(frame().getAttribute("sandbox")).toBe("allow-scripts");
-      expect(frame().getAttribute("srcdoc")).toMatch(/<script src="[^"]+\/__youi\/discover-preview\/a{16}\.js">/);
-      act(() => void window.dispatchEvent(new MessageEvent("message", { source: window, data: { youi: "try", type: "escape" } })));
-      expect(frame().dataset.live).toBe("true");
-      act(() => void window.dispatchEvent(new MessageEvent("message", { source: frame().contentWindow, data: { youi: "try", type: "escape" } })));
-      expect(frame().dataset.live).toBeUndefined();
       // Full size: a dialog of its own; closing it gives focus back.
       const open = within(drawer).getByRole("button", { name: "Show Dashboard 01 full size" });
       fireEvent.click(open);
@@ -354,6 +442,11 @@ describe("an opened block, drawn as the page it is", () => {
       fireEvent.click(within(full).getByRole("button", { name: "Close full size" }));
       await waitFor(() => expect(screen.queryByTestId("page-fullscreen")).toBeNull());
       await waitFor(() => expect(document.activeElement).toBe(open));
+      // Escape pressed inside the running page (the frame keeps the key) closes the drawer; from anywhere else, nothing.
+      act(() => void window.dispatchEvent(new MessageEvent("message", { source: window, data: { youi: "try", type: "escape" } })));
+      expect(screen.queryByTestId("candidate-drawer")).not.toBeNull();
+      act(() => void window.dispatchEvent(new MessageEvent("message", { source: frame().contentWindow, data: { youi: "try", type: "escape" } })));
+      await waitFor(() => expect(screen.queryByTestId("candidate-drawer")).toBeNull());
     } finally {
       width.mockRestore();
     }

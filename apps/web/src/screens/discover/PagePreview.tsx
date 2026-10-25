@@ -1,9 +1,10 @@
 /**
- * A block (a sign-in page, a dashboard, a chart card) drawn as the page it is, in the user's theme:
- * at a desktop's or a phone's width, light or dark, scaled down to fit, and scrollable inside its
- * frame. The drawing is static (no script, as every specimen frame); Try it swaps in the live
- * bundle, sandboxed as Try it always is, so its menus and toggles work. Fullscreen shows it at
- * full size in a dialog of its own (Escape closes it, focus goes back to the button).
+ * A block (a sign-in page, a dashboard, a chart card) as the page it is, in the user's theme: at a
+ * desktop's or a phone's width, light or dark, scaled down to fit, and scrollable inside its frame.
+ * It runs live from the start (its bundle, sandboxed as Try it always is), so its menus and
+ * toggles work; Live off shows the still drawing instead (no script, as every specimen frame).
+ * Fullscreen shows it at full size in a dialog of its own (Escape closes it, focus goes back to
+ * the button).
  */
 import * as Dialog from "@radix-ui/react-dialog";
 import { Maximize2, X } from "lucide-react";
@@ -50,7 +51,7 @@ function useWidth<T extends HTMLElement>(): [RefObject<T | null>, number] {
 }
 
 /** One page frame: static, or live once Try it is on. Escape pressed inside a live page reaches `onEscape` (the frame keeps the key). */
-function PageFrame({ answer, html, size, scheme, live, scale, onEscape }: { answer: PreviewAnswer; html: string; size: PageSize; scheme: Scheme; live: boolean; scale: number; onEscape: () => void }) {
+function PageFrame({ answer, html, size, scheme, live, scale, onEscape }: { answer: PreviewAnswer; html: string | null; size: PageSize; scheme: Scheme; live: boolean; scale: number; onEscape: () => void }) {
   const page = PAGE_SIZES[size];
   const css = answer.css![scheme];
   const frameRef = useRef<HTMLIFrameElement>(null);
@@ -75,7 +76,7 @@ function PageFrame({ answer, html, size, scheme, live, scale, onEscape }: { answ
         key={`${size}:${scheme}:${live ? "live" : "static"}`}
         title={`${answer.name}, ${page.label.toLowerCase()}, ${scheme}${live ? ", live" : ""}`}
         sandbox={live ? LIVE_SANDBOX : "allow-same-origin"}
-        srcDoc={live && answer.script ? liveDocument("", css, scheme, answer.script, true) : frameDocument(html, css, scheme, true)}
+        srcDoc={live && answer.script ? liveDocument("", css, scheme, answer.script, true) : frameDocument(html ?? "", css, scheme, true)}
         data-page-frame={size}
         data-live={live || undefined}
         className="origin-top-left border-0"
@@ -91,18 +92,19 @@ function Controls({ size, onSize, scheme, onScheme, live, onLive, tryable }: { s
       <Segmented label="Width" value={size} onChange={onSize} touch options={(["desktop", "phone"] as const).map((value) => ({ value, label: PAGE_SIZES[value].label }))} />
       <Segmented label="Scheme" value={scheme} onChange={onScheme} touch options={[{ value: "light" as const, label: "Light" }, { value: "dark" as const, label: "Dark" }]} />
       {tryable && (
-        <Button variant={live ? "primary" : "outline"} size="sm" aria-pressed={live} onClick={() => onLive(!live)} className="max-md:h-11">
-          {live ? "Done" : "Try it"}
+        <Button variant={live ? "primary" : "outline"} size="sm" aria-pressed={live} onClick={() => onLive(!live)} className="max-md:h-11" title={live ? "Running: turn off for the still drawing" : "Still: turn on to run it"}>
+          Live
         </Button>
       )}
     </>
   );
 }
 
-export function PagePreview({ answer, html, scheme: hubScheme }: { answer: PreviewAnswer; html: string; scheme: Scheme }) {
+/** `html` is the still drawing, once the hidden frame has drawn it; Escape pressed inside the running page reaches `onEscape`. */
+export function PagePreview({ answer, html, scheme: hubScheme, onEscape }: { answer: PreviewAnswer; html: string | null; scheme: Scheme; onEscape: () => void }) {
   const [size, setSize] = useState<PageSize>("desktop");
   const [scheme, setScheme] = useState<Scheme>(hubScheme);
-  const [live, setLive] = useState(false);
+  const [live, setLive] = useState(answer.script !== null);
   const [full, setFull] = useState(false);
   const [boxRef, width] = useWidth<HTMLDivElement>();
   const tryable = answer.script !== null;
@@ -114,7 +116,7 @@ export function PagePreview({ answer, html, scheme: hubScheme }: { answer: Previ
         <Dialog.Root open={full} onOpenChange={setFull}>
           <Dialog.Trigger asChild>
             <Button variant="ghost" size="sm" className="ml-auto max-md:h-11" aria-label={`Show ${answer.entry.title ?? answer.name} full size`}>
-              <Maximize2 aria-hidden /> Full size
+              <Maximize2 aria-hidden /> <span className="max-sm:hidden">Full size</span>
             </Button>
           </Dialog.Trigger>
           <Dialog.Portal>
@@ -136,14 +138,14 @@ export function PagePreview({ answer, html, scheme: hubScheme }: { answer: Previ
         </Dialog.Root>
       </div>
       <div ref={boxRef} className="flex justify-center">
-        {width > 0 && !full && <PageFrame answer={answer} html={html} size={size} scheme={scheme} live={live} scale={pageScale(size, width, MAX_DRAWER_HEIGHT)} onEscape={() => setLive(false)} />}
+        {width > 0 && !full && (live || html !== null ? <PageFrame answer={answer} html={html} size={size} scheme={scheme} live={live} scale={pageScale(size, width, MAX_DRAWER_HEIGHT)} onEscape={onEscape} /> : <p aria-busy="true" className="py-10 text-small text-faint">Drawing the still page…</p>)}
       </div>
     </div>
   );
 }
 
 /** The page in the fullscreen dialog: as large as the window lets it be, never above full size. */
-function FullStage({ answer, html, size, scheme, live, onEscape }: { answer: PreviewAnswer; html: string; size: PageSize; scheme: Scheme; live: boolean; onEscape: () => void }) {
+function FullStage({ answer, html, size, scheme, live, onEscape }: { answer: PreviewAnswer; html: string | null; size: PageSize; scheme: Scheme; live: boolean; onEscape: () => void }) {
   const [boxRef, width] = useWidth<HTMLDivElement>();
   const [height, setHeight] = useState(0);
   useLayoutEffect(() => setHeight(boxRef.current?.clientHeight ?? 0), [boxRef, width]);

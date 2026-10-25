@@ -34,12 +34,14 @@ interface SheetProps {
   children: ReactNode;
   footer?: ReactNode;
   testId?: string;
+  /** Large: a sheet nearly the whole phone's height and a wider drawer, for something to see at size (a Discover item running live). */
+  size?: "default" | "large";
 }
 
 /** Drag samples kept for the release velocity: the last this many milliseconds. */
 const VELOCITY_WINDOW_MS = 80;
 
-export function Sheet({ open, onOpenChange, variant, title, description, children, footer, testId }: SheetProps) {
+export function Sheet({ open, onOpenChange, variant, title, description, children, footer, testId, size = "default" }: SheetProps) {
   const contentRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ id: number; startY: number; samples: Array<{ y: number; t: number }> } | null>(null);
   const [offset, setOffset] = useState(0);
@@ -87,10 +89,11 @@ export function Sheet({ open, onOpenChange, variant, title, description, childre
         <Dialog.Content
           ref={contentRef}
           data-variant={variant}
+          data-size={size}
           data-testid={testId}
           className={clsx(
             "inv-drawer fixed z-50 flex flex-col border-line bg-surface shadow-popover outline-none",
-            sheet ? "inset-x-0 bottom-0 max-h-[88dvh] rounded-t-xl border-t" : "inset-y-0 right-0 w-[min(560px,100vw)] border-l",
+            sheet ? clsx("inset-x-0 bottom-0 rounded-t-xl border-t", size === "large" ? "h-[94dvh]" : "max-h-[88dvh]") : clsx("inset-y-0 right-0 border-l", size === "large" ? "w-[min(760px,100vw)]" : "w-[min(560px,100vw)]"),
             settling && "inv-settle",
           )}
           style={offset > 0 || settling ? { transform: `translate3d(0, ${offset}px, 0)` } : undefined}

@@ -1,8 +1,9 @@
 /**
- * An opened candidate in the drawer (a bottom sheet on a phone): its listing, then, once the
- * hub's server has fetched and bundled it, its drawing in the project's theme, light and dark,
- * with Try it and its five states; what drew with the project's tokens and what could not, in
- * plain words; what it is built from and what it imports without declaring; and the actions.
+ * An opened candidate in the drawer (a tall bottom sheet on a phone). First, once the hub's server
+ * has fetched and bundled it, the thing itself running in the project's theme (Stage, or a block's
+ * PagePreview), light or dark, with its states drawn still beneath; then its listing; what drew
+ * with the project's tokens and what could not, in plain words; what it is built from and what it
+ * imports without declaring; and the actions.
  */
 import { CircleAlert, CircleCheck } from "lucide-react";
 import type { ReactNode } from "react";
@@ -14,6 +15,7 @@ import { CandidateActions } from "./Actions.tsx";
 import { candidateTile } from "./candidate.tsx";
 import { LicenceBadge } from "./LicenceBadge.tsx";
 import { PagePreview } from "./PagePreview.tsx";
+import { Stage } from "./Stage.tsx";
 
 /** Behind a scheme's tile whatever scheme the hub is in, for a page that paints no background of its own. */
 export const SCHEME_BACKDROP: Readonly<Record<Scheme, string>> = { light: "#fcfcfd", dark: "#0f1011" };
@@ -28,7 +30,10 @@ export function siteOf(url: string | null | undefined): { href: string; host: st
   }
 }
 
-function Drawing({ answer, failure, scheme }: { answer: PreviewAnswer; failure: string | null; scheme: Scheme }) {
+/** The stage's height while there is nothing to run yet, so the drawer does not jump when it starts. */
+const WAITING = "grid h-[min(420px,48dvh)] place-items-center rounded-md border border-line bg-sunken px-4 text-center text-small text-faint";
+
+function Drawing({ answer, failure, scheme, onEscape }: { answer: PreviewAnswer; failure: string | null; scheme: Scheme; onEscape: () => void }) {
   const html = useDrawn(answer.id);
   const error = answer.error ?? failure;
   if (error) {
@@ -48,18 +53,32 @@ function Drawing({ answer, failure, scheme }: { answer: PreviewAnswer; failure: 
       </p>
     );
   }
+  // A block is a page: one large frame with its width and scheme to choose, running from the start.
+  if (answer.page && answer.css && (answer.script || html))
+    return (
+      <div data-drawn={html ? answer.id : undefined}>
+        <PagePreview answer={answer} html={html} scheme={scheme} onEscape={onEscape} />
+      </div>
+    );
+  // A component runs on the stage at once; its states are drawn still beneath, once the hidden frame has drawn it.
+  const { script, css } = answer;
+  if (script && css)
+    return (
+      <div className="space-y-4">
+        <Stage answer={{ ...answer, script, css }} scheme={scheme} onEscape={onEscape} />
+        {html && (
+          <div className="space-y-1.5" data-drawn={answer.id}>
+            <h4 className="text-small font-medium text-ink-2">Its states</h4>
+            <StateStrip tile={candidateTile(answer, html, scheme, `${answer.id}:states`)} scheme={scheme} label={answer.name} />
+          </div>
+        )}
+      </div>
+    );
   if (!html)
     return (
       <p aria-busy="true" className="grid place-items-center rounded-md border border-line bg-sunken text-small text-faint" style={{ height: LARGE_TILE_HEIGHT }}>
         Drawing it in your theme…
       </p>
-    );
-  // A block is a page: one large frame with its width and scheme to choose, not two small tiles.
-  if (answer.page && answer.css)
-    return (
-      <div data-drawn={answer.id}>
-        <PagePreview answer={answer} html={html} scheme={scheme} />
-      </div>
     );
   return (
     <div className="space-y-3" data-drawn={answer.id}>
@@ -98,11 +117,28 @@ function Lines({ title, icon, lines, tone, empty }: { title: string; icon: React
   );
 }
 
-export function CandidatePanel({ hit, state, scheme, family, failure }: { hit: DiscoverHit; state: PreviewState | null; scheme: Scheme; family: string | null; failure: string | null }) {
+export function CandidatePanel({ hit, state, scheme, family, failure, onClose }: { hit: DiscoverHit; state: PreviewState | null; scheme: Scheme; family: string | null; failure: string | null; onClose: () => void }) {
   const answer = state?.status === "ready" ? state.answer : null;
   const signals = signalLines(hit);
   return (
-    <div className="space-y-6 px-5 py-4" data-candidate={hit.id}>
+    <div className="space-y-6 px-5 py-4 max-sm:px-4" data-candidate={hit.id}>
+      <section aria-labelledby="candidate-drawing" className="space-y-2">
+        <h3 id="candidate-drawing" className="sr-only">
+          Running in your theme
+        </h3>
+        {state === null ? (
+          <p aria-busy="true" className={WAITING}>
+            Fetching only this item's source, then running it with your project's CSS…
+          </p>
+        ) : state.status === "error" ? (
+          <p className="rounded-md border border-dashed border-line-strong p-3 text-small text-muted" data-preview-error>
+            {state.message}
+          </p>
+        ) : (
+          <Drawing answer={state.answer} failure={failure} scheme={scheme} onEscape={onClose} />
+        )}
+      </section>
+
       <section className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">
           <code className="font-mono text-mono-sm text-ink-2">{hit.source.ref ?? hit.name}</code>
@@ -115,23 +151,6 @@ export function CandidatePanel({ hit, state, scheme, family, failure }: { hit: D
         </div>
         {descriptionOf(hit) ? <p className="text-small text-ink-2">{descriptionOf(hit)}</p> : <p className="text-small text-muted">{sourceOf(hit)} gives no description for it.</p>}
         <p className="text-caption text-muted">An outside reference from {sourceOf(hit)}: not in your system and not approved.</p>
-      </section>
-
-      <section aria-labelledby="candidate-drawing" className="space-y-2">
-        <h3 id="candidate-drawing" className="text-heading">
-          In your theme
-        </h3>
-        {state === null ? (
-          <p aria-busy="true" className="text-small text-faint">
-            Fetching only this item's source, then drawing it with your project's CSS…
-          </p>
-        ) : state.status === "error" ? (
-          <p className="rounded-md border border-dashed border-line-strong p-3 text-small text-muted" data-preview-error>
-            {state.message}
-          </p>
-        ) : (
-          <Drawing answer={state.answer} failure={failure} scheme={scheme} />
-        )}
       </section>
 
       {answer && !answer.error && (

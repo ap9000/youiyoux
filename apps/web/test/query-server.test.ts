@@ -119,6 +119,13 @@ describe("/__youi/query", () => {
     expect(ids(await ok("/__youi/query?kind=discover&sort=newest&limit=5"))).toEqual(ids(await ok("/__youi/query?kind=discover&limit=5")));
   });
 
+  test("discover by id: that one listing, by lib: id or ref, for a link that opens it; a 404 for one there is not", async () => {
+    expect(await ok("/__youi/query?kind=discover&id=lib%3Acoss%2Fcomponent%2Fcommand")).toMatchObject({ kind: "discover", hit: { id: "lib:coss/component/command", name: "command" } });
+    expect(await ok("/__youi/query?kind=discover&id=%40coss%2Fcommand")).toMatchObject({ hit: { id: "lib:coss/component/command" } });
+    const missing = await call("/__youi/query?kind=discover&id=lib%3Anope%2Fcomponent%2Fx");
+    expect(missing).toMatchObject({ status: 404, body: { error: 'no Discover candidate "lib:nope/component/x"' } });
+  });
+
   test("discover facets: licence known or unknown, headless or styled, on a need and when browsing", async () => {
     const licences = (body: Record<string, unknown>) => (body.hits as Array<{ license: string }>).map((h) => h.license);
     // Browsing holds both; on a need, command menus are all known (coss's is AGPL-3.0) and Aceternity's spotlight is not

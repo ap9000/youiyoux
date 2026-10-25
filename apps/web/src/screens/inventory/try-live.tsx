@@ -10,7 +10,7 @@
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { Scheme } from "../../app/theme.tsx";
-import { DESK_WIDTH, documentHead, FRAME_HEIGHT, fitTransform, specimenWrapper } from "./Specimens.tsx";
+import { DESK_WIDTH, documentHead, FRAME_HEIGHT, fitTransform, specimenWrapper, type SpecimenLayout } from "./Specimens.tsx";
 
 export const TRY_ENDPOINT = "__youi/try";
 
@@ -30,7 +30,7 @@ const absolute = (url: string): string => {
 };
 
 /** The live frame's document: the static one, plus the look's bundle as a classic script at the end. */
-export function liveDocument(html: string, css: string, scheme: Scheme, script: string, page = false): string {
+export function liveDocument(html: string, css: string, scheme: Scheme, script: string, page: SpecimenLayout = false): string {
   return `${documentHead(absolute(css), scheme)}</head><body><div id="youi-specimen" style="${specimenWrapper(page)}">${html}</div><script src="${escapeAttribute(absolute(script))}"></script></body></html>`;
 }
 

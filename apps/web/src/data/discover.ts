@@ -173,6 +173,9 @@ const tally = (values: Iterable<string>): Record<string, number> => {
  * name counts most), ties keep the file's order (official first, then by downloads). Facets
  * count the matches before paging, as the server's do.
  */
+/** A snapshot listing as a hit: what the page shows, without what only the in-memory search reads. */
+const strip = ({ registry: _r, roles: _ro, style: _s, text: _t, ...hit }: Listing): DiscoverHit => hit;
+
 export function searchListings(file: ListingsFile, query: DiscoverQuery, limit = query.per): DiscoverPage {
   const need = words(query.q);
   const scored: Array<{ listing: Listing; score: number; order: number }> = [];
@@ -194,7 +197,6 @@ export function searchListings(file: ListingsFile, query: DiscoverQuery, limit =
   });
   scored.sort((a, b) => b.score - a.score || a.order - b.order);
   const matches = sortListings(scored.map((s) => s.listing), query.sort);
-  const strip = ({ registry: _r, roles: _ro, style: _s, text: _t, ...hit }: Listing): DiscoverHit => hit;
   return {
     hits: matches.slice(query.offset, query.offset + limit).map(strip),
     matched: matches.length,
@@ -257,6 +259,30 @@ export async function searchDiscover(query: DiscoverQuery, options: { signal?: A
   const file = await listings.catch(() => null);
   if (!file) throw new NoListings("No Discover listings here: run youiyoux discover sync, then open the hub with youiyoux ui (its own server reads the local index).");
   return searchListings(file, query);
+}
+
+/**
+ * One listing by id, for a link that opens a candidate on no page shown: from the hub's server when
+ * it answers, else from the snapshot's listings. Null when neither has it.
+ */
+export async function findDiscoverHit(id: string, options: { signal?: AbortSignal } = {}): Promise<DiscoverHit | null> {
+  if (!staticHost) {
+    let response: Response | null = null;
+    try {
+      response = await fetch(`${import.meta.env.BASE_URL}__youi/query?${new URLSearchParams({ kind: "discover", id })}`, { cache: "no-store", ...(options.signal ? { signal: options.signal } : {}) });
+    } catch (error: unknown) {
+      if ((error as { name?: string }).name === "AbortError") throw error;
+      response = null;
+    }
+    const body = response && (response.headers.get("content-type") ?? "").includes("application/json") ? ((await response.json().catch(() => null)) as { hit?: DiscoverHit; error?: string } | null) : null;
+    if (response?.ok && body?.hit) return body.hit;
+    if (response && body?.error) return null;
+    if (!response || !body) staticHost = true;
+  }
+  listings ??= discoverListingsFile().then((file) => (file ? loadDiscoverListings<ListingsFile>(file) : null));
+  const file = await listings.catch(() => null);
+  const listing = file?.entries.find((entry) => entry.id === id);
+  return listing ? strip(listing) : null;
 }
 
 /** Tests: forget what was learnt about the host. */

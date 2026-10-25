@@ -7,7 +7,8 @@
  *   kind=discover  q (a need; without one, listings browse official first), sort (recommended,
  *                  name, registry or downloads), role, source,
  *                  licence (SPDX ids, `unknown`, or `known` for any known licence), style
- *                  (headless|styled), all=1 (the --all listings too)
+ *                  (headless|styled), all=1 (the --all listings too); or id (a lib: id or
+ *                  ref) alone: that one listing as `hit`, a 404 when there is none
  *   kind=families  role, run (default: the newest inventory run)
  *   kind=looks     family, role, run
  *   kind=history   project
@@ -115,6 +116,13 @@ export function queryMiddleware(options: QueryOptions = {}, base = "/", load: ()
     if (kind === "discover") {
       if (!existsSync(join(cache, d.INDEX_FILE))) throw new NotFound("no Discover index: run youiyoux discover sync");
       const store = await d.readCatalog(cache, path, env);
+      // One listing by id: what a link to an opened candidate needs when it is on no page shown.
+      const id = params.get("id");
+      if (id !== null) {
+        const shown = await d.showFromCatalog(store, id).catch(() => null);
+        if (!shown) throw new NotFound(`no Discover candidate ${JSON.stringify(id.slice(0, 200))}`);
+        return { kind, hit: d.hitOf(shown.entry, 0, []) };
+      }
       const need = params.get("q")?.trim();
       const all = params.get("all") === "1";
       const asked = params.get("sort");

@@ -104,7 +104,7 @@ function Probe({ id, project, onFail }: { id: string; project: string | null; on
   return <DrawProbe answer={state.answer} onFail={(sentence) => onFail(id, sentence)} />;
 }
 
-/** Every opened candidate's hidden frame, and the open one's drawer (a bottom sheet on a phone); closing it gives focus back to the result that opened it. */
+/** Every opened candidate's hidden frame, and the open one's drawer (a tall bottom sheet on a phone); closing it gives focus back to the result that opened it. */
 export function CandidateLayer({ openHit, opened, project, scheme, family, onClose }: { openHit: DiscoverHit | null; opened: readonly string[]; project: string | null; scheme: Scheme; family: string | null; onClose: () => void }) {
   const wide = useWide();
   const [failures, setFailures] = useState<Readonly<Record<string, string>>>({});
@@ -115,8 +115,8 @@ export function CandidateLayer({ openHit, opened, project, scheme, family, onClo
       {opened.map((id) => (
         <Probe key={id} id={id} project={project} onFail={fail} />
       ))}
-      <Sheet open={openHit !== null} onOpenChange={(next) => !next && onClose()} variant={wide ? "drawer" : "sheet"} testId="candidate-drawer" title={openHit ? (openHit.title ?? openHit.name) : ""} description={openHit ? `${sourceOf(openHit)} · ${openHit.kind}` : undefined}>
-        <ScrollRoot.Provider value={null}>{openHit && <CandidatePanel hit={openHit} state={preview} scheme={scheme} family={family} failure={failures[openHit.id] ?? null} />}</ScrollRoot.Provider>
+      <Sheet open={openHit !== null} onOpenChange={(next) => !next && onClose()} variant={wide ? "drawer" : "sheet"} size="large" testId="candidate-drawer" title={openHit ? (openHit.title ?? openHit.name) : ""} description={openHit ? `${sourceOf(openHit)} · ${openHit.kind}` : undefined}>
+        <ScrollRoot.Provider value={null}>{openHit && <CandidatePanel hit={openHit} state={preview} scheme={scheme} family={family} failure={failures[openHit.id] ?? null} onClose={onClose} />}</ScrollRoot.Provider>
       </Sheet>
     </>
   );
