@@ -8,7 +8,8 @@
  * the code runs only in the hub's sandboxed preview frame, bundled like the item's own files. The
  * whole tree is resolved first (`--package-lock-only`) and refused unless every package in it comes
  * from the registry the requested ones come from: a dependency on a git repository, a local path,
- * a link or another host's tarball is never fetched.
+ * a link or another host's tarball is never fetched. Then exactly that tree is installed
+ * (`npm ci`), never resolved again.
  * Peer dependencies are not fetched (React always comes from the project). The names come from
  * fetched files, so each must be a plain npm name, and a version a plain range or tag: no URL,
  * path, git or file spec, and no Node built-in's name.
@@ -111,7 +112,7 @@ export async function fetchPreviewPackages(cache: string, names: readonly string
     await mkdir(store, { recursive: true });
     if (!existsSync(join(store, "package.json"))) await writeFileAtomic(join(store, "package.json"), `${JSON.stringify({ name: "youiyoux-preview-packages", private: true, description: "npm packages fetched for Discover previews by youiyoux; safe to delete" }, null, 2)}\n`);
     const signal = AbortSignal.any([AbortSignal.timeout(options.timeoutMs ?? INSTALL_TIMEOUT_MS), ...(options.signal ? [options.signal] : [])]);
-    const flags = ["--ignore-scripts", "--no-audit", "--no-fund", "--legacy-peer-deps", "--save-exact", "--loglevel=error"];
+    const flags = ["--ignore-scripts", "--no-audit", "--no-fund", "--legacy-peer-deps", "--loglevel=error"];
     const npmRun = async (args: readonly string[]): Promise<void> => {
       let result: { code: number; stderr: string };
       try {
@@ -135,7 +136,7 @@ export async function fetchPreviewPackages(cache: string, names: readonly string
       }
     };
     try {
-      await npmRun(["install", "--package-lock-only", ...flags, ...specs]);
+      await npmRun(["install", "--package-lock-only", "--save-exact", ...flags, ...specs]);
       const lock = JSON.parse(await readFile(join(store, "package-lock.json"), "utf8")) as unknown;
       const refused = offRegistry(lock, unique);
       if (refused.length > 0) throw new Error(`refused to fetch ${specs.join(", ")}: ${refused.length === 1 ? "a package it depends on does" : `${refused.length} packages it depends on do`} not come from the npm registry: ${refused.slice(0, 3).join(", ")}`);
@@ -143,7 +144,8 @@ export async function fetchPreviewPackages(cache: string, names: readonly string
       await restore();
       throw error;
     }
-    await npmRun(["install", ...flags, ...specs]);
+    // Exactly the tree that was checked: npm ci installs the lockfile as it is, resolving nothing.
+    await npmRun(["ci", ...flags]);
     return { store, fetched: specs };
   });
   installs.set(store, install);

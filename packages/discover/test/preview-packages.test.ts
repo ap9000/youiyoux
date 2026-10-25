@@ -34,7 +34,7 @@ function fakeNpm(answer: { code?: number; stderr?: string; delayMs?: number; fai
     inFlight--;
     if (answer.fail) throw answer.fail;
     if (args.includes("--package-lock-only") && answer.code === undefined) {
-      const names = args.filter((x) => !x.startsWith("-") && x !== "install").map((x) => x.replace(/(.)@.*$/, "$1"));
+      const names = args.filter((x) => !x.startsWith("-") && x !== "install" && x !== "ci").map((x) => x.replace(/(.)@.*$/, "$1"));
       await writeFile(join(cwd, "package-lock.json"), (answer.lock ?? (() => lockOf(names)))(args));
       // As npm does, the requested packages are saved to package.json too.
       const pkg = JSON.parse(await readFile(join(cwd, "package.json"), "utf8")) as { dependencies?: Record<string, string> };
@@ -59,11 +59,11 @@ test("fetched into the cache's own folder with install scripts off and peers lef
   const result = await fetchPreviewPackages(cache, ["motion", "@base-ui/react", "motion"], { declared: ["motion@^12.0.0"], run: npm.run });
   const store = join(cache, PREVIEW_PACKAGES_DIR);
   expect(result).toEqual({ store, fetched: ["motion@^12.0.0", "@base-ui/react"] });
-  const flags = ["--ignore-scripts", "--no-audit", "--no-fund", "--legacy-peer-deps", "--save-exact", "--loglevel=error"];
-  // The tree resolved first, nothing downloaded; then the install.
+  const flags = ["--ignore-scripts", "--no-audit", "--no-fund", "--legacy-peer-deps", "--loglevel=error"];
+  // The tree resolved first, nothing downloaded; then exactly that tree installed, resolving nothing again.
   expect(npm.runs).toEqual([
-    { cwd: store, args: ["install", "--package-lock-only", ...flags, "motion@^12.0.0", "@base-ui/react"] },
-    { cwd: store, args: ["install", ...flags, "motion@^12.0.0", "@base-ui/react"] },
+    { cwd: store, args: ["install", "--package-lock-only", "--save-exact", ...flags, "motion@^12.0.0", "@base-ui/react"] },
+    { cwd: store, args: ["ci", ...flags] },
   ]);
   expect(JSON.parse(await readFile(join(store, "package.json"), "utf8"))).toMatchObject({ name: "youiyoux-preview-packages", private: true });
 });

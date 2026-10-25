@@ -173,8 +173,8 @@ describe("Discover previews (c1, c2)", () => {
     expect(body.error).toBeNull();
     expect(body.script).toMatch(/\.js$/);
     expect(body.notes).toContain("motion: not installed in your project, so a copy fetched from npm for previews draws it (install it to use it for real)");
-    const flags = ["--ignore-scripts", "--no-audit", "--no-fund", "--legacy-peer-deps", "--save-exact", "--loglevel=error"];
-    expect(runs).toEqual([["install", "--package-lock-only", ...flags, "motion"], ["install", ...flags, "motion"]]);
+    const flags = ["--ignore-scripts", "--no-audit", "--no-fund", "--legacy-peer-deps", "--loglevel=error"];
+    expect(runs).toEqual([["install", "--package-lock-only", "--save-exact", ...flags, "motion"], ["ci", ...flags]]);
     // Kept: the next preview needing it fetches nothing.
     json(await call(discoverPreviewMiddleware(SNAPSHOT, "/", { cache, fetcher, npm }), ask));
     expect(runs).toHaveLength(2);
