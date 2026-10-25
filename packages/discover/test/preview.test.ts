@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { buildsOn, DEMO_RECHECK_MS, demoNames, exportNames, importedNames, preparePreview, safeRelative, syncIndex, type ProjectPart } from "../src/index.ts";
+import { buildsOn, DEMO_RECHECK_MS, demoNames, exportNames, importedNames, MAX_BLOCK_PARTS, MAX_DEMO_PARTS, MAX_FETCHED_PARTS, partLimit, preparePreview, safeRelative, syncIndex, type ProjectPart } from "../src/index.ts";
 import { fixtureFetcher } from "./fixture-fetcher.ts";
 
 let dir: string;
@@ -97,7 +97,7 @@ test("export and import names are read from the text", () => {
   expect(importedNames('import { A, B as C } from "@/x"\nimport D, { E } from "@/x"', "@/x")).toEqual(["A", "B", "E", "default"]);
 });
 
-test("a block is drawn from its page, as a page, with up to 16 parts and its own data", async () => {
+test("a block is drawn from its page, as a page, with up to 24 parts and its own data", async () => {
   const page = [
     'import { Input } from "@/registry/new-york-v4/ui/input";',
     'import { Button } from "@/registry/new-york-v4/ui/button";',
@@ -122,7 +122,7 @@ test("a block is drawn from its page, as a page, with up to 16 parts and its own
   expect(prepared.main).toBe("registry/new-york-v4/blocks/dashboard-01/page.tsx");
   expect(prepared.page).toBe(true);
   expect(prepared.exports).toContain("default");
-  // Four parts, past a component's cap of 3: a block may fetch up to 16.
+  // Four parts, past a component's cap of 3: a block may fetch up to 24.
   expect(prepared.parts.map((p) => [p.name, p.from])).toEqual([["input", "fetched"], ["button", "fetched"], ["dialog", "fetched"], ["command", "fetched"]]);
   expect(prepared.files).toContain("registry/new-york-v4/blocks/dashboard-01/data.json");
   // A block is a page already: no demo is asked for.
@@ -149,6 +149,84 @@ test("another registry's item: its own lib/utils is cn, and shadcn's components 
   expect(fixtures.requests.map((r) => r.url)).not.toContain("https://coss.com/ui/r/dialog.json");
 });
 
+
+describe("parts a registry names its own way", () => {
+  let cache: string;
+  const COSS = (name: string) => `https://coss.com/ui/r/${name}.json`;
+  beforeAll(async () => {
+    cache = await mkdtemp(join(tmpdir(), "discover-preview-parts-"));
+    await syncIndex({ ...options, cacheDir: cache, fetcher: fixtureFetcher().fetcher });
+  }, 60_000);
+  afterAll(async () => {
+    await rm(cache, { recursive: true, force: true });
+  });
+
+  test("a file is found where it is installed: an `@/` import of its target, and a relative import written from there", async () => {
+    const item = {
+      name: "autocomplete",
+      type: "registry:ui",
+      files: [
+        { path: "src/blocks/autocomplete/index.tsx", type: "registry:ui", target: "components/coss/autocomplete/index.tsx", content: 'import { Hint } from "./parts/hint";\nimport { Card } from "@/components/coss/autocomplete/card";\nexport function Autocomplete() { return <Card><Hint /></Card>; }' },
+        { path: "src/blocks/autocomplete/card.tsx", type: "registry:component", target: "@components/coss/autocomplete/card.tsx", content: "export function Card(props) { return <div {...props} />; }" },
+        { path: "src/shared/hint.tsx", type: "registry:component", target: "components/coss/autocomplete/parts/hint.tsx", content: "export function Hint() { return <p>hint</p>; }" },
+      ],
+    };
+    const fixtures = fixtureFetcher({ override: (url) => (url === COSS("autocomplete") ? { inline: JSON.stringify(item) } : undefined) });
+    const prepared = await preparePreview(cache, "@coss/autocomplete", { fetcher: fixtures.fetcher });
+    const main = await readFile(join(prepared.dir, "src/blocks/autocomplete/index.tsx"), "utf8");
+    expect(main).toContain('from "./card"');
+    expect(main).toContain('from "../../shared/hint"');
+    // Nothing fetched for them: they came with the item.
+    expect(fixtures.requests.map((r) => r.url).filter((u) => !/-demo|\/p-autocomplete/.test(u))).toEqual([COSS("autocomplete")]);
+  });
+
+  test("declared parts are fetched as named: by URL on its own site (www. or not), as @registry/name, by what they install, and a bare name is shadcn's; another site's never", async () => {
+    const item = {
+      name: "toast",
+      type: "registry:ui",
+      registryDependencies: ["https://www.coss.com/ui/r/number-roll.json?as=dependency", "@coss/foundation", "https://evil.example/r/tokens.json", "button", "@kibo-ui/motion"],
+      files: [{ path: "registry/toast.tsx", type: "registry:ui", content: 'import { Roll } from "./number-roll";\nimport { ease } from "@/lib/motion-tokens";\nimport { tokens } from "@/lib/tokens";\nimport { spring } from "@/lib/motion";\nimport { Button } from "@/components/ui/button";\nexport function Toast() { return <Button><Roll ease={ease} t={tokens} s={spring} /></Button>; }' }],
+    };
+    const roll = { name: "number-roll", type: "registry:ui", files: [{ path: "registry/number-roll.tsx", type: "registry:ui", content: "export function Roll() { return <span>1</span>; }" }] };
+    const foundation = { name: "foundation", type: "registry:lib", files: [{ path: "registry/foundation/motion.ts", type: "registry:lib", target: "lib/motion-tokens.ts", content: "export const ease = 1;" }] };
+    const fixtures = fixtureFetcher({
+      override: (url) => (url === COSS("toast") ? { inline: JSON.stringify(item) } : url === "https://www.coss.com/ui/r/number-roll.json?as=dependency" ? { inline: JSON.stringify(roll) } : url === COSS("foundation") ? { inline: JSON.stringify(foundation) } : undefined),
+    });
+    const prepared = await preparePreview(cache, "@coss/toast", { fetcher: fixtures.fetcher });
+    const urls = fixtures.requests.map((r) => r.url);
+    expect(urls).toContain("https://www.coss.com/ui/r/number-roll.json?as=dependency");
+    expect(urls).toContain(COSS("foundation"));
+    expect(urls).toContain(ITEM("button"));
+    // Another site's part, and another registry's, are never asked for.
+    expect(urls.some((u) => u.includes("evil.example") || u.includes("kibo-ui.com"))).toBe(false);
+    // Nor is a part of that name taken from its own registry in its place.
+    expect(urls).not.toContain(COSS("motion"));
+    const text = await readFile(join(prepared.dir, "registry/toast.tsx"), "utf8");
+    expect(text).toContain('from "./number-roll"');
+    expect(text).toContain('from "./foundation/motion"');
+    // Left as the project's: no part it may fetch brings it (another site's tokens, another registry's motion).
+    expect(text).toContain('from "@/lib/tokens"');
+    expect(text).toContain('from "@/lib/motion"');
+    expect(text).toContain('from "../parts/button/registry/new-york-v4/ui/button"');
+    expect(prepared.parts.map((p) => [p.name, p.from])).toEqual(expect.arrayContaining([["number-roll", "fetched"], ["foundation", "fetched"], ["button", "fetched"]]));
+  });
+
+  test("an undeclared sibling its own registry does not have is shadcn's", async () => {
+    const item = { name: "dialog", type: "registry:ui", files: [{ path: "registry/default/ui/dialog.tsx", type: "registry:ui", content: 'import { Input } from "@/registry/default/ui/input";\nexport function Dialog() { return <Input />; }' }] };
+    const fixtures = fixtureFetcher({ override: (url) => (url === COSS("dialog") ? { inline: JSON.stringify(item) } : url === COSS("input") ? { status: 404, inline: "{}" } : undefined) });
+    const prepared = await preparePreview(cache, "@coss/dialog", { fetcher: fixtures.fetcher });
+    const urls = fixtures.requests.map((r) => r.url);
+    expect(urls.indexOf(COSS("input"))).toBeLessThan(urls.indexOf(ITEM("input")));
+    expect(prepared.parts).toEqual([expect.objectContaining({ name: "input", from: "fetched", detail: "input: the registry's own @shadcn/input, fetched (your project has none)" })]);
+  });
+
+  test("the limit: a block's page most, a demo (drawn from one, or one itself) more than a lone component", () => {
+    expect(partLimit("pattern", "dashboard-01", false)).toBe(MAX_BLOCK_PARTS);
+    expect(partLimit("component", "button", true)).toBe(MAX_DEMO_PARTS);
+    for (const name of ["demo-p-popover-01", "button-demo", "button-demo-2"]) expect(partLimit("component", name, false), name).toBe(MAX_DEMO_PARTS);
+    for (const name of ["button", "demonstration", "democracy-card"]) expect(partLimit("component", name, false), name).toBe(MAX_FETCHED_PARTS);
+  });
+});
 
 describe("a component drawn from its registry's own demo", () => {
   let cache: string;

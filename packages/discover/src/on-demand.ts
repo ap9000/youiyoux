@@ -8,6 +8,7 @@ import { ALL_INDEX_FILE, loadIndex, readAllIndex, readHttpCache, readSignals, re
 import { applySignals } from "./signals.ts";
 import { dedupe } from "./sync.ts";
 import { cleanData } from "./text.ts";
+import { publicHttps } from "./urls.ts";
 
 async function directory(cacheDir: string): Promise<DirectoryRegistry[]> {
   return JSON.parse(await readFile(join(cacheDir, "directory.json"), "utf8"));
@@ -161,7 +162,16 @@ export async function candidateSource(cacheDir: string, id: string, options: Pol
 export async function registryItemSource(cacheDir: string, registry: string, name: string, options: PoliteOptions = {}): Promise<CandidateSource | "missing"> {
   const template = registry === SHADCN.name ? "https://ui.shadcn.com/r/styles/new-york-v4/{name}.json" : (await directory(cacheDir)).find((r) => r.name === registry)?.template;
   if (!template) throw new Error("Registry URL is unavailable; run youiyoux discover sync");
-  const url = registryUrl(template, name);
+  return registryItemAt(cacheDir, registryUrl(template, name), name, options);
+}
+
+/**
+ * One registry item at its URL (a part an item names by URL, `https://x.dev/r/number-roll.json`),
+ * which must be public https and answer with an item of that name: cache-first under source/,
+ * "missing" on a 404 or 410, any other failure thrown.
+ */
+export async function registryItemAt(cacheDir: string, url: string, name: string, options: PoliteOptions = {}): Promise<CandidateSource | "missing"> {
+  if (!publicHttps(url)) throw new Error("refused: a registry item must be on public https");
   const file = join(cacheDir, "source", `${sha256(url)}.json`);
   try { return JSON.parse(await readFile(file, "utf8")) as CandidateSource; } catch { /* fetch on first use */ }
   const client = new PoliteClient(options);

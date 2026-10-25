@@ -2,7 +2,7 @@ import { mkdtemp, readFile, readdir, rm, mkdir, stat, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { candidateSource, catalogBytes, CURATED, readAllIndex, dedupe, expandAll, listRegistries, loadIndex, readSources, registryEntry, parseRegistryItems, searchIndex, selectSources, SHADCN, syncIndex, writeJson } from "../src/index.ts";
+import { candidateSource, catalogBytes, CURATED, readAllIndex, dedupe, expandAll, listRegistries, loadIndex, registryItemAt, readSources, registryEntry, parseRegistryItems, searchIndex, selectSources, SHADCN, syncIndex, writeJson } from "../src/index.ts";
 import * as text from "../src/text.ts";
 import { fixtureFetcher } from "./fixture-fetcher.ts";
 
@@ -96,6 +96,13 @@ test("registries: the directory for someone who does not know the names, yours a
   expect(fetched.rows.map((r) => [r.name, r.state, r.listed])).toEqual([["@shadcn", "official", 7], ["@coss", "source", null], ["@extra", "listed", 1]]);
   // The official registry's count is its listings when the directory gives none.
   expect(fetched.rows[0]!.itemCount).toBe(7);
+});
+
+test("an item by URL is fetched only from public https, and only when it is the item asked for", async () => {
+  const fetcher = fixtures().fetcher;
+  for (const url of ["http://extra.test/r/command.json", "https://localhost/r/command.json", "https://10.0.0.1/r/command.json", "file:///etc/passwd"]) await expect(registryItemAt(dir, url, "command", { fetcher }), url).rejects.toThrow(/public https/);
+  expect(await registryItemAt(dir, "https://extra.test/r/command.json", "command", { fetcher: fixtures().fetcher })).toMatchObject({ files: [{ content: SOURCE }] });
+  await expect(registryItemAt(dir, "https://extra.test/r/registry.json", "other", { fetcher: fixtures().fetcher })).rejects.toThrow(/different or invalid/);
 });
 
 test("mirror URLs normalize host, query, template and trailing slash before content fallback", () => {

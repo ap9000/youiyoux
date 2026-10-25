@@ -9,7 +9,12 @@
  * pointed at a local copy: the project's own component of that name when it exports everything
  * the import asks for (so the preview is built with what the project already has), else that
  * part's own registry source, fetched the same way, at most MAX_FETCHED_PARTS per preview; a
- * part past the cap or missing from the index is listed as not fetched. Nothing here runs the
+ * part past the cap or missing from the index is listed as not fetched. Registries outside
+ * shadcn's own name their parts their own ways, and those are followed too: a file is found where
+ * it is installed (its `target`) as well as where its registry keeps it; a part the item declares
+ * by URL (on its own site only), as `@registry/name` (its own registry only) or by a bare name
+ * (shadcn's) is fetched when an import needs it, by name or, failing that, by what it installs;
+ * an undeclared one is its own registry's of that name, else shadcn's. Nothing here runs the
  * fetched code: it is only written, read and rewritten as text.
  *
  * A component is drawn from its registry's own demo when it has one (findDemo): the demo is what
@@ -22,14 +27,14 @@ import { lstat, readFile, rm } from "node:fs/promises";
 import { join, posix } from "node:path";
 import { sha256, writeFileAtomic } from "@youiyoux/core";
 import type { PoliteOptions } from "./http.ts";
-import { candidateSource, findListing, registryItemSource, type CandidateSource } from "./on-demand.ts";
+import { candidateSource, findListing, registryItemAt, registryItemSource, type CandidateSource } from "./on-demand.ts";
 import { importedPackages, packageName } from "./sources.ts";
 
 export const PREVIEW_DIR = "preview";
 /** Registry parts fetched for one preview besides the item itself. */
 export const MAX_FETCHED_PARTS = 3;
 /** The same for a block: a page is built from many parts (a sidebar, a card, a separator…). */
-export const MAX_BLOCK_PARTS = 16;
+export const MAX_BLOCK_PARTS = 24;
 /** The same for a component drawn from its demo: a demo shows it among a few others (a card with a label and an input). */
 export const MAX_DEMO_PARTS = 8;
 /** Where what was learnt about each component's demo is kept: its name, or that it has none. */
@@ -210,6 +215,57 @@ function relativeSpec(fromFile: string, toFile: string): string {
   return rel.startsWith(".") ? rel : `./${rel}`;
 }
 
+/** Script extensions an import may leave off, or write as `.js` for a `.ts` file (TypeScript's ESM style). */
+const SCRIPT = /\.(?:tsx?|jsx?|mjs|cjs)$/;
+/** shadcn's target aliases (`@ui/spinner.tsx`, `@components/blocks/x.tsx`), as the paths `@/` imports name. */
+const TARGET_ALIASES: ReadonlyArray<readonly [string, string]> = [["@ui/", "components/ui/"], ["@components/", "components/"], ["@lib/", "lib/"], ["@hooks/", "hooks/"], ["~/", ""], ["@/", ""]];
+
+/**
+ * The module paths a written file answers to, without extension: where the registry keeps it
+ * (`registry/pagination`) and where it is installed (`components/shadcn-space/blocks/x`, its
+ * `target`), each with a leading `src/` and a trailing `/index` taken off too. An `@/x/y` import
+ * names `x/y`; nothing here is written, so a target only needs to be a safe relative path.
+ */
+function modulePaths(path: string, target: string | undefined): string[] {
+  const keys: string[] = [];
+  const from = (value: string | null): void => {
+    if (!value) return;
+    const bare = value.replace(SCRIPT, "");
+    for (const key of [bare, bare.replace(/\/index$/, "")]) for (const k of [key, key.replace(/^src\//, "")]) if (k && !keys.includes(k)) keys.push(k);
+  };
+  from(path);
+  from(installedAt(target));
+  return keys;
+}
+
+/** Whether two registry URLs are one site's: the same host, `www.` or not (`atelier-ui.com` names its parts without it). */
+function sameSite(a: string, b: string): boolean {
+  if (!URL.canParse(a) || !URL.canParse(b)) return false;
+  const host = (url: string): string => new URL(url).host.toLowerCase().replace(/^www\./, "");
+  return host(a) === host(b);
+}
+
+/** A listing that is a demo itself (`@spaceui/demo-p-popover-01`, `button-demo`): drawn with a demo's parts. */
+const DEMO_NAME = /(?:^|-)demo(?:-|$)/;
+
+/** How many registry parts one preview may fetch: a block's page most, a demo (drawn from one, or one itself) more than a lone component. */
+export function partLimit(kind: string, name: string, drawnFromDemo: boolean): number {
+  return kind === "pattern" ? MAX_BLOCK_PARTS : drawnFromDemo || DEMO_NAME.test(name) ? MAX_DEMO_PARTS : MAX_FETCHED_PARTS;
+}
+
+/** Where a file is installed (its `target`, aliases spelled out), when that is a safe relative path. */
+function installedAt(target: string | undefined): string | null {
+  if (typeof target !== "string") return null;
+  const alias = TARGET_ALIASES.find(([lead]) => target.startsWith(lead));
+  return safeRelative(alias ? `${alias[1]}${target.slice(alias[0].length)}` : target);
+}
+
+/** A declared part's own name: `@hairline/number-roll`, `https://x.dev/r/number-roll.json?as=dependency` and `number-roll` are all `number-roll`. */
+function depName(dep: string): string {
+  const path = /^https:\/\//.test(dep) ? (URL.canParse(dep) ? new URL(dep).pathname : dep) : dep;
+  return path.split("/").at(-1)!.replace(/\.json$/, "");
+}
+
 /** The item's main file: its first ui or component file, else its first script. */
 function mainFile(files: readonly string[], types: ReadonlyMap<string, string | undefined>): string | null {
   // A block's page puts its parts together (a sidebar inside its provider), so it is what to draw.
@@ -239,50 +295,165 @@ export async function preparePreview(cacheDir: string, id: string, options: Prev
 
   const texts = new Map<string, string>();
   const types = new Map<string, string | undefined>();
-  const add = (files: CandidateSource["files"], under: string): string[] => {
+  /** Each module path a written file answers to (modulePaths); the first file to claim one keeps it. */
+  const modules = new Map<string, string>();
+  /** The URL of the item each written file came from: a part it names by URL must be on that host. */
+  const urlOf = new Map<string, string>();
+  /** Where each written file is installed, when its registry says: its relative imports are written from there. */
+  const installed = new Map<string, string>();
+  const add = (files: CandidateSource["files"], under: string, url: string): string[] => {
     const written: string[] = [];
     for (const file of files) {
       if (typeof file.content !== "string") continue;
       const rel = safeRelative(file.path);
       if (rel === null) throw new Error(`refused: the registry gave a file path that leaves the preview directory (${String(file.path).slice(0, 80)})`);
       const at = under ? posix.join(under, rel) : rel;
+      // A part's file already written from elsewhere (a shared helper): the first copy stands.
+      if (texts.has(at)) continue;
       texts.set(at, file.content);
       types.set(at, file.type);
+      urlOf.set(at, url);
+      const target = installedAt(file.target);
+      if (target) installed.set(at, target);
+      for (const key of modulePaths(at, file.target)) if (!modules.has(key)) modules.set(key, at);
+      for (const key of modulePaths(rel, file.target)) if (!modules.has(key)) modules.set(key, at);
       written.push(at);
     }
     return written;
   };
-  const own = add(source.files, "");
+  const own = add(source.files, "", source.url);
   // The demo's files beside the component's, so its imports of the component resolve to this copy.
-  const shown = demo ? add(demo.source.files, "").filter((f) => !own.includes(f)) : [];
+  const shown = demo ? add(demo.source.files, "", demo.source.url).filter((f) => !own.includes(f)) : [];
   const main = demo ? demoMain([...shown, ...own], demo.name, own) : mainFile(own, types);
   if (!main) throw new Error(`${ref} has no component code to draw (its registry entry lists no script files)`);
 
   const parts: PreviewPart[] = [];
   const resolved = new Map<string, string>();
-  const max = options.maxParts ?? (entry.kind === "pattern" ? MAX_BLOCK_PARTS : demo ? MAX_DEMO_PARTS : MAX_FETCHED_PARTS);
+  /** A relative import that resolves somewhere other than beside its importer, by `<importer>\0<spec>`. */
+  const relative = new Map<string, string>();
+  const max = options.maxParts ?? partLimit(entry.kind, entry.name, demo !== null);
   let fetched = 0;
   /** What the fetched parts declare: their packages are the install's too. */
   const partDeps: string[] = [];
   const queue = [...own, ...shown];
   /** The registry each part's files came from: a shadcn part's own `@/registry/…` imports are shadcn's. */
   const registryOf = new Map<string, string>();
+  /** Every part the item and what it fetched declare (`@reg/name`, a URL, or a bare name, which is shadcn's). */
+  const declaredParts: string[] = [...(source.registryDependencies ?? []), ...(demo?.source.registryDependencies ?? [])];
+  const asked = new Set<string>();
+  /** A part not fetched, said once however many files import it. */
+  const notFetched = (name: string, detail: string): void => {
+    if (!parts.some((p) => p.name === name && p.from === "not-fetched")) parts.push({ name, from: "not-fetched", detail });
+  };
+  const moduleOf = (path: string): string | undefined => modules.get(path.replace(SCRIPT, "")) ?? modules.get(path.replace(SCRIPT, "").replace(/\/index$/, ""));
+
+  /**
+   * Fetch one declared part, as the item names it, and write its files where the registry keeps
+   * them (a relative import between parts then resolves as written), or under `under` for a
+   * sibling the item imports by its registry path (kept apart from the item's own files). Only its own registry's
+   * parts (by name, or by URL on the host it came from) and shadcn's (a bare name). Null when it is
+   * not one of those, past the limit, or cannot be had.
+   */
+  const fetchDeclared = async (dep: string, from: string, fromUrl: string, why: string, under = ""): Promise<string[] | null> => {
+    if (asked.has(dep)) return null;
+    asked.add(dep);
+    const name = depName(dep);
+    let partRef: string;
+    let load: () => Promise<CandidateSource | "missing">;
+    if (/^https:\/\//.test(dep)) {
+      if (!sameSite(dep, fromUrl)) return null;
+      partRef = `${from}/${name}`;
+      load = () => registryItemAt(cacheDir, dep, name, options);
+    } else if (dep.startsWith("@")) {
+      if (dep.slice(0, dep.indexOf("/")) !== from) return null;
+      partRef = dep;
+      load = () => registryItemSource(cacheDir, from, name, options);
+    } else {
+      partRef = `@shadcn/${name}`;
+      load = () => registryItemSource(cacheDir, "@shadcn", name, options);
+    }
+    if (fetched >= max) {
+      notFetched(name, `${name}: not fetched (${why}; at most ${max} parts are fetched for one preview)`);
+      return null;
+    }
+    try {
+      const part = await load();
+      if (part === "missing") throw new Error(`${partRef} is not in its registry`);
+      fetched++;
+      partDeps.push(...(part.dependencies ?? []));
+      declaredParts.push(...(part.registryDependencies ?? []));
+      const written = add(part.files, under, part.url);
+      const partRegistry = partRef.slice(0, partRef.indexOf("/"));
+      for (const at of written) registryOf.set(at, partRegistry);
+      queue.push(...written);
+      parts.push({ name, from: "fetched", detail: `${name}: the registry's own ${partRef}, fetched (${why})` });
+      return written;
+    } catch (error: unknown) {
+      notFetched(name, `${name}: could not be fetched (${error instanceof Error ? error.message.split("\n")[0] : String(error)}; ${why})`);
+      return null;
+    }
+  };
+
+  /**
+   * A module an import names that no written file answers to yet: the declared part of that name,
+   * else (an import named for a file, not its part: `@/lib/motion-tokens` in `@nusaiba/foundation`)
+   * each declared part of the same registry in turn until one brings it. The file it is, or null.
+   */
+  const findDeclared = async (path: string, file: string, why: string): Promise<string | null> => {
+    const from = registryOf.get(file) ?? registry;
+    const fromUrl = urlOf.get(file) ?? source.url;
+    const name = path.replace(SCRIPT, "").replace(/\/index$/, "").split("/").at(-1)!;
+    for (const dep of declaredParts.filter((d) => depName(d) === name)) {
+      await fetchDeclared(dep, from, fromUrl, why);
+      const found = moduleOf(path);
+      if (found) return found;
+    }
+    for (const dep of declaredParts.filter((d) => !asked.has(d) && (d.startsWith(`${from}/`) || (/^https:\/\//.test(d) && sameSite(d, fromUrl))))) {
+      await fetchDeclared(dep, from, fromUrl, why);
+      const found = moduleOf(path);
+      if (found) return found;
+    }
+    return null;
+  };
+
   while (queue.length > 0) {
     const file = queue.shift()!;
     const from = registryOf.get(file) ?? registry;
     const text = texts.get(file)!;
     for (const match of text.matchAll(SPECIFIER)) {
       const spec = match[3]!;
-      const shadcnUi = SHADCN_UI.test(spec);
-      if ((!spec.startsWith("@/registry/") && !shadcnUi) || resolved.has(spec)) continue;
+      // A relative import: beside its importer when written so, else wherever that module was written.
+      if (spec.startsWith("./") || spec.startsWith("../")) {
+        const path = posix.normalize(posix.join(posix.dirname(file), spec));
+        if (path.startsWith("..") || relative.has(`${file}\0${spec}`)) continue;
+        const beside = [...texts.keys()].some((f) => f.replace(SCRIPT, "") === path.replace(SCRIPT, "") || f.replace(SCRIPT, "") === `${path.replace(SCRIPT, "")}/index`);
+        if (beside) continue;
+        // Written from where the file is installed (`components/wxcn/`), not where its registry keeps it.
+        const target = installed.get(file);
+        const fromTarget = target ? posix.normalize(posix.join(posix.dirname(target), spec)) : null;
+        const found = moduleOf(path) ?? (fromTarget && !fromTarget.startsWith("..") ? moduleOf(fromTarget) : undefined) ?? (await findDeclared(path, file, "it is imported beside the item"));
+        if (found && found.replace(SCRIPT, "") !== path.replace(SCRIPT, "")) relative.set(`${file}\0${spec}`, found);
+        continue;
+      }
+      if (!spec.startsWith("@/") || resolved.has(spec)) continue;
       // The bundler supplies cn: the project's own, else shadcn's.
       if (REGISTRY_UTILS.test(spec)) {
         resolved.set(spec, "cn");
         continue;
       }
-      const local = [...texts.keys()].find((f) => f.replace(/\.(?:tsx?|jsx?)$/, "") === spec.slice(2) || f.replace(/\/index\.(?:tsx?|jsx?)$/, "") === spec.slice(2));
+      const shadcnUi = SHADCN_UI.test(spec);
+      const sibling = spec.startsWith("@/registry/");
+      // Written already: the item's own file, or a part's, where it is kept or installed.
+      const local = moduleOf(spec.slice(2));
       if (local) {
         resolved.set(spec, local);
+        continue;
+      }
+      if (!sibling && !shadcnUi) {
+        // Any other `@/` module (`@/lib/utils`, `@/hooks/use-x`) is the project's, unless the item declares a part that brings it.
+        if (/^@\/lib\/utils(?:\.[jt]sx?)?$/.test(spec)) continue;
+        const found = await findDeclared(spec.slice(2), file, "your project has none");
+        if (found) resolved.set(spec, found);
         continue;
       }
       const name = partName(spec);
@@ -295,27 +466,55 @@ export async function preparePreview(cacheDir: string, id: string, options: Prev
         continue;
       }
       const why = mine ? `your ${mine.display} has no ${lacking.join(", ")}` : "your project has none";
-      if (fetched >= max) {
-        resolved.set(spec, spec);
-        parts.push({ name, from: "not-fetched", detail: `${name}: not fetched (${why}; at most ${max} parts are fetched for one preview)` });
+      // A part the item declares by name (by URL, `@reg/name`, or bare for shadcn's), where its registry keeps it.
+      const named = declaredParts.find((d) => depName(d) === name && !asked.has(d));
+      if (named) {
+        const written = await fetchDeclared(named, from, urlOf.get(file) ?? source.url, why, `parts/${name}`);
+        const found = written ? (moduleOf(spec.slice(2)) ?? mainFile(written, types)) : null;
+        if (found) {
+          resolved.set(spec, found);
+          continue;
+        }
+      }
+      // A part of its own registry that brings it under another name (`primitives-popover` installs `components/ui/popover`).
+      const brought = await findDeclared(spec.slice(2), file, why);
+      if (brought) {
+        resolved.set(spec, brought);
         continue;
       }
-      // Undeclared, `@/components/ui/<name>` is shadcn's component of that name, whatever the item's registry.
-      const partRef = shadcnUi ? `@shadcn/${name}` : `${from}/${name}`;
-      try {
-        const part = await candidateSource(cacheDir, partRef, options);
-        fetched++;
-        partDeps.push(...(part.dependencies ?? []));
-        const written = add(part.files, `parts/${name}`);
-        const partMain = mainFile(written, types);
-        if (!partMain) throw new Error("it has no script files");
-        resolved.set(spec, partMain);
-        for (const at of written) registryOf.set(at, partRef.slice(0, partRef.indexOf("/")));
-        queue.push(...written);
-        parts.push({ name, from: "fetched", detail: `${name}: the registry's own ${partRef}, fetched (${why})` });
-      } catch (error: unknown) {
+      if (fetched >= max) {
         resolved.set(spec, spec);
-        parts.push({ name, from: "not-fetched", detail: `${name}: could not be fetched (${error instanceof Error ? error.message.split("\n")[0] : String(error)}; ${why})` });
+        notFetched(name, `${name}: not fetched (${why}; at most ${max} parts are fetched for one preview)`);
+        continue;
+      }
+      // Undeclared: its own registry's part of that name, else shadcn's (`@/components/ui/<name>` is shadcn's first).
+      const tries = shadcnUi || from === "@shadcn" ? ["@shadcn"] : [from, "@shadcn"];
+      let done = false;
+      let last = "";
+      for (const reg of tries) {
+        const partRef = `${reg}/${name}`;
+        try {
+          const part = await registryItemSource(cacheDir, reg, name, options);
+          if (part === "missing") throw new Error(`${partRef} is not in its registry`);
+          fetched++;
+          partDeps.push(...(part.dependencies ?? []));
+          declaredParts.push(...(part.registryDependencies ?? []));
+          const written = add(part.files, `parts/${name}`, part.url);
+          const partMain = mainFile(written, types);
+          if (!partMain) throw new Error("it has no script files");
+          resolved.set(spec, partMain);
+          for (const at of written) registryOf.set(at, reg);
+          queue.push(...written);
+          parts.push({ name, from: "fetched", detail: `${name}: the registry's own ${partRef}, fetched (${why})` });
+          done = true;
+          break;
+        } catch (error: unknown) {
+          last = error instanceof Error ? error.message.split("\n")[0]! : String(error);
+        }
+      }
+      if (!done) {
+        resolved.set(spec, spec);
+        notFetched(name, `${name}: could not be fetched (${last}; ${why})`);
       }
     }
   }
@@ -323,7 +522,7 @@ export async function preparePreview(cacheDir: string, id: string, options: Prev
   const rewritten = new Map<string, string>();
   for (const [file, text] of texts) {
     rewritten.set(file, text.replace(SPECIFIER, (all, lead: string, quote: string, spec: string) => {
-      const target = resolved.get(spec);
+      const target = resolved.get(spec) ?? relative.get(`${file}\0${spec}`);
       if (!target || target === spec) return all;
       if (target === "cn") return `${lead}${quote}cn${quote}`;
       // A project file by its absolute path; a local copy relative to the importer.
