@@ -16,7 +16,9 @@
  * Opening a candidate is the one step that may use the network: its registry source is fetched
  * (cache-first, `show --source`'s path, each request timed out) into the Discover cache, with the
  * registry parts it imports (preparePreview), and for a component its registry's own demo when it
- * has one (`demo`, drawn as written). The fetched code never runs on this server: it is
+ * has one (`demo`, drawn as written); and npm packages it needs that nobody here has, for the
+ * official registry and your sources only (an item from every other registry draws with the
+ * packages already here). The fetched code never runs on this server: it is
  * bundled (bundlePreview: fenced to the project root, its packages and that one preview
  * directory) and runs only in the hub's sandboxed frame. The project's CSS is built with
  * Tailwind's sources widened to the fetched files (so the classes they use exist in the project's
@@ -247,8 +249,14 @@ export function discoverPreviewMiddleware(snapshot: string, base = "/", options:
     const bundle = (): Promise<Built> => bundles.get(`${projectId}\0${prepared.key}\0${root}`, () => scanner.bundlePreview({ root, tsconfig, dir: prepared.dir, main: prepared.main, compose, fallback, packages, projectParts: prepared.parts.flatMap((part) => (part.file ? [part.file] : [])) }, { signal }));
     let [built, sheet] = await Promise.all([bundle(), scanner.buildProjectCss(root, target.files, scanner.newStats(), { tsconfig: target.tsconfig, templates: target.templates, override: target.specimenCss, extraSources: [prepared.dir], signal })]);
     signal.throwIfAborted();
-    // Packages nobody here has (motion, say): fetched once from npm into the Discover cache, then bundled again.
-    if ("error" in built && built.missing?.length && options.fetchPackages !== false) {
+    // Packages nobody here has (motion, say): fetched once from npm into the Discover cache, then bundled again;
+    // only for the official registry and your sources. An item from any other registry draws with what is here.
+    const registry = entry.source.ref?.includes("/") ? entry.source.ref.slice(0, entry.source.ref.indexOf("/")) : null;
+    const fetches = registry === discover.SHADCN.name || (registry !== null && (await discover.readSources(cache)).includes(registry));
+    if ("error" in built && built.missing?.length && options.fetchPackages !== false && !fetches) {
+      const missing = built.missing;
+      built = { error: `it needs ${missing.join(", ")}, which neither your project nor the hub has; previews fetch packages only for the official registry and your sources (youiyoux discover sources add ${registry ?? "<registry>"}, then youiyoux discover sync)` };
+    } else if ("error" in built && built.missing?.length && options.fetchPackages !== false) {
       const missing = built.missing;
       try {
         await discover.fetchPreviewPackages(cache, missing, { declared: install?.npm ?? [], signal, ...(options.npm ? { run: options.npm } : {}) });

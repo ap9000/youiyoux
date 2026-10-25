@@ -46,6 +46,8 @@ export interface DiscoverQuery {
   /** Listings per page (PER_PAGE); PAGE_SIZE unless chosen. */
   readonly per: number;
   readonly offset: number;
+  /** Every registry in shadcn's directory, not only your sources (`every=1`; the server's `all=1`). */
+  readonly every: boolean;
 }
 
 /** The orders a person can choose; recommended is the default and has no value in the address. */
@@ -57,7 +59,7 @@ export const SORT_SUMMARIES: Readonly<Record<DiscoverSort, string>> = { name: "B
 export const PAGE_SIZE = 20;
 export const PER_PAGE = [20, 50, 100] as const;
 
-export const EMPTY_QUERY: DiscoverQuery = { q: "", role: null, source: null, licence: null, style: null, family: null, open: null, view: null, sort: null, per: PAGE_SIZE, offset: 0 };
+export const EMPTY_QUERY: DiscoverQuery = { q: "", role: null, source: null, licence: null, style: null, family: null, open: null, view: null, sort: null, per: PAGE_SIZE, offset: 0, every: false };
 
 export interface DiscoverPage {
   readonly hits: readonly DiscoverHit[];
@@ -98,6 +100,7 @@ export function parseQuery(search: string): DiscoverQuery {
     sort: pick("sort", SORTS),
     per: (PER_PAGE as readonly number[]).includes(per) ? per : PAGE_SIZE,
     offset: Number.isSafeInteger(offset) && offset > 0 ? offset : 0,
+    every: params.get("every") === "1",
   };
 }
 
@@ -107,6 +110,7 @@ export function queryToSearch(query: DiscoverQuery): string {
   for (const key of ["role", "source", "licence", "style", "family", "open", "view", "sort"] as const) if (query[key]) params.set(key, query[key]!);
   if (query.per !== PAGE_SIZE) params.set("per", String(query.per));
   if (query.offset > 0) params.set("offset", String(query.offset));
+  if (query.every) params.set("every", "1");
   const text = params.toString();
   return text ? `?${text}` : "";
 }
@@ -236,6 +240,7 @@ function endpointUrl(query: DiscoverQuery): string {
   if (query.licence) params.set("licence", query.licence);
   if (query.style) params.set("style", query.style);
   if (query.offset) params.set("offset", String(query.offset));
+  if (query.every) params.set("all", "1");
   return `${import.meta.env.BASE_URL}__youi/query?${params}`;
 }
 

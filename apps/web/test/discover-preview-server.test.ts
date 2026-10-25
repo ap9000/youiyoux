@@ -9,7 +9,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
-import { syncIndex } from "../../../packages/discover/src/index.ts";
+import { selectSources, syncIndex } from "../../../packages/discover/src/index.ts";
 import { fixtureFetcher } from "../../../packages/discover/test/fixture-fetcher.ts";
 import type { Fetcher } from "../../../packages/discover/src/index.ts";
 import { discoverPreviewMiddleware, projectParts, uiDirOf, type PreviewAnswer } from "../scripts/discover-preview-server.ts";
@@ -180,6 +180,29 @@ describe("Discover previews (c1, c2)", () => {
     // Kept: the next preview needing it fetches nothing.
     json(await call(discoverPreviewMiddleware(SNAPSHOT, "/", { cache, fetcher, npm }), ask));
     expect(runs).toHaveLength(2);
+  }, 60_000);
+
+  test("packages are fetched only for the official registry and your sources: an item from any other registry is drawn with what is here, and says how to allow it", async () => {
+    const fresh = mkdtempSync(join(tmpdir(), "youi-discover-preview-every-"));
+    try {
+      await syncIndex({ sleep: async () => {}, cacheDir: fresh, fetcher: fixtureFetcher().fetcher, now: () => new Date("2026-10-12T12:00:00Z"), timeoutMs: 100 });
+      const runs: string[][] = [];
+      // Recorded, then refused: what was asked is all this test needs.
+      const npm = async (args: readonly string[]) => (runs.push([...args]), { code: 1, stderr: "npm error refused in tests" });
+      const ask = "/__youi/discover-preview?id=%40coss%2Fbutton&project=console";
+      // @coss is no longer one of your sources: its button needs @base-ui/react, which nobody here has.
+      await selectSources(fresh, "remove", "coss");
+      const stranger = json(await call(discoverPreviewMiddleware(SNAPSHOT, "/", { cache: fresh, fetcher: fixtureFetcher().fetcher, npm }), ask));
+      expect(stranger.body.error).toBe("it needs @base-ui/react, which neither your project nor the hub has; previews fetch packages only for the official registry and your sources (youiyoux discover sources add @coss, then youiyoux discover sync)");
+      expect(runs).toEqual([]);
+      // One of your sources again: the package is asked of npm.
+      await selectSources(fresh, "add", "coss");
+      const yours = json(await call(discoverPreviewMiddleware(SNAPSHOT, "/", { cache: fresh, fetcher: fixtureFetcher().fetcher, npm }), ask));
+      expect(yours.body.error).toMatch(/^it needs @base-ui\/react, which is installed in neither your project nor the hub, and fetching it failed/);
+      expect(runs[0]).toContain("@base-ui/react");
+    } finally {
+      rmSync(fresh, { recursive: true, force: true });
+    }
   }, 60_000);
 
   describe("builds are bounded", () => {

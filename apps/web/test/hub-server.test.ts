@@ -156,6 +156,15 @@ describe("the hub's own server", () => {
     expect((await fetchFrom(port, "/kit/candidates.json")).status).toBe(404);
   });
 
+  test("every registry's state is answered, as the dev server answers it", async () => {
+    vi.stubEnv("YOUI_DISCOVER_CACHE", join(work, "no-discover-cache"));
+    try {
+      expect(JSON.parse((await fetchFrom(port, "/__youi/discover-every")).body)).toMatchObject({ state: "none", fetchedAt: null });
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   test("only this machine is answered, and nothing outside the served directories", async () => {
     expect((await fetchFrom(port, "/", { host: "evil.example" })).status).toBe(403);
     vi.stubEnv("YOUI_ALLOW_HOSTS", "my-mac.example.ts.net");

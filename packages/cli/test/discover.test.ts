@@ -1,4 +1,4 @@
-import { renderDiscoverShow, renderDiscoverSearch } from "../src/discover.ts";
+import { renderDiscoverShow, renderDiscoverSearch, renderRegistries } from "../src/discover.ts";
 import { loadIndex, searchIndex, showCandidate } from "@youiyoux/discover";
 import { mkdtemp, readdir, readFile, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -108,6 +108,25 @@ describe("youiyoux discover", () => {
     expect(await main(["discover", "--cache", dir])).toBe(2);
   });
 
+  test("registries lists the directory for someone who does not know the names, from the cache only", async () => {
+    const fetch = vi.spyOn(globalThis, "fetch");
+    expect(await main(["discover", "registries", "--cache", dir, "--json"])).toBe(0);
+    const listed = JSON.parse(out) as { total: number; left: number; rows: Array<{ name: string; state: string; listed: number | null }> };
+    expect(listed.rows.slice(0, 2).map((r) => [r.name, r.state])).toEqual([["@shadcn", "official"], ["@coss", "source"]]);
+    expect(listed.rows.find((r) => r.name === "@coss")!.listed).toBeGreaterThan(0);
+    // Hidden and unavailable registries are left out, and counted.
+    expect(listed.rows.map((r) => r.name)).not.toContain("@abstract");
+    expect(listed.left).toBe(2);
+    out = "";
+    expect(await main(["discover", "registries", "animated", "--cache", dir])).toBe(0);
+    expect(out).toContain("@magicui");
+    expect(out).not.toContain("@coss");
+    expect(out).toContain("Next: youiyoux discover \"<need>\" --all");
+    out = "";
+    expect(await main(["discover", "registries", "--sort", "stars", "--cache", dir])).toBe(2);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   test("help lists discover", async () => {
     expect(await main(["--help"])).toBe(0);
     expect(out).toMatch(/discover sync[\s\S]*discover "<need>"[\s\S]*discover show/);
@@ -143,7 +162,8 @@ test("CLI renderers independently clean all data strings before styling", async 
     if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, inject(item)])) as T;
     return value;
   };
-  for (const result of [renderDiscoverShow(inject(showCandidate(index, "command"))), renderDiscoverSearch(inject(searchIndex(index, "command menu")))]) {
+  const registries = { total: 1, offset: 0, left: 0, icons: 0, every: null, rows: [{ name: "@x", homepage: null, description: "a registry", itemCount: 3, state: "available" as const, listed: null }] };
+  for (const result of [renderDiscoverShow(inject(showCandidate(index, "command"))), renderDiscoverSearch(inject(searchIndex(index, "command menu"))), renderRegistries(inject(registries), inject("q"))]) {
     expect(result).not.toMatch(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/);
     expect(result).not.toContain("pwned");
   }

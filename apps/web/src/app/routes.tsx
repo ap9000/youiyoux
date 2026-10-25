@@ -47,6 +47,7 @@ const changes = preloadable(() => import("../screens/changes/ChangesScreen.tsx")
 const inventory = preloadable(() => import("../screens/inventory/InventoryScreen.tsx"), (m) => m.InventoryScreen);
 const discover = preloadable(() => import("../screens/discover/DiscoverScreen.tsx"), (m) => m.DiscoverScreen);
 const specimen = preloadable(() => import("../screens/discover/SpecimenCapture.tsx"), (m) => m.SpecimenCapture);
+const registries = preloadable(() => import("../screens/discover/RegistriesScreen.tsx"), (m) => m.RegistriesScreen);
 const style = preloadable(() => import("../screens/style/StyleScreen.tsx"), (m) => m.StyleScreen);
 const workspace = preloadable(() => import("../screens/workspace/WorkspaceScreen.tsx"), (m) => m.WorkspaceScreen);
 const loadStubs = () => import("../screens/stubs/StubScreens.tsx");
@@ -67,6 +68,7 @@ export const ChangesScreen = changes.Component;
 export const InventoryScreen = inventory.Component;
 export const DiscoverScreen = discover.Component;
 export const SpecimenCaptureScreen = specimen.Component;
+export const RegistriesScreen = registries.Component;
 export const StyleScreen = style.Component;
 export const WorkspaceScreen = workspace.Component;
 export const AccessScreen = access.Component;

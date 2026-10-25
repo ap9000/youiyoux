@@ -7,7 +7,7 @@ import { basename, dirname, join, relative, resolve } from "node:path";
 import { parseArgs, promisify, type ParseArgsConfig } from "node:util";
 import { parse as parseYaml } from "yaml";
 import { DefinitionError, DESIGN_CONFIG_FILE, findUp, getSystem, loadDesignRepo, loadLibrary, MigrationSpec, OutputConfig, PACKAGE_NAME, renderJsonSchemas, safeId, writeFileAtomic, InventoryReport, type ScanReport } from "@youiyoux/core";
-import { buildGaps, candidateSource, declaredPackages, expandAll, MissingIndexError, selectSources, discoverCacheDir, discoverIndexPath, ingestCatalog, readCatalog, searchCatalog, sharedStore, showFromCatalog, syncIndex, type Fetcher } from "@youiyoux/discover";
+import { buildGaps, candidateSource, declaredPackages, expandAll, listRegistries, MissingIndexError, REGISTRY_SORTS, selectSources, discoverCacheDir, discoverIndexPath, ingestCatalog, readCatalog, searchCatalog, sharedStore, showFromCatalog, syncIndex, type Fetcher } from "@youiyoux/discover";
 import { indexHome, storeLocation } from "@youiyoux/store";
 import { buildTokens, compareParity } from "@youiyoux/tokens";
 import { adoptionRequest, buildInventory, captureScreens, captureText, chosenSession, openLoginBrowser, recordSession, sessionFile, type LoginBrowser, type LoginPage, within, RenderUnavailableError, renderShots, shotsNext, type ShotsOptions, checkCapabilities, componentCard, describeIdentity, designRootOf, evaluateRule, linkedDesign, linksFile, setLink, findContract, loadProject, planChange, PROJECT_FILE, type LoadProjectOptions, ProjectWatcher, ruleCapability, runMigration, scanProject, screenBom, searchLibrary, whereUsed, type CacheStats, type PlanInput, type Project, type WatchUpdate } from "@youiyoux/scanner";
@@ -19,7 +19,7 @@ import { runClaudeHook, runPreCommitHook, type HookTarget } from "./hooks.ts";
 import { codexFallback, installRepoAgentInstructions, hookCommand, installClaudeHook, installPreCommit, installRecordWorkflow, installWorkflow, repoRootOf } from "./hooks-install.ts";
 import { installAgentRule, installClaudeMcp, installCodexMcp, mcpCommand, relativeTo, removeAgentRule, removeClaudeMcp, removeCodexMcp, type AgentsResult } from "./agents-install.ts";
 import { detectTarget, renderDetect } from "./detect.ts";
-import { renderDiscoverSearch, renderDiscoverShow, renderDiscoverSync } from "./discover.ts";
+import { renderDiscoverSearch, renderDiscoverShow, renderDiscoverSync, renderRegistries } from "./discover.ts";
 import { startRuleEditor, type RuleEditor } from "./editor.ts";
 import { allowHosts, DEFAULT_HUB_PORT, runHub, runPreviews } from "./hub.ts";
 import { renderBrief, renderRequests } from "./requests.ts";
@@ -206,6 +206,9 @@ ${style.bold("Discover")}  ${style.dim("UI components by need, across shadcn reg
                            refresh cached candidates, licences and signals; add --icons for icon sets
                            GITHUB_TOKEN raises GitHub limits when set; never stored or printed
   discover sources [list|add|remove] <name>  choose community sources
+  discover registries [word…] [--sort items|name] [--limit n] [--offset n] [--icons] [--json]
+                           every registry in shadcn's directory, for when you do not know their names:
+                           what each says it is and how many items it has, biggest first
   discover "<need>" [--all] [--role r] [--license spdx,…] [--limit n] [--offset n] [--json]
                            candidates ranked by match (names, aliases: command menu = cmdk, toast =
                            snackbar…) plus signals, with licence (or unknown) and the install command,
@@ -333,6 +336,7 @@ const OPTIONS = {
   status: { type: "string" },
   "max-registries": { type: "string" },
   offset: { type: "string" },
+  sort: { type: "string" },
   history: { type: "boolean", default: false },
   render: { type: "boolean", default: false },
   yes: { type: "boolean", short: "y", default: false },
@@ -1323,6 +1327,17 @@ async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Pr
   if (action === "sources") {
     const names = await selectSources(cacheDir, rest[0], rest[1]);
     if (values.json) json(names); else print(names.join("\n"));
+    return 0;
+  }
+  if (action === "registries") {
+    const sort = values.sort === undefined ? "items" : REGISTRY_SORTS.find((s) => s === values.sort);
+    if (!sort) throw new UsageError("youiyoux discover registries [word…] [--sort items|name] [--limit n] [--offset n] [--icons] [--json]");
+    // How many of each registry's listings are in the local index, when there is one.
+    const store = await catalog().catch(() => null);
+    const listed = store ? (await store.discoverFacets({ scopes: ["chosen", "all"] })).source : undefined;
+    const result = await listRegistries(cacheDir, { q: rest.join(" "), sort, limit: positiveInt(values.limit, "--limit") ?? 30, offset: positiveInt(values.offset, "--offset") ?? 0, icons: values.icons ?? false, ...(listed ? { listed } : {}) });
+    if (values.json) json(result);
+    else print(renderRegistries(result, rest.join(" ")));
     return 0;
   }
   if (action === "sync") {

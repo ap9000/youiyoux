@@ -1,7 +1,7 @@
 /** Terminal output for `youiyoux discover`: the sync summary, ranked candidates, and one candidate in full. */
 import { copyleft } from "@youiyoux/core";
 import { cleanData as safe } from "@youiyoux/discover";
-import type { DiscoverSearch, DiscoverShow, SyncSummary } from "@youiyoux/discover";
+import type { DiscoverSearch, DiscoverShow, listRegistries, SyncSummary } from "@youiyoux/discover";
 import { ms, padEnd, plural, style, truncate } from "./ui.ts";
 
 function compact(n: number | null): string {
@@ -27,6 +27,28 @@ export function renderDiscoverSync(summary: SyncSummary): string {
     ...summary.failures.slice(0, 12).map((f) => style.warn(`  ! ${f.id}: ${f.reason}`)),
     ...(summary.failures.length > 12 ? [style.dim(`  …${summary.failures.length - 12} more in health.json`)] : []),
     style.dim(`index → ${summary.cacheDir}`),
+  ];
+  return lines.join("\n");
+}
+
+const STATES = { official: "official", source: "your source", listed: "listed", available: "" } as const;
+
+/** `youiyoux discover registries`: one line each (name, items, what it says it is), and how to go on. */
+export function renderRegistries(result: Awaited<ReturnType<typeof listRegistries>>, q: string): string {
+  result = safe(result);
+  q = safe(q);
+  if (result.total === 0) return `No registry in the directory matches “${q}”.\n${style.dim("Next: try fewer words, or youiyoux discover registries with none")}`;
+  const width = Math.max(...result.rows.map((r) => r.name.length));
+  const last = result.offset + result.rows.length;
+  const lines = [
+    `${plural(result.total, "registry", "registries")}${q ? ` for “${q}”` : ""} ${style.dim(`· ${result.offset + 1}–${last} · most items first unless --sort name`)}`,
+    ...result.rows.map((r) => {
+      const state = STATES[r.state];
+      return `  ${padEnd(r.name, width)}  ${compact(r.itemCount).padStart(5)} items  ${truncate((r.description ?? "").replace(/\s+/g, " "), 72)}${state ? style.dim(` · ${state}`) : ""}`;
+    }),
+    ...(result.left || result.icons ? [style.dim(`  ${[result.left ? `${result.left} left out (hidden, unavailable or not public https)` : "", result.icons ? `${plural(result.icons, "icon set")} left out (--icons lists them)` : ""].filter(Boolean).join(" · ")}`)] : []),
+    ...(last < result.total ? [style.dim(`  …${result.total - last} more: --offset ${last}`)] : []),
+    style.dim(result.every ? "Next: youiyoux discover \"<need>\" --all searches every registry's items; youiyoux discover sources add <name>, then youiyoux discover sync, makes one of your sources" : "Next: youiyoux discover \"<need>\" --all fetches every registry's item list once (names and descriptions, no code) and searches it; youiyoux discover sources add <name>, then youiyoux discover sync, makes one of your sources"),
   ];
   return lines.join("\n");
 }

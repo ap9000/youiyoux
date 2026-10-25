@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { sha256, writeFileAtomic } from "@youiyoux/core";
 import { PoliteClient, type PoliteOptions } from "./http.ts";
@@ -29,22 +29,85 @@ export async function selectSources(cacheDir: string, action = "list", name?: st
   return next;
 }
 
+/** One registry of the directory as the registries list shows it. */
+export interface RegistryRow {
+  readonly name: string;
+  readonly homepage: string | null;
+  readonly description: string | null;
+  /** Items the directory counts in it (every type), or null when it gives none. */
+  readonly itemCount: number | null;
+  /** official: shadcn's own; source: one of your sources; listed: its items are among every registry's; available: not fetched yet. */
+  readonly state: "official" | "source" | "listed" | "available";
+  /** Its listings in the local index (what Discover can show of it), or null when none are. */
+  readonly listed: number | null;
+}
+
+export const REGISTRY_SORTS = ["items", "name"] as const;
+export type RegistrySort = (typeof REGISTRY_SORTS)[number];
+
+/** A registry the directory describes as an icon set: Discover leaves those out unless asked (`--icons`). */
+const isIconRegistry = (r: DirectoryRegistry): boolean => /\bicons?\b/i.test(`${r.name} ${r.description ?? ""}`);
+
 /**
- * CLI-only expansion. The listings it adds go to index-all.json, never into index.json, so a
- * default search stays on the chosen sources; `--all` searches both. MCP only reads.
+ * The directory's registries, for someone who does not know their names: the ones a sync could
+ * fetch (public https, not hidden or unavailable), icon sets only with `icons`, narrowed by every
+ * word of `q` (name and description), most items first or by name, paged. `listed` is how many of
+ * each registry's listings the local index holds (the store's source facet). Reads files only.
  */
-export async function expandAll(cacheDir: string, options: PoliteOptions & { icons?: boolean } = {}): Promise<void> {
+export async function listRegistries(cacheDir: string, options: { readonly q?: string; readonly sort?: RegistrySort; readonly limit?: number; readonly offset?: number; readonly icons?: boolean; readonly listed?: Readonly<Record<string, number>> } = {}) {
+  const rows = await directory(cacheDir).catch(() => null);
+  if (!rows) throw new Error("The registry directory is not on this machine yet: run youiyoux discover sync");
+  const selected = new Set(await readSources(cacheDir));
+  const every = await stat(join(cacheDir, ALL_INDEX_FILE)).then((s) => s.mtime.toISOString(), () => null);
+  const words = (options.q ?? "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  let left = 0;
+  let icons = 0;
+  const shown: RegistryRow[] = [];
+  // The official registry is read from its own index, so the directory may not list it.
+  const official: DirectoryRegistry = { name: SHADCN.name, homepage: SHADCN.homepage, template: SHADCN.registry.replace("registry.json", "{name}.json"), description: "The official shadcn/ui registry: its components, blocks and charts.", health: { status: "healthy", score: null, checkedAt: null, hidden: false }, itemCount: options.listed?.[SHADCN.name] ?? null };
+  for (const r of rows.some((row) => row.name === SHADCN.name) ? rows : [official, ...rows]) {
+    const isOfficial = r.name === SHADCN.name;
+    if (!isOfficial && skipReason(r)) { left++; continue; }
+    if (!isOfficial && !options.icons && isIconRegistry(r)) { icons++; continue; }
+    const text = `${r.name} ${r.description ?? ""}`.toLowerCase();
+    if (!words.every((word) => text.includes(word))) continue;
+    const listed = options.listed?.[r.name] ?? null;
+    const state = isOfficial ? "official" : selected.has(r.name) ? "source" : listed ? "listed" : "available";
+    shown.push({ name: r.name, homepage: r.homepage, description: r.description, itemCount: r.itemCount, state, listed });
+  }
+  const rank = { official: 0, source: 1, listed: 2, available: 2 } as const;
+  shown.sort((a, b) => (options.sort === "name" ? 0 : rank[a.state] - rank[b.state] || (b.itemCount ?? -1) - (a.itemCount ?? -1)) || a.name.localeCompare(b.name));
+  const offset = Math.max(0, Math.trunc(options.offset ?? 0));
+  const limit = Math.max(1, Math.trunc(options.limit ?? 50));
+  return { total: shown.length, offset, rows: shown.slice(offset, offset + limit), left, icons, every };
+}
+
+/** How far a fetch of every registry's listings has got: registries asked, of how many. */
+export type ExpandProgress = (done: number, total: number) => void;
+
+/**
+ * Every healthy registry's listings, beside the chosen ones (the CLI's `--all`, and the hub's
+ * Every registry). The listings it adds go to index-all.json, never into index.json, so a default
+ * search stays on the chosen sources; `--all` searches both. MCP only reads. Metadata only: each
+ * registry's registry.json, cache-first; no item's code.
+ */
+export async function expandAll(cacheDir: string, options: PoliteOptions & { icons?: boolean; onProgress?: ExpandProgress } = {}): Promise<{ registries: number; failed: number; listings: number }> {
   const index = await loadIndex(cacheDir);
   const cache = await readHttpCache(cacheDir);
   const client = new PoliteClient({ ...options, cache });
   const selected = await readSources(cacheDir);
   const categories = new Map(Object.entries(index.categories));
   const signals = await readSignals(cacheDir);
-  const extra = await Promise.all((await directory(cacheDir)).filter((r) => !selected.includes(r.name) && !skipReason(r) && (options.icons || !/\bicons?\b/i.test(`${r.name} ${r.description}`))).map(async (r) => {
+  const asked = (await directory(cacheDir)).filter((r) => !selected.includes(r.name) && !skipReason(r) && (options.icons || !isIconRegistry(r)));
+  let done = 0;
+  let failed = 0;
+  options.onProgress?.(0, asked.length);
+  const extra = await Promise.all(asked.map(async (r) => {
     const url = registryUrl(r.template);
     const hit = cache.get(url);
     const response = hit ? { ok: true as const, value: JSON.parse(hit.body) as unknown, result: hit } : await client.json(url);
-    if (!response.ok) return [];
+    options.onProgress?.(++done, asked.length);
+    if (!response.ok) return (failed++, []);
     const entries = parseRegistryItems(response.value).items.filter(isCandidate).map((item) => registryEntry({ name: r.name, homepage: r.homepage, url, fetchedAt: response.result.fetchedAt, official: false, health: r.health }, item, categories));
     return !options.icons && entries.length && entries.filter(isIconEntry).length / entries.length >= 0.8 ? [] : entries.map((entry) => applySignals(entry, signals));
   }));
@@ -55,6 +118,7 @@ export async function expandAll(cacheDir: string, options: PoliteOptions & { ico
   // Written only when it changed: the store reloads the --all listings whenever this file does.
   const next = `${JSON.stringify(cleanData({ schema: index.schema, format: 2, builtAt: index.builtAt, sources: [], categories: index.categories, entries }))}\n`;
   if ((await readFile(join(cacheDir, ALL_INDEX_FILE), "utf8").catch(() => null)) !== next) await writeFileAtomic(join(cacheDir, ALL_INDEX_FILE), next);
+  return { registries: asked.length, failed, listings: entries.length };
 }
 
 /** A listing by id or ref, from the index or, failing that, the --all listings. */

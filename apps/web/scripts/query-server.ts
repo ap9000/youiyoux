@@ -9,6 +9,9 @@
  *                  licence (SPDX ids, `unknown`, or `known` for any known licence), style
  *                  (headless|styled), all=1 (the --all listings too); or id (a lib: id or
  *                  ref) alone: that one listing as `hit`, a 404 when there is none
+ *   kind=registries  q (words its name or description holds), sort (items or name), icons=1:
+ *                  shadcn's registry directory as the Discover cache keeps it, each with how
+ *                  many of its listings the index holds, and whether it is one of your sources
  *   kind=families  role, run (default: the newest inventory run)
  *   kind=looks     family, role, run
  *   kind=history   project
@@ -146,6 +149,14 @@ export function queryMiddleware(options: QueryOptions = {}, base = "/", load: ()
       const named = known === true ? held : known === false ? ["unknown"] : licences;
       return { kind, limit, ...(await d.browseCatalog(store, { ...scope, ...(named ? { licences: named } : {}) }, { limit, offset, sort })) };
     }
+    if (kind === "registries") {
+      if (!existsSync(join(cache, "directory.json"))) throw new NotFound("no registry directory on this machine yet: run youiyoux discover sync");
+      const store = await d.readCatalog(cache, path, env).catch(() => null);
+      const listed = store ? (await store.discoverFacets({ scopes: ["chosen", "all"] })).source : undefined;
+      const asked = params.get("sort");
+      const sort = d.REGISTRY_SORTS.find((s) => s === asked) ?? "items";
+      return { kind, limit, ...(await d.listRegistries(cache, { q: params.get("q")?.slice(0, 200) ?? "", sort, limit, offset, icons: params.get("icons") === "1", ...(listed ? { listed } : {}) })) };
+    }
     if (!env.DATABASE_URL && !existsSync(path)) throw new NotFound("no local index yet: run youiyoux inventory, youiyoux scan or youiyoux index rebuild");
     const store = await d.sharedStore(path, env, { readOnly: true });
     if (kind === "history") {
@@ -160,7 +171,7 @@ export function queryMiddleware(options: QueryOptions = {}, base = "/", load: ()
       const family = params.get("family") ?? undefined;
       return { kind, limit, offset, ...(await store.looks({ ...(run ? { run } : {}), ...(family ? { family } : {}), ...(role ? { role } : {}), limit, offset })) };
     }
-    throw new NotFound(`unknown kind "${kind}": discover, families, looks or history`);
+    throw new NotFound(`unknown kind "${kind}": discover, registries, families, looks or history`);
   }
 
   return async (req: IncomingMessage, res: ServerResponse, next: () => void): Promise<void> => {

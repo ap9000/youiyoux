@@ -24,13 +24,14 @@
  * near the screen.
  */
 import { clsx } from "clsx";
-import { ArrowLeft, ArrowRight, ChevronDown, Compass, LayoutGrid, List, SlidersHorizontal, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, ChevronDown, Compass, LayoutGrid, Library, List, SlidersHorizontal, X } from "lucide-react";
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation, useSearch } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import { type Scheme, useTheme } from "../../app/theme.tsx";
 import { descriptionOf, findDiscoverHit, parseQuery, PER_PAGE, queryToSearch, searchDiscover, signalLines, SORT_LABELS, SORT_SUMMARIES, SORTS, sourceOf, type DiscoverHit, type DiscoverPage, type DiscoverQuery, type DiscoverSort } from "../../data/discover.ts";
 import { hasPictures, shortReason, useThumbs, type Thumbs } from "../../data/discover-thumbs.ts";
 import type { InventorySource } from "../../data/inventory-source.ts";
+import { everyStatus, NO_SERVER, startEvery, type EveryStatus } from "../../data/registries.ts";
 import type { Resource } from "../../data/store.ts";
 import { Badge } from "../../ui/Badge.tsx";
 import { Button } from "../../ui/Button.tsx";
@@ -39,6 +40,7 @@ import { EmptyState } from "../../ui/EmptyState.tsx";
 import { Select } from "../../ui/Field.tsx";
 import { PaneHeader } from "../../ui/Pane.tsx";
 import { SearchField } from "../../ui/SearchField.tsx";
+import { Segmented } from "../../ui/Segmented.tsx";
 import { LicenceBadge } from "./LicenceBadge.tsx";
 
 /** The parts that exist once something is opened or pinned: one chunk, fetched then and not before. */
@@ -50,6 +52,10 @@ const CandidateLayer = lazy(() => loadOpened().then((m) => ({ default: m.Candida
 const SUGGESTIONS = ["command menu", "date picker", "toast", "dialog", "tabs"];
 const TYPING_MS = 250;
 const ROLE_FACETS = 12;
+/** Every registry lists hundreds of sources: the biggest few, and the one chosen. */
+const SOURCE_FACETS = 12;
+/** How often a fetch of every registry's listings is asked how far it has got. */
+const EVERY_POLL_MS = 1_000;
 /** Browsing the gallery with nothing searched: a shelf for each of the commonest types. */
 const SHELVES = 8;
 const SHELF_SIZE = 4;
@@ -57,9 +63,9 @@ const SHELF_SIZE = 4;
 type Loaded = { status: "loading" } | { status: "ready"; page: DiscoverPage } | { status: "error"; message: string };
 
 /** One page of listings for the query (its search part only; the open candidate and the pin do not search again). */
-function useListings(query: DiscoverQuery): Loaded {
+function useListings(query: DiscoverQuery, generation = 0): Loaded {
   const [state, setState] = useState<Loaded>({ status: "loading" });
-  const key = queryToSearch({ ...query, open: null, family: null });
+  const key = `${queryToSearch({ ...query, open: null, family: null })}#${generation}`;
   useEffect(() => {
     const controller = new AbortController();
     setState((s) => (s.status === "ready" ? s : { status: "loading" }));
@@ -97,7 +103,9 @@ export function DiscoverView({ inventory }: { inventory?: Resource<InventorySour
     return () => clearTimeout(timer);
   }, [typed, setQuery]);
 
-  const listings = useListings(query);
+  // Every registry's listings arriving: the same search, asked again.
+  const [generation, setGeneration] = useState(0);
+  const listings = useListings(query, generation);
   const page = listings.status === "ready" ? listings.page : null;
   const thumbs = useThumbs();
   const gallery = query.view ? query.view === "gallery" : hasPictures(thumbs);
@@ -124,6 +132,11 @@ export function DiscoverView({ inventory }: { inventory?: Resource<InventorySour
         if (!hit) return;
         seen.current.set(hit.id, hit);
         setLinked(hit.id);
+        // A link by ref (@initium/hero-section-1): the address takes the listing's own id.
+        if (hit.id !== id) {
+          setOpened((list) => [...new Set(list.map((open) => (open === id ? hit.id : open)))]);
+          setQuery({ ...latest.current, open: hit.id });
+        }
       },
       () => undefined,
     );
@@ -139,12 +152,27 @@ export function DiscoverView({ inventory }: { inventory?: Resource<InventorySour
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col" data-screen="discover">
       <PaneHeader title="Discover" count={page?.matched}>
-        <Badge tone="outline">Outside references · not built with</Badge>
+        <Badge tone="outline" className="max-sm:hidden">Outside references · not built with</Badge>
+        <Button asChild variant="ghost" size="sm" className="max-md:h-11">
+          <Link href="/discover/registries" data-registries-link>
+            <Library aria-hidden /> Registries
+          </Link>
+        </Button>
       </PaneHeader>
       <div ref={setScroller} className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto max-w-6xl space-y-6 px-6 py-6 max-sm:space-y-4 max-sm:px-4">
             <div className="space-y-2">
               <SearchField value={typed} onChange={setTyped} placeholder="Search by need: command menu, date picker, toast…" label="Search by need" touch className="max-w-2xl" />
+              <Segmented
+                label="Search in"
+                value={query.every ? "every" : "yours"}
+                onChange={(next) => set({ every: next === "every", source: null })}
+                touch
+                options={[
+                  { value: "yours" as const, label: "Your sources" },
+                  { value: "every" as const, label: "Every registry" },
+                ]}
+              />
               {!query.q && (
                 <div className="flex flex-wrap items-center gap-1.5 text-small text-muted">
                   <span>Try</span>
@@ -156,6 +184,8 @@ export function DiscoverView({ inventory }: { inventory?: Resource<InventorySour
                 </div>
               )}
             </div>
+
+            {query.every && <EveryRegistry onReady={() => setGeneration((n) => n + 1)} />}
 
             {query.family && (
               <Suspense fallback={<p className="text-small text-faint">Loading the pinned family…</p>}>
@@ -184,6 +214,93 @@ export function DiscoverView({ inventory }: { inventory?: Resource<InventorySour
         </Suspense>
       )}
     </div>
+  );
+}
+
+/* ---------------------------------------------------------------- every registry */
+
+/**
+ * Every registry: whether their listings are on this machine, and if not, the one button that
+ * fetches them (each registry's list once: names and descriptions, never an item's code), with how
+ * far it has got. `onReady` runs when a fetch finishes, so the search is asked again.
+ */
+function EveryRegistry({ onReady }: { onReady: () => void }) {
+  const [status, setStatus] = useState<EveryStatus | null | "loading">("loading");
+  const [error, setError] = useState<string | null>(null);
+  const ready = useRef(onReady);
+  ready.current = onReady;
+  const running = status !== "loading" && status?.state === "running";
+  useEffect(() => {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let was: EveryStatus["state"] | null = null;
+    const ask = (): void => {
+      everyStatus({ signal: controller.signal }).then(
+        (next) => {
+          setStatus(next);
+          if (was === "running" && next?.state !== "running") ready.current();
+          was = next?.state ?? null;
+          if (next?.state === "running") timer = setTimeout(ask, EVERY_POLL_MS);
+        },
+        () => undefined,
+      );
+    };
+    ask();
+    return () => (controller.abort(), clearTimeout(timer));
+    // Asked again each time a fetch starts here.
+  }, [running]);
+  const start = (): void => {
+    setError(null);
+    startEvery().then(setStatus, (e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+  };
+  if (status === "loading") return null;
+  if (status === null)
+    return (
+      <p className="rounded-lg border border-line bg-sunken px-3 py-2 text-small text-muted" data-every="none">
+        {NO_SERVER}
+      </p>
+    );
+  if (status.state === "ready")
+    return (
+      <p className="text-small text-muted" data-every="ready">
+        Searching every registry in shadcn's directory{status.fetchedAt ? `, as listed on ${new Date(status.fetchedAt).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })}` : ""}.{" "}
+        <span className="text-faint">Unknown code from strangers: it only ever runs in the sandboxed preview, and packages are fetched only for the official registry and your own sources.</span>
+      </p>
+    );
+  return (
+    <section aria-label="Every registry" className="space-y-2 rounded-lg border border-line bg-surface p-4" data-every={status.state}>
+      {status.state === "running" ? (
+        <>
+          <p className="text-body text-ink" role="status">
+            Asking each registry for its list: {status.done} of {status.total || "…"}
+          </p>
+          <div className="h-1 overflow-hidden rounded-full bg-raised" aria-hidden>
+            <div className="h-full bg-accent transition-[width] duration-300" style={{ width: `${status.total ? Math.round((status.done / status.total) * 100) : 0}%` }} />
+          </div>
+          <p className="text-small text-muted">Your sources stay searchable meanwhile. It takes a minute or two.</p>
+        </>
+      ) : (
+        <>
+          <h2 className="text-body font-medium text-ink">Every registry's items are not on this machine yet</h2>
+          <p className="max-w-2xl text-small text-muted">
+            Fetching asks each of the few hundred registries in shadcn's directory for its list once: names, descriptions and file lists, never an item's code. After that, a search covers all of them, and an item is fetched only when you open it.
+          </p>
+          {status.state === "failed" && (
+            <p className="text-small text-warning" role="status">
+              The last fetch stopped: {status.error}
+            </p>
+          )}
+          {error && (
+            <p className="text-small text-warning" role="status">
+              {error}
+            </p>
+          )}
+          <Button variant="primary" onClick={start} className="max-md:h-11" data-every-start>
+            {status.state === "failed" ? "Try again" : "Fetch every registry's list"}
+          </Button>
+        </>
+      )}
+    </section>
   );
 }
 
@@ -271,7 +388,7 @@ function Facets({ query, page, onChange, folded }: { query: DiscoverQuery; page:
   return (
     <aside id="discover-facets" aria-label="Facets" className={clsx("space-y-4 max-md:space-y-3", folded && "max-md:hidden")} data-facets data-folded={folded || undefined}>
       <FacetGroup label="Role" value={query.role} onChange={(role) => onChange({ role })} options={keep(entries(facets.role).slice(0, ROLE_FACETS).map(([value, count]) => ({ value, label: value.replace(/-/g, " "), count })), query.role)} />
-      <FacetGroup label="Source" value={query.source} onChange={(source) => onChange({ source })} options={keep(entries(facets.source).map(([value, count]) => ({ value, label: value, count })), query.source)} />
+      <FacetGroup label="Source" value={query.source} onChange={(source) => onChange({ source })} options={keep(entries(facets.source).slice(0, SOURCE_FACETS).map(([value, count]) => ({ value, label: value, count })), query.source)} />
       <FacetGroup
         label="Licence"
         value={query.licence}

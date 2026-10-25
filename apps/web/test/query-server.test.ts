@@ -149,6 +149,18 @@ describe("/__youi/query", () => {
     expect(command.find((h) => h.id === "lib:shadcn/component/command")).toMatchObject({ license: "MIT", signals: { via: { package: "cmdk", weeklyDownloads: 41566267 } }, install: { command: "npx shadcn add command" } });
   });
 
+  test("registries: the directory, yours and the official first, with each one's listings in the index; words narrow it", async () => {
+    const body = (await ok("/__youi/query?kind=registries")) as { total: number; left: number; rows: Array<{ name: string; state: string; listed: number | null }> };
+    expect(body.rows.slice(0, 2).map((r) => [r.name, r.state])).toEqual([["@shadcn", "official"], ["@coss", "source"]]);
+    expect(body.rows.find((r) => r.name === "@shadcn")!.listed).toBeGreaterThan(0);
+    expect(body.left).toBe(2);
+    const named = (await ok("/__youi/query?kind=registries&q=animated&sort=name")) as { rows: Array<{ name: string }> };
+    expect(named.rows.map((r) => r.name)).toEqual(["@magicui"]);
+    expect(await ok("/__youi/query?kind=registries&limit=1&offset=1")).toMatchObject({ offset: 1, rows: [{ name: "@coss" }] });
+    const bare = queryMiddleware({ cache: join(scratch, "no-directory"), index: join(scratch, "no-directory.db"), env: {} });
+    expect(await call("/__youi/query?kind=registries", { mw: bare })).toMatchObject({ status: 404, body: { error: expect.stringMatching(/youiyoux discover sync/) } });
+  });
+
   test("history, families and looks page through the inventory runs", async () => {
     const history = await ok("/__youi/query?kind=history&limit=2");
     expect((history.rows as Array<{ project: string; scannedAt: string }>).map((r) => [r.project, r.scannedAt.slice(0, 10)])).toEqual([["console", "2026-10-12"], ["site", "2026-10-12"]]);
@@ -196,6 +208,8 @@ describe("/__youi/query", () => {
       const response = await fetch(`${origin}/__youi/query?kind=history&limit=1`);
       expect(response.status).toBe(200);
       expect(((await response.json()) as { rows: unknown[] }).rows).toHaveLength(1);
+      // And every registry's state, beside it.
+      expect(await (await fetch(`${origin}/__youi/discover-every`)).json()).toMatchObject({ state: "none" });
       // Vite itself answers a name given to youiyoux ui --allow-host (as tailscale serve sends it), and no other.
       const statusFor = (host: string): Promise<number> =>
         new Promise((done, fail) => {

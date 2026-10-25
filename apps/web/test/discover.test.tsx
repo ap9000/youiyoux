@@ -27,6 +27,7 @@ import { siteOf } from "../src/screens/discover/CandidatePanel.tsx";
 import { pageScale } from "../src/screens/discover/PagePreview.tsx";
 import { pinnedRows } from "../src/screens/discover/PinnedCompare.tsx";
 import { DiscoverView, pageNumbers } from "../src/screens/discover/DiscoverScreen.tsx";
+import { browseHref, RegistriesScreen } from "../src/screens/discover/RegistriesScreen.tsx";
 import { SpecimenCapture } from "../src/screens/discover/SpecimenCapture.tsx";
 import { InventoryView } from "../src/screens/inventory/InventoryScreen.tsx";
 
@@ -97,12 +98,15 @@ let drafts: unknown[];
 let service: "up" | "down";
 /** What `/__youi/discover-thumbs` answers: none by default, as a hub before `youiyoux discover previews`. */
 let thumbs: Thumbs | null;
+/** What `/__youi/discover-every` answers, by method: none by default, as a static host. */
+let every: ((method: string) => Response) | null;
 
 beforeEach(() => {
   calls = [];
   drafts = [];
   service = "up";
   thumbs = null;
+  every = null;
   resetDiscoverSource();
   resetThumbs();
   vi.stubGlobal(
@@ -113,6 +117,7 @@ beforeEach(() => {
       if (url.pathname === "/__youi/query") return viaMiddleware(url);
       if (url.pathname === "/__youi/discover-preview") return json(answerFor(await entryOf(url.searchParams.get("id")!)));
       if (url.pathname === "/__youi/discover-thumbs") return thumbs ? json(thumbs) : new Response("not found", { status: 404 });
+      if (url.pathname === "/__youi/discover-every") return every ? every(init?.method ?? "GET") : new Response("not found", { status: 404 });
       if (url.pathname === "/api/info") return service === "up" ? json({ schema: "youiyoux.workflow/v1", kinds: ["rule", "style", "library"] }) : new Response("<html>", { status: 502, headers: { "Content-Type": "text/html" } });
       if (url.pathname === "/api/drafts" && init?.method === "POST") {
         const body = JSON.parse(String(init.body)) as { content: { request: string; entry: LibraryEntry } };
@@ -221,8 +226,9 @@ describe("search by need (c1)", () => {
     expect(window.location.search).toContain("licence=unknown");
     expect([...document.querySelectorAll<HTMLElement>("[data-hit]")].every((hit) => text(hit).includes("licence unknown"))).toBe(true);
     expect(calls.some((c) => c.includes("licence=unknown"))).toBe(true);
-    expect(parseQuery("?q=x&role=button&source=%40shadcn&licence=known&style=styled&family=button-1&open=lib%3Ax&offset=20")).toEqual({ q: "x", role: "button", source: "@shadcn", licence: "known", style: "styled", family: "button-1", open: "lib:x", view: null, sort: null, per: 20, offset: 20 });
-    expect(queryToSearch(parseQuery("?licence=bogus&style=nope&q=a"))).toBe("?q=a");
+    expect(parseQuery("?q=x&role=button&source=%40shadcn&licence=known&style=styled&family=button-1&open=lib%3Ax&offset=20")).toEqual({ q: "x", role: "button", source: "@shadcn", licence: "known", style: "styled", family: "button-1", open: "lib:x", view: null, sort: null, per: 20, offset: 20, every: false });
+    expect(queryToSearch(parseQuery("?licence=bogus&style=nope&q=a&every=yes"))).toBe("?q=a");
+    expect(queryToSearch(parseQuery("?q=a&every=1"))).toBe("?q=a&every=1");
   });
 
   test("on a phone the facets fold behind one Filters button that says how many are on; each one on comes off without unfolding", async () => {
@@ -381,6 +387,13 @@ describe("an opened candidate, in the project's theme (c2)", () => {
     expect(screen.queryByTestId("candidate-drawer")).toBeNull();
   });
 
+  test("a link by ref (@shadcn/command) opens it too, and the address takes its id", async () => {
+    show(`?q=date%20picker&open=${encodeURIComponent("@shadcn/command")}`);
+    const drawer = await screen.findByTestId("candidate-drawer", {}, { timeout: 5000 });
+    expect(within(drawer).getByRole("heading", { name: "Command" })).toBeTruthy();
+    await waitFor(() => expect(parseQuery(window.location.search).open).toBe("lib:shadcn/component/command"));
+  });
+
   test("on a static host the link is found in the snapshot's listings", async () => {
     const listings = JSON.parse(readFileSync(join(scratch, "data", listingsFile), "utf8")) as ListingsFile;
     vi.stubGlobal(
@@ -397,6 +410,74 @@ describe("an opened candidate, in the project's theme (c2)", () => {
     expect(hit).toMatchObject({ id: "lib:coss/component/command", name: "command" });
     expect(hit).not.toHaveProperty("text");
     expect(await findDiscoverHit("lib:nope/component/x")).toBeNull();
+  });
+});
+
+describe("every registry, and the registries behind Discover", () => {
+  const WAIT = { timeout: 5000 };
+  const status = (state: string, extra: Record<string, unknown> = {}) => json({ state, done: 0, total: 0, listings: null, failed: 0, fetchedAt: null, error: null, ...extra });
+
+  test("Every registry searches beyond your sources (all=1 in the address and the query); not fetched yet, one button fetches every registry's list, says how far it has got, then searches again", async () => {
+    let state: "none" | "running" | "ready" = "none";
+    const posts: string[] = [];
+    every = (method) => {
+      if (method === "POST") return (posts.push(method), (state = "running"), status("running", { done: 1, total: 3 }));
+      if (state === "running") return ((state = "ready"), status("running", { done: 2, total: 3 }));
+      return state === "ready" ? status("ready", { done: 3, total: 3, listings: 120, fetchedAt: "2026-10-25T12:00:00.000Z" }) : status("none");
+    };
+    show("?q=command&view=list");
+    await waitFor(() => expect(document.querySelectorAll("[data-hit]").length).toBeGreaterThan(0), WAIT);
+    expect(document.querySelector("[data-every]")).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: "Every registry" }));
+    await waitFor(() => expect(parseQuery(window.location.search).every).toBe(true));
+    await waitFor(() => expect(calls.some((c) => c.startsWith("/__youi/query") && c.includes("all=1"))).toBe(true), WAIT);
+    const start = await screen.findByRole("button", { name: "Fetch every registry's list" }, WAIT);
+    expect(text(document.querySelector("[data-every='none']")!)).toMatch(/never an item's code/);
+    const asked = calls.filter((c) => c.startsWith("/__youi/query")).length;
+    fireEvent.click(start);
+    await waitFor(() => expect(text(document.querySelector("[data-every='running']")!)).toMatch(/1 of 3|2 of 3/), WAIT);
+    expect(posts).toEqual(["POST"]);
+    await waitFor(() => expect(document.querySelector("[data-every='ready']")).not.toBeNull(), WAIT);
+    expect(text(document.querySelector("[data-every='ready']")!)).toMatch(/^Searching every registry in shadcn's directory, as listed on/);
+    // The same search, asked again once the listings are in.
+    await waitFor(() => expect(calls.filter((c) => c.startsWith("/__youi/query")).length).toBeGreaterThan(asked), WAIT);
+    // Back to your sources: all=1 is gone.
+    fireEvent.click(screen.getByRole("radio", { name: "Your sources" }));
+    await waitFor(() => expect(window.location.search).not.toContain("every=1"));
+  });
+
+  test("on a static host, Every registry says it needs the hub's own server", async () => {
+    show("?every=1&view=list");
+    await waitFor(() => expect(document.querySelector("[data-every='none']")).not.toBeNull(), WAIT);
+    expect(text(document.querySelector("[data-every='none']")!)).toMatch(/youiyoux ui/);
+    expect(screen.queryByRole("button", { name: "Fetch every registry's list" })).toBeNull();
+  });
+
+  test("Registries lists the directory, yours and the official first; words narrow it; Browse its items opens Discover on it, among every registry's unless it is yours", async () => {
+    window.history.replaceState(null, "", "/discover/registries");
+    render(<RegistriesScreen />);
+    await waitFor(() => expect(document.querySelectorAll("[data-registry]").length).toBeGreaterThan(3), WAIT);
+    const names = [...document.querySelectorAll<HTMLElement>("[data-registry]")].map((li) => li.dataset.registry);
+    expect(names.slice(0, 2)).toEqual(["@shadcn", "@coss"]);
+    expect(names).not.toContain("@abstract");
+    expect(text(document.querySelector("[data-registry='@shadcn']")!)).toMatch(/Official/);
+    expect(text(document.querySelector("[data-registry='@coss']")!)).toMatch(/Your source.*\d+ to browse/);
+    expect(document.querySelector<HTMLAnchorElement>("[data-browse='@coss']")!.getAttribute("href")).toBe("/discover?source=%40coss");
+    expect(browseHref({ name: "@extra", state: "available" })).toBe("/discover?source=%40extra&every=1");
+    expect(document.querySelector<HTMLAnchorElement>("[data-registry='@coss'] a[target='_blank']")!.rel).toContain("noopener");
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search registries" }), { target: { value: "animated" } });
+    await waitFor(() => expect(window.location.search).toBe("?q=animated"), WAIT);
+    await waitFor(() => expect([...document.querySelectorAll<HTMLElement>("[data-registry]")].map((li) => li.dataset.registry)).toEqual(["@magicui"]), WAIT);
+    fireEvent.change(document.querySelector<HTMLSelectElement>("[data-registry-sort]")!, { target: { value: "name" } });
+    await waitFor(() => expect(window.location.search).toBe("?q=animated&sort=name"));
+    await waitFor(() => expect(calls.some((c) => c.includes("kind=registries") && c.includes("sort=name"))).toBe(true), WAIT);
+  });
+
+  test("Registries on a static host says it needs the hub's own server", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("<html>", { status: 200, headers: { "Content-Type": "text/html" } })));
+    window.history.replaceState(null, "", "/discover/registries");
+    render(<RegistriesScreen />);
+    expect(await screen.findByText(/youiyoux ui/, {}, WAIT)).toBeTruthy();
   });
 });
 

@@ -8,7 +8,7 @@
  * - the preview frame: /preview.html and /kit/ from the frame kit (`--kit`), /frame/ from the
  *   snapshot's frame, built from its demos at start (`--build-frame`, scripts/frame.ts);
  * - the endpoints the dev server has: Try it, the local index's queries, Discover previews and
- *   thumbnails (the same middleware as vite.config.ts);
+ *   thumbnails, and fetching every registry's listings (the same middleware as vite.config.ts);
  * - /api/, proxied to the workflow service (`--api`), as the dev server does;
  * - with `--live`, /__youi/events: an event each time the snapshot's manifest is rewritten
  *   (`youiyoux ui --watch`), named in index.html so the open hub loads each new generation.
@@ -20,6 +20,7 @@ import { createServer, request, type IncomingMessage, type Server, type ServerRe
 import type { AddressInfo } from "node:net";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { discoverEveryMiddleware } from "./discover-every.ts";
 import { discoverPreviewMiddleware } from "./discover-preview-server.ts";
 import { discoverThumbsMiddleware } from "./discover-thumbs.ts";
 import { buildFrame, FRAME_PATH, frameIsCurrent, KIT_PATH, type FrameBuild } from "./frame.ts";
@@ -120,7 +121,7 @@ export async function createHubServer(options: HubServerOptions): Promise<{ serv
     });
   }
 
-  const middleware: Middleware[] = [tryMiddleware(snapshot), queryMiddleware(), discoverPreviewMiddleware(snapshot, "/", { fallback: null }), discoverThumbsMiddleware(snapshot)];
+  const middleware: Middleware[] = [tryMiddleware(snapshot), queryMiddleware(), discoverPreviewMiddleware(snapshot, "/", { fallback: null }), discoverThumbsMiddleware(snapshot), discoverEveryMiddleware()];
   const run = (req: IncomingMessage, res: ServerResponse, at: number, last: () => void): void => {
     const step = middleware[at];
     if (!step) return last();

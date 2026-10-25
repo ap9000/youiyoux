@@ -2,7 +2,7 @@ import { mkdtemp, readFile, readdir, rm, mkdir, stat, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { candidateSource, catalogBytes, CURATED, readAllIndex, dedupe, expandAll, loadIndex, readSources, registryEntry, parseRegistryItems, searchIndex, selectSources, SHADCN, syncIndex, writeJson } from "../src/index.ts";
+import { candidateSource, catalogBytes, CURATED, readAllIndex, dedupe, expandAll, listRegistries, loadIndex, readSources, registryEntry, parseRegistryItems, searchIndex, selectSources, SHADCN, syncIndex, writeJson } from "../src/index.ts";
 import * as text from "../src/text.ts";
 import { fixtureFetcher } from "./fixture-fetcher.ts";
 
@@ -12,7 +12,7 @@ afterEach(async () => { vi.restoreAllMocks(); await rm(dir, { recursive: true, f
 const options = { sleep: async () => {}, now: () => new Date("2026-10-12T12:00:00Z"), npm: false, budgets: { npmPackages: 0, githubRepos: 0, githubSearches: 0 } };
 const rows = [
   { name: "@coss", url: "https://coss.com/ui/r/{name}.json" },
-  { name: "@extra", url: "https://extra.test/r/{name}.json" },
+  { name: "@extra", url: "https://extra.test/r/{name}.json", description: "Animated blocks for landing pages", ranking: { itemCount: 12 } },
   { name: "@icons", url: "https://icons.test/r/{name}.json", description: "icons" },
   { name: "@unsafe", url: "https://localhost/r/{name}.json" },
   { name: "@bad-home", url: "https://bad-home.test/r/{name}.json", homepage: "http://bad-home.test" },
@@ -71,6 +71,31 @@ test("all fetches other listings once, metadata stays lean, source fetches exact
   expect(await candidateSource(dir, "@extra/command", { fetcher: source.fetcher })).toMatchObject({ files: [{ content: SOURCE }] });
   await candidateSource(dir, entry.id, { fetcher: source.fetcher });
   expect(source.requests.map((r) => r.url)).toEqual(["https://extra.test/r/command.json"]);
+});
+
+test("registries: the directory for someone who does not know the names, yours and the official first, words narrow it, icon sets and unsafe ones left out", async () => {
+  await expect(listRegistries(dir)).rejects.toThrow(/youiyoux discover sync/);
+  await syncIndex({ ...options, cacheDir: dir, fetcher: fixtures().fetcher });
+  const all = await listRegistries(dir);
+  expect(all.rows.map((r) => [r.name, r.state, r.itemCount])).toEqual([["@shadcn", "official", null], ["@coss", "source", null], ["@extra", "available", 12]]);
+  expect(all).toMatchObject({ total: 3, left: 2, icons: 1, every: null });
+  expect(all.rows[2]).toMatchObject({ description: "Animated blocks for landing pages", homepage: null, listed: null });
+  // Every word, in the name or the description; any case.
+  expect((await listRegistries(dir, { q: "LANDING animated" })).rows.map((r) => r.name)).toEqual(["@extra"]);
+  expect((await listRegistries(dir, { q: "landing nothing" })).total).toBe(0);
+  expect((await listRegistries(dir, { icons: true })).rows.map((r) => r.name)).toContain("@icons");
+  expect((await listRegistries(dir, { sort: "name" })).rows.map((r) => r.name)).toEqual(["@coss", "@extra", "@shadcn"]);
+  expect(await listRegistries(dir, { limit: 1, offset: 1 })).toMatchObject({ total: 3, offset: 1, rows: [{ name: "@coss" }] });
+
+  // Fetching every registry's listings: how far it has got, and what it added.
+  const progress: Array<[number, number]> = [];
+  expect(await expandAll(dir, { fetcher: fixtures().fetcher, onProgress: (done, total) => progress.push([done, total]) })).toEqual({ registries: 1, failed: 0, listings: 1 });
+  expect(progress).toEqual([[0, 1], [1, 1]]);
+  const fetched = await listRegistries(dir, { listed: { "@extra": 1, "@shadcn": 7 } });
+  expect(fetched.every).toMatch(/^\d{4}-\d\d-\d\dT/);
+  expect(fetched.rows.map((r) => [r.name, r.state, r.listed])).toEqual([["@shadcn", "official", 7], ["@coss", "source", null], ["@extra", "listed", 1]]);
+  // The official registry's count is its listings when the directory gives none.
+  expect(fetched.rows[0]!.itemCount).toBe(7);
 });
 
 test("mirror URLs normalize host, query, template and trailing slash before content fallback", () => {

@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import type { Plugin } from "vite";
 import { defineConfig } from "vitest/config";
+import { discoverEveryMiddleware } from "./scripts/discover-every.ts";
 import { discoverPreviewMiddleware } from "./scripts/discover-preview-server.ts";
 import { discoverThumbsMiddleware } from "./scripts/discover-thumbs.ts";
 import { allowedHosts, queryMiddleware } from "./scripts/query-server.ts";
@@ -115,8 +116,24 @@ function discoverThumbs(): Plugin {
   };
 }
 
+/**
+ * Every registry (scripts/discover-every.ts): Discover's switch to every registry in shadcn's
+ * directory fetches their listings (metadata only) into the local index, on request; localhost only.
+ */
+function discoverEvery(): Plugin {
+  return {
+    name: "youiyoux-discover-every",
+    configureServer(server) {
+      server.middlewares.use(discoverEveryMiddleware(server.config.base));
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(discoverEveryMiddleware(server.config.base));
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react(), tailwindcss(), snapshotFiles(), tryIt(), query(), discoverPreview(), discoverThumbs()],
+  plugins: [react(), tailwindcss(), snapshotFiles(), tryIt(), query(), discoverPreview(), discoverThumbs(), discoverEvery()],
   resolve: { alias: { "@snapshot": snapshot } },
   // A system's demos may use any of the hub's UI packages. Pre-bundled up front, so the preview
   // frame's first visit to such a demo never makes the dev server re-optimize and reload mid-render.
