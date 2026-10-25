@@ -5,14 +5,17 @@
  * the project.
  *
  * Fetching runs none of a package's code here: install scripts are off (`--ignore-scripts`), and
- * the code runs only in the hub's sandboxed preview frame, bundled like the item's own files.
+ * the code runs only in the hub's sandboxed preview frame, bundled like the item's own files. The
+ * whole tree is resolved first (`--package-lock-only`) and refused unless every package in it comes
+ * from the registry the requested ones come from: a dependency on a git repository, a local path,
+ * a link or another host's tarball is never fetched.
  * Peer dependencies are not fetched (React always comes from the project). The names come from
  * fetched files, so each must be a plain npm name, and a version a plain range or tag: no URL,
  * path, git or file spec, and no Node built-in's name.
  */
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
+import { mkdir, readFile, rm } from "node:fs/promises";
 import { builtinModules } from "node:module";
 import { join } from "node:path";
 import { writeFileAtomic } from "@youiyoux/core";
@@ -59,6 +62,32 @@ const npm: NpmRunner = (args, cwd, signal) =>
     child.on("close", (code) => done({ code: code ?? 1, stderr }));
   });
 
+/**
+ * What in a resolved tree (package-lock.json v2/v3) does not come from the registry the requested
+ * packages came from: a git, file or link dependency, or a tarball on another host. Empty: none.
+ */
+export function offRegistry(lock: unknown, requested: readonly string[]): string[] {
+  const packages = (lock as { packages?: Record<string, { resolved?: unknown; link?: unknown; inBundle?: unknown }> } | null)?.packages ?? {};
+  const hostOf = (resolved: unknown): string | null => {
+    if (typeof resolved !== "string") return null;
+    try {
+      const url = new URL(resolved);
+      return url.protocol === "https:" || url.protocol === "http:" ? url.host : null;
+    } catch {
+      return null;
+    }
+  };
+  const hosts = new Set(requested.map((name) => hostOf(packages[`node_modules/${name}`]?.resolved)).filter((host): host is string => host !== null));
+  const refused: string[] = [];
+  for (const [path, entry] of Object.entries(packages)) {
+    if (path === "" || entry.inBundle === true) continue;
+    const name = path.slice(path.lastIndexOf("node_modules/") + "node_modules/".length);
+    const host = hostOf(entry.resolved);
+    if (entry.link === true || host === null || !hosts.has(host)) refused.push(`${name} (${typeof entry.resolved === "string" ? entry.resolved.slice(0, 120) : entry.link === true ? "a link" : "no registry source"})`);
+  }
+  return refused;
+}
+
 /** One install at a time per folder: npm does not share a node_modules with itself. */
 const installs = new Map<string, Promise<unknown>>();
 
@@ -82,19 +111,39 @@ export async function fetchPreviewPackages(cache: string, names: readonly string
     await mkdir(store, { recursive: true });
     if (!existsSync(join(store, "package.json"))) await writeFileAtomic(join(store, "package.json"), `${JSON.stringify({ name: "youiyoux-preview-packages", private: true, description: "npm packages fetched for Discover previews by youiyoux; safe to delete" }, null, 2)}\n`);
     const signal = AbortSignal.any([AbortSignal.timeout(options.timeoutMs ?? INSTALL_TIMEOUT_MS), ...(options.signal ? [options.signal] : [])]);
-    const args = ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--legacy-peer-deps", "--save-exact", "--loglevel=error", ...specs];
-    let result: { code: number; stderr: string };
+    const flags = ["--ignore-scripts", "--no-audit", "--no-fund", "--legacy-peer-deps", "--save-exact", "--loglevel=error"];
+    const npmRun = async (args: readonly string[]): Promise<void> => {
+      let result: { code: number; stderr: string };
+      try {
+        result = await (options.run ?? npm)(args, store, signal);
+      } catch (error: unknown) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new Error("npm is not installed on this machine, so the packages it needs could not be fetched");
+        if (signal.aborted && !options.signal?.aborted) throw new Error(`npm took over ${Math.round((options.timeoutMs ?? INSTALL_TIMEOUT_MS) / 1000)}s fetching ${specs.join(", ")} and was stopped`);
+        throw error;
+      }
+      if (result.code !== 0) {
+        const why = result.stderr.split("\n").map((line) => line.replace(/^npm (?:error|ERR!)\s*/, "").trim()).find((line) => line && !/^(?:A complete log|code )/.test(line));
+        throw new Error(`npm could not fetch ${specs.join(", ")}${why ? ` (${why.slice(0, 200)})` : ""}`);
+      }
+    };
+    // The tree first, nothing downloaded: what it would fetch, and from where.
+    const kept = await Promise.all(["package.json", "package-lock.json"].map(async (file) => [file, await readFile(join(store, file), "utf8").catch(() => null)] as const));
+    const restore = async (): Promise<void> => {
+      for (const [file, text] of kept) {
+        if (text === null) await rm(join(store, file), { force: true });
+        else await writeFileAtomic(join(store, file), text);
+      }
+    };
     try {
-      result = await (options.run ?? npm)(args, store, signal);
+      await npmRun(["install", "--package-lock-only", ...flags, ...specs]);
+      const lock = JSON.parse(await readFile(join(store, "package-lock.json"), "utf8")) as unknown;
+      const refused = offRegistry(lock, unique);
+      if (refused.length > 0) throw new Error(`refused to fetch ${specs.join(", ")}: ${refused.length === 1 ? "a package it depends on does" : `${refused.length} packages it depends on do`} not come from the npm registry: ${refused.slice(0, 3).join(", ")}`);
     } catch (error: unknown) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") throw new Error("npm is not installed on this machine, so the packages it needs could not be fetched");
-      if (signal.aborted && !options.signal?.aborted) throw new Error(`npm took over ${Math.round((options.timeoutMs ?? INSTALL_TIMEOUT_MS) / 1000)}s fetching ${specs.join(", ")} and was stopped`);
+      await restore();
       throw error;
     }
-    if (result.code !== 0) {
-      const why = result.stderr.split("\n").map((line) => line.replace(/^npm (?:error|ERR!)\s*/, "").trim()).find((line) => line && !/^(?:A complete log|code )/.test(line));
-      throw new Error(`npm could not fetch ${specs.join(", ")}${why ? ` (${why.slice(0, 200)})` : ""}`);
-    }
+    await npmRun(["install", ...flags, ...specs]);
     return { store, fetched: specs };
   });
   installs.set(store, install);

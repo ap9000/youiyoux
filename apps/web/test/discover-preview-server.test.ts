@@ -158,6 +158,10 @@ describe("Discover previews (c1, c2)", () => {
     const runs: string[][] = [];
     const npm = async (args: readonly string[], cwd: string) => {
       runs.push([...args]);
+      if (args.includes("--package-lock-only")) {
+        writeFileSync(join(cwd, "package-lock.json"), JSON.stringify({ lockfileVersion: 3, packages: { "": {}, "node_modules/motion": { resolved: "https://registry.npmjs.org/motion/-/motion-12.0.0.tgz" } } }));
+        return { code: 0, stderr: "" };
+      }
       // What npm would leave: the package in the folder it ran in.
       mkdirSync(join(cwd, "node_modules/motion"), { recursive: true });
       writeFileSync(join(cwd, "node_modules/motion/package.json"), JSON.stringify({ name: "motion", version: "12.0.0", exports: { "./react": "./react.js" } }));
@@ -169,10 +173,11 @@ describe("Discover previews (c1, c2)", () => {
     expect(body.error).toBeNull();
     expect(body.script).toMatch(/\.js$/);
     expect(body.notes).toContain("motion: not installed in your project, so a copy fetched from npm for previews draws it (install it to use it for real)");
-    expect(runs).toEqual([["install", "--ignore-scripts", "--no-audit", "--no-fund", "--legacy-peer-deps", "--save-exact", "--loglevel=error", "motion"]]);
+    const flags = ["--ignore-scripts", "--no-audit", "--no-fund", "--legacy-peer-deps", "--save-exact", "--loglevel=error"];
+    expect(runs).toEqual([["install", "--package-lock-only", ...flags, "motion"], ["install", ...flags, "motion"]]);
     // Kept: the next preview needing it fetches nothing.
     json(await call(discoverPreviewMiddleware(SNAPSHOT, "/", { cache, fetcher, npm }), ask));
-    expect(runs).toHaveLength(1);
+    expect(runs).toHaveLength(2);
   }, 60_000);
 
   describe("builds are bounded", () => {
