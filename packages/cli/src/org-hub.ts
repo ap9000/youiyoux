@@ -23,8 +23,11 @@
  * A record goes to the workspace that names its GitHub owner (by numeric id, from GitHub Actions'
  * OIDC token), or whose CI token it comes with (`youiyoux hub token add`); anything else is
  * refused. A member is invited (`youiyoux hub member add`) or let in as an active member of the
- * workspace's GitHub organisation, checked at each sign-in. Sessions are random, kept by their
- * SHA-256 only, in an HttpOnly, SameSite=Strict cookie; GitHub's token is revoked once read.
+ * workspace's GitHub organisation, checked at each sign-in and trusted for 12 hours: past that, a
+ * session that relies on it must sign in again, so someone who has left the organisation loses its
+ * workspaces within hours, not at the session's end. An invite, or its removal, counts at once.
+ * Sessions are random, kept by their SHA-256 only, in an HttpOnly, SameSite=Strict cookie;
+ * GitHub's token is revoked once read.
  *
  * Who may send a record: with YOUIYOUX_HUB_GITHUB_OWNERS set, only GitHub Actions in those
  * owners' repositories, each proving with GitHub's OIDC token that the record's repository, commit
@@ -59,6 +62,8 @@ export const ORG_MODE_META = "youi-org-mode";
 const COOKIE = "youi_hub_session";
 const STATE_COOKIE = "youi_hub_github_state";
 const WORKSPACE_SESSION_DAYS = 14;
+/** How long a sign-in's check of someone's GitHub organisations stands for a membership it gave. */
+export const ORG_RECHECK_HOURS = 12;
 const MAX_RECORD = 2 * 1024 * 1024;
 const MIN_SECRET = 24;
 const SESSION_DAYS = 30;
@@ -220,10 +225,18 @@ export async function startOrgHub(options: OrgHubOptions): Promise<OrgHub> {
     const value = cookie(req, COOKIE);
     return value ? sha256(value) : null;
   };
-  /** Who a workspace hub's request is from, or null. */
+  /**
+   * Who a workspace hub's request is from, and their memberships, or null: no session, an expired
+   * one, or one whose sign-in checked an organisation membership it relies on too long ago.
+   */
   const person = async (req: IncomingMessage) => {
     const hash = sessionHash(req);
-    return hash ? options.store.sessionUser(hash, now().toISOString()) : null;
+    const user = hash ? await options.store.sessionUser(hash, now().toISOString()) : null;
+    if (!user) return null;
+    const memberships = await options.store.memberships(user.githubId);
+    const checked = now().getTime() - Date.parse(user.signedInAt) <= ORG_RECHECK_HOURS * 3_600_000;
+    if (!checked && memberships.some((m) => m.via === "org")) return null;
+    return { user, memberships };
   };
   const redirect = (res: ServerResponse, location: string, cookies: string[]): void => {
     res.writeHead(302, { ...HEADERS, Location: location, "Cache-Control": "no-store", "Set-Cookie": cookies });
@@ -334,17 +347,17 @@ export async function startOrgHub(options: OrgHubOptions): Promise<OrgHub> {
             return back(null, [cookieHeader(secret, WORKSPACE_SESSION_DAYS * 86_400)]);
           }
           if (path === "/api/me" && method === "GET") {
-            const user = await person(req);
-            if (!user) return send(res, 401, { error: "sign in with GitHub" });
-            const memberships = await options.store.memberships(user.githubId);
+            const signedIn = await person(req);
+            if (!signedIn) return send(res, 401, { error: "sign in with GitHub" });
+            const { user, memberships } = signedIn;
             return send(res, 200, { user: { login: user.login, name: user.name }, workspaces: memberships.map((m) => ({ id: m.workspace, name: m.name, role: m.role })) });
           }
           const scoped = /^\/api\/w\/([a-z0-9-]{1,40})\/org$/.exec(path);
           if (scoped && method === "GET") {
-            const user = await person(req);
-            if (!user) return send(res, 401, { error: "sign in with GitHub" });
+            const signedIn = await person(req);
+            if (!signedIn) return send(res, 401, { error: "sign in with GitHub" });
             // Not a member and no such workspace answer the same: a workspace's name is not given away.
-            if (!(await options.store.memberships(user.githubId)).some((m) => m.workspace === scoped[1])) return send(res, 404, { error: `you are not a member of a workspace ${scoped[1]} on this hub` });
+            if (!signedIn.memberships.some((m) => m.workspace === scoped[1])) return send(res, 404, { error: `you are not a member of a workspace ${scoped[1]} on this hub` });
             return send(res, 200, orgView(await options.store.latestRecords(scoped[1]), now()));
           }
           if (path === "/api/session" && method === "DELETE") {

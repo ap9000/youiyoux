@@ -85,8 +85,10 @@ docker compose exec hub youiyoux hub owner add acme acme
 docker compose exec hub youiyoux hub member add acme your-login --admin
 ```
 
-- `--org` lets every active member of that GitHub organisation in, checked each time they sign in:
-  someone who has left it loses access at their next sign-in, or when their 14-day session ends.
+- `--org` lets every active member of that GitHub organisation in, checked when they sign in. That
+  check stands for 12 hours; then the hub asks them to sign in again (one click: GitHub does not ask
+  again for an app they have approved), so someone who has left the organisation loses access within
+  12 hours. Invited members keep a 14-day session, and removing anyone counts at once.
 - `owner add` says whose repositories' CI sends records here: an organisation or a user, kept by
   GitHub's numeric id, so a renamed account's old name never matches. One owner feeds one workspace.
 - `member add` invites a person by login, also outside the organisation; `--admin` marks them as the

@@ -268,6 +268,11 @@ export interface HubUser {
   readonly name: string | null;
 }
 
+/** A signed-in person, and when the sign-in that made their session checked their organisations. */
+export interface SessionUser extends HubUser {
+  readonly signedInAt: string;
+}
+
 export interface Membership {
   readonly workspace: string;
   readonly name: string;
@@ -353,7 +358,7 @@ export interface Store {
   /** A session for a person, by the SHA-256 of its secret. */
   addSession(hash: string, githubId: string, at: string, expiresAt: string): Promise<void>;
   /** The person a session is for, while it has not expired. */
-  sessionUser(hash: string, now: string): Promise<HubUser | null>;
+  sessionUser(hash: string, now: string): Promise<SessionUser | null>;
   removeSession(hash: string): Promise<void>;
 
   /** Replace everything one source said about the graph. */

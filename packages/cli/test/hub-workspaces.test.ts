@@ -150,11 +150,36 @@ describe("signing in with GitHub", () => {
     expect(cookieOf(out, "youi_hub_session")).toMatch(/^youi_hub_session=; .*Max-Age=0/);
     expect((await get("/api/me", session)).status).toBe(401);
 
-    const later = await signIn("peter-code");
+    // Milton is invited, so nothing but the session's end asks him to sign in again.
+    await store.addMember("globex", { id: "12", login: "milton" }, "member", "invite", clock.toISOString());
+    const later = await signIn("milton-code");
     clock = new Date(clock.getTime() + 14 * 86_400_000 - 1000);
     expect((await get("/api/me", later)).status).toBe(200);
     clock = new Date(clock.getTime() + 2000);
     expect((await get("/api/me", later)).status).toBe(401);
+  });
+});
+
+describe("a membership from GitHub's organisation", () => {
+  test("stands 12 hours after the sign-in that checked it; then the person signs in again, and someone who has left loses the workspace", async () => {
+    const session = await signIn("peter-code");
+    clock = new Date(clock.getTime() + 12 * 3_600_000);
+    expect((await get("/api/w/acme/org", session)).status).toBe(200);
+    clock = new Date(clock.getTime() + 1000);
+    expect((await get("/api/w/acme/org", session)).status).toBe(401);
+    expect((await get("/api/me", session)).status).toBe(401);
+    people.set("peter-code", { ...PETER, orgs: [] });
+    const again = await signIn("peter-code");
+    expect(await (await get("/api/me", again)).json()).toMatchObject({ workspaces: [] });
+    expect((await get("/api/w/acme/org", again)).status).toBe(404);
+  });
+
+  test("an admin's removal counts at the next request, whatever the session", async () => {
+    await store.addMember("globex", { id: "12", login: "milton" }, "member", "invite", clock.toISOString());
+    const session = await signIn("milton-code");
+    expect((await get("/api/w/globex/org", session)).status).toBe(200);
+    await store.removeMember("globex", "12");
+    expect((await get("/api/w/globex/org", session)).status).toBe(404);
   });
 });
 

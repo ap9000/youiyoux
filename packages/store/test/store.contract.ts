@@ -346,7 +346,7 @@ export function storeContract(engine: Engine): void {
       expect((await store.members("initech")).map((m) => m.login)).toEqual(["peter-gibbons"]);
 
       await store.addSession("session-hash", "11", at, "2026-10-26T12:00:00.000Z");
-      expect(await store.sessionUser("session-hash", "2026-10-26T11:59:59.000Z")).toEqual({ githubId: "11", login: "peter-gibbons", name: "Peter" });
+      expect(await store.sessionUser("session-hash", "2026-10-26T11:59:59.000Z")).toEqual({ githubId: "11", login: "peter-gibbons", name: "Peter", signedInAt: at });
       expect(await store.sessionUser("session-hash", "2026-10-26T12:00:00.000Z")).toBeNull();
       expect(await store.sessionUser("another-hash", at)).toBeNull();
       await store.removeSession("session-hash");

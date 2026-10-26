@@ -7,7 +7,7 @@ import type { CiRecord } from "@youiyoux/core";
 import { pageInteger, Lock, type Adapter, type Param, type Row } from "./driver.ts";
 import { MIGRATIONS, SCHEMA_VERSION } from "./migrations.ts";
 import { DEFAULT_WORKSPACE } from "./types.ts";
-import type { Ambiguous, GithubAccount, HubUser, MemberVia, Membership, Workspace, WorkspaceMember, WorkspaceRole, ProjectScope, DiscoverFilter, DiscoverItem, DiscoverSort, DiscoverMatchQuery, DiscoverPage, DiscoverRow, DiscoverScope, EdgeKind, Facets, FamilyRecord, Graph, GraphNode, InventoryRun, Licence, LookRecord, NodeKind, Page, Reached, RuleCovers, ScanRecord, Signal, SourceClass, Store, StoreStats, SwapImpact, WhereUsed } from "./types.ts";
+import type { Ambiguous, GithubAccount, HubUser, MemberVia, SessionUser, Membership, Workspace, WorkspaceMember, WorkspaceRole, ProjectScope, DiscoverFilter, DiscoverItem, DiscoverSort, DiscoverMatchQuery, DiscoverPage, DiscoverRow, DiscoverScope, EdgeKind, Facets, FamilyRecord, Graph, GraphNode, InventoryRun, Licence, LookRecord, NodeKind, Page, Reached, RuleCovers, ScanRecord, Signal, SourceClass, Store, StoreStats, SwapImpact, WhereUsed } from "./types.ts";
 
 /** The tables a rebuild empties: everything derived from git. ci_records is what CI sent, kept across rebuilds. */
 const TABLES = ["meta", "discover_items", "discover_roles", "signals", "licences", "scans", "families", "looks", "nodes", "edges"] as const;
@@ -407,9 +407,9 @@ export class SqlStore implements Store {
     });
   }
 
-  async sessionUser(hash: string, now: string): Promise<HubUser | null> {
-    const row = (await this.db.all<{ github_id: string; login: string; name: string | null }>(`SELECT u.github_id, u.login, u.name FROM hub_sessions s JOIN hub_users u ON u.github_id = s.github_id WHERE s.hash = ? AND s.expires_at > ?`, [hash, now]))[0];
-    return row ? { githubId: row.github_id, login: row.login, name: row.name } : null;
+  async sessionUser(hash: string, now: string): Promise<SessionUser | null> {
+    const row = (await this.db.all<{ github_id: string; login: string; name: string | null; created_at: string }>(`SELECT u.github_id, u.login, u.name, s.created_at FROM hub_sessions s JOIN hub_users u ON u.github_id = s.github_id WHERE s.hash = ? AND s.expires_at > ?`, [hash, now]))[0];
+    return row ? { githubId: row.github_id, login: row.login, name: row.name, signedInAt: String(row.created_at) } : null;
   }
 
   async removeSession(hash: string): Promise<void> {
