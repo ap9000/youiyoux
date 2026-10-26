@@ -26,7 +26,7 @@
  *   POST   /api/w/<id>/admin/members          { account, role }: invite someone by GitHub login
  *   PATCH  /api/w/<id>/admin/members/<github id>  { role }
  *   DELETE /api/w/<id>/admin/members/<github id>
- *   POST   /api/w/<id>/admin/owners           { account }: a GitHub owner whose CI sends records here
+ *   POST   /api/w/<id>/admin/owners           { account }: the workspace's GitHub organisation, or the admin's own account
  *   DELETE /api/w/<id>/admin/owners/<github id>
  *   POST   /api/w/<id>/admin/tokens           { name }: a CI token, in the answer once
  *   DELETE /api/w/<id>/admin/tokens/<name>
@@ -291,11 +291,13 @@ export async function startOrgHub(options: OrgHubOptions): Promise<OrgHub> {
       }
     }
     const at = now().toISOString();
+    // Always as GitHub has it: the CLI's offline id:login is taken as given, so the page never takes it.
     const lookup = async (field: string): Promise<Awaited<ReturnType<typeof githubAccount>> | string> => {
       const given = body[field];
-      if (typeof given !== "string" || given.trim() === "") return `send { "${field}": "<GitHub login>" }`;
+      if (typeof given !== "string" || given.trim() === "" || given.includes(":")) return `send { "${field}": "<GitHub login>" }: a login, which the hub looks up on GitHub`;
       try {
-        return await (ws!.lookup ?? githubAccount)(given);
+        const found = await (ws!.lookup ?? githubAccount)(given);
+        return found.type === null ? `GitHub did not say what kind of account ${given} is` : found;
       } catch (error: unknown) {
         return error instanceof Error ? error.message : String(error);
       }
@@ -331,6 +333,8 @@ export async function startOrgHub(options: OrgHubOptions): Promise<OrgHub> {
         const found = await lookup("account");
         if (typeof found === "string") return send(res, 422, { error: found });
         if (workspace.owners.some((o) => o.id === found.id)) return send(res, 409, { error: `${found.login}'s CI sends records here already` });
+        // An admin adds only what the workspace already stands for: its GitHub organisation, or their own account. Anyone else's repositories are the operator's to route.
+        if (found.id !== workspace.githubOrg?.id && found.id !== signedIn.user.githubId) return send(res, 403, { error: `from this page, an admin adds ${workspace.githubOrg ? `${workspace.githubOrg.login}, the workspace's GitHub organisation, or ` : ""}their own account; whoever runs the hub adds ${found.login} (youiyoux hub owner add ${id} ${found.login})` });
         if (await options.store.workspaceForOwner(found.id)) return send(res, 409, { error: `${found.login}'s CI sends its records to another workspace on this hub, and an owner feeds one: the hub's operator moves it (youiyoux hub owner remove)` });
         await options.store.addOwner(id, { id: found.id, login: found.login }, at);
         return send(res, 201, { owner: { id: found.id, login: found.login } });

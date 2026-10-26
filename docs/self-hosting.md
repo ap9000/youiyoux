@@ -95,14 +95,15 @@ docker compose exec hub youiyoux hub member add acme your-login --admin
   the workspace's admins, who manage it from the page from then on (below). An invite stays when the
   person leaves the organisation; `member remove` ends it.
 - Accounts are looked up on GitHub by login or id; on a machine that cannot reach GitHub, give
-  `id:login` (`1234567:acme`).
+  `id:login` (`1234567:acme`). The Manage page takes only a login, always confirmed on GitHub.
 
 `youiyoux hub workspace list` shows each workspace with its owners, members and CI tokens;
 `youiyoux hub member list acme` shows its members and how each got in.
 
 **The Manage page.** A workspace's admins see Manage beside its overview. There they invite people
-by GitHub login and change their roles, add or remove the GitHub owners whose CI sends records, and
-make or remove CI tokens; each in a modal, where a new token is shown once. A workspace always keeps
+by GitHub login and change their roles, remove GitHub owners and add back the workspace's
+organisation or their own account (any other owner is the operator's: `youiyoux hub owner add`, so
+no admin can route another organisation's records to their workspace), and make or remove CI tokens; each in a modal, where a new token is shown once. A workspace always keeps
 one admin: the last one can neither be removed nor step down. The hub sends no invitation: tell the
 person the hub's address, and they sign in with GitHub. A change is taken only from the hub's own page
 (its origin is `YOUIYOUX_HUB_AUDIENCE`'s). Adding or removing a workspace, and its `--org`, stay with

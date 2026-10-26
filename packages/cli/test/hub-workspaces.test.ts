@@ -50,6 +50,8 @@ const fakeGithub: GithubSignIn = {
 /** GitHub's accounts, as the admin pages look them up. */
 const ACCOUNTS: Record<string, { id: string; login: string; type: "User" | "Organization" }> = {
   samir: { id: "13", login: "samir", type: "User" },
+  milton: { id: "12", login: "milton", type: "User" },
+  acme: { id: "1001", login: "acme", type: "Organization" },
   initrode: { id: "4004", login: "initrode", type: "Organization" },
   globex: { id: "2002", login: "globex", type: "Organization" },
 };
@@ -272,6 +274,9 @@ describe("a workspace's admin pages", () => {
     const stranger = await change("POST", "/api/w/acme/admin/members", milton, { account: "nobody-here" });
     expect([stranger.status, (await stranger.json()).error]).toEqual([422, "GitHub has no account nobody-here"]);
     expect((await change("POST", "/api/w/acme/admin/members", milton, { account: "samir", role: "owner" })).status).toBe(400);
+    // The CLI's offline id:login is the operator's: the page takes only a login GitHub confirms.
+    expect((await change("POST", "/api/w/acme/admin/members", milton, { account: "14:a-made-up-name" })).status).toBe(422);
+    expect((await store.members("acme")).map((m) => m.githubId)).not.toContain("14");
 
     expect((await change("PATCH", "/api/w/acme/admin/members/13", milton, { role: "member" })).status).toBe(200);
     expect((await store.memberships("13"))[0]).toMatchObject({ role: "member" });
@@ -288,16 +293,23 @@ describe("a workspace's admin pages", () => {
     expect((await change("DELETE", "/api/w/acme/admin/members/13", milton)).status).toBe(404);
   });
 
-  test("adds a GitHub owner, whose CI's records then come here, and removes it; an owner another workspace has stays there", async () => {
+  test("removes a GitHub owner and adds back the workspace's organisation, or the admin's own account; anyone else's repositories stay the operator's", async () => {
     const { milton } = await admins();
-    expect((await sendRecord(record("initrode/web"), { [GITHUB_TOKEN_HEADER]: oidc("initrode", "4004") })).status).toBe(403);
-    const added = await change("POST", "/api/w/acme/admin/owners", milton, { account: "initrode" });
-    expect([added.status, await added.json()]).toEqual([201, { owner: { id: "4004", login: "initrode" } }]);
-    expect(await (await sendRecord(record("initrode/web"), { [GITHUB_TOKEN_HEADER]: oidc("initrode", "4004") })).json()).toMatchObject({ workspace: "acme" });
-    const taken = await change("POST", "/api/w/acme/admin/owners", milton, { account: "globex" });
-    expect(taken.status).toBe(409);
+    expect((await change("DELETE", "/api/w/acme/admin/owners/1001", milton)).status).toBe(200);
+    expect((await sendRecord(record("acme/web"), { [GITHUB_TOKEN_HEADER]: oidc("acme", "1001") })).status).toBe(403);
+    const added = await change("POST", "/api/w/acme/admin/owners", milton, { account: "acme" });
+    expect([added.status, await added.json()]).toEqual([201, { owner: { id: "1001", login: "acme" } }]);
+    expect(await (await sendRecord(record("acme/web"), { [GITHUB_TOKEN_HEADER]: oidc("acme", "1001") })).json()).toMatchObject({ workspace: "acme" });
+    expect((await change("POST", "/api/w/acme/admin/owners", milton, { account: "milton" })).status).toBe(201);
+    expect((await store.workspace("acme"))!.owners.map((o) => o.login)).toEqual(["acme", "milton"]);
+
+    // Another organisation's records would come here, and it could not be added where it belongs.
+    const other = await change("POST", "/api/w/acme/admin/owners", milton, { account: "initrode" });
+    expect([other.status, (await other.json()).error]).toEqual([403, "from this page, an admin adds acme, the workspace's GitHub organisation, or their own account; whoever runs the hub adds initrode (youiyoux hub owner add acme initrode)"]);
+    expect((await change("POST", "/api/w/acme/admin/owners", milton, { account: "globex" })).status).toBe(403);
+    expect((await change("POST", "/api/w/acme/admin/owners", milton, { account: "4004:initrode" })).status).toBe(422);
+    expect(await store.workspaceForOwner("4004")).toBeNull();
     expect(await store.workspaceForOwner("2002")).toBe("globex");
-    expect((await change("DELETE", "/api/w/acme/admin/owners/4004", milton)).status).toBe(200);
     expect((await sendRecord(record("initrode/web"), { [GITHUB_TOKEN_HEADER]: oidc("initrode", "4004") })).status).toBe(403);
   });
 

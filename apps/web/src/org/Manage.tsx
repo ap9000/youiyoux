@@ -135,7 +135,7 @@ function OwnerModal({ data, onClose, onDone }: { data: WorkspaceAdmin; onClose: 
   return (
     <Modal
       title="Add a GitHub owner"
-      description="An organisation or account. GitHub Actions in its repositories then send their records here, each proving which repository it comes from: no secret to share."
+      description={`${data.workspace.githubOrg ? `${data.workspace.githubOrg.login}, the workspace's GitHub organisation, or your own account` : "Your own GitHub account"}. GitHub Actions in its repositories then send their records here, each proving which repository it comes from. Any other owner is added by whoever runs the hub.`}
       icon={Building2}
       onClose={onClose}
       onSubmit={submit}
@@ -149,7 +149,7 @@ function OwnerModal({ data, onClose, onDone }: { data: WorkspaceAdmin; onClose: 
       }
     >
       <Field label="GitHub owner" error={error} hint="Its login, as in github.com/acme.">
-        {(id, describedBy) => <TextInput id={id} value={account} onChange={(e) => setAccount(e.target.value)} placeholder="acme" aria-describedby={describedBy} aria-invalid={error ? true : undefined} autoFocus className="max-md:h-11" />}
+        {(id, describedBy) => <TextInput id={id} value={account} onChange={(e) => setAccount(e.target.value)} placeholder={data.workspace.githubOrg?.login ?? "octocat"} aria-describedby={describedBy} aria-invalid={error ? true : undefined} autoFocus className="max-md:h-11" />}
       </Field>
     </Modal>
   );
