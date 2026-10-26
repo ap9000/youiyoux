@@ -39,6 +39,7 @@ jobs:
     outputs:
       version: ${{ steps.verify.outputs.version }}
       tarball: ${{ steps.pack.outputs.name }}
+      published: ${{ steps.npm.outputs.published }}
     env:
       TAG: ${{ inputs.tag || github.ref_name }}
     steps:
@@ -97,9 +98,18 @@ jobs:
           path: ${{ steps.pack.outputs.path }}
           if-no-files-found: error
           retention-days: 7
+      # A re-run for a version already on npm skips the publish job, and with it the npm
+      # environment, which only a tag may deploy to (a re-run starts from main).
+      - name: Already on npm?
+        id: npm
+        env:
+          VERSION: ${{ steps.verify.outputs.version }}
+        run: |
+          if [ "$(npm view "youiyoux@$VERSION" version 2>/dev/null)" = "$VERSION" ]; then echo "published=true" >> "$GITHUB_OUTPUT"; else echo "published=false" >> "$GITHUB_OUTPUT"; fi
 
   publish:
     needs: build
+    if: needs.build.outputs.published != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     # Add required reviewers to this environment in the repo settings to approve each publish.
@@ -136,6 +146,7 @@ jobs:
 
   image:
     needs: [build, publish]
+    if: ${{ !cancelled() && needs.build.result == 'success' && contains(fromJSON('["success", "skipped"]'), needs.publish.result) }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -193,6 +204,7 @@ jobs:
 
   release:
     needs: [build, publish]
+    if: ${{ !cancelled() && needs.build.result == 'success' && contains(fromJSON('["success", "skipped"]'), needs.publish.result) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

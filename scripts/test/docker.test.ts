@@ -78,6 +78,17 @@ describe("docker/compose.yml", () => {
     expect(read(".github/workflows/release.yml")).toContain("ghcr.io/${{ github.repository_owner }}/youiyoux");
   });
 
+  test("a release re-run for a version already on npm skips the npm environment and still pushes the image", () => {
+    type Job = { needs?: string[]; if?: string; outputs?: Record<string, string>; environment?: string; steps: Array<{ id?: string; run?: string }> };
+    const { jobs } = parse(read(".github/workflows/release.yml")) as { jobs: Record<string, Job> };
+    expect(jobs.build!.outputs?.published).toBe("${{ steps.npm.outputs.published }}");
+    expect(jobs.build!.steps.find((s) => s.id === "npm")?.run).toContain('npm view "youiyoux@$VERSION" version');
+    expect(jobs.publish!.environment).toBe("npm");
+    expect(jobs.publish!.if).toBe("needs.build.outputs.published != 'true'");
+    // A job that needs a skipped job is skipped too, unless its condition says otherwise.
+    for (const name of ["image", "release"]) expect(jobs[name]!.if, name).toMatch(/needs\.build\.result == 'success'.*\["success", "skipped"\].*needs\.publish\.result/);
+  });
+
   test("a workflow job that checks out the repo without installing pnpm sets up Node without pnpm's cache", () => {
     // setup-node reads package.json's packageManager and fails the job when that pnpm is not on PATH.
     for (const file of ["ci.yml", "release.yml", "web-preview.yml"]) {
