@@ -1,0 +1,61 @@
+# The team's hosted hub with Postgres, for `docker compose up -d` (docs/self-hosting.md).
+# Copy .env.example to .env beside this file and fill it in; nothing secret is kept here.
+#
+#   docker compose up -d                   the hub on http://127.0.0.1:8080, Postgres beside it
+#   docker compose --profile https up -d   and Caddy in front, with a certificate for YOUIYOUX_DOMAIN
+name: youiyoux
+
+services:
+  hub:
+    image: ghcr.io/ap9000/youiyoux:${YOUIYOUX_VERSION:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://youiyoux:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (openssl rand -hex 24)}@db:5432/youiyoux
+      YOUIYOUX_HUB_VIEW_KEY: ${YOUIYOUX_HUB_VIEW_KEY:?set YOUIYOUX_HUB_VIEW_KEY in .env (openssl rand -base64 32)}
+      YOUIYOUX_HUB_GITHUB_OWNERS: ${YOUIYOUX_HUB_GITHUB_OWNERS:-}
+      YOUIYOUX_HUB_AUDIENCE: ${YOUIYOUX_HUB_AUDIENCE:-}
+      YOUIYOUX_HUB_BRANCHES: ${YOUIYOUX_HUB_BRANCHES:-}
+      YOUIYOUX_HUB_TOKEN: ${YOUIYOUX_HUB_TOKEN:-}
+    # This machine only: reach it through the https profile's Caddy, or your own proxy.
+    ports:
+      - "127.0.0.1:${YOUIYOUX_PORT:-8080}:8080"
+
+  db:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: youiyoux
+      POSTGRES_DB: youiyoux
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (openssl rand -hex 24)}
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U youiyoux -d youiyoux"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  proxy:
+    profiles: [https]
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on: [hub]
+    environment:
+      YOUIYOUX_DOMAIN: ${YOUIYOUX_DOMAIN:-}
+    # Compose reads every profile's variables, so the domain is required here, when Caddy starts.
+    command: ["sh", "-c", "test -n \"$$YOUIYOUX_DOMAIN\" || { echo 'set YOUIYOUX_DOMAIN in .env: the hub domain, pointed at this machine' >&2; exit 1; }; exec caddy run --config /etc/caddy/Caddyfile --adapter caddyfile"]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  db:
+  caddy-data:
+  caddy-config:

@@ -15,6 +15,10 @@
 No npm token is stored anywhere. The workflow signs in with GitHub's OIDC token and publishes with
 provenance.
 
+4. After the first release with the image job: GitHub → your profile → **Packages** → `youiyoux` →
+   **Package settings** → **Change visibility** → Public, so teams can pull
+   `ghcr.io/ap9000/youiyoux` without signing in. GHCR makes a new package private.
+
 ## Every release
 
 ```sh
@@ -27,10 +31,12 @@ commits `Release vX.Y.Z`, tags `vX.Y.Z`, shows what it will push and asks before
 skips the question).
 
 The tag push runs [`release.yml`](../.github/workflows/release.yml). It publishes only a tag whose
-commit is on `main` and matches the package version. Three jobs, least privilege each: build
+commit is on `main` and matches the package version. Four jobs, least privilege each: build
 (typecheck, tests, `pnpm pack`; read-only), publish (that exact tarball, `npm publish
---provenance`; the only job with an OIDC token, in the `npm` environment), release (the GitHub
-Release with generated notes and the tarball).
+--provenance`; the only job with an OIDC token, in the `npm` environment), image (the hosted hub's
+image from that tarball, smoke-tested, pushed to `ghcr.io/ap9000/youiyoux` as the version and, for
+a release that is not a prerelease, `latest`; the only job that can write packages), release (the
+GitHub Release with generated notes and the tarball).
 
 | Flag | Does |
 | --- | --- |

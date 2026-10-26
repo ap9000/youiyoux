@@ -6,3 +6,5 @@ coverage/
 build/
 .scratch/
 evidence/
+# The self-hosted hub's secrets (docker/.env.example is the template).
+docker/.env

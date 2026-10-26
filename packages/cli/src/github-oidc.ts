@@ -55,6 +55,8 @@ const decode = (part: string): unknown => JSON.parse(Buffer.from(part, "base64ur
 
 /** The branches a record is taken from when the hub names none: a feature branch must not replace a repository's latest. */
 export const DEFAULT_BRANCHES = ["main", "master"] as const;
+/** Branches records are taken from, besides the defaults: comma-separated. */
+export const BRANCHES_ENV = "YOUIYOUX_HUB_BRANCHES";
 
 export interface GithubVerifierOptions {
   /**

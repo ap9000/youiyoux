@@ -1,0 +1,4 @@
+# The https profile's proxy (compose.yml): a certificate for YOUIYOUX_DOMAIN, the hub behind it.
+{$YOUIYOUX_DOMAIN} {
+	reverse_proxy hub:8080
+}

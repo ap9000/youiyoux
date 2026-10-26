@@ -29,7 +29,7 @@ import { extractSystem } from "./extract.ts";
 import { renderUpgrade, upgradeProject } from "./upgrade.ts";
 import { buildRecord, HUB_TOKEN_ENV, HUB_URL_ENV, renderRecord, sendRecord, toolVersion } from "./record.ts";
 import { AUDIENCE_ENV, GITHUB_OWNERS_ENV, secretsProblem, startOrgHub, VIEW_KEY_ENV } from "./org-hub.ts";
-import { audienceOf, DEFAULT_BRANCHES, githubVerifier, requestGithubToken } from "./github-oidc.ts";
+import { audienceOf, BRANCHES_ENV, DEFAULT_BRANCHES, githubVerifier, requestGithubToken } from "./github-oidc.ts";
 import { renderStatus, statusExitCode, statusTargets, workspaceStatus } from "./status.ts";
 import { startWorkspaceHub } from "./workspace-hub.ts";
 import { noteSource, rebuildIndex, recordInventory, recordProject, renderHistory, renderRebuild, SCANS_LOG, SOURCES_FILE } from "./index-store.ts";
@@ -755,7 +755,7 @@ async function cmdHubServe(values: Values, positionals: string[]): Promise<numbe
   const owners = (process.env[GITHUB_OWNERS_ENV] ?? "").split(",").map((o) => o.trim()).filter(Boolean);
   const audience = process.env[AUDIENCE_ENV];
   if (owners.length > 0 && !audience) throw new UsageError(`${GITHUB_OWNERS_ENV} needs ${AUDIENCE_ENV}: the hub's address, exactly as CI's ${HUB_URL_ENV} names it (GitHub's token is issued for it)`);
-  const branches = (process.env.YOUIYOUX_HUB_BRANCHES ?? "").split(",").map((b) => b.trim()).filter(Boolean);
+  const branches = (process.env[BRANCHES_ENV] ?? "").split(",").map((b) => b.trim()).filter(Boolean);
   const github = owners.length > 0 ? githubVerifier({ owners, audience: audience!, branches }) : undefined;
   const problem = secretsProblem(github ? undefined : process.env[HUB_TOKEN_ENV], process.env[VIEW_KEY_ENV], Boolean(github));
   if (problem) throw new UsageError(problem);

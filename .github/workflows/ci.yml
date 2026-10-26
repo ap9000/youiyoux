@@ -51,3 +51,7 @@ jobs:
         run: pnpm --filter @youiyoux/web build
       - name: Budgets (download incl. fonts, search)
         run: pnpm --filter @youiyoux/web measure
+
+      # The hosted hub's image, from this commit's package: built, run, a record sent and read back.
+      - name: Hub image (docker/Dockerfile)
+        run: node scripts/docker.ts --smoke

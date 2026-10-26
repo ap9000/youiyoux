@@ -312,7 +312,7 @@ A team's view across repositories, read-only and fed by CI. No source code leave
 
 **In each repository**, `youiyoux hooks install --record` writes a workflow that runs `youiyoux record --send` on each push to the default branch, pinned to this youiyoux version, after installing with the repository's lockfile, with only GitHub's own actions beside it. Give the repository the secret `YOUIYOUX_HUB_URL` (the hub's https address). The workflow has `id-token: write`, so the record carries GitHub's OIDC token for the hub's address, which proves the repository, commit and branch it was sent from. A hub on a shared ingest token also needs `YOUIYOUX_HUB_TOKEN`. The record (`youi.record/v1`) is each product's status as `youiyoux status` reads it: the System and version it follows and has synced, sync state, drift, check counts against the baseline, components used, open requests and the next step. Every string goes through the shareable report's redaction (repo-relative paths only; no home, username, environment or `.env` values, or credentials in URLs), and the record is refused if anything survives it. `youiyoux record` alone prints what it would send; `--out` writes it.
 
-**The hub** is `youiyoux hub serve`, on any host that runs Node 20 or later behind https:
+**The hub** is `youiyoux hub serve`, on any host that runs Node 20 or later behind https, or the image each release publishes, `ghcr.io/ap9000/youiyoux`, with a Compose file for Postgres and https ([Self-hosting](self-hosting.md)):
 
 ```sh
 npm install youiyoux pg                          # pg only for Postgres

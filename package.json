@@ -14,7 +14,8 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json",
     "schemas": "node packages/cli/bin/youi.js schema --write",
-    "release": "node scripts/release.ts"
+    "release": "node scripts/release.ts",
+    "docker": "node scripts/docker.ts"
   },
   "devDependencies": {
     "@youiyoux/cli": "workspace:*",
