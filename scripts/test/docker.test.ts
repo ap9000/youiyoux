@@ -77,6 +77,18 @@ describe("docker/compose.yml", () => {
     expect(hub.image).toBe("ghcr.io/ap9000/youiyoux:${YOUIYOUX_VERSION:-latest}");
     expect(read(".github/workflows/release.yml")).toContain("ghcr.io/${{ github.repository_owner }}/youiyoux");
   });
+
+  test("a workflow job that checks out the repo without installing pnpm sets up Node without pnpm's cache", () => {
+    // setup-node reads package.json's packageManager and fails the job when that pnpm is not on PATH.
+    for (const file of ["ci.yml", "release.yml", "web-preview.yml"]) {
+      const workflow = parse(read(`.github/workflows/${file}`)) as { jobs: Record<string, { steps: Array<{ uses?: string; with?: Record<string, unknown> }> }> };
+      for (const [name, job] of Object.entries(workflow.jobs)) {
+        const uses = (action: string) => job.steps.some((s) => s.uses?.startsWith(action));
+        if (!uses("actions/checkout") || uses("pnpm/action-setup")) continue;
+        for (const step of job.steps.filter((s) => s.uses?.startsWith("actions/setup-node"))) expect(step.with?.["package-manager-cache"], `${file} ${name}`).toBe(false);
+      }
+    }
+  });
 });
 
 describe("docker/.env.example", () => {
