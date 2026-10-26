@@ -59,10 +59,11 @@ async function fill(store: Store): Promise<void> {
 export function storeContract(engine: Engine): void {
   describe(`store contract on ${engine.name}`, () => {
     let store: Store;
+    // PGlite starts a WebAssembly Postgres: 2s alone, past vitest's 10s default when the whole suite shares a busy machine.
     beforeAll(async () => {
       store = await engine.open();
       await fill(store);
-    });
+    }, 60_000);
     afterAll(async () => {
       await store.close();
       await engine.cleanup?.();
