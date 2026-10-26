@@ -11,6 +11,21 @@
  *   GET  /api/health    "ok", for the platform's health check; no data
  *   GET  /              the hub's page, in its read-only organisation mode
  *
+ * With workspaces (`workspaces`: the hub's GitHub OAuth App), one hub holds several organisations,
+ * kept apart, and people sign in with GitHub instead of a view key:
+ *
+ *   GET  /auth/github           to GitHub's consent page, with a state kept in a short cookie
+ *   GET  /auth/github/callback  back from GitHub: the person, their memberships, a session
+ *   GET  /api/me                who is signed in, and the workspaces they are a member of
+ *   GET  /api/w/<id>/org        a workspace's view, for its members only (anyone else: 404)
+ *   DELETE /api/session         sign out: the session is removed
+ *
+ * A record goes to the workspace that names its GitHub owner (by numeric id, from GitHub Actions'
+ * OIDC token), or whose CI token it comes with (`youiyoux hub token add`); anything else is
+ * refused. A member is invited (`youiyoux hub member add`) or let in as an active member of the
+ * workspace's GitHub organisation, checked at each sign-in. Sessions are random, kept by their
+ * SHA-256 only, in an HttpOnly, SameSite=Strict cookie; GitHub's token is revoked once read.
+ *
  * Who may send a record: with YOUIYOUX_HUB_GITHUB_OWNERS set, only GitHub Actions in those
  * owners' repositories, each proving with GitHub's OIDC token that the record's repository, commit
  * and branch are its own (github-oidc.ts); no shared secret. Otherwise whoever holds
@@ -20,13 +35,14 @@
  * a URL with credentials is refused (`youiyoux record` redacts both), and so is one dated more
  * than five minutes after it arrives, which would otherwise stay its repository's latest.
  */
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, join, normalize, sep } from "node:path";
 import { CiRecord, type OrgView, type ProjectStatus, type ProjectStatusFailure } from "@youiyoux/core";
-import type { Store } from "@youiyoux/store";
-import { recordMismatch, type GithubVerifier } from "./github-oidc.ts";
+import { DEFAULT_WORKSPACE, type Store } from "@youiyoux/store";
+import type { GithubSignIn } from "./github-signin.ts";
+import { audienceOf, recordMismatch, type GithubVerifier } from "./github-oidc.ts";
 import { compareVersions } from "./upgrade.ts";
 
 export const VIEW_KEY_ENV = "YOUIYOUX_HUB_VIEW_KEY";
@@ -38,7 +54,11 @@ export const GITHUB_TOKEN_HEADER = "x-youi-github-oidc";
 const FUTURE_MS = 5 * 60 * 1000;
 /** The page reads this meta tag: it shows the organisation, from this API, and nothing else. */
 export const ORG_META = "youi-org";
+/** With workspaces, the page is told so: it signs people in with GitHub. */
+export const ORG_MODE_META = "youi-org-mode";
 const COOKIE = "youi_hub_session";
+const STATE_COOKIE = "youi_hub_github_state";
+const WORKSPACE_SESSION_DAYS = 14;
 const MAX_RECORD = 2 * 1024 * 1024;
 const MIN_SECRET = 24;
 const SESSION_DAYS = 30;
@@ -49,8 +69,10 @@ export interface OrgHubOptions {
   readonly ingestToken?: string;
   /** GitHub Actions' OIDC tokens: when set, a record is accepted only with one, for its own repository, commit and branch. */
   readonly github?: GithubVerifier;
-  /** For people: the organisation is shown only with it. */
-  readonly viewKey: string;
+  /** For people: the organisation is shown only with it. Not used with workspaces. */
+  readonly viewKey?: string;
+  /** Workspaces, with people signed in by the hub's GitHub OAuth App at its public address (`url`), instead of the view key. */
+  readonly workspaces?: { readonly signIn: GithubSignIn; readonly url: string };
   /** The built hub (index.html, assets/), or null to serve the API only. */
   readonly dist: string | null;
   readonly host?: string;
@@ -170,24 +192,43 @@ export function orgView(latest: ReadonlyArray<{ record: CiRecord; receivedAt: st
 const TYPES: Record<string, string> = { ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".svg": "image/svg+xml", ".woff2": "font/woff2", ".png": "image/png", ".webp": "image/webp", ".json": "application/json" };
 
 export async function startOrgHub(options: OrgHubOptions): Promise<OrgHub> {
-  const problem = secretsProblem(options.github ? undefined : options.ingestToken, options.viewKey, Boolean(options.github));
-  if (problem) throw new Error(problem);
+  const ws = options.workspaces ?? null;
+  if (!ws) {
+    const problem = secretsProblem(options.github ? undefined : options.ingestToken, options.viewKey, Boolean(options.github));
+    if (problem) throw new Error(problem);
+  }
   const host = options.host ?? "127.0.0.1";
   const local = ["127.0.0.1", "localhost", "::1"].includes(host);
   const secure = options.secureCookies ?? !local;
   const now = options.now ?? (() => new Date());
   // A session is the view key's HMAC: changing the key signs everyone out.
-  const session = createHmac("sha256", options.viewKey).update("youiyoux hub viewer").digest("base64url");
-  const page = options.dist
-    ? (await readFile(join(options.dist, "index.html"), "utf8")).replace("</head>", `    <meta name="${ORG_META}" content="/api/org" />\n  </head>`)
-    : null;
+  const session = ws ? "" : createHmac("sha256", options.viewKey!).update("youiyoux hub viewer").digest("base64url");
+  const meta = ws ? `    <meta name="${ORG_META}" content="/api/me" />\n    <meta name="${ORG_MODE_META}" content="workspaces" />\n` : `    <meta name="${ORG_META}" content="/api/org" />\n`;
+  const page = options.dist ? (await readFile(join(options.dist, "index.html"), "utf8")).replace("</head>", `${meta}  </head>`) : null;
+  const callback = ws ? `${audienceOf(ws.url)}/auth/github/callback` : "";
   const pagePolicy = csp(page ? [...page.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]!) : []);
   const viewer = (req: IncomingMessage): boolean => {
     const given = cookie(req, COOKIE) ?? null;
     const key = bearer(req);
-    return (given !== null && same(given, session)) || (key !== null && same(key, options.viewKey));
+    return (given !== null && same(given, session)) || (key !== null && same(key, options.viewKey!));
   };
   const cookieHeader = (value: string, maxAge: number): string => `${COOKIE}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${secure ? "; Secure" : ""}`;
+  // GitHub sends the person back by a cross-site navigation, which carries Lax cookies, never Strict ones.
+  const stateCookie = (value: string, maxAge: number): string => `${STATE_COOKIE}=${value}; Path=/auth/github; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${secure ? "; Secure" : ""}`;
+  const sha256 = (text: string): string => createHash("sha256").update(text).digest("hex");
+  const sessionHash = (req: IncomingMessage): string | null => {
+    const value = cookie(req, COOKIE);
+    return value ? sha256(value) : null;
+  };
+  /** Who a workspace hub's request is from, or null. */
+  const person = async (req: IncomingMessage) => {
+    const hash = sessionHash(req);
+    return hash ? options.store.sessionUser(hash, now().toISOString()) : null;
+  };
+  const redirect = (res: ServerResponse, location: string, cookies: string[]): void => {
+    res.writeHead(302, { ...HEADERS, Location: location, "Cache-Control": "no-store", "Set-Cookie": cookies });
+    res.end();
+  };
 
   const serveFile = async (res: ServerResponse, path: string): Promise<void> => {
     const root = join(options.dist!, "assets");
@@ -209,7 +250,24 @@ export async function startOrgHub(options: OrgHubOptions): Promise<OrgHub> {
           // Who is sending: with GitHub's OIDC, the token's repository (checked against the record below); else the shared ingest token.
           const oidc = req.headers[GITHUB_TOKEN_HEADER];
           let sender: Awaited<ReturnType<GithubVerifier>> | null = null;
-          if (options.github) {
+          let workspace = DEFAULT_WORKSPACE;
+          if (ws) {
+            if (typeof oidc === "string" && options.github) {
+              try {
+                sender = await options.github(oidc);
+              } catch (error: unknown) {
+                return send(res, 401, { error: `the GitHub Actions token was refused: ${error instanceof Error ? error.message : String(error)}` });
+              }
+              const routed = await options.store.workspaceForOwner(sender.repository_owner_id!);
+              if (!routed) return send(res, 403, { error: `records from ${sender.repository_owner} (id ${sender.repository_owner_id}) go to no workspace on this hub: its admin runs youiyoux hub owner add <workspace> ${sender.repository_owner}` });
+              workspace = routed;
+            } else {
+              const token = bearer(req);
+              const routed = token === null ? null : await options.store.workspaceForToken(sha256(token));
+              if (!routed) return send(res, 401, { error: "this hub takes records with GitHub Actions' OIDC token (permissions: id-token: write), or a workspace's CI token (youiyoux hub token add <workspace> <name>)" });
+              workspace = routed;
+            }
+          } else if (options.github) {
             if (typeof oidc !== "string") return send(res, 401, { error: "this hub takes records from GitHub Actions with its OIDC token: give the workflow permissions: id-token: write (youiyoux hooks install --record does)" });
             try {
               sender = await options.github(oidc);
@@ -238,8 +296,63 @@ export async function startOrgHub(options: OrgHubOptions): Promise<OrgHub> {
           if (Date.parse(record.data.generatedAt) > received.getTime() + FUTURE_MS) return send(res, 422, { error: `the record is dated ${record.data.generatedAt}, after the hub's clock (${received.toISOString()}) by more than five minutes: it would stay its repository's latest, so it was not kept` });
           const leaks = unredacted(record.data);
           if (leaks.length > 0) return send(res, 422, { error: `the record holds ${leaks.join(" and ")}, so it was not kept: youiyoux record redacts these` });
-          await options.store.putRecord(record.data, received.toISOString());
-          return send(res, 201, { kept: record.data.repo, products: record.data.products.length });
+          await options.store.putRecord(record.data, received.toISOString(), workspace);
+          return send(res, 201, { kept: record.data.repo, products: record.data.products.length, ...(ws ? { workspace } : {}) });
+        }
+        if (ws) {
+          if (path === "/auth/github" && method === "GET") {
+            const state = randomBytes(24).toString("base64url");
+            return redirect(res, ws.signIn.authorizeUrl(state, callback), [stateCookie(state, 600)]);
+          }
+          if (path === "/auth/github/callback" && method === "GET") {
+            const params = new URL(req.url ?? "/", "http://hub").searchParams;
+            const back = (outcome: string | null, cookies: string[] = []): void => redirect(res, outcome ? `/?signin=${outcome}` : "/", [stateCookie("", 0), ...cookies]);
+            if (params.has("error")) return back("denied");
+            const expected = cookie(req, STATE_COOKIE);
+            const given = params.get("state");
+            const code = params.get("code");
+            // The state this browser was given, so a sign-in someone else started never lands here.
+            if (!expected || !given || !code || !same(given, expected)) return back("expired");
+            let signedIn: Awaited<ReturnType<GithubSignIn["signIn"]>>;
+            try {
+              signedIn = await ws.signIn.signIn(code, callback);
+            } catch (error: unknown) {
+              process.stderr.write(`youiyoux hub: signing in with GitHub failed: ${error instanceof Error ? error.message : String(error)}\n`);
+              return back("failed");
+            }
+            const at = now();
+            const { user } = signedIn;
+            await options.store.putUser(user, at.toISOString());
+            const orgs = new Set(signedIn.orgs.map((o) => o.id));
+            for (const w of await options.store.workspaces()) {
+              if (!w.githubOrg) continue;
+              if (orgs.has(w.githubOrg.id)) await options.store.addMember(w.id, { id: user.githubId, login: user.login }, "member", "org", at.toISOString());
+              else await options.store.removeMember(w.id, user.githubId, "org");
+            }
+            const secret = randomBytes(32).toString("base64url");
+            await options.store.addSession(sha256(secret), user.githubId, at.toISOString(), new Date(at.getTime() + WORKSPACE_SESSION_DAYS * 86_400_000).toISOString());
+            return back(null, [cookieHeader(secret, WORKSPACE_SESSION_DAYS * 86_400)]);
+          }
+          if (path === "/api/me" && method === "GET") {
+            const user = await person(req);
+            if (!user) return send(res, 401, { error: "sign in with GitHub" });
+            const memberships = await options.store.memberships(user.githubId);
+            return send(res, 200, { user: { login: user.login, name: user.name }, workspaces: memberships.map((m) => ({ id: m.workspace, name: m.name, role: m.role })) });
+          }
+          const scoped = /^\/api\/w\/([a-z0-9-]{1,40})\/org$/.exec(path);
+          if (scoped && method === "GET") {
+            const user = await person(req);
+            if (!user) return send(res, 401, { error: "sign in with GitHub" });
+            // Not a member and no such workspace answer the same: a workspace's name is not given away.
+            if (!(await options.store.memberships(user.githubId)).some((m) => m.workspace === scoped[1])) return send(res, 404, { error: `you are not a member of a workspace ${scoped[1]} on this hub` });
+            return send(res, 200, orgView(await options.store.latestRecords(scoped[1]), now()));
+          }
+          if (path === "/api/session" && method === "DELETE") {
+            const hash = sessionHash(req);
+            if (hash) await options.store.removeSession(hash);
+            return send(res, 200, { ok: true }, { "Set-Cookie": cookieHeader("", 0) });
+          }
+          if (path === "/api/session" || path === "/api/org") return send(res, 404, { error: "this hub has workspaces, and people sign in with GitHub (/auth/github); a workspace's view is /api/w/<workspace>/org" });
         }
         if (path === "/api/session" && method === "POST") {
           let key: unknown;
@@ -248,7 +361,7 @@ export async function startOrgHub(options: OrgHubOptions): Promise<OrgHub> {
           } catch {
             return send(res, 400, { error: "send { \"key\": \"…\" }" });
           }
-          if (typeof key !== "string" || !same(key, options.viewKey)) return send(res, 401, { error: "that is not this hub's view key" });
+          if (typeof key !== "string" || !same(key, options.viewKey!)) return send(res, 401, { error: "that is not this hub's view key" });
           return send(res, 200, { ok: true }, { "Set-Cookie": cookieHeader(session, SESSION_DAYS * 86_400) });
         }
         if (path === "/api/session" && method === "DELETE") return send(res, 200, { ok: true }, { "Set-Cookie": cookieHeader("", 0) });

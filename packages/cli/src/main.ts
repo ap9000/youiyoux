@@ -29,6 +29,7 @@ import { extractSystem } from "./extract.ts";
 import { renderUpgrade, upgradeProject } from "./upgrade.ts";
 import { buildRecord, HUB_TOKEN_ENV, HUB_URL_ENV, renderRecord, sendRecord, toolVersion } from "./record.ts";
 import { AUDIENCE_ENV, GITHUB_OWNERS_ENV, secretsProblem, startOrgHub, VIEW_KEY_ENV } from "./org-hub.ts";
+import { CLIENT_ID_ENV, CLIENT_SECRET_ENV, githubAccount, githubSignIn } from "./github-signin.ts";
 import { audienceOf, BRANCHES_ENV, DEFAULT_BRANCHES, githubVerifier, requestGithubToken } from "./github-oidc.ts";
 import { renderStatus, statusExitCode, statusTargets, workspaceStatus } from "./status.ts";
 import { startWorkspaceHub } from "./workspace-hub.ts";
@@ -153,7 +154,16 @@ ${style.bold("In a product repo")}
                            YOUIYOUX_HUB_VIEW_KEY and see every repository and each System's adoption
                            by version. YOUIYOUX_HUB_GITHUB_OWNERS and YOUIYOUX_HUB_AUDIENCE: GitHub
                            Actions proves each record's repository (else YOUIYOUX_HUB_TOKEN, shared).
-                           Records are kept in Postgres (DATABASE_URL) or a SQLite file
+                           Records are kept in Postgres (DATABASE_URL) or a SQLite file.
+                           With YOUIYOUX_HUB_GITHUB_CLIENT_ID and _SECRET (the hub's GitHub OAuth
+                           App): workspaces, kept apart, and people sign in with GitHub
+  hub workspace add <id> [--name n] [--org github-org] | list | remove <id> --yes
+  hub owner add|remove <workspace> <github owner>      whose CI sends records to a workspace
+  hub member add|remove <workspace> <github login> [--admin] | list <workspace>
+  hub token add|remove <workspace> <name>              a CI token, for CI other than GitHub's
+                           a workspace hub's admin, on the hub's own store (DATABASE_URL or --db);
+                           accounts by login or numeric id (id:login without asking GitHub); members
+                           also come in from --org's GitHub organisation, at each sign-in
 
 ${style.bold("System")}  ${style.dim("approved elements: build only with these")}
   show <component>         the contract: import, legal prop values, guidance, examples
@@ -322,6 +332,9 @@ const OPTIONS = {
   hub: { type: "string" },
   host: { type: "string" },
   db: { type: "string" },
+  name: { type: "string" },
+  org: { type: "string" },
+  admin: { type: "boolean", default: false },
   record: { type: "boolean", default: false },
   draft: { type: "boolean", default: false },
   paste: { type: "boolean", default: false },
@@ -749,25 +762,76 @@ function builtHub(): string | null {
   return null;
 }
 
+const HUB_USAGE = "youiyoux hub serve | workspace add|list|remove | owner add|remove | member add|remove|list | token add|remove   (the team's hosted hub, and its workspaces)";
+
+/** `youiyoux hub <verb>`: the team's hosted hub (serve), and a workspace hub's admin. */
+async function cmdHub(values: Values, positionals: string[]): Promise<number> {
+  const [verb, ...rest] = positionals;
+  if (verb === "serve") return cmdHubServe(values, rest);
+  if (verb === "workspace" || verb === "owner" || verb === "member" || verb === "token") return cmdHubAdmin(verb, values, rest);
+  throw new UsageError(HUB_USAGE);
+}
+
+/** The hub's store: Postgres with DATABASE_URL, else --db, YOUI_HUB_DB or the default file. */
+async function openHubStore(values: Values) {
+  const { openStore, storeLocation } = await import("@youiyoux/store");
+  const path = resolve(values.db ?? process.env.YOUI_HUB_DB ?? join(process.env.XDG_DATA_HOME || join(homedir(), ".local/share"), "youiyoux/hub.db"));
+  return { store: await openStore({ path }), where: storeLocation({ path }) };
+}
+
 /** `youiyoux hub serve [--port n] [--host h] [--db file]`: the team's hosted hub, read-only, fed by CI. */
 async function cmdHubServe(values: Values, positionals: string[]): Promise<number> {
-  if (positionals[0] !== "serve" || positionals.length > 1) throw new UsageError("youiyoux hub serve [--port n] [--host h] [--db file]   (the team's hosted hub: read-only, fed by youiyoux record in CI)");
+  if (positionals.length > 0) throw new UsageError("youiyoux hub serve [--port n] [--host h] [--db file]   (the team's hosted hub: read-only, fed by youiyoux record in CI)");
   const owners = (process.env[GITHUB_OWNERS_ENV] ?? "").split(",").map((o) => o.trim()).filter(Boolean);
   const audience = process.env[AUDIENCE_ENV];
-  if (owners.length > 0 && !audience) throw new UsageError(`${GITHUB_OWNERS_ENV} needs ${AUDIENCE_ENV}: the hub's address, exactly as CI's ${HUB_URL_ENV} names it (GitHub's token is issued for it)`);
   const branches = (process.env[BRANCHES_ENV] ?? "").split(",").map((b) => b.trim()).filter(Boolean);
-  const github = owners.length > 0 ? githubVerifier({ owners, audience: audience!, branches }) : undefined;
-  const problem = secretsProblem(github ? undefined : process.env[HUB_TOKEN_ENV], process.env[VIEW_KEY_ENV], Boolean(github));
-  if (problem) throw new UsageError(problem);
+  const clientId = process.env[CLIENT_ID_ENV];
+  const clientSecret = process.env[CLIENT_SECRET_ENV];
+  const workspaces = Boolean(clientId || clientSecret);
+  let github: ReturnType<typeof githubVerifier> | undefined;
+  if (workspaces) {
+    if (!clientId || !clientSecret) throw new UsageError(`set both ${CLIENT_ID_ENV} and ${CLIENT_SECRET_ENV}: the hub's GitHub OAuth App (github.com/settings/applications/new, with the callback URL <the hub's address>/auth/github/callback)`);
+    if (!audience) throw new UsageError(`with workspaces, set ${AUDIENCE_ENV}: the hub's address, where GitHub sends people back after they sign in, and what CI's ${HUB_URL_ENV} names`);
+    // Not URL.parse: the published package runs on Node 20.
+    const address = ((): URL | null => {
+      try {
+        return new URL(audience);
+      } catch {
+        return null;
+      }
+    })();
+    if (!address || !(address.protocol === "https:" || (address.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(address.hostname)))) throw new UsageError(`${AUDIENCE_ENV} ${JSON.stringify(audience)}: the hub's https address (http only on localhost)`);
+    const unused = [GITHUB_OWNERS_ENV, HUB_TOKEN_ENV, VIEW_KEY_ENV].filter((name) => process.env[name]);
+    if (unused.length > 0) throw new UsageError(`with workspaces, ${unused.join(" and ")} ${unused.length === 1 ? "is" : "are"} not used: GitHub owners and CI tokens belong to workspaces (youiyoux hub owner add, youiyoux hub token add), and people sign in with GitHub. Remove ${unused.length === 1 ? "it" : "them"} from the environment`);
+    github = githubVerifier({ owners: "any", audience, branches });
+  } else {
+    if (owners.length > 0 && !audience) throw new UsageError(`${GITHUB_OWNERS_ENV} needs ${AUDIENCE_ENV}: the hub's address, exactly as CI's ${HUB_URL_ENV} names it (GitHub's token is issued for it)`);
+    github = owners.length > 0 ? githubVerifier({ owners, audience: audience!, branches }) : undefined;
+    const problem = secretsProblem(github ? undefined : process.env[HUB_TOKEN_ENV], process.env[VIEW_KEY_ENV], Boolean(github));
+    if (problem) throw new UsageError(problem);
+  }
   const port = Number(values.port ?? process.env.PORT ?? 8080);
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new UsageError(`--port ${JSON.stringify(values.port ?? process.env.PORT)}: expected a port number`);
-  const { openStore, storeLocation: where } = await import("@youiyoux/store");
-  const path = resolve(values.db ?? process.env.YOUI_HUB_DB ?? join(process.env.XDG_DATA_HOME || join(homedir(), ".local/share"), "youiyoux/hub.db"));
-  const store = await openStore({ path });
+  const { store, where } = await openHubStore(values);
   const dist = builtHub();
-  const hub = await startOrgHub({ store, ...(github ? { github } : { ingestToken: process.env[HUB_TOKEN_ENV]! }), viewKey: process.env[VIEW_KEY_ENV]!, dist, host: values.host ?? "127.0.0.1", port });
-  const senders = github ? `CI sends records from GitHub Actions in ${owners.join(", ")}, on ${(branches.length > 0 ? branches : DEFAULT_BRANCHES).join(" or ")}, each proving its repository (OIDC, for ${audienceOf(audience!)})${process.env[HUB_TOKEN_ENV] ? `; ${HUB_TOKEN_ENV} is not used` : ""}` : `CI sends records with ${HUB_TOKEN_ENV}, which can name any repository (${GITHUB_OWNERS_ENV} makes GitHub Actions prove each one's)`;
-  print([`${style.ok("youiyoux hub")} ${hub.url}  ${style.dim(`read-only · records kept in ${where({ path })}`)}`, ...(dist ? [] : [style.warn("! the hub's page is not built here (pnpm --filter web build): the API answers at /api/org")]), style.dim(`  ${senders}; people sign in with ${VIEW_KEY_ENV}. Put it behind https; --host 0.0.0.0 to listen beyond this machine`)].join("\n"));
+  const hub = await startOrgHub({
+    store,
+    ...(github ? { github } : { ingestToken: process.env[HUB_TOKEN_ENV]! }),
+    ...(workspaces ? { workspaces: { signIn: githubSignIn({ clientId: clientId!, clientSecret: clientSecret! }), url: audience! } } : { viewKey: process.env[VIEW_KEY_ENV]! }),
+    dist,
+    host: values.host ?? "127.0.0.1",
+    port,
+  });
+  const lines = [`${style.ok("youiyoux hub")} ${hub.url}  ${style.dim(`read-only · records kept in ${where}`)}`, ...(dist ? [] : [style.warn("! the hub's page is not built here (pnpm --filter web build): the API answers at /api/org")])];
+  if (workspaces) {
+    const all = await store.workspaces();
+    lines.push(style.dim(`  workspaces: ${all.length === 0 ? "none yet" : all.map((w) => `${w.id} (${plural(w.owners.length, "owner")}, ${plural(w.members, "member")})`).join(", ")}; people sign in with GitHub at ${audienceOf(audience!)}; CI proves each record's repository (OIDC), on ${(branches.length > 0 ? branches : DEFAULT_BRANCHES).join(" or ")}`));
+    if (all.length === 0) lines.push(style.warn(`! no workspace yet: youiyoux hub workspace add <id> --org <github org>, then youiyoux hub owner add <id> <github owner> and youiyoux hub member add <id> <your login> --admin`));
+  } else {
+    const senders = github ? `CI sends records from GitHub Actions in ${owners.join(", ")}, on ${(branches.length > 0 ? branches : DEFAULT_BRANCHES).join(" or ")}, each proving its repository (OIDC, for ${audienceOf(audience!)})${process.env[HUB_TOKEN_ENV] ? `; ${HUB_TOKEN_ENV} is not used` : ""}` : `CI sends records with ${HUB_TOKEN_ENV}, which can name any repository (${GITHUB_OWNERS_ENV} makes GitHub Actions prove each one's)`;
+    lines.push(style.dim(`  ${senders}; people sign in with ${VIEW_KEY_ENV}. Put it behind https; --host 0.0.0.0 to listen beyond this machine`));
+  }
+  print(lines.join("\n"));
   await new Promise<void>((done) => {
     const stop = (): void => done();
     process.once("SIGINT", stop);
@@ -776,6 +840,107 @@ async function cmdHubServe(values: Values, positionals: string[]): Promise<numbe
   await hub.close();
   await store.close();
   return 0;
+}
+
+const WORKSPACE_ID = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
+
+/** `youiyoux hub workspace|owner|member|token …`: a workspace hub's admin, on the hub's own store. */
+async function cmdHubAdmin(noun: "workspace" | "owner" | "member" | "token", values: Values, args: string[]): Promise<number> {
+  const [verb, first, second] = args;
+  const usage: Record<typeof noun, string> = {
+    workspace: "youiyoux hub workspace add <id> [--name n] [--org github-org] | list [--json] | remove <id> --yes",
+    owner: "youiyoux hub owner add|remove <workspace> <github owner: login, id, or id:login>",
+    member: "youiyoux hub member add <workspace> <github login, id, or id:login> [--admin] | remove <workspace> <login or id> | list <workspace> [--json]",
+    token: "youiyoux hub token add|remove <workspace> <name>",
+  };
+  const arity = noun === "workspace" ? (verb === "list" ? 1 : 2) : noun === "member" && verb === "list" ? 2 : 3;
+  const verbs = noun === "workspace" ? ["add", "list", "remove"] : noun === "member" ? ["add", "remove", "list"] : ["add", "remove"];
+  if (!verb || !verbs.includes(verb) || args.length !== arity) throw new UsageError(usage[noun]);
+  const { store } = await openHubStore(values);
+  const at = new Date().toISOString();
+  try {
+    const workspace = async (id: string) => {
+      const found = await store.workspace(id);
+      if (!found) throw new UsageError(`there is no workspace ${id} on this hub (youiyoux hub workspace list)`);
+      return found;
+    };
+    if (noun === "workspace") {
+      if (verb === "list") {
+        const all = await store.workspaces();
+        if (values.json) print(JSON.stringify(all, null, 2));
+        else if (all.length === 0) print(`no workspace yet: ${style.bold("youiyoux hub workspace add <id> --org <github org>")}`);
+        else for (const w of all) print(`${style.bold(w.id)}  ${w.name}${w.githubOrg ? style.dim(` · members of ${w.githubOrg.login} let in`) : ""}\n  ${style.dim(`owners: ${w.owners.map((o) => o.login).join(", ") || "none (youiyoux hub owner add)"} · ${plural(w.members, "member")} · CI tokens: ${w.tokens.join(", ") || "none"}`)}`);
+        return 0;
+      }
+      if (verb === "add") {
+        if (!WORKSPACE_ID.test(first!)) throw new UsageError(`"${first}": a workspace id is lowercase letters, digits and hyphens (at most 40), e.g. acme`);
+        const org = values.org ? await githubAccount(values.org) : null;
+        if (org?.type === "User") throw new UsageError(`${org.login} is a person's account, not an organisation: --org lets in an organisation's members`);
+        await store.addWorkspace({ id: first!, name: values.name ?? first!, githubOrg: org ? { id: org.id, login: org.login } : null }, at);
+        print(`${style.ok("added")} the workspace ${first}${org ? `; active members of ${org.login} come in at sign-in` : ""}\n  ${style.dim(`next: youiyoux hub owner add ${first} <github owner>, so its repositories' CI sends records here; youiyoux hub member add ${first} <login> --admin`)}`);
+        return 0;
+      }
+      await workspace(first!);
+      if (!values.yes) throw new UsageError(`youiyoux hub workspace remove ${first} --yes   (removes its owners, CI tokens, members and every record it holds)`);
+      await store.removeWorkspace(first!);
+      print(`${style.ok("removed")} the workspace ${first}, with its owners, CI tokens, members and records`);
+      return 0;
+    }
+    const target = await workspace(first!);
+    if (noun === "owner") {
+      if (verb === "add") {
+        const owner = await githubAccount(second!);
+        await store.addOwner(target.id, { id: owner.id, login: owner.login }, at);
+        print(`${style.ok("added")} ${owner.login} (id ${owner.id}) to ${target.id}: its repositories' CI sends records here, proved by GitHub Actions' OIDC token`);
+        return 0;
+      }
+      const owner = target.owners.find((o) => o.id === second || o.login.toLowerCase() === second!.toLowerCase());
+      if (!owner) throw new UsageError(`${second} is not an owner of ${target.id} (youiyoux hub workspace list)`);
+      await store.removeOwner(target.id, owner.id);
+      print(`${style.ok("removed")} ${owner.login} from ${target.id}: its CI's records are refused from now on`);
+      return 0;
+    }
+    if (noun === "member") {
+      if (verb === "list") {
+        const members = await store.members(target.id);
+        if (values.json) print(JSON.stringify(members, null, 2));
+        else if (members.length === 0) print(`${target.id} has no members yet: youiyoux hub member add ${target.id} <login> --admin`);
+        else for (const m of members) print(`${m.login}  ${style.dim(`${m.role} · ${m.via === "invite" ? "invited" : `from ${target.githubOrg?.login ?? "the organisation"}`} · id ${m.githubId}`)}`);
+        return 0;
+      }
+      if (verb === "add") {
+        const person = await githubAccount(second!);
+        if (person.type === "Organization") throw new UsageError(`${person.login} is an organisation: members are people (--org on youiyoux hub workspace add lets an organisation's members in)`);
+        await store.addMember(target.id, { id: person.id, login: person.login }, values.admin ? "admin" : "member", "invite", at);
+        print(`${style.ok("added")} ${person.login} to ${target.id} as ${values.admin ? "an admin" : "a member"}: they sign in with GitHub`);
+        return 0;
+      }
+      const member = (await store.members(target.id)).find((m) => m.githubId === second || m.login.toLowerCase() === second!.toLowerCase());
+      if (!member) throw new UsageError(`${second} is not a member of ${target.id} (youiyoux hub member list ${target.id})`);
+      await store.removeMember(target.id, member.githubId);
+      print(`${style.ok("removed")} ${member.login} from ${target.id}${member.via === "org" ? style.dim(`: they come back at their next sign-in while they are in ${target.githubOrg?.login ?? "its organisation"}`) : ""}`);
+      return 0;
+    }
+    if (verb === "add") {
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(second!)) throw new UsageError(`"${second}": a token's name is letters, digits, dots, hyphens and underscores, e.g. jenkins`);
+      const { createHash, randomBytes } = await import("node:crypto");
+      const token = `yxh_${randomBytes(32).toString("base64url")}`;
+      await store.addToken(target.id, second!, createHash("sha256").update(token).digest("hex"), at);
+      print(`${style.ok("added")} the CI token ${second} to ${target.id}. It is shown once, here; the hub keeps only its hash:\n\n  ${token}\n\n${style.dim(`Give it to that CI as the secret ${HUB_TOKEN_ENV}; youiyoux hub token remove ${target.id} ${second} revokes it.`)}`);
+      return 0;
+    }
+    if (!(await store.removeToken(target.id, second!))) throw new UsageError(`${target.id} has no CI token named ${second} (youiyoux hub workspace list)`);
+    print(`${style.ok("removed")} the CI token ${second} from ${target.id}: records sent with it are refused from now on`);
+    return 0;
+  } catch (error: unknown) {
+    if (error instanceof UsageError) throw error;
+    // The store's own refusals (a taken id, an owner another workspace has) are the person's to fix.
+    if (error instanceof Error && /^(there is|.+'s records go to|the workspace .+ has a token)/.test(error.message)) throw new UsageError(error.message);
+    if (error instanceof Error && /^(GitHub|".+" is not a GitHub)/.test(error.message)) throw new UsageError(error.message);
+    throw error;
+  } finally {
+    await store.close();
+  }
 }
 
 async function cmdInit(values: Values): Promise<number> {
@@ -1384,7 +1549,7 @@ async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Pr
 type Command = (values: Values, positionals: string[], io: CliIo) => Promise<number>;
 
 const COMMANDS: Record<string, Command> = {
-  adopt: cmdAdopt, status: cmdStatus, system: cmdSystem, link: cmdLink, unlink: cmdUnlink, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, upgrade: cmdUpgrade, record: cmdRecord, hub: cmdHubServe, figma: cmdFigma, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, screens: cmdScreens, requests: cmdRequests, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+  adopt: cmdAdopt, status: cmdStatus, system: cmdSystem, link: cmdLink, unlink: cmdUnlink, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, upgrade: cmdUpgrade, record: cmdRecord, hub: cmdHub, figma: cmdFigma, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, screens: cmdScreens, requests: cmdRequests, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
 
 /** Every command name, for a front end that runs one by default (the youiyoux bin runs report). */

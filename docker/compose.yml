@@ -14,7 +14,11 @@ services:
         condition: service_healthy
     environment:
       DATABASE_URL: postgres://youiyoux:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env (openssl rand -hex 24)}@db:5432/youiyoux
-      YOUIYOUX_HUB_VIEW_KEY: ${YOUIYOUX_HUB_VIEW_KEY:?set YOUIYOUX_HUB_VIEW_KEY in .env (openssl rand -base64 32)}
+      # One organisation behind a view key, or workspaces with GitHub sign-in (the OAuth App's pair):
+      # the hub refuses to start without one of them, and says what is missing.
+      YOUIYOUX_HUB_VIEW_KEY: ${YOUIYOUX_HUB_VIEW_KEY:-}
+      YOUIYOUX_HUB_GITHUB_CLIENT_ID: ${YOUIYOUX_HUB_GITHUB_CLIENT_ID:-}
+      YOUIYOUX_HUB_GITHUB_CLIENT_SECRET: ${YOUIYOUX_HUB_GITHUB_CLIENT_SECRET:-}
       YOUIYOUX_HUB_GITHUB_OWNERS: ${YOUIYOUX_HUB_GITHUB_OWNERS:-}
       YOUIYOUX_HUB_AUDIENCE: ${YOUIYOUX_HUB_AUDIENCE:-}
       YOUIYOUX_HUB_BRANCHES: ${YOUIYOUX_HUB_BRANCHES:-}

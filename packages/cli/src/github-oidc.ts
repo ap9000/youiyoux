@@ -18,6 +18,8 @@ const JWKS_RETRY_MS = 60 * 1000;
 export interface GithubClaims {
   readonly repository: string;
   readonly repository_owner: string;
+  /** The owner's numeric id, which a renamed account keeps: what a workspace hub routes a record by. */
+  readonly repository_owner_id?: string;
   readonly sha: string;
   readonly ref: string;
   /** The event the run is for (`push`, `workflow_dispatch`, `pull_request`…). */
@@ -62,9 +64,10 @@ export interface GithubVerifierOptions {
   /**
    * The owners (organisations or users) whose repositories may send records: GitHub's numeric
    * account id (`gh api orgs/acme --jq .id`), which never passes to another owner, or a name,
-   * which a renamed owner gives up for anyone to take.
+   * which a renamed owner gives up for anyone to take. `"any"`: every owner, for a hub with
+   * workspaces, which takes a record only from an owner one of them names (by id).
    */
-  readonly owners: readonly string[];
+  readonly owners: readonly string[] | "any";
   /** The branches records are taken from (default main and master). */
   readonly branches?: readonly string[];
   /** The audience CI asked for: the hub's address, as YOUIYOUX_HUB_URL names it. */
@@ -80,7 +83,8 @@ export type GithubVerifier = (token: string) => Promise<GithubClaims>;
 
 export function githubVerifier(options: GithubVerifierOptions): GithubVerifier {
   // An all-digit entry is an id and matches only an id; any other, only a name (an account may be named with digits).
-  const listed = options.owners.map((o) => o.trim().toLowerCase()).filter(Boolean);
+  const anyOwner = options.owners === "any";
+  const listed = anyOwner ? [] : (options.owners as readonly string[]).map((o) => o.trim().toLowerCase()).filter(Boolean);
   const ownerIds = new Set(listed.filter((o) => /^\d+$/.test(o)));
   const ownerNames = new Set(listed.filter((o) => !/^\d+$/.test(o)));
   const branches = new Set(options.branches && options.branches.length > 0 ? options.branches : DEFAULT_BRANCHES);
@@ -126,9 +130,11 @@ export function githubVerifier(options: GithubVerifierOptions): GithubVerifier {
     const { repository, repository_owner: owner, repository_owner_id: ownerId, sha, ref, event_name: event } = claims;
     if (typeof repository !== "string" || typeof owner !== "string" || typeof sha !== "string" || typeof ref !== "string") throw new Error("missing its repository, owner, commit or ref");
     // An owner listed by id matches only that account; one listed by name, whoever holds the name now.
-    if (!(typeof ownerId === "string" && ownerIds.has(ownerId)) && !ownerNames.has(owner.toLowerCase())) throw new Error(`from ${owner}${typeof ownerId === "string" ? ` (id ${ownerId})` : ""}, which this hub does not take records from`);
+    if (anyOwner) {
+      if (typeof ownerId !== "string" || !/^\d+$/.test(ownerId)) throw new Error("missing its owner's id");
+    } else if (!(typeof ownerId === "string" && ownerIds.has(ownerId)) && !ownerNames.has(owner.toLowerCase())) throw new Error(`from ${owner}${typeof ownerId === "string" ? ` (id ${ownerId})` : ""}, which this hub does not take records from`);
     if (!ref.startsWith("refs/heads/") || !branches.has(ref.slice("refs/heads/".length))) throw new Error(`from ${ref}: this hub takes records from ${[...branches].join(" and ")} only (YOUIYOUX_HUB_BRANCHES)`);
-    return { repository, repository_owner: owner, sha, ref, ...(typeof event === "string" ? { event_name: event } : {}) };
+    return { repository, repository_owner: owner, ...(typeof ownerId === "string" ? { repository_owner_id: ownerId } : {}), sha, ref, ...(typeof event === "string" ? { event_name: event } : {}) };
   };
 }
 

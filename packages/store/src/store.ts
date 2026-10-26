@@ -6,7 +6,8 @@
 import type { CiRecord } from "@youiyoux/core";
 import { pageInteger, Lock, type Adapter, type Param, type Row } from "./driver.ts";
 import { MIGRATIONS, SCHEMA_VERSION } from "./migrations.ts";
-import type { Ambiguous, ProjectScope, DiscoverFilter, DiscoverItem, DiscoverSort, DiscoverMatchQuery, DiscoverPage, DiscoverRow, DiscoverScope, EdgeKind, Facets, FamilyRecord, Graph, GraphNode, InventoryRun, Licence, LookRecord, NodeKind, Page, Reached, RuleCovers, ScanRecord, Signal, SourceClass, Store, StoreStats, SwapImpact, WhereUsed } from "./types.ts";
+import { DEFAULT_WORKSPACE } from "./types.ts";
+import type { Ambiguous, GithubAccount, HubUser, MemberVia, Membership, Workspace, WorkspaceMember, WorkspaceRole, ProjectScope, DiscoverFilter, DiscoverItem, DiscoverSort, DiscoverMatchQuery, DiscoverPage, DiscoverRow, DiscoverScope, EdgeKind, Facets, FamilyRecord, Graph, GraphNode, InventoryRun, Licence, LookRecord, NodeKind, Page, Reached, RuleCovers, ScanRecord, Signal, SourceClass, Store, StoreStats, SwapImpact, WhereUsed } from "./types.ts";
 
 /** The tables a rebuild empties: everything derived from git. ci_records is what CI sent, kept across rebuilds. */
 const TABLES = ["meta", "discover_items", "discover_roles", "signals", "licences", "scans", "families", "looks", "nodes", "edges"] as const;
@@ -271,17 +272,148 @@ export class SqlStore implements Store {
 
   /* ---------------------------------------------------------------- CI records */
 
-  async putRecord(record: CiRecord, receivedAt: string): Promise<void> {
+  async putRecord(record: CiRecord, receivedAt: string, workspace: string = DEFAULT_WORKSPACE): Promise<void> {
     await this.write(async () => {
       const id = `${record.repo}@${record.commit ?? record.generatedAt}`;
-      await this.insert("ci_records", ["id", "repo", "commit_sha", "ref", "generated_at", "received_at", "record"], [[id, record.repo, record.commit, record.ref, record.generatedAt, receivedAt, json(record)]], "ON CONFLICT (id) DO UPDATE SET ref = excluded.ref, generated_at = excluded.generated_at, received_at = excluded.received_at, record = excluded.record");
-      await this.db.run(`DELETE FROM ci_records WHERE repo = ? AND id NOT IN (SELECT id FROM ci_records WHERE repo = ? ORDER BY generated_at DESC, received_at DESC LIMIT ${RECORDS_KEPT})`, [record.repo, record.repo]);
+      await this.insert("ci_records", ["workspace", "id", "repo", "commit_sha", "ref", "generated_at", "received_at", "record"], [[workspace, id, record.repo, record.commit, record.ref, record.generatedAt, receivedAt, json(record)]], "ON CONFLICT (workspace, id) DO UPDATE SET ref = excluded.ref, generated_at = excluded.generated_at, received_at = excluded.received_at, record = excluded.record");
+      await this.db.run(`DELETE FROM ci_records WHERE workspace = ? AND repo = ? AND id NOT IN (SELECT id FROM ci_records WHERE workspace = ? AND repo = ? ORDER BY generated_at DESC, received_at DESC LIMIT ${RECORDS_KEPT})`, [workspace, record.repo, workspace, record.repo]);
     });
   }
 
-  async latestRecords(): Promise<Array<{ record: CiRecord; receivedAt: string }>> {
-    const rows = await this.db.all<{ record: unknown; received_at: string }>(`SELECT record, received_at FROM (SELECT record, received_at, repo, ROW_NUMBER() OVER (PARTITION BY repo ORDER BY generated_at DESC, received_at DESC) AS n FROM ci_records) ranked WHERE n = 1 ORDER BY repo`);
+  async latestRecords(workspace: string = DEFAULT_WORKSPACE): Promise<Array<{ record: CiRecord; receivedAt: string }>> {
+    const rows = await this.db.all<{ record: unknown; received_at: string }>(`SELECT record, received_at FROM (SELECT record, received_at, repo, ROW_NUMBER() OVER (PARTITION BY repo ORDER BY generated_at DESC, received_at DESC) AS n FROM ci_records WHERE workspace = ?) ranked WHERE n = 1 ORDER BY repo`, [workspace]);
     return rows.map((r) => ({ record: parse<CiRecord>(r.record), receivedAt: String(r.received_at) }));
+  }
+
+  /* -------------------------------------------------------- hosted hub workspaces */
+
+  async addWorkspace(workspace: { id: string; name: string; githubOrg: GithubAccount | null }, at: string): Promise<void> {
+    await this.write(async () => {
+      if ((await this.db.all(`SELECT id FROM workspaces WHERE id = ?`, [workspace.id])).length > 0) throw new Error(`there is a workspace ${workspace.id} already`);
+      await this.db.run(`INSERT INTO workspaces (id, name, github_org_id, github_org_login, created_at) VALUES (?, ?, ?, ?, ?)`, [workspace.id, workspace.name, workspace.githubOrg?.id ?? null, workspace.githubOrg?.login ?? null, at]);
+    });
+  }
+
+  async workspaces(): Promise<Workspace[]> {
+    const rows = await this.db.all<{ id: string; name: string; github_org_id: string | null; github_org_login: string | null; created_at: string }>(`SELECT id, name, github_org_id, github_org_login, created_at FROM workspaces ORDER BY id`);
+    const owners = await this.db.all<{ workspace: string; owner_id: string; login: string }>(`SELECT workspace, owner_id, login FROM workspace_owners ORDER BY LOWER(login), owner_id`);
+    const tokens = await this.db.all<{ workspace: string; name: string }>(`SELECT workspace, name FROM workspace_tokens ORDER BY name`);
+    const members = await this.db.all<{ workspace: string; n: unknown }>(`SELECT workspace, COUNT(*) AS n FROM workspace_members GROUP BY workspace`);
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      githubOrg: r.github_org_id ? { id: r.github_org_id, login: r.github_org_login ?? r.github_org_id } : null,
+      createdAt: String(r.created_at),
+      owners: owners.filter((o) => o.workspace === r.id).map((o) => ({ id: o.owner_id, login: o.login })),
+      tokens: tokens.filter((t) => t.workspace === r.id).map((t) => t.name),
+      members: int(members.find((m) => m.workspace === r.id)?.n),
+    }));
+  }
+
+  async workspace(id: string): Promise<Workspace | null> {
+    return (await this.workspaces()).find((w) => w.id === id) ?? null;
+  }
+
+  async removeWorkspace(id: string): Promise<boolean> {
+    return this.write(async () => {
+      if ((await this.db.all(`SELECT id FROM workspaces WHERE id = ?`, [id])).length === 0) return false;
+      for (const table of ["workspace_owners", "workspace_tokens", "workspace_members", "ci_records"]) await this.db.run(`DELETE FROM ${table} WHERE workspace = ?`, [id]);
+      await this.db.run(`DELETE FROM workspaces WHERE id = ?`, [id]);
+      return true;
+    });
+  }
+
+  private async needWorkspace(id: string): Promise<void> {
+    if ((await this.db.all(`SELECT id FROM workspaces WHERE id = ?`, [id])).length === 0) throw new Error(`there is no workspace ${id}`);
+  }
+
+  async addOwner(workspace: string, owner: GithubAccount, at: string): Promise<void> {
+    await this.write(async () => {
+      await this.needWorkspace(workspace);
+      const held = (await this.db.all<{ workspace: string }>(`SELECT workspace FROM workspace_owners WHERE owner_id = ?`, [owner.id]))[0];
+      if (held && held.workspace !== workspace) throw new Error(`${owner.login}'s records go to the workspace ${held.workspace} already: an owner feeds one workspace`);
+      await this.db.run(`INSERT INTO workspace_owners (owner_id, workspace, login, added_at) VALUES (?, ?, ?, ?) ON CONFLICT (owner_id) DO UPDATE SET login = excluded.login`, [owner.id, workspace, owner.login, at]);
+    });
+  }
+
+  /** Delete what matches, and say whether anything did (the adapters do not count changes). */
+  private async deleted(table: string, where: string, params: readonly Param[]): Promise<boolean> {
+    return this.write(async () => {
+      const found = (await this.db.all(`SELECT 1 AS found FROM ${table} WHERE ${where}`, params)).length > 0;
+      if (found) await this.db.run(`DELETE FROM ${table} WHERE ${where}`, params);
+      return found;
+    });
+  }
+
+  async removeOwner(workspace: string, ownerId: string): Promise<boolean> {
+    return this.deleted("workspace_owners", "workspace = ? AND owner_id = ?", [workspace, ownerId]);
+  }
+
+  async workspaceForOwner(ownerId: string): Promise<string | null> {
+    return (await this.db.all<{ workspace: string }>(`SELECT workspace FROM workspace_owners WHERE owner_id = ?`, [ownerId]))[0]?.workspace ?? null;
+  }
+
+  async addToken(workspace: string, name: string, hash: string, at: string): Promise<void> {
+    await this.write(async () => {
+      await this.needWorkspace(workspace);
+      if ((await this.db.all(`SELECT name FROM workspace_tokens WHERE workspace = ? AND name = ?`, [workspace, name])).length > 0) throw new Error(`the workspace ${workspace} has a token named ${name} already`);
+      await this.db.run(`INSERT INTO workspace_tokens (hash, workspace, name, created_at) VALUES (?, ?, ?, ?)`, [hash, workspace, name, at]);
+    });
+  }
+
+  async removeToken(workspace: string, name: string): Promise<boolean> {
+    return this.deleted("workspace_tokens", "workspace = ? AND name = ?", [workspace, name]);
+  }
+
+  async workspaceForToken(hash: string): Promise<string | null> {
+    return (await this.db.all<{ workspace: string }>(`SELECT workspace FROM workspace_tokens WHERE hash = ?`, [hash]))[0]?.workspace ?? null;
+  }
+
+  async putUser(user: HubUser, at: string): Promise<void> {
+    await this.write(async () => {
+      await this.db.run(`INSERT INTO hub_users (github_id, login, name, seen_at) VALUES (?, ?, ?, ?) ON CONFLICT (github_id) DO UPDATE SET login = excluded.login, name = excluded.name, seen_at = excluded.seen_at`, [user.githubId, user.login, user.name, at]);
+      // A member's login follows their account's.
+      await this.db.run(`UPDATE workspace_members SET login = ? WHERE github_id = ?`, [user.login, user.githubId]);
+    });
+  }
+
+  async addMember(workspace: string, person: GithubAccount, role: WorkspaceRole, via: MemberVia, at: string): Promise<void> {
+    await this.write(async () => {
+      await this.needWorkspace(workspace);
+      const conflict = via === "invite" ? "DO UPDATE SET login = excluded.login, role = excluded.role, via = excluded.via" : "DO NOTHING";
+      await this.db.run(`INSERT INTO workspace_members (workspace, github_id, login, role, via, added_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (workspace, github_id) ${conflict}`, [workspace, person.id, person.login, role, via, at]);
+    });
+  }
+
+  async removeMember(workspace: string, githubId: string, via?: MemberVia): Promise<boolean> {
+    return via ? this.deleted("workspace_members", "workspace = ? AND github_id = ? AND via = ?", [workspace, githubId, via]) : this.deleted("workspace_members", "workspace = ? AND github_id = ?", [workspace, githubId]);
+  }
+
+  async members(workspace: string): Promise<WorkspaceMember[]> {
+    const rows = await this.db.all<{ github_id: string; login: string; role: WorkspaceRole; via: MemberVia; added_at: string }>(`SELECT github_id, login, role, via, added_at FROM workspace_members WHERE workspace = ? ORDER BY LOWER(login), github_id`, [workspace]);
+    return rows.map((r) => ({ githubId: r.github_id, login: r.login, role: r.role, via: r.via, addedAt: String(r.added_at) }));
+  }
+
+  async memberships(githubId: string): Promise<Membership[]> {
+    const rows = await this.db.all<{ workspace: string; name: string; role: WorkspaceRole; via: MemberVia }>(`SELECT m.workspace, w.name, m.role, m.via FROM workspace_members m JOIN workspaces w ON w.id = m.workspace WHERE m.github_id = ? ORDER BY LOWER(w.name), w.id`, [githubId]);
+    return rows.map((r) => ({ workspace: r.workspace, name: r.name, role: r.role, via: r.via }));
+  }
+
+  async addSession(hash: string, githubId: string, at: string, expiresAt: string): Promise<void> {
+    await this.write(async () => {
+      // Expired sessions go as new ones come.
+      await this.db.run(`DELETE FROM hub_sessions WHERE expires_at <= ?`, [at]);
+      await this.db.run(`INSERT INTO hub_sessions (hash, github_id, created_at, expires_at) VALUES (?, ?, ?, ?)`, [hash, githubId, at, expiresAt]);
+    });
+  }
+
+  async sessionUser(hash: string, now: string): Promise<HubUser | null> {
+    const row = (await this.db.all<{ github_id: string; login: string; name: string | null }>(`SELECT u.github_id, u.login, u.name FROM hub_sessions s JOIN hub_users u ON u.github_id = s.github_id WHERE s.hash = ? AND s.expires_at > ?`, [hash, now]))[0];
+    return row ? { githubId: row.github_id, login: row.login, name: row.name } : null;
+  }
+
+  async removeSession(hash: string): Promise<void> {
+    await this.write(() => this.db.run(`DELETE FROM hub_sessions WHERE hash = ?`, [hash]));
   }
 
   /* ----------------------------------------------------------------- inventory */

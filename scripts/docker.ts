@@ -6,7 +6,9 @@
  * context holds that tarball alone. --smoke then runs the image as a team would, with secrets
  * made for this run only and passed through the environment (never argv): it waits for the
  * health check, sends a record with the ingest token, reads it back with the view key, checks the
- * hub runs as a user other than root, and removes the container.
+ * hub runs as a user other than root, and removes the container. Then it runs it again with
+ * workspaces (a made-up OAuth App: nobody signs in): the admin commands, run in the container,
+ * add a workspace and a CI token, and a record sent with that token is filed under it.
  */
 import { execFileSync, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -84,6 +86,35 @@ async function smoke(tag: string): Promise<void> {
   }
 }
 
+/** The hub with workspaces: its admin commands in the container, and a record routed by a workspace's CI token. */
+async function smokeWorkspaces(tag: string): Promise<void> {
+  // A made-up app: the hub needs one to start in this mode, and GitHub is never asked here.
+  const app = { YOUIYOUX_HUB_GITHUB_CLIENT_ID: "smoke-client", YOUIYOUX_HUB_GITHUB_CLIENT_SECRET: randomBytes(24).toString("base64url"), YOUIYOUX_HUB_AUDIENCE: "http://localhost:8080" };
+  const id = docker(["run", "-d", "--rm", "-p", "127.0.0.1::8080", ...Object.keys(app).flatMap((name) => ["-e", name]), tag], { ...process.env, ...app });
+  try {
+    const port = docker(["port", id, "8080/tcp"]).split("\n")[0]!.split(":").pop()!;
+    const url = `http://127.0.0.1:${port}`;
+    await waitHealthy(url, 60_000);
+    docker(["exec", id, "youiyoux", "hub", "workspace", "add", "smoke", "--name", "Smoke"]);
+    const token = /\b(yxh_[\w-]{43})\b/.exec(docker(["exec", id, "youiyoux", "hub", "token", "add", "smoke", "ci"]))?.[1];
+    if (!token) throw new Error("youiyoux hub token add printed no token");
+    const sent = await fetch(`${url}/api/records`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify(smokeRecord(new Date())) });
+    const body = (await sent.json()) as { workspace?: string };
+    if (sent.status !== 201 || body.workspace !== "smoke") throw new Error(`a record with the workspace's token answered ${sent.status} ${JSON.stringify(body)}`);
+    const me = await fetch(`${url}/api/me`);
+    if (me.status !== 401) throw new Error(`/api/me answered ${me.status} with nobody signed in`);
+    if (!(await (await fetch(url)).text()).includes('name="youi-org-mode" content="workspaces"')) throw new Error("the hub's page is not in its workspace mode");
+    const listed = docker(["exec", id, "youiyoux", "hub", "workspace", "list", "--json"]);
+    if (!(JSON.parse(listed) as Array<{ id: string; tokens: string[] }>).some((w) => w.id === "smoke" && w.tokens.includes("ci"))) throw new Error("youiyoux hub workspace list does not show the workspace and its token");
+    console.log(`smoke: ${tag} with workspaces: a workspace and its CI token added in the container, a record filed under it`);
+  } catch (error) {
+    spawnSync("docker", ["logs", id], { stdio: "inherit" });
+    throw error;
+  } finally {
+    spawnSync("docker", ["rm", "-f", id], { stdio: "ignore" });
+  }
+}
+
 async function main(): Promise<void> {
   const { values } = parseArgs({ options: { tag: { type: "string" }, tarball: { type: "string" }, smoke: { type: "boolean", default: false } } });
   const tag = values.tag ?? "youiyoux-hub:dev";
@@ -99,7 +130,10 @@ async function main(): Promise<void> {
     const build = spawnSync("docker", ["build", "-f", DOCKERFILE, "-t", tag, context], { stdio: "inherit" });
     if (build.status !== 0) throw new Error("docker build failed");
     console.log(`built ${tag}`);
-    if (values.smoke) await smoke(tag);
+    if (values.smoke) {
+      await smoke(tag);
+      await smokeWorkspaces(tag);
+    }
   } finally {
     rmSync(context, { recursive: true, force: true });
   }

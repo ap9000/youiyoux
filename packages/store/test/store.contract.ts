@@ -71,7 +71,7 @@ export function storeContract(engine: Engine): void {
     test(`${engine.name}: migrations are recorded once and re-running them changes nothing`, async () => {
       expect((await store.stats()).schema).toBe(SCHEMA_VERSION);
       expect(await (store as SqlStore).migrate()).toEqual([]);
-      expect(MIGRATIONS.map((m) => m.id)).toEqual([1, 2, 3, 4]);
+      expect(MIGRATIONS.map((m) => m.id)).toEqual([1, 2, 3, 4, 5]);
       expect((await store.stats()).engine).toBe(engine.name === "sqlite" ? "sqlite" : "postgres");
     });
 
@@ -282,6 +282,77 @@ export function storeContract(engine: Engine): void {
       await store.reset();
       expect((await store.latestRecords()).length).toBe(2);
       await fill(store);
+    });
+
+    test(`${engine.name}: workspaces keep their records apart; an owner and a token feed one workspace each; removing one removes all it holds; a rebuild keeps them`, async () => {
+      const at = "2026-10-25T12:00:00.000Z";
+      const record = (repo: string, n: number): CiRecord => ({ schema: "youi.record/v1", repo, commit: n.toString(16).padStart(40, "0"), ref: "main", generatedAt: new Date(Date.UTC(2026, 9, 1, 0, n)).toISOString(), tool: "0.1.28", products: [] });
+      await store.addWorkspace({ id: "acme", name: "Acme", githubOrg: { id: "1001", login: "acme" } }, at);
+      await store.addWorkspace({ id: "globex", name: "Globex", githubOrg: null }, at);
+      await expect(store.addWorkspace({ id: "acme", name: "Again", githubOrg: null }, at)).rejects.toThrow("there is a workspace acme already");
+
+      await store.addOwner("acme", { id: "1001", login: "acme" }, at);
+      await store.addOwner("acme", { id: "1001", login: "acme-renamed" }, at);
+      await expect(store.addOwner("globex", { id: "1001", login: "acme" }, at)).rejects.toThrow("acme's records go to the workspace acme already");
+      await expect(store.addOwner("nowhere", { id: "2002", login: "x" }, at)).rejects.toThrow("there is no workspace nowhere");
+      expect(await store.workspaceForOwner("1001")).toBe("acme");
+      expect(await store.workspaceForOwner("2002")).toBeNull();
+
+      await store.addToken("globex", "jenkins", "hash-of-globex-token", at);
+      await expect(store.addToken("globex", "jenkins", "another-hash", at)).rejects.toThrow("has a token named jenkins already");
+      expect(await store.workspaceForToken("hash-of-globex-token")).toBe("globex");
+
+      // The same repository and commit in two workspaces are two records, never one replacing the other.
+      await store.putRecord(record("shared/app", 1), at, "acme");
+      await store.putRecord({ ...record("shared/app", 1), ref: "globex-main" }, at, "globex");
+      expect((await store.latestRecords("acme")).map((l) => l.record.ref)).toEqual(["main"]);
+      expect((await store.latestRecords("globex")).map((l) => l.record.ref)).toEqual(["globex-main"]);
+      expect((await store.latestRecords()).map((l) => l.record.repo)).not.toContain("shared/app");
+
+      expect(await store.workspaces()).toEqual([
+        { id: "acme", name: "Acme", githubOrg: { id: "1001", login: "acme" }, createdAt: at, owners: [{ id: "1001", login: "acme-renamed" }], tokens: [], members: 0 },
+        { id: "globex", name: "Globex", githubOrg: null, createdAt: at, owners: [], tokens: ["jenkins"], members: 0 },
+      ]);
+      await store.reset();
+      expect((await store.workspaces()).map((w) => w.id)).toEqual(["acme", "globex"]);
+      await fill(store);
+
+      expect(await store.removeWorkspace("globex")).toBe(true);
+      expect(await store.removeWorkspace("globex")).toBe(false);
+      expect(await store.workspaceForToken("hash-of-globex-token")).toBeNull();
+      expect(await store.latestRecords("globex")).toEqual([]);
+      expect(await store.latestRecords("acme")).toHaveLength(1);
+      expect(await store.removeOwner("acme", "1001")).toBe(true);
+      expect(await store.removeOwner("acme", "1001")).toBe(false);
+      expect(await store.removeWorkspace("acme")).toBe(true);
+    });
+
+    test(`${engine.name}: members: an invite replaces a membership from the organisation, never the other way; a login follows its account; sessions end when they expire or are removed`, async () => {
+      const at = "2026-10-25T12:00:00.000Z";
+      await store.addWorkspace({ id: "initech", name: "Initech", githubOrg: { id: "3003", login: "initech" } }, at);
+      await store.addMember("initech", { id: "11", login: "peter" }, "member", "org", at);
+      await store.addMember("initech", { id: "11", login: "peter" }, "admin", "invite", at);
+      await store.addMember("initech", { id: "11", login: "peter" }, "member", "org", at);
+      await store.addMember("initech", { id: "12", login: "milton" }, "member", "org", at);
+      expect((await store.members("initech")).map((m) => [m.login, m.role, m.via])).toEqual([["milton", "member", "org"], ["peter", "admin", "invite"]]);
+      // Leaving the organisation removes only what the organisation gave.
+      expect(await store.removeMember("initech", "11", "org")).toBe(false);
+      expect(await store.removeMember("initech", "12", "org")).toBe(true);
+      expect(await store.memberships("11")).toEqual([{ workspace: "initech", name: "Initech", role: "admin", via: "invite" }]);
+      expect(await store.memberships("12")).toEqual([]);
+      await expect(store.addMember("nowhere", { id: "11", login: "peter" }, "member", "invite", at)).rejects.toThrow("there is no workspace nowhere");
+
+      await store.putUser({ githubId: "11", login: "peter-gibbons", name: "Peter" }, at);
+      expect((await store.members("initech")).map((m) => m.login)).toEqual(["peter-gibbons"]);
+
+      await store.addSession("session-hash", "11", at, "2026-10-26T12:00:00.000Z");
+      expect(await store.sessionUser("session-hash", "2026-10-26T11:59:59.000Z")).toEqual({ githubId: "11", login: "peter-gibbons", name: "Peter" });
+      expect(await store.sessionUser("session-hash", "2026-10-26T12:00:00.000Z")).toBeNull();
+      expect(await store.sessionUser("another-hash", at)).toBeNull();
+      await store.removeSession("session-hash");
+      expect(await store.sessionUser("session-hash", at)).toBeNull();
+      expect(await store.removeWorkspace("initech")).toBe(true);
+      expect(await store.memberships("11")).toEqual([]);
     });
 
     test(`${engine.name}: emptied and rebuilt from the same inputs, it answers exactly as before`, async () => {

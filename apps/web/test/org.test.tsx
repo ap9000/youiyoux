@@ -105,3 +105,46 @@ describe("the hosted hub", () => {
     expect((await screen.findByRole("alert")).textContent).toBe("the hub could not read its store; its log says why");
   });
 });
+
+describe("the hosted hub with workspaces", () => {
+  const empty: OrgView = { ...view, repos: [], systems: [], totals: { repos: 0, products: 0, unreadable: 0, behind: 0, failing: 0 } };
+  const me = { user: { login: "peter", name: "Peter" }, workspaces: [{ id: "acme", name: "Acme", role: "member" }, { id: "globex", name: "Globex", role: "admin" }] };
+  afterEach(() => window.history.replaceState(null, "", "/"));
+
+  test("signed out, it offers GitHub, and says what happened when GitHub sent someone back without signing them in", async () => {
+    window.history.replaceState(null, "", "/?signin=denied&w=acme");
+    vi.stubGlobal("fetch", vi.fn(async () => json({ error: "sign in with GitHub" }, 401)));
+    render(<OrgApp api="/api/me" mode="workspaces" />);
+    const link = await screen.findByRole("link", { name: "Sign in with GitHub" });
+    expect(link.getAttribute("href")).toBe("/auth/github");
+    expect(screen.getByRole("alert").textContent).toContain("You declined on GitHub");
+    // The outcome is read once: the address keeps only the workspace.
+    expect(window.location.search).toBe("?w=acme");
+    expect(screen.queryByLabelText("View key")).toBeNull();
+  });
+
+  test("the workspace in the address, or the first; switching reads the other one and puts it in the address", async () => {
+    window.history.replaceState(null, "", "/?w=globex");
+    const fetch = vi.fn(async (url: string) => (url === "/api/me" ? json(me) : url === "/api/w/globex/org" ? json(empty) : json(view)));
+    vi.stubGlobal("fetch", fetch);
+    render(<OrgApp api="/api/me" mode="workspaces" />);
+    expect(await screen.findByText("No records in Globex yet")).toBeTruthy();
+    expect(screen.getByText("youiyoux hub owner add")).toBeTruthy();
+    expect(screen.getByText("peter")).toBeTruthy();
+    fireEvent.change(screen.getByRole("combobox", { name: "Workspace" }), { target: { value: "acme" } });
+    expect(await screen.findByText("Adoption by version")).toBeTruthy();
+    expect(window.location.search).toBe("?w=acme");
+    expect(fetch.mock.calls.map(([url]) => url)).toEqual(["/api/me", "/api/w/globex/org", "/api/w/acme/org"]);
+  });
+
+  test("signed in with no workspace, it says who can add them and why an organisation might not let them in; sign out offers GitHub again", async () => {
+    const fetch = vi.fn(async (url: string, init?: RequestInit) => (url === "/api/session" && init?.method === "DELETE" ? json({ ok: true }) : json({ ...me, workspaces: [] })));
+    vi.stubGlobal("fetch", fetch);
+    render(<OrgApp api="/api/me" mode="workspaces" />);
+    expect(await screen.findByText("You are not in a workspace here yet")).toBeTruthy();
+    expect(screen.getByText("youiyoux hub member add <workspace> peter")).toBeTruthy();
+    expect(screen.getByText(/third-party access settings/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
+    expect(await screen.findByRole("link", { name: "Sign in with GitHub" })).toBeTruthy();
+  });
+});

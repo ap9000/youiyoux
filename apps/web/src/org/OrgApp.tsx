@@ -3,18 +3,22 @@
  * record from CI, and each System's adoption by the version its products have synced. index.html
  * names the API with the `youi-org` meta tag; the snapshot the local hub reads is never loaded.
  * Nothing here changes a repository: approval stays in the design repo's pull requests.
+ *
+ * A hub with workspaces (`youi-org-mode`) signs people in with GitHub and shows one workspace at a
+ * time (`?w=<id>`), among those they are a member of; someone signed in with none is told who can
+ * add them.
  */
 import type { OrgView, ProjectStatus, ProjectStatusFailure } from "@youiyoux/core";
-import { Building2, LogOut, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { OrgRequestError, orgApi } from "../data/org.ts";
+import { Building2, LogIn, LogOut, RefreshCw, Users } from "lucide-react";
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { GITHUB_SIGN_IN, OrgRequestError, orgApi, type Me } from "../data/org.ts";
 import { when } from "../lib/when.ts";
 import { noun, plural } from "../lib/plural.ts";
 import { Facts, Next } from "../screens/workspace/WorkspaceScreen.tsx";
 import { Badge } from "../ui/Badge.tsx";
 import { Button } from "../ui/Button.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
-import { Field, TextInput } from "../ui/Field.tsx";
+import { Field, Select, TextInput } from "../ui/Field.tsx";
 import { PaneHeader, PaneSkeleton } from "../ui/Pane.tsx";
 
 type Load = { state: "loading" } | { state: "signed-out" } | { state: "failed"; message: string } | { state: "ready"; view: OrgView };
@@ -161,17 +165,216 @@ function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
   );
 }
 
-function NoRecords() {
+function NoRecords({ workspace }: { workspace?: string }) {
   return (
-    <EmptyState icon={Building2} title="No records yet">
-      <p>
-        In each repository, <span className={`${mono} text-ink`}>youiyoux hooks install --record</span> writes a workflow that sends its record here on every push to the default branch. Set <span className={`${mono} text-ink`}>YOUIYOUX_HUB_URL</span> and <span className={`${mono} text-ink`}>YOUIYOUX_HUB_TOKEN</span> as its secrets.
-      </p>
+    <EmptyState icon={Building2} title={workspace ? `No records in ${workspace} yet` : "No records yet"}>
+      {workspace ? (
+        <p>
+          In each repository, <span className={`${mono} text-ink`}>youiyoux hooks install --record</span> writes a workflow that sends its record here on every push to the default branch; set <span className={`${mono} text-ink`}>YOUIYOUX_HUB_URL</span> as its secret. The hub takes it once its admin has added the repository's GitHub owner (<span className={`${mono} text-ink`}>youiyoux hub owner add</span>).
+        </p>
+      ) : (
+        <p>
+          In each repository, <span className={`${mono} text-ink`}>youiyoux hooks install --record</span> writes a workflow that sends its record here on every push to the default branch. Set <span className={`${mono} text-ink`}>YOUIYOUX_HUB_URL</span> and <span className={`${mono} text-ink`}>YOUIYOUX_HUB_TOKEN</span> as its secrets.
+        </p>
+      )}
     </EmptyState>
   );
 }
 
-export function OrgApp({ api }: { api: string }) {
+/** The organisation (or a workspace) as CI last recorded it. */
+function OrgBody({ view }: { view: OrgView }) {
+  const latest = new Map(view.systems.map((s) => [s.id, s.latest]));
+  return (
+    <div className="mx-auto w-full max-w-5xl min-w-0 space-y-10 px-8 py-10 animate-enter max-md:px-4 max-md:py-6">
+      <Headline view={view} />
+      {view.systems.length > 0 && (
+        <div className="space-y-6">
+          <h2 className="text-heading">Adoption by version</h2>
+          {view.systems.map((system) => (
+            <Adoption key={system.id} system={system} />
+          ))}
+        </div>
+      )}
+      <div className="space-y-4">
+        <h2 className="text-heading">Repositories</h2>
+        {view.repos.map((repo) => (
+          <Repository key={repo.repo} repo={repo} latest={latest} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Shell({ title, count, actions, children }: { title: string; count?: number | undefined; actions?: ReactNode; children: ReactNode }) {
+  return (
+    <div className="flex h-dvh overflow-hidden bg-canvas">
+      <main className="flex min-w-0 flex-1 p-1.5 max-md:p-0">
+        <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-line bg-surface max-md:rounded-none max-md:border-0">
+          <PaneHeader title={title} count={count}>
+            {actions}
+          </PaneHeader>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">{children}</div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+/** What coming back from GitHub without a session means, in the words the person needs. */
+const SIGN_IN_OUTCOME: Readonly<Record<string, string>> = {
+  denied: "You declined on GitHub, so nothing was shared with the hub. Sign in again whenever you are ready.",
+  expired: "That sign-in took too long, or was started in another browser. Try again from here.",
+  failed: "GitHub did not let the hub read your account. Try again; if it keeps failing, the hub's log says why.",
+};
+
+function GithubSignIn({ outcome }: { outcome: string | null }) {
+  const message = outcome ? (SIGN_IN_OUTCOME[outcome] ?? null) : null;
+  return (
+    <div className="flex flex-1 items-center justify-center p-8 max-sm:p-4">
+      <div className="w-full max-w-sm space-y-4 animate-enter">
+        <div className="space-y-1.5">
+          <h2 className="text-heading">Sign in to the hub</h2>
+          <p className="text-small text-muted">Where each product stands with its design system, as CI records it, for the workspaces you are a member of. The hub reads your GitHub account and organisations once, at sign-in, and keeps no GitHub token.</p>
+        </div>
+        {message && (
+          <p role="alert" className="text-small text-danger">
+            {message}
+          </p>
+        )}
+        <Button asChild variant="primary" className="w-full max-md:h-11">
+          <a href={GITHUB_SIGN_IN}>
+            <LogIn /> Sign in with GitHub
+          </a>
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function NoWorkspace({ me }: { me: Me }) {
+  return (
+    <EmptyState icon={Users} title="You are not in a workspace here yet">
+      <p>
+        Signed in as <span className={`${mono} text-ink`}>{me.user.login}</span>. The hub's admin adds you with <span className={`${mono} text-ink`}>youiyoux hub member add &lt;workspace&gt; {me.user.login}</span>.
+      </p>
+      <p className="mt-2">If your GitHub organisation should let you in, it may limit which OAuth apps can see its members: an owner of the organisation approves this hub's app in its third-party access settings, then you sign in again.</p>
+    </EmptyState>
+  );
+}
+
+type WorkspaceLoad =
+  | { state: "loading" }
+  | { state: "signed-out"; outcome: string | null }
+  | { state: "failed"; message: string }
+  | { state: "ready"; me: Me; workspace: string | null; view: OrgView | null; error: string | null };
+
+/** The page's ?w=, and a sign-in outcome GitHub's callback left in ?signin= (read once, then dropped from the address). */
+function readAddress(): { workspace: string | null; outcome: string | null } {
+  const params = new URLSearchParams(window.location.search);
+  const outcome = params.get("signin");
+  if (outcome) {
+    params.delete("signin");
+    const rest = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${rest ? `?${rest}` : ""}`);
+  }
+  return { workspace: params.get("w"), outcome };
+}
+
+function WorkspacesApp() {
+  const [load, setLoad] = useState<WorkspaceLoad>({ state: "loading" });
+  const show = useCallback((me: Me, wanted: string | null) => {
+    const workspace = me.workspaces.find((w) => w.id === wanted)?.id ?? me.workspaces[0]?.id ?? null;
+    setLoad({ state: "ready", me, workspace, view: null, error: null });
+    if (!workspace) return;
+    orgApi.workspace(workspace).then(
+      (view) => setLoad((l) => (l.state === "ready" && l.workspace === workspace ? { ...l, view } : l)),
+      (error: unknown) => {
+        if (error instanceof OrgRequestError && error.status === 401) return setLoad({ state: "signed-out", outcome: null });
+        setLoad((l) => (l.state === "ready" && l.workspace === workspace ? { ...l, error: error instanceof Error ? error.message : String(error) } : l));
+      },
+    );
+  }, []);
+  const read = useCallback(() => {
+    const { workspace, outcome } = readAddress();
+    orgApi.me().then(
+      (me) => show(me, workspace),
+      (error: unknown) => setLoad(error instanceof OrgRequestError && error.status === 401 ? { state: "signed-out", outcome } : { state: "failed", message: error instanceof Error ? error.message : String(error) }),
+    );
+  }, [show]);
+  useEffect(read, [read]);
+  const choose = (id: string): void => {
+    if (load.state !== "ready") return;
+    const params = new URLSearchParams(window.location.search);
+    params.set("w", id);
+    window.history.replaceState(null, "", `${window.location.pathname}?${params}`);
+    show(load.me, id);
+  };
+  const signOut = (): void => void orgApi.signOut().finally(() => setLoad({ state: "signed-out", outcome: null }));
+  const ready = load.state === "ready" ? load : null;
+  const current = ready?.me.workspaces.find((w) => w.id === ready.workspace) ?? null;
+  return (
+    <Shell
+      title={current?.name ?? "Workspaces"}
+      count={ready?.view?.totals.repos}
+      actions={
+        ready && (
+          <>
+            {ready.me.workspaces.length > 1 && (
+              <label className="flex items-center gap-1.5 text-small text-muted">
+                <span className="max-sm:sr-only">Workspace</span>
+                <Select value={ready.workspace ?? ""} onChange={(event) => choose(event.target.value)} className="w-auto max-md:h-11" aria-label="Workspace">
+                  {ready.me.workspaces.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name}
+                    </option>
+                  ))}
+                </Select>
+              </label>
+            )}
+            {ready.view && (
+              <Button size="sm" variant="ghost" onClick={() => show(ready.me, ready.workspace)}>
+                <RefreshCw /> Read again
+              </Button>
+            )}
+            <span className={`${mono} text-muted max-sm:hidden`}>{ready.me.user.login}</span>
+            <Button size="sm" variant="ghost" onClick={signOut}>
+              <LogOut /> Sign out
+            </Button>
+          </>
+        )
+      }
+    >
+      {load.state === "loading" ? (
+        <PaneSkeleton />
+      ) : load.state === "signed-out" ? (
+        <GithubSignIn outcome={load.outcome} />
+      ) : load.state === "failed" ? (
+        <p role="alert" className="px-8 py-8 text-small text-danger">
+          {load.message}
+        </p>
+      ) : load.workspace === null ? (
+        <NoWorkspace me={load.me} />
+      ) : load.error ? (
+        <p role="alert" className="px-8 py-8 text-small text-danger">
+          {load.error}
+        </p>
+      ) : load.view === null ? (
+        <PaneSkeleton />
+      ) : load.view.repos.length === 0 ? (
+        <NoRecords workspace={current?.name ?? load.workspace} />
+      ) : (
+        <OrgBody view={load.view} />
+      )}
+    </Shell>
+  );
+}
+
+export function OrgApp({ api, mode = "key" }: { api: string; mode?: "key" | "workspaces" }) {
+  return mode === "workspaces" ? <WorkspacesApp /> : <KeyOrgApp api={api} />;
+}
+
+/** The single organisation, behind the hub's view key. */
+function KeyOrgApp({ api }: { api: string }) {
   const [load, setLoad] = useState<Load>({ state: "loading" });
   const read = useCallback(() => {
     orgApi.view(api).then(
@@ -182,56 +385,36 @@ export function OrgApp({ api }: { api: string }) {
   useEffect(read, [read]);
   const signOut = (): void => void orgApi.signOut().finally(() => setLoad({ state: "signed-out" }));
   const view = load.state === "ready" ? load.view : null;
-  const latest = new Map(view?.systems.map((s) => [s.id, s.latest]) ?? []);
   return (
-    <div className="flex h-dvh overflow-hidden bg-canvas">
-      <main className="flex min-w-0 flex-1 p-1.5 max-md:p-0">
-        <div className="relative flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-line bg-surface max-md:rounded-none max-md:border-0">
-          <PaneHeader title="Organisation" count={view?.totals.repos}>
-            {view && (
-              <>
-                <Button size="sm" variant="ghost" onClick={read}>
-                  <RefreshCw /> Read again
-                </Button>
-                <Button size="sm" variant="ghost" onClick={signOut}>
-                  <LogOut /> Sign out
-                </Button>
-              </>
-            )}
-          </PaneHeader>
-          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
-            {load.state === "loading" ? (
-              <PaneSkeleton />
-            ) : load.state === "signed-out" ? (
-              <SignIn onSignedIn={read} />
-            ) : load.state === "failed" ? (
-              <p role="alert" className="px-8 py-8 text-small text-danger">
-                {load.message}
-              </p>
-            ) : load.view.repos.length === 0 ? (
-              <NoRecords />
-            ) : (
-              <div className="mx-auto w-full max-w-5xl min-w-0 space-y-10 px-8 py-10 animate-enter max-md:px-4 max-md:py-6">
-                <Headline view={load.view} />
-                {load.view.systems.length > 0 && (
-                  <div className="space-y-6">
-                    <h2 className="text-heading">Adoption by version</h2>
-                    {load.view.systems.map((system) => (
-                      <Adoption key={system.id} system={system} />
-                    ))}
-                  </div>
-                )}
-                <div className="space-y-4">
-                  <h2 className="text-heading">Repositories</h2>
-                  {load.view.repos.map((repo) => (
-                    <Repository key={repo.repo} repo={repo} latest={latest} />
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      </main>
-    </div>
+    <Shell
+      title="Organisation"
+      count={view?.totals.repos}
+      actions={
+        view && (
+          <>
+            <Button size="sm" variant="ghost" onClick={read}>
+              <RefreshCw /> Read again
+            </Button>
+            <Button size="sm" variant="ghost" onClick={signOut}>
+              <LogOut /> Sign out
+            </Button>
+          </>
+        )
+      }
+    >
+      {load.state === "loading" ? (
+        <PaneSkeleton />
+      ) : load.state === "signed-out" ? (
+        <SignIn onSignedIn={read} />
+      ) : load.state === "failed" ? (
+        <p role="alert" className="px-8 py-8 text-small text-danger">
+          {load.message}
+        </p>
+      ) : load.view.repos.length === 0 ? (
+        <NoRecords />
+      ) : (
+        <OrgBody view={load.view} />
+      )}
+    </Shell>
   );
 }

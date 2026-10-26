@@ -225,6 +225,56 @@ export interface StoreStats {
   readonly tables: Readonly<Record<string, number>>;
 }
 
+/* ------------------------------------------------------------- hosted hub workspaces */
+
+/** The workspace records go to when a hub has none: everything sent before workspaces. */
+export const DEFAULT_WORKSPACE = "default";
+
+/** A GitHub account, by the numeric id it keeps for life, and the login it has now. */
+export interface GithubAccount {
+  readonly id: string;
+  readonly login: string;
+}
+
+export type WorkspaceRole = "admin" | "member";
+/** How a member got in: invited by an admin, or as a member of the workspace's GitHub organisation (checked at each sign-in). */
+export type MemberVia = "invite" | "org";
+
+export interface Workspace {
+  /** Lowercase letters, digits and hyphens. */
+  readonly id: string;
+  readonly name: string;
+  /** Whose members are let in at sign-in, or null. */
+  readonly githubOrg: GithubAccount | null;
+  readonly createdAt: string;
+  /** The GitHub owners whose repositories' CI sends records here. */
+  readonly owners: readonly GithubAccount[];
+  /** CI tokens, by name (the token itself is never kept). */
+  readonly tokens: readonly string[];
+  readonly members: number;
+}
+
+export interface WorkspaceMember {
+  readonly githubId: string;
+  readonly login: string;
+  readonly role: WorkspaceRole;
+  readonly via: MemberVia;
+  readonly addedAt: string;
+}
+
+export interface HubUser {
+  readonly githubId: string;
+  readonly login: string;
+  readonly name: string | null;
+}
+
+export interface Membership {
+  readonly workspace: string;
+  readonly name: string;
+  readonly role: WorkspaceRole;
+  readonly via: MemberVia;
+}
+
 /**
  * The store: large, derived youiyoux data (Discover listings, signals, licences, inventory
  * history, the usage graph), local on SQLite or hosted on Postgres, rebuildable from its
@@ -266,10 +316,45 @@ export interface Store {
   families(filter?: { readonly run?: string; readonly role?: string } & Page): Promise<{ run: string | null; total: number; rows: FamilyRecord[] }>;
   looks(filter: { readonly run?: string; readonly family?: string; readonly role?: string } & Page): Promise<{ run: string | null; total: number; rows: LookRecord[] }>;
 
-  /** Keep what CI sent a hosted hub (youi.record/v1), received now; a repository's last 100 are kept. A record for a commit already kept replaces it. */
-  putRecord(record: CiRecord, receivedAt: string): Promise<void>;
-  /** Each repository's newest record (by generatedAt, then receipt), by repository name. */
-  latestRecords(): Promise<Array<{ readonly record: CiRecord; readonly receivedAt: string }>>;
+  /** Keep what CI sent a hosted hub (youi.record/v1) for a workspace (default: DEFAULT_WORKSPACE), received now; a repository's last 100 are kept. A record for a commit already kept replaces it. */
+  putRecord(record: CiRecord, receivedAt: string, workspace?: string): Promise<void>;
+  /** A workspace's (default: DEFAULT_WORKSPACE) newest record for each repository (by generatedAt, then receipt), by repository name. */
+  latestRecords(workspace?: string): Promise<Array<{ readonly record: CiRecord; readonly receivedAt: string }>>;
+
+  /** A new workspace; throws if the id is taken. */
+  addWorkspace(workspace: { readonly id: string; readonly name: string; readonly githubOrg: GithubAccount | null }, at: string): Promise<void>;
+  workspaces(): Promise<Workspace[]>;
+  workspace(id: string): Promise<Workspace | null>;
+  /** The workspace and everything in it: owners, tokens, members, records. False when there was none. */
+  removeWorkspace(id: string): Promise<boolean>;
+  /** Let a GitHub owner's repositories send records here; throws if another workspace has it. */
+  addOwner(workspace: string, owner: GithubAccount, at: string): Promise<void>;
+  removeOwner(workspace: string, ownerId: string): Promise<boolean>;
+  /** Which workspace an owner's records go to, or null. */
+  workspaceForOwner(ownerId: string): Promise<string | null>;
+  /** A CI token for a workspace, by the SHA-256 of the token; throws if the name is taken there. */
+  addToken(workspace: string, name: string, hash: string, at: string): Promise<void>;
+  removeToken(workspace: string, name: string): Promise<boolean>;
+  workspaceForToken(hash: string): Promise<string | null>;
+
+  /** Record a person signing in; their login and name as GitHub has them now. */
+  putUser(user: HubUser, at: string): Promise<void>;
+  /**
+   * Make someone a member. An invite always applies (and replaces a membership from the
+   * organisation); one from the organisation never replaces an invite.
+   */
+  addMember(workspace: string, person: GithubAccount, role: WorkspaceRole, via: MemberVia, at: string): Promise<void>;
+  /** Remove a member; with `via`, only a membership that came that way. */
+  removeMember(workspace: string, githubId: string, via?: MemberVia): Promise<boolean>;
+  members(workspace: string): Promise<WorkspaceMember[]>;
+  /** The workspaces a person is a member of, by name. */
+  memberships(githubId: string): Promise<Membership[]>;
+
+  /** A session for a person, by the SHA-256 of its secret. */
+  addSession(hash: string, githubId: string, at: string, expiresAt: string): Promise<void>;
+  /** The person a session is for, while it has not expired. */
+  sessionUser(hash: string, now: string): Promise<HubUser | null>;
+  removeSession(hash: string): Promise<void>;
 
   /** Replace everything one source said about the graph. */
   replaceGraph(source: string, graph: Graph): Promise<void>;

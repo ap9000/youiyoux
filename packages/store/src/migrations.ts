@@ -116,6 +116,25 @@ export const MIGRATIONS: readonly Migration[] = [
     `CREATE TABLE IF NOT EXISTS ci_records (id TEXT PRIMARY KEY, repo TEXT NOT NULL, commit_sha TEXT, ref TEXT, generated_at TEXT NOT NULL, received_at TEXT NOT NULL, record ${json} NOT NULL)`,
     `CREATE INDEX IF NOT EXISTS ci_records_repo ON ci_records (repo, generated_at)`,
   ] },
+  // A hosted hub's workspaces, kept apart from each other: the GitHub owners and CI tokens that feed
+  // each, its members, and people's sessions. Like ci_records, none of it is derived from git, and
+  // a rebuild keeps it. Owners and people by GitHub's numeric id, which a renamed account never
+  // passes on; tokens and sessions by their SHA-256 only. Records sent before workspaces are the
+  // `default` workspace's, and a commit is kept once per workspace.
+  { id: 5, name: "workspaces", statements: ({ json }) => [
+    `CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT NOT NULL, github_org_id TEXT, github_org_login TEXT, created_at TEXT NOT NULL)`,
+    `CREATE TABLE workspace_owners (owner_id TEXT PRIMARY KEY, workspace TEXT NOT NULL, login TEXT NOT NULL, added_at TEXT NOT NULL)`,
+    `CREATE TABLE workspace_tokens (hash TEXT PRIMARY KEY, workspace TEXT NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE (workspace, name))`,
+    `CREATE TABLE hub_users (github_id TEXT PRIMARY KEY, login TEXT NOT NULL, name TEXT, seen_at TEXT NOT NULL)`,
+    `CREATE TABLE workspace_members (workspace TEXT NOT NULL, github_id TEXT NOT NULL, login TEXT NOT NULL, role TEXT NOT NULL, via TEXT NOT NULL, added_at TEXT NOT NULL, PRIMARY KEY (workspace, github_id))`,
+    `CREATE INDEX workspace_members_person ON workspace_members (github_id)`,
+    `CREATE TABLE hub_sessions (hash TEXT PRIMARY KEY, github_id TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL)`,
+    `CREATE TABLE ci_records_by_workspace (workspace TEXT NOT NULL, id TEXT NOT NULL, repo TEXT NOT NULL, commit_sha TEXT, ref TEXT, generated_at TEXT NOT NULL, received_at TEXT NOT NULL, record ${json} NOT NULL, PRIMARY KEY (workspace, id))`,
+    `INSERT INTO ci_records_by_workspace (workspace, id, repo, commit_sha, ref, generated_at, received_at, record) SELECT 'default', id, repo, commit_sha, ref, generated_at, received_at, record FROM ci_records`,
+    `DROP TABLE ci_records`,
+    `ALTER TABLE ci_records_by_workspace RENAME TO ci_records`,
+    `CREATE INDEX ci_records_workspace_repo ON ci_records (workspace, repo, generated_at)`,
+  ] },
 ];
 
 export const SCHEMA_VERSION = Math.max(...MIGRATIONS.map((m) => m.id));

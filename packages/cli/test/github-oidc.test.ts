@@ -39,7 +39,7 @@ function token(claims: Record<string, unknown> = {}, header: Record<string, unkn
   return `${head}.${body}.${sign("RSA-SHA256", Buffer.from(`${head}.${body}`), key).toString("base64url")}`;
 }
 
-const verifier = (owners = ["acme"]) => githubVerifier({ owners, audience: `${AUDIENCE}/`, jwks: async () => JWKS, now: () => NOW });
+const verifier = (owners: string[] | "any" = ["acme"]) => githubVerifier({ owners, audience: `${AUDIENCE}/`, jwks: async () => JWKS, now: () => NOW });
 const record = (extra: Partial<CiRecord> = {}): CiRecord => ({ schema: "youi.record/v1", repo: "acme/billing", commit: SHA, ref: "main", generatedAt: NOW.toISOString(), tool: "0.1.12", products: [{ root: ".", error: "no youi.project.json", next: "youiyoux adopt" }], ...extra });
 
 let dir: string;
@@ -74,6 +74,14 @@ describe("GitHub Actions' OIDC token", () => {
     await expect(verifier(["1234567"])(token({ repository_owner_id: "7654321" }))).rejects.toThrow("from acme (id 7654321), which this hub does not take records from");
     // An account named with digits does not match an owner listed by that number: an id matches only an id.
     await expect(verifier(["1234567"])(token({ repository_owner: "1234567", repository: "1234567/billing", repository_owner_id: "999" }))).rejects.toThrow("from 1234567 (id 999), which this hub does not take records from");
+  });
+
+  test("for a hub with workspaces, any owner, with the owner's id for routing; a token without the id is refused", async () => {
+    expect(await verifier("any")(token({ repository_owner_id: "7654321" }))).toMatchObject({ repository: "acme/billing", repository_owner_id: "7654321" });
+    await expect(verifier("any")(token())).rejects.toThrow("missing its owner's id");
+    await expect(verifier("any")(token({ repository_owner_id: "acme" }))).rejects.toThrow("missing its owner's id");
+    // Everything else is still checked: the branch, here.
+    await expect(verifier("any")(token({ repository_owner_id: "7654321", ref: "refs/heads/feature" }))).rejects.toThrow("from refs/heads/feature");
   });
 
   test("anything else is refused, saying why", async () => {

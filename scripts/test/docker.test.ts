@@ -9,6 +9,7 @@ import { describe, expect, test } from "vitest";
 import { parse } from "yaml";
 import { CiRecord } from "@youiyoux/core";
 import { BRANCHES_ENV } from "../../packages/cli/src/github-oidc.ts";
+import { CLIENT_ID_ENV, CLIENT_SECRET_ENV } from "../../packages/cli/src/github-signin.ts";
 import { AUDIENCE_ENV, GITHUB_OWNERS_ENV, VIEW_KEY_ENV } from "../../packages/cli/src/org-hub.ts";
 import { HUB_TOKEN_ENV } from "../../packages/cli/src/record.ts";
 import { smokeRecord } from "../docker.ts";
@@ -53,12 +54,12 @@ describe("docker/compose.yml", () => {
   const hub = compose.services.hub!;
 
   test("the hub reads the environment variables the hub serve command does, by their names", () => {
-    expect(Object.keys(hub.environment!).sort()).toEqual(["DATABASE_URL", VIEW_KEY_ENV, GITHUB_OWNERS_ENV, AUDIENCE_ENV, BRANCHES_ENV, HUB_TOKEN_ENV].sort());
+    expect(Object.keys(hub.environment!).sort()).toEqual(["DATABASE_URL", VIEW_KEY_ENV, CLIENT_ID_ENV, CLIENT_SECRET_ENV, GITHUB_OWNERS_ENV, AUDIENCE_ENV, BRANCHES_ENV, HUB_TOKEN_ENV].sort());
     expect(hub.environment!.DATABASE_URL).toMatch(/^postgres:\/\/youiyoux:\$\{POSTGRES_PASSWORD:\?[^}]+\}@db:5432\/youiyoux$/);
   });
 
-  test("secrets come from .env and are required there; none is written in the file", () => {
-    expect(hub.environment![VIEW_KEY_ENV]).toMatch(/^\$\{YOUIYOUX_HUB_VIEW_KEY:\?/);
+  test("secrets come from .env, the database's required there; none is written in the file", () => {
+    // The view key or the OAuth App: which one is the hub's to check (youiyoux hub serve refuses to start without either).
     expect(compose.services.db!.environment!.POSTGRES_PASSWORD).toMatch(/^\$\{POSTGRES_PASSWORD:\?/);
     for (const [name, value] of Object.entries(hub.environment!)) expect(value, name).toMatch(/\$\{/);
   });
@@ -82,7 +83,7 @@ describe("docker/.env.example", () => {
   test("names every variable compose.yml reads, with no secret filled in, and docker/.env is kept out of git", () => {
     const used = new Set([...composeText.matchAll(/\$\{([A-Z_]+)[:}]/g)].map((m) => m[1]!));
     expect([...used].filter((name) => !exampleVars.has(name))).toEqual([]);
-    for (const secret of ["POSTGRES_PASSWORD", VIEW_KEY_ENV, HUB_TOKEN_ENV]) expect(exampleVars.get(secret), secret).toBe("");
+    for (const secret of ["POSTGRES_PASSWORD", VIEW_KEY_ENV, HUB_TOKEN_ENV, CLIENT_SECRET_ENV]) expect(exampleVars.get(secret), secret).toBe("");
     expect(read(".gitignore").split("\n")).toContain("docker/.env");
   });
 });
