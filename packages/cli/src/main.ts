@@ -28,7 +28,7 @@ import { planAdoption, type AdoptPlan } from "./adopt.ts";
 import { extractSystem } from "./extract.ts";
 import { renderUpgrade, upgradeProject } from "./upgrade.ts";
 import { buildRecord, HUB_TOKEN_ENV, HUB_URL_ENV, renderRecord, sendRecord, toolVersion } from "./record.ts";
-import { AUDIENCE_ENV, GITHUB_OWNERS_ENV, secretsProblem, startOrgHub, VIEW_KEY_ENV } from "./org-hub.ts";
+import { AUDIENCE_ENV, GITHUB_OWNERS_ENV, newCiToken, secretsProblem, startOrgHub, TOKEN_NAME, VIEW_KEY_ENV } from "./org-hub.ts";
 import { CLIENT_ID_ENV, CLIENT_SECRET_ENV, githubAccount, githubSignIn } from "./github-signin.ts";
 import { audienceOf, BRANCHES_ENV, DEFAULT_BRANCHES, githubVerifier, requestGithubToken } from "./github-oidc.ts";
 import { renderStatus, statusExitCode, statusTargets, workspaceStatus } from "./status.ts";
@@ -922,10 +922,9 @@ async function cmdHubAdmin(noun: "workspace" | "owner" | "member" | "token", val
       return 0;
     }
     if (verb === "add") {
-      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(second!)) throw new UsageError(`"${second}": a token's name is letters, digits, dots, hyphens and underscores, e.g. jenkins`);
-      const { createHash, randomBytes } = await import("node:crypto");
-      const token = `yxh_${randomBytes(32).toString("base64url")}`;
-      await store.addToken(target.id, second!, createHash("sha256").update(token).digest("hex"), at);
+      if (!TOKEN_NAME.test(second!)) throw new UsageError(`"${second}": a token's name is letters, digits, dots, hyphens and underscores, e.g. jenkins`);
+      const { token, hash } = newCiToken();
+      await store.addToken(target.id, second!, hash, at);
       print(`${style.ok("added")} the CI token ${second} to ${target.id}. It is shown once, here; the hub keeps only its hash:\n\n  ${token}\n\n${style.dim(`Give it to that CI as the secret ${HUB_TOKEN_ENV}; youiyoux hub token remove ${target.id} ${second} revokes it.`)}`);
       return 0;
     }

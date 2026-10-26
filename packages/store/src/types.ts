@@ -351,6 +351,8 @@ export interface Store {
   addMember(workspace: string, person: GithubAccount, role: WorkspaceRole, via: MemberVia, at: string): Promise<void>;
   /** Remove a member; with `via`, only a membership that came that way. */
   removeMember(workspace: string, githubId: string, via?: MemberVia): Promise<boolean>;
+  /** A member's role, however they got in; false when they are not a member. */
+  setMemberRole(workspace: string, githubId: string, role: WorkspaceRole): Promise<boolean>;
   members(workspace: string): Promise<WorkspaceMember[]>;
   /** The workspaces a person is a member of, by name. */
   memberships(githubId: string): Promise<Membership[]>;

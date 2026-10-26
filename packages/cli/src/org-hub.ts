@@ -20,6 +20,20 @@
  *   GET  /api/w/<id>/org        a workspace's view, for its members only (anyone else: 404)
  *   DELETE /api/session         sign out: the session is removed
  *
+ * and for a workspace's admins (a member who is not one: 403), its admin pages:
+ *
+ *   GET    /api/w/<id>/admin                  its members, GitHub owners and CI tokens' names
+ *   POST   /api/w/<id>/admin/members          { account, role }: invite someone by GitHub login
+ *   PATCH  /api/w/<id>/admin/members/<github id>  { role }
+ *   DELETE /api/w/<id>/admin/members/<github id>
+ *   POST   /api/w/<id>/admin/owners           { account }: a GitHub owner whose CI sends records here
+ *   DELETE /api/w/<id>/admin/owners/<github id>
+ *   POST   /api/w/<id>/admin/tokens           { name }: a CI token, in the answer once
+ *   DELETE /api/w/<id>/admin/tokens/<name>
+ *
+ * A change comes as JSON from the hub's own page (a request from another origin is refused, beside
+ * the Strict cookie), and never leaves a workspace without an admin.
+ *
  * A record goes to the workspace that names its GitHub owner (by numeric id, from GitHub Actions'
  * OIDC token), or whose CI token it comes with (`youiyoux hub token add`); anything else is
  * refused. A member is invited (`youiyoux hub member add`) or let in as an active member of the
@@ -44,7 +58,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { extname, join, normalize, sep } from "node:path";
 import { CiRecord, type OrgView, type ProjectStatus, type ProjectStatusFailure } from "@youiyoux/core";
 import { DEFAULT_WORKSPACE, type Store } from "@youiyoux/store";
-import type { GithubSignIn } from "./github-signin.ts";
+import { githubAccount, type GithubSignIn } from "./github-signin.ts";
 import { audienceOf, recordMismatch, type GithubVerifier } from "./github-oidc.ts";
 import { compareVersions } from "./upgrade.ts";
 
@@ -67,6 +81,13 @@ export const ORG_RECHECK_HOURS = 12;
 const MAX_RECORD = 2 * 1024 * 1024;
 const MIN_SECRET = 24;
 const SESSION_DAYS = 30;
+/** A CI token's name: `youiyoux hub token add <workspace> <name>`, or the admin page. */
+export const TOKEN_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+/** A new CI token for a workspace, and the SHA-256 the hub keeps of it instead. */
+export function newCiToken(): { token: string; hash: string } {
+  const token = `yxh_${randomBytes(32).toString("base64url")}`;
+  return { token, hash: createHash("sha256").update(token).digest("hex") };
+}
 
 export interface OrgHubOptions {
   readonly store: Store;
@@ -77,7 +98,12 @@ export interface OrgHubOptions {
   /** For people: the organisation is shown only with it. Not used with workspaces. */
   readonly viewKey?: string;
   /** Workspaces, with people signed in by the hub's GitHub OAuth App at its public address (`url`), instead of the view key. */
-  readonly workspaces?: { readonly signIn: GithubSignIn; readonly url: string };
+  readonly workspaces?: {
+    readonly signIn: GithubSignIn;
+    readonly url: string;
+    /** A GitHub account by login or id, for the admin pages (default: GitHub's API). */
+    readonly lookup?: typeof githubAccount;
+  };
   /** The built hub (index.html, assets/), or null to serve the API only. */
   readonly dist: string | null;
   readonly host?: string;
@@ -238,6 +264,96 @@ export async function startOrgHub(options: OrgHubOptions): Promise<OrgHub> {
     if (!checked && memberships.some((m) => m.via === "org")) return null;
     return { user, memberships };
   };
+  /** A workspace's admin pages (its admins only): who is in it, whose CI sends it records, its CI tokens. */
+  const administer = async (req: IncomingMessage, res: ServerResponse, method: string, id: string, part: string | null, item: string | null): Promise<void> => {
+    const signedIn = await person(req);
+    if (!signedIn) return send(res, 401, { error: "sign in with GitHub" });
+    const membership = signedIn.memberships.find((m) => m.workspace === id);
+    const workspace = membership ? await options.store.workspace(id) : null;
+    if (!membership || !workspace) return send(res, 404, { error: `you are not a member of a workspace ${id} on this hub` });
+    if (membership.role !== "admin") return send(res, 403, { error: `only an admin of ${membership.name} manages it: ask one to make you an admin` });
+    if (method === "GET" && part === null) {
+      return send(res, 200, { workspace: { id: workspace.id, name: workspace.name, githubOrg: workspace.githubOrg }, you: signedIn.user.githubId, members: await options.store.members(id), owners: workspace.owners, tokens: workspace.tokens });
+    }
+    // Beside the Strict cookie: a change comes from the hub's own page, never another site's.
+    const origin = req.headers.origin;
+    const own = new URL(ws!.url).origin;
+    if (origin !== undefined && origin !== own) return send(res, 403, { error: `a change to a workspace comes from the hub's own page, at ${own}; this one came from ${origin}` });
+    let body: Record<string, unknown> = {};
+    if (method === "POST" || method === "PATCH") {
+      if (!(req.headers["content-type"] ?? "").startsWith("application/json")) return send(res, 415, { error: "send JSON (content-type: application/json)" });
+      try {
+        const parsed: unknown = JSON.parse(await readBody(req, 4096));
+        if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) throw new Error("not an object");
+        body = parsed as Record<string, unknown>;
+      } catch {
+        return send(res, 400, { error: "send a JSON object" });
+      }
+    }
+    const at = now().toISOString();
+    const lookup = async (field: string): Promise<Awaited<ReturnType<typeof githubAccount>> | string> => {
+      const given = body[field];
+      if (typeof given !== "string" || given.trim() === "") return `send { "${field}": "<GitHub login>" }`;
+      try {
+        return await (ws!.lookup ?? githubAccount)(given);
+      } catch (error: unknown) {
+        return error instanceof Error ? error.message : String(error);
+      }
+    };
+    if (part === "members") {
+      const members = await options.store.members(id);
+      const admins = members.filter((m) => m.role === "admin").length;
+      if (method === "POST" && item === null) {
+        const role = body.role ?? "member";
+        if (role !== "admin" && role !== "member") return send(res, 400, { error: `a role is "admin" or "member"` });
+        const found = await lookup("account");
+        if (typeof found === "string") return send(res, 422, { error: found });
+        if (found.type === "Organization") return send(res, 422, { error: `${found.login} is an organisation: members are people. Its repositories' CI is added as an owner` });
+        if (members.some((m) => m.githubId === found.id)) return send(res, 409, { error: `${found.login} is a member already: change their role in the list` });
+        await options.store.addMember(id, { id: found.id, login: found.login }, role, "invite", at);
+        return send(res, 201, { member: (await options.store.members(id)).find((m) => m.githubId === found.id) });
+      }
+      const member = members.find((m) => m.githubId === item);
+      if (item === null || (method !== "PATCH" && method !== "DELETE")) return send(res, 405, { error: "members: GET the page, POST an invite, PATCH or DELETE /members/<github id>" });
+      if (!member) return send(res, 404, { error: `there is no member ${item} in ${workspace.name}` });
+      const role = method === "DELETE" ? null : body.role;
+      if (role !== null && role !== "admin" && role !== "member") return send(res, 400, { error: `a role is "admin" or "member"` });
+      if (member.role === "admin" && role !== "admin" && admins === 1) return send(res, 409, { error: `${member.login} is ${workspace.name}'s only admin: make someone else an admin first` });
+      if (role === null) {
+        await options.store.removeMember(id, member.githubId);
+        return send(res, 200, { removed: member.login, ...(member.via === "org" ? { returns: `they come back at their next sign-in while they are in ${workspace.githubOrg?.login ?? "its organisation"}` } : {}) });
+      }
+      await options.store.setMemberRole(id, member.githubId, role);
+      return send(res, 200, { member: { ...member, role } });
+    }
+    if (part === "owners") {
+      if (method === "POST" && item === null) {
+        const found = await lookup("account");
+        if (typeof found === "string") return send(res, 422, { error: found });
+        if (workspace.owners.some((o) => o.id === found.id)) return send(res, 409, { error: `${found.login}'s CI sends records here already` });
+        if (await options.store.workspaceForOwner(found.id)) return send(res, 409, { error: `${found.login}'s CI sends its records to another workspace on this hub, and an owner feeds one: the hub's operator moves it (youiyoux hub owner remove)` });
+        await options.store.addOwner(id, { id: found.id, login: found.login }, at);
+        return send(res, 201, { owner: { id: found.id, login: found.login } });
+      }
+      if (method !== "DELETE" || item === null) return send(res, 405, { error: "owners: POST one, DELETE /owners/<github id>" });
+      if (!(await options.store.removeOwner(id, item))) return send(res, 404, { error: `${item} is not an owner of ${workspace.name}` });
+      return send(res, 200, { removed: item });
+    }
+    if (part === "tokens") {
+      if (method === "POST" && item === null) {
+        const name = body.name;
+        if (typeof name !== "string" || !TOKEN_NAME.test(name)) return send(res, 400, { error: "a token's name is letters, digits, dots, hyphens and underscores (at most 64), e.g. jenkins" });
+        if (workspace.tokens.includes(name)) return send(res, 409, { error: `${workspace.name} has a CI token named ${name} already` });
+        const { token, hash } = newCiToken();
+        await options.store.addToken(id, name, hash, at);
+        return send(res, 201, { name, token });
+      }
+      if (method !== "DELETE" || item === null) return send(res, 405, { error: "tokens: POST one, DELETE /tokens/<name>" });
+      if (!(await options.store.removeToken(id, item))) return send(res, 404, { error: `${workspace.name} has no CI token named ${item}` });
+      return send(res, 200, { removed: item });
+    }
+    return send(res, 405, { error: "a workspace's admin page: GET /api/w/<id>/admin" });
+  };
   const redirect = (res: ServerResponse, location: string, cookies: string[]): void => {
     res.writeHead(302, { ...HEADERS, Location: location, "Cache-Control": "no-store", "Set-Cookie": cookies });
     res.end();
@@ -359,6 +475,16 @@ export async function startOrgHub(options: OrgHubOptions): Promise<OrgHub> {
             // Not a member and no such workspace answer the same: a workspace's name is not given away.
             if (!signedIn.memberships.some((m) => m.workspace === scoped[1])) return send(res, 404, { error: `you are not a member of a workspace ${scoped[1]} on this hub` });
             return send(res, 200, orgView(await options.store.latestRecords(scoped[1]), now()));
+          }
+          const admin = /^\/api\/w\/([a-z0-9-]{1,40})\/admin(?:\/(members|owners|tokens)(?:\/([^/]{1,200}))?)?$/.exec(path);
+          if (admin) {
+            let item: string | null = null;
+            try {
+              item = admin[3] === undefined ? null : decodeURIComponent(admin[3]);
+            } catch {
+              return send(res, 400, { error: "that address is not readable" });
+            }
+            return await administer(req, res, method, admin[1]!, admin[2] ?? null, item);
           }
           if (path === "/api/session" && method === "DELETE") {
             const hash = sessionHash(req);

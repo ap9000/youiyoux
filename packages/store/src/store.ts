@@ -389,6 +389,14 @@ export class SqlStore implements Store {
     return via ? this.deleted("workspace_members", "workspace = ? AND github_id = ? AND via = ?", [workspace, githubId, via]) : this.deleted("workspace_members", "workspace = ? AND github_id = ?", [workspace, githubId]);
   }
 
+  async setMemberRole(workspace: string, githubId: string, role: WorkspaceRole): Promise<boolean> {
+    return this.write(async () => {
+      if ((await this.db.all(`SELECT 1 AS found FROM workspace_members WHERE workspace = ? AND github_id = ?`, [workspace, githubId])).length === 0) return false;
+      await this.db.run(`UPDATE workspace_members SET role = ? WHERE workspace = ? AND github_id = ?`, [role, workspace, githubId]);
+      return true;
+    });
+  }
+
   async members(workspace: string): Promise<WorkspaceMember[]> {
     const rows = await this.db.all<{ github_id: string; login: string; role: WorkspaceRole; via: MemberVia; added_at: string }>(`SELECT github_id, login, role, via, added_at FROM workspace_members WHERE workspace = ? ORDER BY LOWER(login), github_id`, [workspace]);
     return rows.map((r) => ({ githubId: r.github_id, login: r.login, role: r.role, via: r.via, addedAt: String(r.added_at) }));

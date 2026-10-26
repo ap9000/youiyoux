@@ -47,6 +47,18 @@ const fakeGithub: GithubSignIn = {
   },
 };
 
+/** GitHub's accounts, as the admin pages look them up. */
+const ACCOUNTS: Record<string, { id: string; login: string; type: "User" | "Organization" }> = {
+  samir: { id: "13", login: "samir", type: "User" },
+  initrode: { id: "4004", login: "initrode", type: "Organization" },
+  globex: { id: "2002", login: "globex", type: "Organization" },
+};
+const fakeLookup = async (loginOrId: string) => {
+  const found = ACCOUNTS[loginOrId.toLowerCase()];
+  if (!found) throw new Error(`GitHub has no account ${loginOrId}`);
+  return found;
+};
+
 let dir: string;
 let store: Store;
 let hub: OrgHub | null = null;
@@ -70,7 +82,7 @@ beforeEach(async () => {
   await store.addOwner("acme", { id: "1001", login: "acme" }, at);
   await store.addOwner("globex", { id: "2002", login: "globex" }, at);
   await store.addToken("globex", "jenkins", sha256("globex-ci-token-for-tests"), at);
-  hub = await startOrgHub({ store, github: githubVerifier({ owners: "any", audience: AUDIENCE, jwks: async () => JWKS, now: () => clock }), workspaces: { signIn: fakeGithub, url: `${AUDIENCE}/` }, dist: null, now: () => clock });
+  hub = await startOrgHub({ store, github: githubVerifier({ owners: "any", audience: AUDIENCE, jwks: async () => JWKS, now: () => clock }), workspaces: { signIn: fakeGithub, url: `${AUDIENCE}/`, lookup: fakeLookup }, dist: null, now: () => clock });
 });
 afterEach(async () => {
   await hub?.close();
@@ -220,6 +232,102 @@ describe("workspaces stay apart", () => {
     const other = await sendRecord(record("globex/web"), { [GITHUB_TOKEN_HEADER]: oidc("acme", "1001") });
     expect(other.status).toBe(403);
     expect(await store.latestRecords("globex")).toHaveLength(1);
+  });
+});
+
+describe("a workspace's admin pages", () => {
+  /** milton, invited as acme's admin; peter, a member from its organisation. */
+  async function admins(): Promise<{ milton: string; peter: string }> {
+    await store.addMember("acme", { id: "12", login: "milton" }, "admin", "invite", clock.toISOString());
+    return { milton: await signIn("milton-code"), peter: await signIn("peter-code") };
+  }
+  const change = (method: string, path: string, cookie: string, body?: unknown, headers: Record<string, string> = {}): Promise<Response> =>
+    fetch(`${hub!.url}${path}`, { method, headers: { cookie, ...(body === undefined ? {} : { "content-type": "application/json" }), ...headers }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+
+  test("an admin reads who is in the workspace, whose CI sends it records and its tokens' names; a member is told only an admin may; anyone else gets the same 404", async () => {
+    const { milton, peter } = await admins();
+    const page = await get("/api/w/acme/admin", milton);
+    expect(page.status).toBe(200);
+    const body = await page.json();
+    expect(body).toMatchObject({ workspace: { id: "acme", name: "Acme", githubOrg: { id: "1001", login: "acme" } }, you: "12", owners: [{ id: "1001", login: "acme" }], tokens: [] });
+    expect(body.members.map((m: { login: string; role: string; via: string }) => [m.login, m.role, m.via])).toEqual([["milton", "admin", "invite"], ["peter", "member", "org"]]);
+    const member = await get("/api/w/acme/admin", peter);
+    expect(member.status).toBe(403);
+    expect((await member.json()).error).toBe("only an admin of Acme manages it: ask one to make you an admin");
+    expect((await change("POST", "/api/w/acme/admin/tokens", peter, { name: "sneaky" })).status).toBe(403);
+    expect((await store.workspace("acme"))!.tokens).toEqual([]);
+    expect((await get("/api/w/globex/admin", milton)).status).toBe(404);
+    expect((await get("/api/w/nowhere/admin", milton)).status).toBe(404);
+    expect((await get("/api/w/acme/admin")).status).toBe(401);
+  });
+
+  test("invites a person by login, changes their role, removes them; never an organisation, a stranger, someone already in, or the last admin", async () => {
+    const { milton } = await admins();
+    const invited = await change("POST", "/api/w/acme/admin/members", milton, { account: "samir", role: "admin" });
+    expect(invited.status).toBe(201);
+    expect(await invited.json()).toMatchObject({ member: { githubId: "13", login: "samir", role: "admin", via: "invite" } });
+    expect((await change("POST", "/api/w/acme/admin/members", milton, { account: "samir" })).status).toBe(409);
+    const org = await change("POST", "/api/w/acme/admin/members", milton, { account: "initrode" });
+    expect([org.status, (await org.json()).error]).toEqual([422, "initrode is an organisation: members are people. Its repositories' CI is added as an owner"]);
+    const stranger = await change("POST", "/api/w/acme/admin/members", milton, { account: "nobody-here" });
+    expect([stranger.status, (await stranger.json()).error]).toEqual([422, "GitHub has no account nobody-here"]);
+    expect((await change("POST", "/api/w/acme/admin/members", milton, { account: "samir", role: "owner" })).status).toBe(400);
+
+    expect((await change("PATCH", "/api/w/acme/admin/members/13", milton, { role: "member" })).status).toBe(200);
+    expect((await store.memberships("13"))[0]).toMatchObject({ role: "member" });
+    // milton is the only admin now: not demoted, not removed, until someone else is one.
+    const alone = await change("PATCH", "/api/w/acme/admin/members/12", milton, { role: "member" });
+    expect([alone.status, (await alone.json()).error]).toEqual([409, "milton is Acme's only admin: make someone else an admin first"]);
+    expect((await change("DELETE", "/api/w/acme/admin/members/12", milton)).status).toBe(409);
+    expect((await store.memberships("12"))[0]).toMatchObject({ role: "admin" });
+
+    const peter = await change("DELETE", "/api/w/acme/admin/members/11", milton);
+    expect(await peter.json()).toEqual({ removed: "peter", returns: "they come back at their next sign-in while they are in acme" });
+    expect((await change("DELETE", "/api/w/acme/admin/members/13", milton)).status).toBe(200);
+    expect((await store.members("acme")).map((m) => m.login)).toEqual(["milton"]);
+    expect((await change("DELETE", "/api/w/acme/admin/members/13", milton)).status).toBe(404);
+  });
+
+  test("adds a GitHub owner, whose CI's records then come here, and removes it; an owner another workspace has stays there", async () => {
+    const { milton } = await admins();
+    expect((await sendRecord(record("initrode/web"), { [GITHUB_TOKEN_HEADER]: oidc("initrode", "4004") })).status).toBe(403);
+    const added = await change("POST", "/api/w/acme/admin/owners", milton, { account: "initrode" });
+    expect([added.status, await added.json()]).toEqual([201, { owner: { id: "4004", login: "initrode" } }]);
+    expect(await (await sendRecord(record("initrode/web"), { [GITHUB_TOKEN_HEADER]: oidc("initrode", "4004") })).json()).toMatchObject({ workspace: "acme" });
+    const taken = await change("POST", "/api/w/acme/admin/owners", milton, { account: "globex" });
+    expect(taken.status).toBe(409);
+    expect(await store.workspaceForOwner("2002")).toBe("globex");
+    expect((await change("DELETE", "/api/w/acme/admin/owners/4004", milton)).status).toBe(200);
+    expect((await sendRecord(record("initrode/web"), { [GITHUB_TOKEN_HEADER]: oidc("initrode", "4004") })).status).toBe(403);
+  });
+
+  test("a CI token is in the answer once and never again; records sent with it come here until it is removed", async () => {
+    const { milton } = await admins();
+    const made = await change("POST", "/api/w/acme/admin/tokens", milton, { name: "buildkite" });
+    expect(made.status).toBe(201);
+    expect(made.headers.get("cache-control")).toBe("no-store");
+    const { token } = await made.json();
+    expect(token).toMatch(/^yxh_[\w-]{43}$/);
+    expect(await (await sendRecord(record("acme/api"), { authorization: `Bearer ${token}` })).json()).toMatchObject({ workspace: "acme" });
+    const page = await (await get("/api/w/acme/admin", milton)).text();
+    expect(JSON.parse(page).tokens).toEqual(["buildkite"]);
+    expect(page).not.toContain(token);
+    expect(page).not.toContain(sha256(token));
+    expect((await change("POST", "/api/w/acme/admin/tokens", milton, { name: "buildkite" })).status).toBe(409);
+    expect((await change("POST", "/api/w/acme/admin/tokens", milton, { name: "../etc" })).status).toBe(400);
+    expect((await change("DELETE", "/api/w/acme/admin/tokens/buildkite", milton)).status).toBe(200);
+    expect((await sendRecord(record("acme/api"), { authorization: `Bearer ${token}` })).status).toBe(401);
+  });
+
+  test("a change from another site, or not as JSON, is refused and changes nothing; the hub's own origin is let through", async () => {
+    const { milton } = await admins();
+    const forged = await change("POST", "/api/w/acme/admin/tokens", milton, { name: "forged" }, { origin: "https://evil.example" });
+    expect([forged.status, (await forged.json()).error]).toEqual([403, "a change to a workspace comes from the hub's own page, at https://hub.acme.dev; this one came from https://evil.example"]);
+    expect((await change("DELETE", "/api/w/acme/admin/owners/1001", milton, undefined, { origin: "https://evil.example" })).status).toBe(403);
+    const form = await fetch(`${hub!.url}/api/w/acme/admin/tokens`, { method: "POST", headers: { cookie: milton, "content-type": "application/x-www-form-urlencoded" }, body: "name=forged" });
+    expect(form.status).toBe(415);
+    expect((await store.workspace("acme"))!).toMatchObject({ tokens: [], owners: [{ id: "1001" }] });
+    expect((await change("POST", "/api/w/acme/admin/tokens", milton, { name: "ours" }, { origin: AUDIENCE })).status).toBe(201);
   });
 });
 

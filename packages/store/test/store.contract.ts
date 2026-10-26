@@ -340,6 +340,13 @@ export function storeContract(engine: Engine): void {
       expect(await store.removeMember("initech", "12", "org")).toBe(true);
       expect(await store.memberships("11")).toEqual([{ workspace: "initech", name: "Initech", role: "admin", via: "invite" }]);
       expect(await store.memberships("12")).toEqual([]);
+      // A role changes however someone got in, and the organisation's next sign-in leaves it as it is.
+      await store.addMember("initech", { id: "13", login: "samir" }, "member", "org", at);
+      expect(await store.setMemberRole("initech", "13", "admin")).toBe(true);
+      await store.addMember("initech", { id: "13", login: "samir" }, "member", "org", at);
+      expect((await store.memberships("13"))[0]).toMatchObject({ role: "admin", via: "org" });
+      expect(await store.setMemberRole("initech", "14", "admin")).toBe(false);
+      expect(await store.removeMember("initech", "13")).toBe(true);
       await expect(store.addMember("nowhere", { id: "11", login: "peter" }, "member", "invite", at)).rejects.toThrow("there is no workspace nowhere");
 
       await store.putUser({ githubId: "11", login: "peter-gibbons", name: "Peter" }, at);

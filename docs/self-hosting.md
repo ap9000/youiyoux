@@ -91,14 +91,22 @@ docker compose exec hub youiyoux hub member add acme your-login --admin
   12 hours. Invited members keep a 14-day session, and removing anyone counts at once.
 - `owner add` says whose repositories' CI sends records here: an organisation or a user, kept by
   GitHub's numeric id, so a renamed account's old name never matches. One owner feeds one workspace.
-- `member add` invites a person by login, also outside the organisation; `--admin` marks them as the
-  workspace's admin (managing it from the page comes later). An invite stays when the person leaves
-  the organisation; `member remove` ends it.
+- `member add` invites a person by login, also outside the organisation; `--admin` makes them one of
+  the workspace's admins, who manage it from the page from then on (below). An invite stays when the
+  person leaves the organisation; `member remove` ends it.
 - Accounts are looked up on GitHub by login or id; on a machine that cannot reach GitHub, give
   `id:login` (`1234567:acme`).
 
 `youiyoux hub workspace list` shows each workspace with its owners, members and CI tokens;
 `youiyoux hub member list acme` shows its members and how each got in.
+
+**The Manage page.** A workspace's admins see Manage beside its overview. There they invite people
+by GitHub login and change their roles, add or remove the GitHub owners whose CI sends records, and
+make or remove CI tokens; each in a modal, where a new token is shown once. A workspace always keeps
+one admin: the last one can neither be removed nor step down. The hub sends no invitation: tell the
+person the hub's address, and they sign in with GitHub. A change is taken only from the hub's own page
+(its origin is `YOUIYOUX_HUB_AUDIENCE`'s). Adding or removing a workspace, and its `--org`, stay with
+whoever runs the hub.
 
 **3. CI.** Each repository's workflow (`npx youiyoux hooks install --record`) proves its repository
 with GitHub Actions' OIDC token, and the hub files the record under the workspace that owns it. For

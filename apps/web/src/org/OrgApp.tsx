@@ -6,10 +6,13 @@
  *
  * A hub with workspaces (`youi-org-mode`) signs people in with GitHub and shows one workspace at a
  * time (`?w=<id>`), among those they are a member of; someone signed in with none is told who can
- * add them.
+ * add them. A workspace's admin also has its Manage page (`&page=manage`, Manage.tsx).
+ *
+ * A secret is only ever typed or shown in a modal (the view key here, a CI token on Manage), never
+ * in a box left on the page.
  */
 import type { OrgView, ProjectStatus, ProjectStatusFailure } from "@youiyoux/core";
-import { Building2, LogIn, LogOut, RefreshCw, Users } from "lucide-react";
+import { Building2, KeyRound, LogIn, LogOut, RefreshCw, Users } from "lucide-react";
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { GITHUB_SIGN_IN, OrgRequestError, orgApi, type Me } from "../data/org.ts";
 import { when } from "../lib/when.ts";
@@ -19,7 +22,10 @@ import { Badge } from "../ui/Badge.tsx";
 import { Button } from "../ui/Button.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Field, Select, TextInput } from "../ui/Field.tsx";
+import { Modal } from "../ui/Modal.tsx";
 import { PaneHeader, PaneSkeleton } from "../ui/Pane.tsx";
+import { Segmented } from "../ui/Segmented.tsx";
+import { Manage } from "./Manage.tsx";
 
 type Load = { state: "loading" } | { state: "signed-out" } | { state: "failed"; message: string } | { state: "ready"; view: OrgView };
 type System = OrgView["systems"][number];
@@ -131,7 +137,26 @@ function Headline({ view }: { view: OrgView }) {
   );
 }
 
+/** Signed out of the single organisation: what the hub is, and the view key asked for in a modal. */
 function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
+  const [asking, setAsking] = useState(false);
+  return (
+    <div className="flex flex-1 items-center justify-center p-8 max-sm:p-4">
+      <div className="w-full max-w-sm space-y-4 animate-enter">
+        <div className="space-y-1.5">
+          <h2 className="text-heading">Sign in to the hub</h2>
+          <p className="text-small text-muted">Where each product stands with its design system, as CI records it. Whoever runs this hub has its view key.</p>
+        </div>
+        <Button variant="primary" onClick={() => setAsking(true)} className="w-full max-md:h-11">
+          <KeyRound /> Sign in with the view key
+        </Button>
+      </div>
+      {asking && <ViewKeyModal onClose={() => setAsking(false)} onSignedIn={onSignedIn} />}
+    </div>
+  );
+}
+
+function ViewKeyModal({ onClose, onSignedIn }: { onClose: () => void; onSignedIn: () => void }) {
   const [key, setKey] = useState("");
   const [error, setError] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
@@ -148,29 +173,44 @@ function SignIn({ onSignedIn }: { onSignedIn: () => void }) {
     );
   };
   return (
-    <div className="flex flex-1 items-center justify-center p-8 max-sm:p-4">
-      <form onSubmit={submit} className="w-full max-w-sm space-y-4 animate-enter">
-        <div className="space-y-1.5">
-          <h2 className="text-heading">Sign in to the hub</h2>
-          <p className="text-small text-muted">Where each product stands with its design system, as CI records it. Whoever runs this hub has its view key.</p>
-        </div>
-        <Field label="View key" error={error}>
-          {(id, describedBy) => <TextInput id={id} type="password" autoComplete="current-password" value={key} onChange={(e) => setKey(e.target.value)} aria-describedby={describedBy} aria-invalid={error ? true : undefined} required autoFocus />}
-        </Field>
-        <Button type="submit" variant="primary" disabled={busy || key.length === 0} className="w-full">
-          {busy ? "Signing in…" : "Sign in"}
-        </Button>
-      </form>
-    </div>
+    <Modal
+      title="Sign in with the view key"
+      description="The hub keeps you signed in on this browser for 30 days; the page keeps no copy of the key."
+      icon={KeyRound}
+      onClose={onClose}
+      onSubmit={submit}
+      footer={
+        <>
+          <Button onClick={onClose}>Cancel</Button>
+          <Button type="submit" variant="primary" disabled={busy || key.length === 0}>
+            {busy ? "Signing in…" : "Sign in"}
+          </Button>
+        </>
+      }
+    >
+      <Field label="View key" error={error}>
+        {(id, describedBy) => <TextInput id={id} type="password" autoComplete="current-password" value={key} onChange={(e) => setKey(e.target.value)} aria-describedby={describedBy} aria-invalid={error ? true : undefined} required autoFocus className="max-md:h-11" />}
+      </Field>
+    </Modal>
   );
 }
 
-function NoRecords({ workspace }: { workspace?: string }) {
+function NoRecords({ workspace, onManage }: { workspace?: string; onManage?: (() => void) | undefined }) {
   return (
-    <EmptyState icon={Building2} title={workspace ? `No records in ${workspace} yet` : "No records yet"}>
+    <EmptyState
+      icon={Building2}
+      title={workspace ? `No records in ${workspace} yet` : "No records yet"}
+      actions={
+        onManage && (
+          <Button onClick={onManage} className="max-md:h-11">
+            Add a GitHub owner
+          </Button>
+        )
+      }
+    >
       {workspace ? (
         <p>
-          In each repository, <span className={`${mono} text-ink`}>youiyoux hooks install --record</span> writes a workflow that sends its record here on every push to the default branch; set <span className={`${mono} text-ink`}>YOUIYOUX_HUB_URL</span> as its secret. The hub takes it once its admin has added the repository's GitHub owner (<span className={`${mono} text-ink`}>youiyoux hub owner add</span>).
+          In each repository, <span className={`${mono} text-ink`}>youiyoux hooks install --record</span> writes a workflow that sends its record here on every push to the default branch; set <span className={`${mono} text-ink`}>YOUIYOUX_HUB_URL</span> as its secret. The hub takes it once an admin has added the repository's GitHub owner, on Manage or with <span className={`${mono} text-ink`}>youiyoux hub owner add</span>.
         </p>
       ) : (
         <p>
@@ -266,10 +306,12 @@ type WorkspaceLoad =
   | { state: "loading" }
   | { state: "signed-out"; outcome: string | null }
   | { state: "failed"; message: string }
-  | { state: "ready"; me: Me; workspace: string | null; view: OrgView | null; error: string | null };
+  | { state: "ready"; me: Me; workspace: string | null; page: Page; view: OrgView | null; error: string | null };
 
-/** The page's ?w=, and a sign-in outcome GitHub's callback left in ?signin= (read once, then dropped from the address). */
-function readAddress(): { workspace: string | null; outcome: string | null } {
+type Page = "overview" | "manage";
+
+/** The page's ?w= and ?page=, and a sign-in outcome GitHub's callback left in ?signin= (read once, then dropped from the address). */
+function readAddress(): { workspace: string | null; page: Page; outcome: string | null } {
   const params = new URLSearchParams(window.location.search);
   const outcome = params.get("signin");
   if (outcome) {
@@ -277,15 +319,27 @@ function readAddress(): { workspace: string | null; outcome: string | null } {
     const rest = params.toString();
     window.history.replaceState(null, "", `${window.location.pathname}${rest ? `?${rest}` : ""}`);
   }
-  return { workspace: params.get("w"), outcome };
+  return { workspace: params.get("w"), page: params.get("page") === "manage" ? "manage" : "overview", outcome };
+}
+
+/** Put the workspace and its page in the address, keeping anything else there. */
+function writeAddress(workspace: string, page: Page): void {
+  const params = new URLSearchParams(window.location.search);
+  params.set("w", workspace);
+  if (page === "manage") params.set("page", "manage");
+  else params.delete("page");
+  window.history.replaceState(null, "", `${window.location.pathname}?${params}`);
 }
 
 function WorkspacesApp() {
   const [load, setLoad] = useState<WorkspaceLoad>({ state: "loading" });
-  const show = useCallback((me: Me, wanted: string | null) => {
-    const workspace = me.workspaces.find((w) => w.id === wanted)?.id ?? me.workspaces[0]?.id ?? null;
-    setLoad({ state: "ready", me, workspace, view: null, error: null });
-    if (!workspace) return;
+  const show = useCallback((me: Me, wanted: string | null, wantedPage: Page = "overview") => {
+    const found = me.workspaces.find((w) => w.id === wanted) ?? me.workspaces[0] ?? null;
+    const workspace = found?.id ?? null;
+    // Manage is an admin's; anyone else asking for it sees the workspace.
+    const page: Page = found?.role === "admin" ? wantedPage : "overview";
+    setLoad({ state: "ready", me, workspace, page, view: null, error: null });
+    if (!workspace || page === "manage") return;
     orgApi.workspace(workspace).then(
       (view) => setLoad((l) => (l.state === "ready" && l.workspace === workspace ? { ...l, view } : l)),
       (error: unknown) => {
@@ -295,30 +349,42 @@ function WorkspacesApp() {
     );
   }, []);
   const read = useCallback(() => {
-    const { workspace, outcome } = readAddress();
+    const { workspace, page, outcome } = readAddress();
     orgApi.me().then(
-      (me) => show(me, workspace),
+      (me) => show(me, workspace, page),
       (error: unknown) => setLoad(error instanceof OrgRequestError && error.status === 401 ? { state: "signed-out", outcome } : { state: "failed", message: error instanceof Error ? error.message : String(error) }),
     );
   }, [show]);
   useEffect(read, [read]);
-  const choose = (id: string): void => {
+  const choose = (id: string, page: Page = "overview"): void => {
     if (load.state !== "ready") return;
-    const params = new URLSearchParams(window.location.search);
-    params.set("w", id);
-    window.history.replaceState(null, "", `${window.location.pathname}?${params}`);
-    show(load.me, id);
+    writeAddress(id, page);
+    show(load.me, id, page);
   };
   const signOut = (): void => void orgApi.signOut().finally(() => setLoad({ state: "signed-out", outcome: null }));
   const ready = load.state === "ready" ? load : null;
   const current = ready?.me.workspaces.find((w) => w.id === ready.workspace) ?? null;
+  const admin = current?.role === "admin";
+  const manage = admin ? () => choose(current.id, "manage") : undefined;
   return (
     <Shell
       title={current?.name ?? "Workspaces"}
-      count={ready?.view?.totals.repos}
+      count={ready?.page === "overview" ? ready.view?.totals.repos : undefined}
       actions={
         ready && (
           <>
+            {admin && (
+              <Segmented
+                label="Page"
+                value={ready.page}
+                onChange={(page) => choose(current.id, page)}
+                touch
+                options={[
+                  { value: "overview", label: "Overview" },
+                  { value: "manage", label: "Manage" },
+                ]}
+              />
+            )}
             {ready.me.workspaces.length > 1 && (
               <label className="flex items-center gap-1.5 text-small text-muted">
                 <span className="max-sm:sr-only">Workspace</span>
@@ -331,14 +397,14 @@ function WorkspacesApp() {
                 </Select>
               </label>
             )}
-            {ready.view && (
-              <Button size="sm" variant="ghost" onClick={() => show(ready.me, ready.workspace)}>
-                <RefreshCw /> Read again
+            {ready.view && ready.page === "overview" && (
+              <Button size="sm" variant="ghost" onClick={() => show(ready.me, ready.workspace)} aria-label="Read again">
+                <RefreshCw /> <span className="max-md:sr-only">Read again</span>
               </Button>
             )}
             <span className={`${mono} text-muted max-sm:hidden`}>{ready.me.user.login}</span>
-            <Button size="sm" variant="ghost" onClick={signOut}>
-              <LogOut /> Sign out
+            <Button size="sm" variant="ghost" onClick={signOut} aria-label="Sign out">
+              <LogOut /> <span className="max-md:sr-only">Sign out</span>
             </Button>
           </>
         )
@@ -354,6 +420,8 @@ function WorkspacesApp() {
         </p>
       ) : load.workspace === null ? (
         <NoWorkspace me={load.me} />
+      ) : load.page === "manage" ? (
+        <Manage key={load.workspace} id={load.workspace} onYouChanged={read} />
       ) : load.error ? (
         <p role="alert" className="px-8 py-8 text-small text-danger">
           {load.error}
@@ -361,7 +429,7 @@ function WorkspacesApp() {
       ) : load.view === null ? (
         <PaneSkeleton />
       ) : load.view.repos.length === 0 ? (
-        <NoRecords workspace={current?.name ?? load.workspace} />
+        <NoRecords workspace={current?.name ?? load.workspace} onManage={manage} />
       ) : (
         <OrgBody view={load.view} />
       )}

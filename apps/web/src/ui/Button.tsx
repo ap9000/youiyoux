@@ -12,6 +12,8 @@ const buttonVariants = cva(
         primary: "bg-accent text-on-accent hover:bg-accent-hover",
         outline: "border border-line-strong bg-surface text-ink hover:bg-raised",
         ghost: "text-ink-2 hover:bg-raised hover:text-ink",
+        /** A removal, confirmed: the danger colour as text only. */
+        danger: "border border-line-strong bg-surface text-danger hover:bg-danger-soft",
       },
       size: {
         sm: "h-6 px-2 text-small",
