@@ -256,6 +256,9 @@ export function LiveScreen({ url, viewport, width, screens, route, commenting, s
           }
         >
           <CodeBlock code={bridgeSnippet(location.origin)} title="live bridge" maxHeight="sm" />
+          <p className="text-small text-muted" data-live-policy>
+            An app that sends a Content-Security-Policy or X-Frame-Options refuses to be framed, and to load scripts from elsewhere. In development, allow this hub: <code className="font-mono break-all">frame-ancestors {location.origin}</code>, and <code className="font-mono break-all">{location.origin}</code> in <code className="font-mono">script-src</code>.
+          </p>
           <p className="text-small text-muted">Then reload the app. Components get their file and line in a development build with source maps, as for <code className="font-mono">youiyoux screens capture</code>.</p>
         </Modal>
       )}

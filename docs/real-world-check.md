@@ -66,3 +66,13 @@ The screen capture, the picture overlay, requests and the canvas, run against To
 | 5 | Canvas | Screens → Canvas | pass, after a fix | Eight screens in one row fit at 35%, too small to read | A project's screens wrap four to a row: 70% | `apps/web/test/canvas.test.tsx` |
 
 Seen, not changed here: in the demo, Tasks' tab counts and task lists draw as plain bullets (`All10`, `Needs you8`) in the production build too, so the capture is faithful; it may be a styling gap in Toolroll itself. `/flows` and `/settings` place the same 62 components as `/chat`: they open as sheets over Chat.
+
+# Real-world check: live screens and commenting on the canvas, on Toolroll
+
+The Screens canvas with Toolroll running live in its cards, on the same scratch copy (`.scratch/toolroll`), run from its source with its own `toolroll demo` (a throwaway, fenced sandbox that never calls a model, spends or reaches outside; it removed itself when stopped) at `http://localhost:4330`, signed in with the demo's own generated login, and the hub at `http://localhost:5312`. Desktop light and dark, and phone.
+
+| # | Step | Command | Result | What was wrong | What changed | Test |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | Capture with the app's address | `youiyoux screens capture --base http://localhost:4330 --project $P --root $T --storage-state <demo session>` | pass | Nothing. 6 screens, 62–113 components placed, 56–107 with their line; `base` recorded | none | n/a |
+| 2 | Frame the console | Live on `/chat` | pass, after an allowance in the scratch copy | Toolroll's console sends `frame-ancestors 'none'` and `script-src 'nonce-…'`, so it refuses to be framed and refuses the bridge, as a strict app should. The hub's help only said to add the bridge line | In the scratch copy only (put back afterwards): `frame-ancestors` and `script-src` allow the hub, and the bridge line appended to the built `workspace.js`. The hub's *How to connect it* and `docs/commands.md` now say a strict app needs that allowance in development | `apps/web/test/live.test.tsx` (the help names `frame-ancestors` with the hub's address) |
+| 3 | Use it, navigate, comment | click Tasks inside the live card; Comment; click *New task* in the rail | pass | Nothing. The real, styled console ran in the card and went from `/chat` to `/work`; the comment named `Navigation` at `src/browser/app.tsx:925` on `/work`, the screen the page showed, not the card's own | none | n/a |

@@ -261,6 +261,13 @@ It needs two things:
 
   It loads only on this machine and only inside a frame, so a production build that keeps it does
   nothing. Keep the hub on one port (`youiyoux ui --port`) so the line stays right.
+- **Room for the hub, if the app has a strict security policy.** An app that sends
+  `frame-ancestors 'none'` (or `X-Frame-Options`) refuses to be framed, and a `script-src` without
+  the hub refuses the bridge. In development only, allow the hub's address in both:
+  `frame-ancestors http://localhost:5173` and `script-src … http://localhost:5173`. Toolroll is
+  such an app: with that allowance in a scratch copy, its demo ran live on the canvas, navigated
+  from Chat to Tasks inside the card, and a comment there named `src/browser/app.tsx:925` on
+  `/work`.
 
 The bridge reads the page the way capture does (React's development stacks), and answers only a
 hub on this machine (`localhost`, `127.0.0.1`, `[::1]`) that framed it: a site elsewhere that

@@ -66,6 +66,8 @@ describe("the running app in a card", () => {
     fireEvent.click(screen.getByRole("button", { name: "How to connect it" }));
     const dialog = screen.getByRole("dialog", { name: "Connect the running app" });
     expect(dialog.textContent).toContain(`${location.origin}/api/live/bridge.js`);
+    // A strict app refuses to be framed until it allows the hub in development: the help says how.
+    expect(dialog.querySelector("[data-live-policy]")!.textContent).toContain(`frame-ancestors ${location.origin}`);
     expect(bridgeSnippet("http://localhost:5173")).toMatch(/window\.parent !== window && \/\^\(localhost\|127/);
   });
 });
