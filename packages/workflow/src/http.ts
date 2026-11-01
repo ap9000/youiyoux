@@ -10,7 +10,7 @@
  * development from wherever it runs; it holds nothing of this run's.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
-import { timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import { COMPONENT_STATES, DefinitionError, ElementId, LibraryEntry, REQUEST_STATUSES, RequestTarget, RuleCheck, RuleRollout } from "@youiyoux/core";
@@ -230,6 +230,17 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string, opti
   throw new WorkflowError("not-found", `no endpoint ${method} ${path}`);
 }
 
+/**
+ * Proof that a page reaches this service: a random challenge signed with the session key. `youiyoux
+ * ui --open` asks for it through the hub before opening the signed-in link, so a server that took
+ * the hub's port never gets the key.
+ */
+export const READY_PATH = "/api/ready";
+export function readyProof(sessionKey: string, challenge: string): string {
+  return createHmac("sha256", sessionKey).update(`youiyoux-ready:${challenge}`).digest("hex");
+}
+const CHALLENGE = /^[0-9a-f]{32}$/;
+
 function createHandler(options: HandlerOptions): (req: IncomingMessage, res: ServerResponse) => void {
   return (req, res) => {
     void (async () => {
@@ -241,6 +252,11 @@ function createHandler(options: HandlerOptions): (req: IncomingMessage, res: Ser
           return void res.end(req.method === "HEAD" ? undefined : liveBridge());
         }
         screen(req, options.sessionKey);
+        if (path === READY_PATH && req.method === "GET") {
+          const challenge = new URL(req.url ?? "/", "http://loopback").searchParams.get("c") ?? "";
+          if (!CHALLENGE.test(challenge)) throw new HttpError(400, "ready takes a challenge: c=<32 hex>");
+          return send(res, 200, { proof: readyProof(options.sessionKey, challenge) });
+        }
         if (path === "/api" || path.startsWith("/api/")) return await api(req, res, path, options);
         throw new HttpError(404, "not found");
       } catch (error: unknown) {

@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "nod
 import { request } from "node:http";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { MemoryStore, ProposalStore, RuleWorkflow, serveWorkflow, type RunningService } from "../src/index.ts";
+import { MemoryStore, ProposalStore, readyProof, RuleWorkflow, serveWorkflow, type RunningService } from "../src/index.ts";
 import { sandbox, type Sandbox } from "./helpers.ts";
 
 const KEY = "test-session-key";
@@ -232,5 +232,16 @@ describe("options an agent put on the canvas", () => {
     } finally {
       rmSync(join(box.project, ".youi/proposals"), { recursive: true, force: true });
     }
+  });
+});
+
+describe("ready", () => {
+  test("signs a fresh challenge with the session key, so --open can tell this service from one that took the port; nothing else", async () => {
+    const challenge = "0123456789abcdef0123456789abcdef";
+    const { status, json } = await call("GET", `/api/ready?c=${challenge}`);
+    expect([status, json.proof]).toEqual([200, readyProof(KEY, challenge)]);
+    expect(json.proof).not.toBe(readyProof("another-key", challenge));
+    expect((await call("GET", "/api/ready?c=not-a-challenge")).status).toBe(400);
+    expect(JSON.stringify(json)).not.toContain(KEY);
   });
 });

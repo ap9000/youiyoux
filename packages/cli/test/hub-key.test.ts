@@ -4,7 +4,8 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { KEY_FILE, keptKey, openWhenUp, opener } from "../src/hub-key.ts";
+import { readyProof } from "@youiyoux/workflow";
+import { isOurs, KEY_FILE, keptKey, openWhenUp, opener, portFree } from "../src/hub-key.ts";
 
 let dir = "";
 beforeEach(async () => {
@@ -46,22 +47,43 @@ describe("the kept key", () => {
 });
 
 describe("--open", () => {
-  test("opens the signed-in link once the hub answers, and not before", async () => {
-    let up = false;
-    const server = createServer((_req, res) => res.writeHead(up ? 200 : 503).end());
+  /** A hub answering ready with a proof signed by `key`, or nothing until `up`. */
+  const hub = async (key: string) => {
+    const state = { up: false };
+    const server = createServer((req, res) => {
+      const url = new URL(req.url ?? "/", "http://x");
+      if (!state.up || url.pathname !== "/api/ready") return void res.writeHead(503).end();
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ proof: readyProof(key, url.searchParams.get("c") ?? "") }));
+    });
     await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
-    const probe = `http://127.0.0.1:${(server.address() as { port: number }).port}/`;
+    return { state, server, base: `http://127.0.0.1:${(server.address() as { port: number }).port}` };
+  };
+
+  test("opens the signed-in link once the hub proves it holds the key, and not before", async () => {
+    const ours = await hub("k".repeat(32));
     try {
       const open = vi.fn();
-      setTimeout(() => (up = true), 700);
-      expect(await openWhenUp(`${probe}#key=k`, probe, { open })).toBe(true);
-      expect(open).toHaveBeenCalledExactlyOnceWith(`${probe}#key=k`);
+      setTimeout(() => (ours.state.up = true), 700);
+      expect(await openWhenUp(`${ours.base}/#key=k`, () => isOurs(ours.base, "k".repeat(32)), { open })).toBe(true);
+      expect(open).toHaveBeenCalledExactlyOnceWith(`${ours.base}/#key=k`);
     } finally {
-      server.close();
+      ours.server.close();
     }
-    const never = vi.fn();
-    expect(await openWhenUp("http://127.0.0.1:9/#key=k", "http://127.0.0.1:9/", { open: never, wait: 600 })).toBe(false);
-    expect(never).not.toHaveBeenCalled();
+  });
+
+  test("a server that took the port, without the key, is never handed the link; a port in use is seen before the hub starts", async () => {
+    const squatter = await hub("someone-else's-key-0000000000000");
+    squatter.state.up = true;
+    try {
+      const open = vi.fn();
+      expect(await isOurs(squatter.base, "k".repeat(32))).toBe(false);
+      expect(await openWhenUp(`${squatter.base}/#key=k`, () => isOurs(squatter.base, "k".repeat(32)), { open, wait: 1200 })).toBe(false);
+      expect(open).not.toHaveBeenCalled();
+      const port = Number(new URL(squatter.base).port);
+      expect(await portFree(port)).toBe(false);
+    } finally {
+      squatter.server.close();
+    }
   });
 
   test("with each platform's own opener", () => {

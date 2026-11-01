@@ -18,7 +18,7 @@ import { actionable, diffJson, githubAnnotations, githubDiffAnnotations, githubD
 import { runClaudeHook, runPreCommitHook, type HookTarget } from "./hooks.ts";
 import { codexFallback, installRepoAgentInstructions, hookCommand, installClaudeHook, installPreCommit, installRecordWorkflow, installWorkflow, repoRootOf } from "./hooks-install.ts";
 import { AGENT_KINDS, checkAgents, setupAgents } from "./agents-setup.ts";
-import { openWhenUp } from "./hub-key.ts";
+import { isOurs, openWhenUp, portFree } from "./hub-key.ts";
 import { detectTarget, renderDetect } from "./detect.ts";
 import { renderDiscoverSearch, renderDiscoverShow, renderDiscoverSync, renderRegistries } from "./discover.ts";
 import { startRuleEditor, type RuleEditor } from "./editor.ts";
@@ -1291,10 +1291,12 @@ async function workspaceUi(values: Values, hosts: { allowHosts?: string[] }): Pr
     throw new Error("no product in this workspace could be read: see each one's Next above");
   }
   const port = values.port ?? DEFAULT_HUB_PORT;
+  const free = values.open ? await portFree(Number(port)) : false;
   let open: ((project: string) => Promise<number>) | null = null;
   const hub = await startWorkspaceHub({ roots, current: first, status: () => workspaceStatus(process.cwd()), open: (root) => (open ? open(root) : Promise.resolve(1)) });
   print(`${style.ok("workspace hub")} http://localhost:${port}/workspace#key=${hub.key}`);
-  if (values.open) void openWhenUp(`http://localhost:${port}/workspace#key=${hub.key}`, `http://localhost:${port}/`);
+  if (values.open && !free) print(style.warn(`! something already listens on port ${port}, so the hub is not opened there: stop it, or pick another --port`));
+  else if (values.open) void openWhenUp(`http://localhost:${port}/workspace#key=${hub.key}`, () => isOurs(`http://localhost:${port}`, hub.key));
   print(style.dim(`  ${plural(roots.length, "product")}; showing ${report.projects[first]!.root} first. Open the link: it carries this run's key, which switching needs`));
   print(style.dim("  Rules and Changes are read-only here; youiyoux ui --project <dir> opens the rule editor on one product"));
   try {
@@ -1317,9 +1319,15 @@ async function cmdUi(values: Values): Promise<number> {
   const workspace = await workspaceUi(values, hosts);
   if (workspace !== null) return workspace;
   const port = values.port ?? DEFAULT_HUB_PORT;
+  // --open hands the browser the key only if the port was free and the page proves it is this hub.
+  const free = values.open ? await portFree(Number(port)) : false;
   const editor = await startEditor(values, port);
-  // --open: the hub in the browser once it answers, signed in when there is a rule editor.
-  if (values.open) void openWhenUp(`http://localhost:${port}/${editor ? `#key=${editor.sessionKey}` : ""}`, `http://localhost:${port}/`).then((opened) => !opened && print(style.warn(`! the hub did not answer on port ${port}, so it was not opened: open the link above`)));
+  if (values.open && !free) print(style.warn(`! something already listens on port ${port}, so the hub is not opened there: stop it, or pick another --port`));
+  else if (values.open) {
+    const base = `http://localhost:${port}`;
+    const ready = editor ? () => isOurs(base, editor.sessionKey) : () => fetch(`${base}/`, { signal: AbortSignal.timeout(2_000) }).then((r) => r.ok);
+    void openWhenUp(`${base}/${editor ? `#key=${editor.sessionKey}` : ""}`, ready).then((opened) => !opened && print(style.warn(`! the hub did not answer on port ${port}, so it was not opened: open the link above`)));
+  }
   try {
     return await runHub(TOOL_ROOT, { ...(values.inventory ? { inventory: values.inventory } : {}), ...(values.design ? { design: values.design } : {}), ...(values.project ? { project: values.project } : {}), ...(values.config ? { config: values.config } : {}), ...(values.root ? { root: values.root } : {}), ...(values.detect ? { detect: values.detect } : {}), ...(values.port || editor ? { port } : {}), ...(editor ? { api: editor.url } : {}), watch: values.watch, ...hosts });
   } finally {

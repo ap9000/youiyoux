@@ -8,13 +8,17 @@
  * with a new key, and says so; `youiyoux ui --new-key` replaces it on purpose, which cuts off
  * every tab that had the old one.
  *
- * `youiyoux ui --open` waits for the hub to answer, then opens it in the default browser, signed in.
+ * `youiyoux ui --open` opens it in the default browser, signed in, only when the port was free before
+ * the hub started and the page there proves it reaches this hub's own service (a random challenge
+ * signed with the key): a server that took the port is never handed the key.
  */
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
+import { createServer } from "node:net";
 import { lstat, mkdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { writeFileAtomic } from "@youiyoux/core";
+import { READY_PATH, readyProof } from "@youiyoux/workflow";
 
 export const KEY_FILE = "session.key";
 const KEY = /^[A-Za-z0-9_-]{32}$/;
@@ -55,15 +59,34 @@ export function opener(url: string, platform: NodeJS.Platform = process.platform
   return { command: "xdg-open", args: [url] };
 }
 
+/** Whether nothing listens on this port, on either loopback address the hub's name reaches. */
+export async function portFree(port: number): Promise<boolean> {
+  const tryOn = (host: string): Promise<boolean> =>
+    new Promise((done) => {
+      const server = createServer();
+      server.once("error", (error: NodeJS.ErrnoException) => done(error.code !== "EADDRINUSE"));
+      server.listen({ port, host, exclusive: true }, () => server.close(() => done(true)));
+    });
+  return (await tryOn("127.0.0.1")) && (await tryOn("::1"));
+}
+
+/** Whether the page at `base` reaches the service holding `key`: it signs a fresh challenge with it. */
+export async function isOurs(base: string, key: string): Promise<boolean> {
+  const challenge = randomBytes(16).toString("hex");
+  const answer = await fetch(`${base}${READY_PATH}?c=${challenge}`, { signal: AbortSignal.timeout(2_000) })
+    .then((r) => (r.ok ? (r.json() as Promise<{ proof?: unknown }>) : null))
+    .catch(() => null);
+  return answer?.proof === readyProof(key, challenge);
+}
+
 /**
- * Open `url` once `probe` answers (the hub is up): polled every half second, for at most `wait`.
- * Resolves with whether it was opened; never throws, so the hub runs on either way.
+ * Open `url` once `ready` says the hub is up and is ours: asked every half second, for at most
+ * `wait`. Resolves with whether it was opened; never throws, so the hub runs on either way.
  */
-export async function openWhenUp(url: string, probe: string, options: { readonly wait?: number; readonly open?: (url: string) => void } = {}): Promise<boolean> {
+export async function openWhenUp(url: string, ready: () => Promise<boolean>, options: { readonly wait?: number; readonly open?: (url: string) => void } = {}): Promise<boolean> {
   const until = Date.now() + (options.wait ?? OPEN_WAIT_MS);
   while (Date.now() < until) {
-    const up = await fetch(probe, { signal: AbortSignal.timeout(2_000) }).then((r) => r.ok, () => false);
-    if (up) {
+    if (await ready().catch(() => false)) {
       const open =
         options.open ??
         ((address: string) => {

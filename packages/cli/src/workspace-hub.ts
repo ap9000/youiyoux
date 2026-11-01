@@ -10,6 +10,7 @@
  * request names. Changes need this run's key (`x-youi-session`, from the link `youiyoux ui`
  * prints), so another page in the browser cannot switch the hub. It listens on 127.0.0.1 only.
  */
+import { READY_PATH, readyProof } from "@youiyoux/workflow";
 import { randomBytes } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { StatusReport } from "@youiyoux/core";
@@ -55,6 +56,11 @@ export async function startWorkspaceHub(options: WorkspaceHubOptions): Promise<W
     void (async () => {
       const path = (req.url ?? "").split("?")[0];
       if (req.method === "GET" && path === "/api/workspace") return send(res, 200, { report, current });
+      // Proof this is the hub youiyoux ui --open started, before it opens the signed-in link.
+      if (req.method === "GET" && path === READY_PATH) {
+        const challenge = new URL(req.url ?? "/", "http://loopback").searchParams.get("c") ?? "";
+        return /^[0-9a-f]{32}$/.test(challenge) ? send(res, 200, { proof: readyProof(key, challenge) }) : send(res, 400, { error: "ready takes a challenge: c=<32 hex>" });
+      }
       if (req.method !== "POST" || (path !== "/api/workspace/open" && path !== "/api/workspace/refresh")) {
         return send(res, 404, { error: "Not in a workspace hub: Rules and Changes are read-only here; youiyoux ui --project <dir> opens the rule editor on one product" });
       }
