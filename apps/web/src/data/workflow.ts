@@ -4,13 +4,13 @@
  * state, so nothing here is cached.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ApiError, DraftContent, DraftView, LibraryDraftContent, LibraryDraftView, LiveInfo, PublishedRules, StyleDraftContent, StyleDraftView, WorkflowInfo } from "@youiyoux/workflow/api";
+import type { AgentKind, AgentsConnected, AgentsView, ApiError, DraftContent, DraftView, LibraryDraftContent, LibraryDraftView, LiveInfo, PublishedRules, StyleDraftContent, StyleDraftView, WorkflowInfo } from "@youiyoux/workflow/api";
 import type { RequestDoc, RequestRun, RequestStatus, RequestTarget, StatusReport } from "@youiyoux/core";
 import type { LiveRawPlace } from "./live.ts";
 import { sessionKey } from "./session-key.ts";
 import type { PlacedComponent } from "./types.ts";
 
-export type { CheckCapability, DraftContent, DraftView, IngestDraftView, LibraryDraftContent, LibraryDraftView, LiveInfo, Preview, PreviewFinding, PublishedRules, RuleDraftView, RuleFields, StyleContrast, StyleDraftContent, StyleDraftView, StylePreview, StyleSite, WorkflowInfo } from "@youiyoux/workflow/api";
+export type { AgentCheck, AgentKind, AgentsConnected, AgentsView, AgentView, CheckCapability, DraftContent, DraftView, IngestDraftView, LibraryDraftContent, LibraryDraftView, LiveInfo, Preview, PreviewFinding, PublishedRules, RuleDraftView, RuleFields, StyleContrast, StyleDraftContent, StyleDraftView, StylePreview, StyleSite, WorkflowInfo } from "@youiyoux/workflow/api";
 
 const API = `${import.meta.env.BASE_URL}api`;
 
@@ -95,6 +95,10 @@ export const workflowApi = {
   moveRequest: (id: string, status: RequestStatus, body = "") => call<RequestView>("POST", `/requests/${id}/status`, { status, body }),
   /** Where the product's app runs, for live screens on the canvas. */
   live: () => call<LiveInfo>("GET", "/live"),
+  /** Coding agents on this machine, and which start the youiyoux MCP server in this project. */
+  agents: () => call<AgentsView>("GET", "/agents"),
+  /** Connect these agents as youiyoux agents install does, then check each server answers. */
+  connectAgents: (agents: readonly AgentKind[]) => call<AgentsConnected>("POST", "/agents", { agents }),
   /** The components under the pointer on a live screen, their frames mapped to the product's files and lines. */
   resolveLive: (places: readonly LiveRawPlace[]) => call<{ places: PlacedComponent[] }>("POST", "/live/resolve", { places }),
 };

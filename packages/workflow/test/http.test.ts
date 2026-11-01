@@ -125,3 +125,36 @@ describe("loopback service", () => {
     expect(approved.json).toMatchObject({ status: "approved", approval: { contrastAcknowledged: [...keys].sort() } });
   });
 });
+
+describe("Connect your agent", () => {
+  test("what is here reads freely; connecting needs the session key, names known agents only, and without the CLI's setup says how to do it from a terminal", async () => {
+    const asked: string[][] = [];
+    const view = { agents: [{ kind: "claude", name: "Claude Code", found: true, connected: false, file: ".mcp.json" }], command: "youiyoux agents install" } as const;
+    const workflow = new RuleWorkflow({ projectRoot: box.project, designRoot: box.design, store: new MemoryStore() });
+    const agents = { view: async () => view, connect: async (kinds: readonly string[]) => (asked.push([...kinds]), { results: [], checks: [], view }) };
+    const withAgents = await serveWorkflow({ workflow, actor: { kind: "person", name: "captain" }, sessionKey: KEY, port: 0, agents });
+    const at = (method: string, path: string, headers: Record<string, string> = {}, body?: unknown) =>
+      new Promise<{ status: number; json: Record<string, unknown> }>((resolve, reject) => {
+        const req = request(new URL(path, withAgents.url), { method, headers: { ...(body === undefined ? {} : { "content-type": "application/json" }), ...headers } }, (res) => {
+          const chunks: Buffer[] = [];
+          res.on("data", (c: Buffer) => chunks.push(c));
+          res.on("end", () => resolve({ status: res.statusCode ?? 0, json: JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}") as Record<string, unknown> }));
+        });
+        req.on("error", reject);
+        req.end(body === undefined ? undefined : JSON.stringify(body));
+      });
+    try {
+      expect((await at("GET", "/api/agents")).json).toEqual(view);
+      expect((await at("POST", "/api/agents", {}, { agents: ["claude"] })).status).toBe(401);
+      expect((await at("POST", "/api/agents", { "x-youi-session": KEY }, { agents: ["claude", "vscode"] })).status).toBe(400);
+      expect((await at("POST", "/api/agents", { "x-youi-session": KEY }, { agents: [] })).status).toBe(400);
+      expect((await at("POST", "/api/agents", { "x-youi-session": KEY }, { agents: ["cursor", "claude", "cursor"] })).status).toBe(200);
+      expect(asked).toEqual([["cursor", "claude"]]);
+    } finally {
+      await withAgents.close();
+    }
+    const without = await call("GET", "/api/agents");
+    expect(without.status).toBe(404);
+    expect(without.json.error).toContain("youiyoux agents install");
+  });
+});

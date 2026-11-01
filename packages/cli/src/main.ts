@@ -17,7 +17,7 @@ import { workingTreeChange, type ChangeProject } from "./check-diff.ts";
 import { actionable, diffJson, githubAnnotations, githubDiffAnnotations, githubDiffSummary, githubSummary, renderCheckText, renderDiffText } from "./check-render.ts";
 import { runClaudeHook, runPreCommitHook, type HookTarget } from "./hooks.ts";
 import { codexFallback, installRepoAgentInstructions, hookCommand, installClaudeHook, installPreCommit, installRecordWorkflow, installWorkflow, repoRootOf } from "./hooks-install.ts";
-import { installAgentRule, installClaudeMcp, installCodexMcp, mcpCommand, relativeTo, removeAgentRule, removeClaudeMcp, removeCodexMcp, type AgentsResult } from "./agents-install.ts";
+import { AGENT_KINDS, checkAgents, setupAgents } from "./agents-setup.ts";
 import { detectTarget, renderDetect } from "./detect.ts";
 import { renderDiscoverSearch, renderDiscoverShow, renderDiscoverSync, renderRegistries } from "./discover.ts";
 import { startRuleEditor, type RuleEditor } from "./editor.ts";
@@ -38,7 +38,7 @@ import { renderGaps } from "./gaps.ts";
 import { renderInventory } from "./inventory.ts";
 import { renderAdoptionRequest, renderLibrarySearch } from "./library.ts";
 import { renderBom, renderMigration, renderPlan, renderRulePreview, renderRules, renderScan, renderShots as renderShotsText, renderShow, renderSync, renderWhere } from "./render.ts";
-import { mcpArgs, syncProject } from "./sync.ts";
+import { syncProject } from "./sync.ts";
 import { COMMAND } from "./command.ts";
 import { TOOL_ROOT } from "./tool.ts";
 import { runReport, type ReportIo } from "./report/run.ts";
@@ -129,10 +129,12 @@ ${style.bold("In a product repo")}
                            (where a family is used, swap impact, what a rule covers; read the local index)
                            ui_find_component (the project's existing component for a need, or where to start),
                            and ui_render (see a changed component, as youiyoux render)
-  agents install|remove [--claude] [--codex]
+  agents install|remove [--claude] [--codex] [--cursor]
                            tell coding agents to call ui_find_component before creating a component:
                            a marked rule in AGENTS.md and CLAUDE.md, and the youiyoux MCP server for
-                           Claude Code (.mcp.json) and Codex (.codex/config.toml); default both.
+                           Claude Code (.mcp.json), Codex (.codex/config.toml) and Cursor
+                           (.cursor/mcp.json); default Claude Code and Codex. Install checks that
+                           each server answers as registered. The hub's Connect your agent does the same.
                            Idempotent; remove takes out only youi's parts. No youi.project.json needed
   hooks install [--claude] [--git] [--ci [--diff]] [--record] [--strict]
                            live checks, existing config kept (default: --claude --git):
@@ -303,6 +305,7 @@ const OPTIONS = {
   baseline: { type: "boolean", default: false },
   claude: { type: "boolean", default: false },
   codex: { type: "boolean", default: false },
+  cursor: { type: "boolean", default: false },
   git: { type: "boolean", default: false },
   ci: { type: "boolean", default: false },
   strict: { type: "boolean", default: false },
@@ -1182,23 +1185,21 @@ async function cmdHooks(values: Values, positionals: string[]): Promise<number> 
  */
 async function cmdAgents(values: Values, positionals: string[]): Promise<number> {
   const [action] = positionals;
-  if (action !== "install" && action !== "remove") throw new UsageError("youiyoux agents install|remove [--claude] [--codex] [--json]");
+  if (action !== "install" && action !== "remove") throw new UsageError("youiyoux agents install|remove [--claude] [--codex] [--cursor] [--json]");
   const projectRoot = resolve(values.project ?? process.cwd());
-  const repoRoot = await repoRootOf(projectRoot);
   const target = { project: projectRoot, ...(values.config ? { config: resolve(values.config) } : {}), ...(values.design ? { design: resolve(values.design) } : {}), ...(values.root !== undefined ? { root: resolve(values.root || ".") } : {}) };
-  const server = mcpCommand(TOOL_ROOT, target);
-  // In a System project at the repo root, the same entry youiyoux sync writes, so the two never fight over it.
   const system = existsSync(resolve(values.config ?? join(projectRoot, PROJECT_FILE))) ? await project(values) : null;
-  const claudeServer = system && system.root === repoRoot ? { command: "node", args: mcpArgs(system) } : relativeTo(repoRoot, server);
-  const both = !values.claude && !values.codex;
-  const results: Array<AgentsResult & { kind: string }> = [];
-  const rule = action === "install" ? await installAgentRule(repoRoot) : await removeAgentRule(repoRoot);
-  results.push(...rule.map((r) => ({ kind: "agent rule", ...r })));
-  if (values.claude || both) results.push({ kind: "Claude Code MCP", ...(action === "install" ? await installClaudeMcp(repoRoot, claudeServer) : await removeClaudeMcp(repoRoot)) });
-  if (values.codex || both) results.push({ kind: "Codex MCP", ...(action === "install" ? await installCodexMcp(repoRoot, server) : await removeCodexMcp(repoRoot)) });
+  const named = AGENT_KINDS.filter((kind) => values[kind]);
+  // Neither named: Claude Code and Codex, as before Cursor could be named.
+  const kinds = named.length > 0 ? named : (["claude", "codex"] as const);
+  const setup = { toolRoot: TOOL_ROOT, target, system };
+  const results = await setupAgents(setup, action, kinds);
   if (values.json) json(results);
   else {
     for (const r of results) print(`${r.action === "unchanged" ? style.dim("unchanged") : style.ok(r.action)} ${r.kind}: ${r.file}\n  ${style.dim(r.guarantee)}`);
+    if (action === "install") {
+      for (const check of await checkAgents(setup, kinds)) print(check.ok ? `${style.ok("answers")} ${check.name}: the youiyoux server starts as registered and lists ${check.tools} tools` : `${style.warn("! does not answer")} ${check.name}: ${check.problem}`);
+    }
     print(action === "install" ? `Next: restart your agent so it loads the ${style.bold("youiyoux")} MCP server; it will call ui_find_component before creating a component. Undo with youiyoux agents remove.` : "Next: restart your agent to drop the youiyoux MCP server.");
   }
   return 0;

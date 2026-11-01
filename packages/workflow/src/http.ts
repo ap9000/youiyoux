@@ -15,7 +15,7 @@ import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import { COMPONENT_STATES, DefinitionError, ElementId, LibraryEntry, REQUEST_STATUSES, RequestTarget, RuleCheck, RuleRollout } from "@youiyoux/core";
 import { BRIDGE_PATH, liveBridge } from "@youiyoux/scanner";
-import type { Actor, ApiError } from "./api.ts";
+import type { Actor, AgentsSetup, ApiError } from "./api.ts";
 import { WorkflowError } from "./policy.ts";
 import type { RuleWorkflow } from "./service.ts";
 
@@ -61,6 +61,8 @@ const LiveFrame = z.object({ url: z.string().min(1).max(2000), line: z.number().
 const LiveBox = z.object({ x: z.number().finite(), y: z.number().finite(), width: z.number().finite().nonnegative(), height: z.number().finite().nonnegative() });
 const LivePlace = z.object({ name: z.string().min(1).max(200), owner: z.string().max(200).nullable(), frames: z.array(LiveFrame).max(8), box: LiveBox, depth: z.number().int().nonnegative().max(100_000), html: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/).optional() });
 const LiveResolveInput = z.object({ places: z.array(LivePlace).max(16) });
+/** The agents to connect to this project (Connect your agent). */
+const AgentsInput = z.object({ agents: z.array(z.enum(["claude", "codex", "cursor"])).min(1).max(3) });
 
 /** JSON has no undefined: an absent light or dark stays absent (unchanged), null stays null (dark follows light). */
 function styleContent<T extends { tokens: Array<{ light?: unknown; dark?: unknown }> }>(content: T): T {
@@ -79,6 +81,8 @@ interface HandlerOptions {
   readonly actor: Actor;
   /** The secret every write must carry in `x-youi-session`. */
   readonly sessionKey: string;
+  /** Connecting coding agents to the project, when the CLI gives it (`youiyoux ui --project`). */
+  readonly agents?: AgentsSetup;
 }
 
 /** Every response: never framed, never sniffed. */
@@ -154,6 +158,11 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string, opti
     if ("kind" in input && input.kind === "library") return send(res, 201, await workflow.create(actor, { kind: "library", content: input.content }));
     if ("kind" in input && input.kind === "ingest") return send(res, 201, await workflow.create(actor, { kind: "ingest", link: input.link }));
     return send(res, 201, await workflow.create(actor, "kind" in input && input.kind === "style" ? { kind: "style", ...(input.content ? { content: styleContent(input.content) } : {}) } : (input as Exclude<typeof input, { kind: "style" } | { kind: "library" } | { kind: "ingest" }>)));
+  }
+  if (path === "/api/agents") {
+    if (!options.agents) throw new WorkflowError("not-found", "connecting agents from the hub needs youiyoux ui --project; in a terminal, youiyoux agents install does the same");
+    if (method === "GET") return send(res, 200, await options.agents.view());
+    if (method === "POST") return send(res, 200, await options.agents.connect([...new Set(parse(AgentsInput, await readJson(req)).agents)]));
   }
   if (path === "/api/live" && method === "GET") return send(res, 200, (await workflow.live()).info());
   if (path === "/api/live/resolve" && method === "POST") return send(res, 200, { places: await (await workflow.live()).resolve(parse(LiveResolveInput, await readJson(req)).places) });

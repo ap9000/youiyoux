@@ -1,7 +1,7 @@
 # youiyoux for coding agents
 
 How an agent uses youiyoux in a repo: what to call, when, and how to read the answer. Examples are
-real output from Toolroll's console. Setup is one command: `npx youiyoux agents install`.
+real output from Toolroll's console. Setup is one command, `npx youiyoux agents install`, or one click: **Connect your agent** in the hub.
 
 ## The loop
 

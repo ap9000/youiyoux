@@ -9,8 +9,10 @@ import { existsSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { join, resolve } from "node:path";
 import { shortHash, type LibraryEntry } from "@youiyoux/core";
-import { loadProject } from "@youiyoux/scanner";
+import { loadProject, PROJECT_FILE } from "@youiyoux/scanner";
 import type { IngestReading, WorkflowInfo } from "@youiyoux/workflow";
+import { agentsSetup } from "./agents-setup.ts";
+import { TOOL_ROOT } from "./tool.ts";
 
 interface RuleEditorOptions {
   readonly project: string;
@@ -77,6 +79,9 @@ export async function startRuleEditor(options: RuleEditorOptions): Promise<RuleE
   // Fails here, before the hub starts, when the design repo is not a git checkout.
   const info = await workflow.info(actor);
   const sessionKey = randomBytes(24).toString("base64url");
-  const service = await serveWorkflow({ workflow, actor, sessionKey, port: 0 });
+  // Connect your agent writes what youiyoux agents install writes, for this product as the hub names it.
+  const target = { project: projectRoot, ...(options.config ? { config: resolve(options.config) } : {}), ...(options.design ? { design: resolve(options.design) } : {}), ...(options.root ? { root: resolve(options.root) } : {}) };
+  const agents = agentsSetup({ toolRoot: TOOL_ROOT, target, system: existsSync(load.configPath ?? join(projectRoot, PROJECT_FILE)) ? project : null });
+  const service = await serveWorkflow({ workflow, actor, sessionKey, port: 0, agents });
   return { url: service.url, sessionKey, stateDir, info, close: () => service.close() };
 }

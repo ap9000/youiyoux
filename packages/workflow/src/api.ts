@@ -462,3 +462,48 @@ export interface LiveInfo {
   readonly screens: ReadonlyArray<{ readonly route: string; readonly path: string }>;
   readonly why?: string;
 }
+
+/** The coding agents Connect your agent can set up: each starts the youiyoux MCP server from its own project file. */
+export type AgentKind = "claude" | "codex" | "cursor";
+
+/** One agent and this project (`GET /api/agents`): whether this machine has it, and whether it starts the server here. */
+export interface AgentView {
+  readonly kind: AgentKind;
+  /** Claude Code, Codex, Cursor. */
+  readonly name: string;
+  /** Its command is on this machine's PATH, or its settings folder is in the home folder. */
+  readonly found: boolean;
+  /** Its project file names the youiyoux server. */
+  readonly connected: boolean;
+  /** That file, relative to the repository root. */
+  readonly file: string;
+}
+
+export interface AgentsView {
+  readonly agents: readonly AgentView[];
+  /** The same setup from a terminal. */
+  readonly command: string;
+}
+
+/** Whether a registered server answered as an agent would start it: it listed its tools, ui_find_component among them. */
+export interface AgentCheck {
+  readonly kind: AgentKind;
+  readonly name: string;
+  readonly ok: boolean;
+  readonly tools: number;
+  /** Why it did not answer, in words. */
+  readonly problem: string | null;
+}
+
+/** What connecting wrote (`POST /api/agents`), file by file, and each agent's check. */
+export interface AgentsConnected {
+  readonly results: readonly { readonly kind: string; readonly file: string; readonly action: "created" | "updated" | "unchanged" | "removed" | "skipped"; readonly guarantee: string }[];
+  readonly checks: readonly AgentCheck[];
+  readonly view: AgentsView;
+}
+
+/** How the service sets agents up; given by the CLI, which owns the files (`youiyoux agents install`). */
+export interface AgentsSetup {
+  view(): Promise<AgentsView>;
+  connect(kinds: readonly AgentKind[]): Promise<AgentsConnected>;
+}

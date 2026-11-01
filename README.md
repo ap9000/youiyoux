@@ -32,7 +32,7 @@ New to it? [Getting started](docs/getting-started.md): the report, the top fix, 
 ## Use cases
 
 - **Audit before a refactor.** Every near-duplicate, which copy to keep, and the files to change.
-- **Stop your agent duplicating components.** After `npx youiyoux agents install`, it asks `ui_find_component` first.
+- **Stop your agent duplicating components.** After `npx youiyoux agents install` (or **Connect your agent** in the hub), it asks `ui_find_component` first.
 - **Keep hardcoded colours out of PRs.** `npx youiyoux check --diff` names the token to use instead.
 - **Share a UI health report.** Send the page or the card to your team or a maintainer.
 - **Let your agent see what it built.** `npx youiyoux render <file>`: light and dark, desktop and phone, accessibility issues, a diff against main.
@@ -92,7 +92,7 @@ Node 20 or later.
 | `youiyoux [path]` / `report` | The report. `--out`, `--render [--yes]`, `--include-code`, `--json` |
 | `check --diff [base]` | What a change adds: near-duplicates, hardcoded values, off-library imports. `--strict`, `--json`, `--format github` |
 | `render [file\|component]` | Draw a component: light and dark, 1280 and 390 px, axe, diff against base. `--base`, `--json` |
-| `agents install\|remove` | Agent rule and MCP server. `--claude`, `--codex` (default both) |
+| `agents install\|remove` | Agent rule and MCP server, then a check that it answers. `--claude`, `--codex`, `--cursor` (default Claude Code and Codex); the hub's Connect your agent does the same |
 | `hooks install` | Claude Code post-edit check and git pre-commit (default). `--ci [--diff]`, `--strict` |
 | `mcp` | The stdio MCP server |
 | `inventory` | Every UI element, grouped by shape. `--project`, `--include`, `--exclude`, `--json`, `--history` |

@@ -6,7 +6,7 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import { NAV } from "../app/routes.tsx";
 import { markNavigation } from "../lib/perf.ts";
 
-export type Overlay = "palette" | "help" | null;
+export type Overlay = "palette" | "help" | "agents" | null;
 
 let overlay: Overlay = null;
 const listeners = new Set<() => void>();

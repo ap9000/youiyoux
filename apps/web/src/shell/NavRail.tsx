@@ -5,7 +5,7 @@
  * From 1280px it is a labelled sidebar; narrower, an icon rail whose names are tooltips.
  */
 import { clsx } from "clsx";
-import { Keyboard, Moon, Search, Sun, SunMoon } from "lucide-react";
+import { Keyboard, Moon, Plug, Search, Sun, SunMoon } from "lucide-react";
 import { Fragment, type ReactNode } from "react";
 import { Link, useLocation } from "wouter";
 import { isActive, NAV_SECTIONS, navGroups, type NavGroup, type NavItem } from "../app/routes.tsx";
@@ -106,6 +106,9 @@ export function NavRail() {
       ))}
       <div className="mt-auto flex flex-col items-center gap-1 pt-3 xl:items-stretch xl:gap-px">
         <LiveStatus />
+        <RailButton label="Connect your agent" onClick={() => setOverlay("agents")}>
+          <Plug />
+        </RailButton>
         <RailButton label="Search" keys={["⌘", "K"]} onClick={() => setOverlay("palette")}>
           <Search />
         </RailButton>

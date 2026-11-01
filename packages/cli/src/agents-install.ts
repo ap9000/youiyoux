@@ -8,6 +8,8 @@
  *   the file keeps its indentation.
  * - Codex: a marked `[mcp_servers.youiyoux]` block in `.codex/config.toml`; a youiyoux table
  *   youi did not write is never touched.
+ * - Cursor: `mcpServers.youiyoux` in `.cursor/mcp.json`, kept like Claude Code's; its paths start
+ *   at `${workspaceFolder}`, which Cursor fills in with the folder that holds `.cursor`.
  *
  * Install twice and nothing changes. Remove strips only youi's block or key, and deletes a file
  * youi created once nothing else is left in it, so the files read as they did before.
@@ -27,6 +29,10 @@ const MCP_NAME = "youiyoux";
 const RULE_FILES = ["AGENTS.md", "CLAUDE.md"] as const;
 const CLAUDE_MCP = ".mcp.json";
 const CODEX_CONFIG = ".codex/config.toml";
+const CURSOR_MCP = ".cursor/mcp.json";
+
+/** Each agent's project file, relative to the repo root. */
+export const AGENT_FILES = { claude: CLAUDE_MCP, codex: CODEX_CONFIG, cursor: CURSOR_MCP } as const;
 
 export interface AgentsResult {
   readonly file: string;
@@ -162,17 +168,39 @@ function readJson(file: string, text: string | null): JsonFile {
 
 const serialize = ({ data, indent, newline }: JsonFile): string => `${JSON.stringify(data, null, indent)}${newline ? "\n" : ""}`;
 
-export async function installClaudeMcp(repoRoot: string, server: { command: string; args: string[] }): Promise<AgentsResult> {
-  const file = join(repoRoot, CLAUDE_MCP);
+/** `mcpServers.youiyoux` in an `mcpServers` JSON file (Claude Code's, Cursor's), every other key kept. */
+async function installJsonMcp(file: string, entry: Record<string, unknown>, guarantee: string): Promise<AgentsResult> {
   const before = await readTextOrNull(file);
   const json = readJson(file, before);
   const servers = (json.data.mcpServers ?? {}) as Record<string, unknown>;
-  const next = { ...json, data: { ...json.data, mcpServers: { ...servers, [MCP_NAME]: { command: server.command, args: server.args } } } };
-  return write(file, serialize(next), before, `Claude Code starts the ${MCP_NAME} MCP server in this repo (it asks once before trusting a project .mcp.json); the command uses the installed tool or portable npx invocation; youiyoux sync writes the same entry`);
+  const next = { ...json, data: { ...json.data, mcpServers: { ...servers, [MCP_NAME]: entry } } };
+  return write(file, serialize(next), before, guarantee);
+}
+
+export async function installClaudeMcp(repoRoot: string, server: { command: string; args: string[] }): Promise<AgentsResult> {
+  return installJsonMcp(join(repoRoot, CLAUDE_MCP), { command: server.command, args: server.args }, `Claude Code starts the ${MCP_NAME} MCP server in this repo (it asks once before trusting a project .mcp.json); the command uses the installed tool or portable npx invocation; youiyoux sync writes the same entry`);
+}
+
+/** The server as Cursor reads it: an absolute path becomes one under `${workspaceFolder}`, the repo root. */
+export function cursorServer(repoRoot: string, server: { command: string; args: readonly string[] }): { command: string; args: string[] } {
+  const under = (path: string): string => ["${workspaceFolder}", relative(repoRoot, path)].filter(Boolean).join("/");
+  return { command: isAbsolute(server.command) ? under(server.command) : server.command, args: server.args.map((arg) => (isAbsolute(arg) ? under(arg) : arg)) };
+}
+
+export async function installCursorMcp(repoRoot: string, server: { command: string; args: string[] }): Promise<AgentsResult> {
+  const { command, args } = cursorServer(repoRoot, server);
+  return installJsonMcp(join(repoRoot, CURSOR_MCP), { type: "stdio", command, args }, `Cursor starts the ${MCP_NAME} MCP server for this project (turn it on in Cursor's MCP settings if it asks); paths start at \${workspaceFolder}, the repo root`);
+}
+
+export async function removeCursorMcp(repoRoot: string): Promise<AgentsResult> {
+  return removeJsonMcp(join(repoRoot, CURSOR_MCP));
 }
 
 export async function removeClaudeMcp(repoRoot: string): Promise<AgentsResult> {
-  const file = join(repoRoot, CLAUDE_MCP);
+  return removeJsonMcp(join(repoRoot, CLAUDE_MCP));
+}
+
+async function removeJsonMcp(file: string): Promise<AgentsResult> {
   const before = await readTextOrNull(file);
   if (before === null) return { file, action: "unchanged", guarantee: `no ${MCP_NAME} server here` };
   const json = readJson(file, before);
@@ -212,4 +240,19 @@ export async function removeCodexMcp(repoRoot: string): Promise<AgentsResult> {
   const next = before === null ? null : withoutBlock(before, TOML_BEGIN, TOML_END);
   if (next === null) return { file, action: "unchanged", guarantee: `no youi ${MCP_NAME} block here` };
   return removeOrWrite(file, next, `${MCP_NAME} removed; other settings kept`);
+}
+
+/** Which agents' project files name the youiyoux server; a file that can't be read is not connected. */
+export async function connectedAgents(repoRoot: string): Promise<Record<keyof typeof AGENT_FILES, boolean>> {
+  const json = async (name: string): Promise<boolean> => {
+    const text = await readTextOrNull(join(repoRoot, name));
+    try {
+      const servers = text === null ? null : (JSON.parse(text) as { mcpServers?: unknown }).mcpServers;
+      return !!servers && typeof servers === "object" && MCP_NAME in servers;
+    } catch {
+      return false;
+    }
+  };
+  const toml = await readTextOrNull(join(repoRoot, CODEX_CONFIG));
+  return { claude: await json(CLAUDE_MCP), codex: toml !== null && withoutBlock(toml, TOML_BEGIN, TOML_END) !== null, cursor: await json(CURSOR_MCP) };
 }

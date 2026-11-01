@@ -1,7 +1,7 @@
 /** ⌘K: jump to any element, screen or setting. Elements come from the same worker search as the lists. */
 import * as Dialog from "@radix-ui/react-dialog";
 import { Command } from "cmdk";
-import { ArrowRight, Moon, Search, Sun, SunMoon } from "lucide-react";
+import { ArrowRight, Moon, Plug, Search, Sun, SunMoon } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useLocation } from "wouter";
 import { NAV, NAV_SECTIONS } from "../app/routes.tsx";
@@ -12,6 +12,7 @@ import { useModelState } from "../data/store.ts";
 import { markNavigation } from "../lib/perf.ts";
 import { useSearch } from "../search/client.ts";
 import { Keys, Kbd } from "../ui/Kbd.tsx";
+import { setOverlay } from "./keyboard.ts";
 import { KindIcon } from "../ui/KindIcon.tsx";
 
 const MAX_ELEMENTS = 12;
@@ -44,9 +45,10 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
   }, [model, search.ids]);
   const screens = NAV.filter((item) => matches(item.label, query) || matches(`go ${item.label}`, query));
   const themes = THEMES.filter((t) => matches(t.label, query));
+  const connect = ["Connect your agent", "MCP setup"].some((label) => matches(label, query));
 
   // Highlight the best match whenever the results change, not whatever was highlighted before.
-  const first = elements[0]?.id ?? (screens[0] ? `go ${screens[0].href}` : themes[0] ? `theme ${themes[0].choice}` : "");
+  const first = elements[0]?.id ?? (screens[0] ? `go ${screens[0].href}` : themes[0] ? `theme ${themes[0].choice}` : connect ? "connect agents" : "");
   const [selected, setSelected] = useState(first);
   useEffect(() => setSelected(first), [first]);
 
@@ -102,6 +104,15 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
                       <span>{theme.label}</span>
                     </Command.Item>
                   ))}
+                </Command.Group>
+              )}
+              {connect && (
+                <Command.Group heading="Setup">
+                  {/* Replaces the palette: the overlay that opens is the dialog. */}
+                  <Command.Item value="connect agents" onSelect={() => setOverlay("agents")} className={ITEM}>
+                    <Plug className="size-4 text-muted" />
+                    <span>Connect your agent</span>
+                  </Command.Item>
                 </Command.Group>
               )}
             </Command.List>
