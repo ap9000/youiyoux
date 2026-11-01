@@ -13,8 +13,11 @@ let app = "";
 let watcher: ProjectWatcher<ScanResult> | null = null;
 const updates: Array<WatchUpdate<ScanResult>> = [];
 
-/** Wait for an update matching `predicate`, then for the watcher to settle. */
-async function updateWhere(predicate: (u: WatchUpdate<ScanResult>) => boolean, timeoutMs = 10_000): Promise<void> {
+/**
+ * Wait for an update matching `predicate`, then for the watcher to settle. Generous, because a busy
+ * Mac's FSEvents can report a change many seconds late; a missed change still fails, only later.
+ */
+async function updateWhere(predicate: (u: WatchUpdate<ScanResult>) => boolean, timeoutMs = 30_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!updates.some(predicate)) {
     if (Date.now() > deadline) throw new Error(`no matching update in ${updates.length}`);
@@ -38,7 +41,8 @@ afterEach(async () => {
 
 const violationsOf = (u: WatchUpdate<ScanResult>) => (u.status === "ok" ? u.result.report.violations : []);
 
-describe("watch mode", () => {
+// Some tests wait for several changes in a row, each up to updateWhere's limit.
+describe("watch mode", { timeout: 120_000 }, () => {
   test("the first run scans the project", () => {
     expect(updates).toHaveLength(1);
     expect(updates[0]).toMatchObject({ generation: 1, status: "ok", reloaded: true });
