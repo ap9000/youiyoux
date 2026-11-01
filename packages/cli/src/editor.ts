@@ -1,10 +1,10 @@
 /**
  * The rule editor that `youiyoux ui --project` runs beside the hub: the workflow service
  * (drafts, impact preview, approval, review branch) on an ephemeral loopback port, which
- * the hub's dev server proxies at /api. Writes need this run's session key, which travels
- * only in the link printed to the terminal (as a URL fragment, which no request carries).
+ * the hub's dev server proxies at /api. Writes need the product's session key, which travels
+ * only in the link printed to the terminal (as a URL fragment, which no request carries); it is
+ * kept in the drafts' folder, so the link stays the same across restarts (hub-key.ts).
  */
-import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { homedir, userInfo } from "node:os";
 import { join, resolve } from "node:path";
@@ -12,6 +12,7 @@ import { shortHash, type LibraryEntry } from "@youiyoux/core";
 import { loadProject, PROJECT_FILE } from "@youiyoux/scanner";
 import type { IngestReading, WorkflowInfo } from "@youiyoux/workflow";
 import { agentsSetup } from "./agents-setup.ts";
+import { keptKey, type KeptKey } from "./hub-key.ts";
 import { TOOL_ROOT } from "./tool.ts";
 
 interface RuleEditorOptions {
@@ -22,12 +23,16 @@ interface RuleEditorOptions {
   readonly root?: string;
   /** Where drafts live; default ~/.youi/workflow/<design repo + project>. */
   readonly state?: string;
+  /** Replace the kept key with a new one: every link with the old one stops making changes. */
+  readonly newKey?: boolean;
 }
 
 export interface RuleEditor {
   /** The service's own address, for the hub's /api proxy. */
   readonly url: string;
   readonly sessionKey: string;
+  /** Whether the key was kept from before, made, or replaced (and why). */
+  readonly key: KeptKey;
   readonly stateDir: string;
   readonly info: WorkflowInfo;
   close(): Promise<void>;
@@ -78,10 +83,11 @@ export async function startRuleEditor(options: RuleEditorOptions): Promise<RuleE
   const actor = { kind: "person" as const, name: userInfo().username };
   // Fails here, before the hub starts, when the design repo is not a git checkout.
   const info = await workflow.info(actor);
-  const sessionKey = randomBytes(24).toString("base64url");
+  const key = await keptKey(stateDir, { fresh: options.newKey === true });
+  const sessionKey = key.key;
   // Connect your agent writes what youiyoux agents install writes, for this product as the hub names it.
   const target = { project: projectRoot, ...(options.config ? { config: resolve(options.config) } : {}), ...(options.design ? { design: resolve(options.design) } : {}), ...(options.root ? { root: resolve(options.root) } : {}) };
   const agents = agentsSetup({ toolRoot: TOOL_ROOT, target, system: existsSync(load.configPath ?? join(projectRoot, PROJECT_FILE)) ? project : null });
   const service = await serveWorkflow({ workflow, actor, sessionKey, port: 0, agents });
-  return { url: service.url, sessionKey, stateDir, info, close: () => service.close() };
+  return { url: service.url, sessionKey, key, stateDir, info, close: () => service.close() };
 }

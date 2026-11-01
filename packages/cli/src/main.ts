@@ -18,6 +18,7 @@ import { actionable, diffJson, githubAnnotations, githubDiffAnnotations, githubD
 import { runClaudeHook, runPreCommitHook, type HookTarget } from "./hooks.ts";
 import { codexFallback, installRepoAgentInstructions, hookCommand, installClaudeHook, installPreCommit, installRecordWorkflow, installWorkflow, repoRootOf } from "./hooks-install.ts";
 import { AGENT_KINDS, checkAgents, setupAgents } from "./agents-setup.ts";
+import { openWhenUp } from "./hub-key.ts";
 import { detectTarget, renderDetect } from "./detect.ts";
 import { renderDiscoverSearch, renderDiscoverShow, renderDiscoverSync, renderRegistries } from "./discover.ts";
 import { startRuleEditor, type RuleEditor } from "./editor.ts";
@@ -249,13 +250,16 @@ ${style.bold("Detect")}  ${style.dim("which UI libraries a repo or website uses 
                            (--out dir, default .youi/detect; the first run downloads Chromium, ~100 MB)
 
 ${style.bold("The hub")}
-  ui [--design dir] [--project dir] [--config file] [--root dir] [--port n] [--watch] [--state dir] [--inventory file] [--detect file] [--allow-host name…]
+  ui [--design dir] [--project dir] [--config file] [--root dir] [--port n] [--watch] [--state dir] [--inventory file] [--detect file] [--allow-host name…] [--open] [--new-key]
                            open the web hub on a design system (default: the demo system; beside a
                            youi.workspace.json, its products, with Work > Workspace to switch);
                            --project adds that product's usage map (read-only scan) and the
                            rule editor (System > Rules, Work > Changes): drafts, impact preview,
                            approval, a review branch in the design repo (drafts kept in --state);
                            --watch re-scans on every save and updates the open hub;
+                           --open opens it in your browser, signed in, once it answers; its link
+                           stays the same across restarts (the key is kept per product, readable
+                           only by you); --new-key replaces it, cutting off old tabs;
                            --inventory shows a youiyoux inventory file on the Inventory page
                            --detect adds a youiyoux detect report to Library > Stack
                            --allow-host (repeats) lets the hub also answer to that name, e.g. this
@@ -322,6 +326,8 @@ const OPTIONS = {
   port: { type: "string" },
   "allow-host": { type: "string", multiple: true },
   watch: { type: "boolean", default: false },
+  open: { type: "boolean", default: false },
+  "new-key": { type: "boolean", default: false },
   expose: { type: "boolean", default: false },
   detect: { type: "string" },
   dark: { type: "string" },
@@ -1249,13 +1255,16 @@ async function cmdWatch(values: Values): Promise<number> {
 async function startEditor(values: Values, port: string): Promise<RuleEditor | null> {
   if (!values.project) return null;
   try {
-    const editor = await startRuleEditor({ project: values.project, ...(values.config ? { config: values.config } : {}), ...(values.design ? { design: values.design } : {}), ...(values.root ? { root: values.root } : {}), ...(values.state ? { state: values.state } : {}) });
+    const editor = await startRuleEditor({ project: values.project, ...(values.config ? { config: values.config } : {}), ...(values.design ? { design: values.design } : {}), ...(values.root ? { root: values.root } : {}), ...(values.state ? { state: values.state } : {}), newKey: values["new-key"] });
     const { design, project: product } = editor.info;
     print(`${style.ok("rule editor")} http://localhost:${port}/#key=${editor.sessionKey}`);
+    const { key } = editor;
+    if (key.how === "replaced") print(style.warn(`  a new link: ${key.why}; tabs opened with the old one can't make changes`));
+    else print(style.dim(`  the link stays the same when the hub restarts (its key is kept in ${join(editor.stateDir, "session.key")}, readable only by you; --new-key replaces it)`));
     print(style.dim(`  design   ${design.root} (${design.branch} @ ${design.head.slice(0, 7)}${design.dirty ? ", working tree differs" : ""})`));
     print(style.dim(`  project  ${product.id} at ${product.root}`));
     print(style.dim(`  drafts   ${editor.stateDir}`));
-    print(style.dim("  open the link above: it carries this run's key, which every change needs (nothing else can approve)"));
+    print(style.dim("  open the link above: it carries the key every change needs (nothing else can approve)"));
     print(style.dim("  approved changes become a local review branch; nothing is pushed"));
     return editor;
   } catch (error: unknown) {
@@ -1285,6 +1294,7 @@ async function workspaceUi(values: Values, hosts: { allowHosts?: string[] }): Pr
   let open: ((project: string) => Promise<number>) | null = null;
   const hub = await startWorkspaceHub({ roots, current: first, status: () => workspaceStatus(process.cwd()), open: (root) => (open ? open(root) : Promise.resolve(1)) });
   print(`${style.ok("workspace hub")} http://localhost:${port}/workspace#key=${hub.key}`);
+  if (values.open) void openWhenUp(`http://localhost:${port}/workspace#key=${hub.key}`, `http://localhost:${port}/`);
   print(style.dim(`  ${plural(roots.length, "product")}; showing ${report.projects[first]!.root} first. Open the link: it carries this run's key, which switching needs`));
   print(style.dim("  Rules and Changes are read-only here; youiyoux ui --project <dir> opens the rule editor on one product"));
   try {
@@ -1308,6 +1318,8 @@ async function cmdUi(values: Values): Promise<number> {
   if (workspace !== null) return workspace;
   const port = values.port ?? DEFAULT_HUB_PORT;
   const editor = await startEditor(values, port);
+  // --open: the hub in the browser once it answers, signed in when there is a rule editor.
+  if (values.open) void openWhenUp(`http://localhost:${port}/${editor ? `#key=${editor.sessionKey}` : ""}`, `http://localhost:${port}/`).then((opened) => !opened && print(style.warn(`! the hub did not answer on port ${port}, so it was not opened: open the link above`)));
   try {
     return await runHub(TOOL_ROOT, { ...(values.inventory ? { inventory: values.inventory } : {}), ...(values.design ? { design: values.design } : {}), ...(values.project ? { project: values.project } : {}), ...(values.config ? { config: values.config } : {}), ...(values.root ? { root: values.root } : {}), ...(values.detect ? { detect: values.detect } : {}), ...(values.port || editor ? { port } : {}), ...(editor ? { api: editor.url } : {}), watch: values.watch, ...hosts });
   } finally {
