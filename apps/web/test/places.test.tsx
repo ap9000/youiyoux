@@ -78,7 +78,7 @@ describe("the components on a screen's picture", () => {
     const onSelect = vi.fn();
     show("elements", null, onSelect);
     fireEvent.click(layer(), { clientX: 25, clientY: 180 });
-    expect(onSelect).toHaveBeenCalledWith(null);
+    expect(onSelect.mock.calls[0]![0]).toBeNull();
   });
 
   test("a pick from the address lights every box it names, placed as shares of the page, and brings the first into view", () => {

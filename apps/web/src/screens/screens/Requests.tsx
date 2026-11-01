@@ -38,8 +38,8 @@ function Failure({ error }: { error: WorkflowRequestError }) {
   );
 }
 
-/** A new comment or change request on what is picked out. */
-export function RequestComposer({ target, elementName, onFiled, onCancel }: { target: RequestTarget; elementName: string | null; onFiled: (request: RequestDoc) => void; onCancel: () => void }) {
+/** A new comment or change request on what is picked out; `bare` inside something that already frames it. */
+export function RequestComposer({ target, elementName, onFiled, onCancel, bare = false }: { target: RequestTarget; elementName: string | null; onFiled: (request: RequestDoc) => void; onCancel: () => void; bare?: boolean }) {
   const [kind, setKind] = useState<RequestDoc["kind"]>("change");
   const [scope, setScope] = useState<RequestTarget["scope"]>("here");
   const [body, setBody] = useState("");
@@ -59,7 +59,7 @@ export function RequestComposer({ target, elementName, onFiled, onCancel }: { ta
     ).finally(() => setBusy(false));
   };
   return (
-    <form onSubmit={submit} className="space-y-2.5 rounded-lg border border-line bg-surface p-3" data-request-composer aria-label="New request">
+    <form onSubmit={submit} className={clsx("space-y-2.5", !bare && "rounded-lg border border-line bg-surface p-3")} data-request-composer aria-label="New request">
       <div className="flex flex-wrap items-center gap-2">
         <Segmented<RequestDoc["kind"]> label="Kind" value={kind} onChange={setKind} options={[{ value: "change", label: "Change request" }, { value: "comment", label: "Comment" }]} />
         {elementName && <Segmented<RequestTarget["scope"]> label="Applies to" value={scope} onChange={setScope} options={[{ value: "here", label: "This one" }, { value: "element", label: `Every ${elementName}` }]} />}

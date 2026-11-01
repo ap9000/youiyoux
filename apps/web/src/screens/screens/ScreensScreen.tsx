@@ -12,7 +12,7 @@ import { type Screen, type ScreenIndex, screenHref, screensOf, routeLabel } from
 import { retryModel, retryUsage, useModelState, useUsageState } from "../../data/store.ts";
 import type { ProjectShots } from "../../data/types.ts";
 import { EVERY_SCREEN, type UsageIndex } from "../../data/usage.ts";
-import { useRemote, workflowApi } from "../../data/workflow.ts";
+import { useRemote, withRequest, workflowApi } from "../../data/workflow.ts";
 import { shortSha } from "../../lib/format.ts";
 import { useListKeys } from "../../shell/keyboard.ts";
 import { Badge } from "../../ui/Badge.tsx";
@@ -83,7 +83,13 @@ function ScreenGrid({ model, index, screens }: { model: Model; index: UsageIndex
     return (
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {header}
-        <ScreensCanvas screens={screens} scheme={scheme} requests={requests.state.status === "ready" ? requests.state.value.requests : []} />
+        <ScreensCanvas
+          screens={screens}
+          scheme={scheme}
+          requests={requests.state.status === "ready" ? requests.state.value.requests : []}
+          onRequest={(next) => (requests.state.status === "ready" ? requests.set({ ...requests.state.value, requests: withRequest(requests.state.value.requests, next) }) : requests.reload())}
+          nameOf={(id) => model.byId.get(id)?.name ?? id}
+        />
       </div>
     );
 

@@ -4,7 +4,8 @@
  * named, and a click picks it out. What is picked lives in the
  * address (`?select=<element id>` or `?select=<file:line>`), so an element's page links straight
  * to it here, and every box it has on this screen is lit. Boxes are placed as shares of the page's
- * size, so they stay on their component at any width.
+ * size, so they stay on their component at any width. The layer alone (PlacesLayer) goes over any
+ * picture of the page: the Screens canvas puts it on its cards to comment on a component there.
  */
 import { clsx } from "clsx";
 import { useEffect, useRef, useState } from "react";
@@ -24,10 +25,7 @@ export interface Pin {
   readonly status: "open" | "addressed" | "closed";
 }
 
-interface Props {
-  shot: ScreenShot | null;
-  scheme: Scheme;
-  label: string;
+interface LayerProps {
   places: PlacesFile;
   placed: readonly Placed[];
   outline: Outline;
@@ -35,13 +33,41 @@ interface Props {
   /** An element the side list points at (hovered or focused there). */
   pointed: string | null;
   nameOf: (placed: Placed) => string;
-  onSelect: (placed: Placed | null) => void;
+  /** A click: the component under it (or none), and where it was on the screen. */
+  onSelect: (placed: Placed | null, at: { clientX: number; clientY: number }) => void;
   pins?: readonly Pin[];
   activePin?: string | null;
   onPin?: (id: string) => void;
 }
 
-export function PlacesOverlay({ shot, scheme, label, places, placed, outline, select, pointed, nameOf, onSelect, pins = [], activePin = null, onPin }: Props) {
+interface Props extends LayerProps {
+  shot: ScreenShot | null;
+  scheme: Scheme;
+  label: string;
+}
+
+export function PlacesOverlay({ shot, scheme, label, ...layer }: Props) {
+  const frame = useRef<HTMLDivElement>(null);
+  const { select } = layer;
+  // Opened with something picked (from an element's page): bring its first box into view.
+  const first = useRef<string | null>(null);
+  useEffect(() => {
+    if (!select || first.current === select) return;
+    const target = frame.current?.querySelector<HTMLElement>("[data-place-lit]");
+    if (!target) return;
+    first.current = select;
+    target.scrollIntoView({ block: "center", behavior: "smooth" });
+  });
+  return (
+    <div ref={frame} className="relative">
+      <ScreenImage shot={shot} scheme={scheme} size="full" label={label} ratio={layer.places.size.width / layer.places.size.height} />
+      <PlacesLayer {...layer} />
+    </div>
+  );
+}
+
+/** The components over a picture of the page, which it fills: outlined, named under the pointer, picked by a click. */
+export function PlacesLayer({ places, placed, outline, select, pointed, nameOf, onSelect, pins = [], activePin = null, onPin }: LayerProps) {
   const layer = useRef<HTMLDivElement>(null);
   const [hover, setHover] = useState<Placed | null>(null);
   const { size } = places;
@@ -49,16 +75,6 @@ export function PlacesOverlay({ shot, scheme, label, places, placed, outline, se
   // Every component outlined at once is noise: "all" names each one under the pointer only.
   const shown = outline === "elements" ? placed.filter(counts) : [];
   const lit = placed.filter((p) => isSelected(p, select) || (pointed !== null && elementOf(p) === pointed));
-
-  // Opened with something picked (from an element's page): bring its first box into view.
-  const first = useRef<string | null>(null);
-  useEffect(() => {
-    if (!select || first.current === select) return;
-    const target = layer.current?.querySelector<HTMLElement>("[data-place-lit]");
-    if (!target) return;
-    first.current = select;
-    target.scrollIntoView({ block: "center", behavior: "smooth" });
-  }, [select, lit.length]);
 
   const pointAt = (event: { clientX: number; clientY: number }): Placed | null => {
     const rect = layer.current!.getBoundingClientRect();
@@ -82,51 +98,48 @@ export function PlacesOverlay({ shot, scheme, label, places, placed, outline, se
   );
 
   return (
-    <div className="relative">
-      <ScreenImage shot={shot} scheme={scheme} size="full" label={label} ratio={size.width / size.height} />
-      <div
-        ref={layer}
-        className={clsx("absolute inset-0", outline !== "off" && "cursor-crosshair")}
-        data-places-layer
-        onPointerMove={(event) => outline !== "off" && setHover(pointAt(event))}
-        onPointerLeave={() => setHover(null)}
-        onClick={(event) => outline !== "off" && onSelect(pointAt(event))}
-      >
-        {shown.map((p, i) => box(p, "shown", `s${i}`))}
-        {lit.map((p, i) => box(p, "lit", `l${i}`))}
-        {hover && !lit.includes(hover) && box(hover, "hover", "hover")}
-        {hover && (
-          <span
-            className="pointer-events-none absolute z-10 max-w-[60%] -translate-y-full truncate rounded-xs bg-ink px-1.5 py-0.5 font-mono text-mono-sm text-canvas shadow-raise"
-            style={{ left: pct(hover.place.box.x, size.width), top: pct(hover.place.box.y, size.height) }}
-            data-place-label
-          >
-            {nameOf(hover)}
-          </span>
-        )}
-        {pins.map((pin) => (
-          <button
-            key={pin.id}
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onPin?.(pin.id);
-            }}
-            onPointerMove={(event) => event.stopPropagation()}
-            aria-label={`Request ${pin.number} (${pin.status})`}
-            aria-pressed={activePin === pin.id}
-            data-pin={pin.id}
-            className={clsx(
-              "absolute z-20 grid size-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-surface text-caption font-semibold tabular shadow-raise outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus",
-              pin.status === "closed" ? "bg-neutral-soft text-muted" : pin.status === "addressed" ? "bg-success text-on-accent" : "bg-accent text-on-accent",
-              activePin === pin.id && "ring-2 ring-accent ring-offset-1 ring-offset-surface",
-            )}
-            style={{ left: pct(pin.box.x, size.width), top: pct(pin.box.y, size.height) }}
-          >
-            {pin.number}
-          </button>
-        ))}
-      </div>
+    <div
+      ref={layer}
+      className={clsx("absolute inset-0", outline !== "off" && "cursor-crosshair")}
+      data-places-layer
+      onPointerMove={(event) => outline !== "off" && setHover(pointAt(event))}
+      onPointerLeave={() => setHover(null)}
+      onClick={(event) => outline !== "off" && onSelect(pointAt(event), event)}
+    >
+      {shown.map((p, i) => box(p, "shown", `s${i}`))}
+      {lit.map((p, i) => box(p, "lit", `l${i}`))}
+      {hover && !lit.includes(hover) && box(hover, "hover", "hover")}
+      {hover && (
+        <span
+          className="pointer-events-none absolute z-10 max-w-[60%] -translate-y-full truncate rounded-xs bg-ink px-1.5 py-0.5 font-mono text-mono-sm text-canvas shadow-raise"
+          style={{ left: pct(hover.place.box.x, size.width), top: pct(hover.place.box.y, size.height) }}
+          data-place-label
+        >
+          {nameOf(hover)}
+        </span>
+      )}
+      {pins.map((pin) => (
+        <button
+          key={pin.id}
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onPin?.(pin.id);
+          }}
+          onPointerMove={(event) => event.stopPropagation()}
+          aria-label={`Request ${pin.number} (${pin.status})`}
+          aria-pressed={activePin === pin.id}
+          data-pin={pin.id}
+          className={clsx(
+            "absolute z-20 grid size-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-surface text-caption font-semibold tabular shadow-raise outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus",
+            pin.status === "closed" ? "bg-neutral-soft text-muted" : pin.status === "addressed" ? "bg-success text-on-accent" : "bg-accent text-on-accent",
+            activePin === pin.id && "ring-2 ring-accent ring-offset-1 ring-offset-surface",
+          )}
+          style={{ left: pct(pin.box.x, size.width), top: pct(pin.box.y, size.height) }}
+        >
+          {pin.number}
+        </button>
+      ))}
     </div>
   );
 }

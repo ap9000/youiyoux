@@ -6,7 +6,7 @@
  * The picture is drawn at the page's width, so a box is placed as a share of the page's size.
  */
 import { useEffect, useState } from "react";
-import type { ElementId } from "@youiyoux/core";
+import type { ElementId, RequestTarget } from "@youiyoux/core";
 import { append } from "../lib/append.ts";
 import { loadPlaces } from "./load.ts";
 import type { PlacedComponent, PlacesFile } from "./types.ts";
@@ -53,6 +53,23 @@ export const elementOf = (placed: Placed): ElementId | null => placed.element ??
 
 /** Among picks that share a line (`<DropdownMenuTrigger asChild><Button>`): the System element first, then the innermost. */
 export const pickOrder = (a: Placed, b: Placed): number => Number(elementOf(b) !== null) - Number(elementOf(a) !== null) || b.place.depth - a.place.depth;
+
+/** A request's target for a picked component on a screen: what it is, where it rendered, and its box on the page. */
+export function requestTarget(route: string, placed: Placed, page: PlacesFile["size"]): RequestTarget {
+  const element = elementOf(placed);
+  const { place } = placed;
+  return {
+    route,
+    scope: "here",
+    name: place.name,
+    ...(element ? { element } : {}),
+    ...(placed.lookalike ? { lookalike: true } : {}),
+    ...(place.file ? { file: place.file } : {}),
+    ...(place.line ? { line: place.line } : {}),
+    box: place.box,
+    page,
+  };
+}
 
 /**
  * The component under a point (page pixels): the smallest box holding it, so a button inside a

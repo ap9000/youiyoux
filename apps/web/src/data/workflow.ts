@@ -93,6 +93,9 @@ export const workflowApi = {
   moveRequest: (id: string, status: RequestStatus, body = "") => call<RequestDoc>("POST", `/requests/${id}/status`, { status, body }),
 };
 
+/** A list of requests with `next` in it: in place of the one it updates, or first when it is new. */
+export const withRequest = (list: readonly RequestDoc[], next: RequestDoc): RequestDoc[] => (list.some((r) => r.id === next.id) ? list.map((r) => (r.id === next.id ? next : r)) : [next, ...list]);
+
 /** A picture of a request's screen, by the service's URL, and where its component is on it. */
 export interface RequestPictureView {
   readonly url: string;

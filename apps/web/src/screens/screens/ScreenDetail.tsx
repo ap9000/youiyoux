@@ -6,15 +6,15 @@
  */
 import { clsx } from "clsx";
 import { ArrowUpRight, ChevronLeft, ChevronRight, Crosshair, MessageSquarePlus, X } from "lucide-react";
-import type { RequestDoc, RequestTarget } from "@youiyoux/core";
+import type { RequestDoc } from "@youiyoux/core";
 import { type ReactNode, useMemo, useState } from "react";
 import { Link, useLocation, useSearch } from "wouter";
 import { type Scheme, useTheme } from "../../app/theme.tsx";
 import { elementHref } from "../../data/ids.ts";
 import { dataUrl } from "../../data/load.ts";
 import type { Model } from "../../data/model.ts";
-import { elementOf, isSelected, matchPlaces, pickOrder, usePlaces, type Placed } from "../../data/places.ts";
-import { useRemote, workflowApi } from "../../data/workflow.ts";
+import { elementOf, isSelected, matchPlaces, pickOrder, requestTarget, usePlaces, type Placed } from "../../data/places.ts";
+import { useRemote, withRequest, workflowApi } from "../../data/workflow.ts";
 import { type Screen, type ScreenElement, type ScreenIndex, screenHref, routeLabel } from "../../data/screens.ts";
 import { EVERY_SCREEN, type ProjectViolation } from "../../data/usage.ts";
 import { markNavigation } from "../../lib/perf.ts";
@@ -280,8 +280,7 @@ export function ScreenDetail({ model, screens, screen }: { model: Model; screens
   const onScreen = all.filter((r) => r.target.route === screen.route || (r.target.scope === "element" && r.target.element !== undefined && placedElements.has(r.target.element))).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   const replace = (next: RequestDoc): void => {
     if (requests.state.status !== "ready") return requests.reload();
-    const list = requests.state.value.requests;
-    requests.set({ ...requests.state.value, requests: list.some((r) => r.id === next.id) ? list.map((r) => (r.id === next.id ? next : r)) : [next, ...list] });
+    requests.set({ ...requests.state.value, requests: withRequest(requests.state.value.requests, next) });
   };
   const pinOf = (request: RequestDoc, number: number): Pin | null => {
     const at = request.target.route === screen.route && request.target.box ? request.target.box : placed.find((p) => request.target.element && elementOf(p) === request.target.element)?.place.box;
@@ -292,17 +291,6 @@ export function ScreenDetail({ model, screens, screen }: { model: Model; screens
     const t = request.target;
     go({ request: request.id, select: t.scope === "element" && t.element ? t.element : t.file && t.line ? `${t.file}:${t.line}` : (t.element ?? null) });
   };
-  const targetOf = (p: Placed): RequestTarget => ({
-    route: screen.route,
-    scope: "here",
-    name: p.place.name,
-    ...(elementOf(p) ? { element: elementOf(p)! } : {}),
-    ...(p.lookalike ? { lookalike: true } : {}),
-    ...(p.place.file ? { file: p.place.file } : {}),
-    ...(p.place.line ? { line: p.place.line } : {}),
-    box: p.place.box,
-    ...(places ? { page: places.size } : {}),
-  });
 
   const picture = (id: string): OnPicture | undefined => {
     if (!places) return undefined;
@@ -353,7 +341,7 @@ export function ScreenDetail({ model, screens, screen }: { model: Model; screens
                 {composing && (
                   <RequestComposer
                     key={picked[0].at ?? picked[0].place.name}
-                    target={targetOf(picked[0])}
+                    target={requestTarget(screen.route, picked[0], places.size)}
                     elementName={elementOf(picked[0]) ? (model.byId.get(elementOf(picked[0])!)?.name ?? null) : null}
                     onCancel={() => setComposing(false)}
                     onFiled={(request) => {

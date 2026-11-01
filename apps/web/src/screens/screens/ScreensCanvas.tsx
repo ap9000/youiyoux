@@ -1,21 +1,29 @@
 /**
  * Every screen of every project on one board: each project its pictures in rows of four, each with its
  * open requests as numbered pins. Drag to pan, scroll to pan, ⌘/Ctrl-scroll or pinch to zoom,
- * + / − / 0 on the keyboard, and Fit. A screen opens its page; a pin opens its request there.
- * Pictures are the thumbnails while zoomed out and the full captures when zoomed in.
+ * + / − / 0 on the keyboard, and Fit. A screen opens its page. Pictures are the thumbnails while
+ * zoomed out and the full captures when zoomed in.
+ *
+ * Commenting happens on the board, as in a design tool: C (or Comment) turns it on, the component
+ * under the pointer is outlined and named on any screen whose capture placed its components, and a
+ * click opens a comment or change request on it beside the click. A pin opens its request's thread
+ * there too, to reply, close or reopen. Esc closes what is open, then stops commenting.
  */
 import { clsx } from "clsx";
-import { Maximize, Minus, Plus } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { ArrowUpRight, Maximize, MessageSquarePlus, Minus, Plus, X } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import { Link, useLocation } from "wouter";
-import type { RequestDoc } from "@youiyoux/core";
+import type { ElementId, RequestDoc, RequestTarget } from "@youiyoux/core";
 import type { Scheme } from "../../app/theme.tsx";
 import { dataUrl } from "../../data/load.ts";
+import { elementOf, matchPlaces, requestTarget, usePlaces, type Placed } from "../../data/places.ts";
 import { routeLabel, screenHref, type Screen, type ScreenIndex } from "../../data/screens.ts";
-import { EVERY_SCREEN } from "../../data/usage.ts";
+import { EVERY_SCREEN, type ProjectLookalike, type Site } from "../../data/usage.ts";
 import { Button } from "../../ui/Button.tsx";
 import { shotFile } from "../../ui/ScreenImage.tsx";
 import { IssueBadge } from "./IssueCounts.tsx";
+import { PlacesLayer } from "./PlacesOverlay.tsx";
+import { RequestComposer, RequestThread } from "./Requests.tsx";
 import { pct } from "../../lib/format.ts";
 
 /** A screen's width on the board, in board pixels. */
@@ -30,11 +38,36 @@ const FULL_AT = 0.75;
 const STEP = 1.25;
 /** A pointer that moves less than this between down and up is a click, not a pan. */
 const CLICK_SLOP = 4;
+/** A comment's bubble: its width, and how far it keeps from the board's edges. */
+const BUBBLE = 360;
+const EDGE = 12;
 
 export interface View {
   readonly x: number;
   readonly y: number;
   readonly scale: number;
+}
+
+/** A point on the board, in board pixels: where a bubble is anchored, so it moves with a pan or zoom. */
+interface Point {
+  readonly x: number;
+  readonly y: number;
+}
+
+/** A comment being written: on which screen, about what, and where it was clicked. */
+interface Draft {
+  readonly screen: Screen;
+  readonly target: RequestTarget;
+  readonly select: string | null;
+  readonly name: string;
+  readonly elementName: string | null;
+  readonly at: Point;
+}
+
+/** What one project's screens render, to tell which placed component is which System element. */
+interface ProjectSites {
+  readonly sites: readonly Site[];
+  readonly lookalikes: readonly ProjectLookalike[];
 }
 
 const clamp = (scale: number): number => Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale));
@@ -52,9 +85,39 @@ export function fitView(board: { width: number; height: number }, frame: { width
   return { scale, x: (frame.width - board.width * scale) / 2, y: Math.max(pad, (frame.height - board.height * scale) / 2) };
 }
 
-function Card({ screen, scheme, full, requests, onPin, onLoad }: { screen: Screen; scheme: Scheme; full: boolean; requests: readonly RequestDoc[]; onPin: (request: RequestDoc) => void; onLoad: () => void }) {
+interface CardProps {
+  screen: Screen;
+  scheme: Scheme;
+  full: boolean;
+  requests: readonly RequestDoc[];
+  onPin: (request: RequestDoc, at: { clientX: number; clientY: number }) => void;
+  onLoad: () => void;
+  /** Commenting: the components are loaded and pickable, and the picture is no longer a link. */
+  commenting: boolean;
+  project: ProjectSites;
+  nameOf: (placed: Placed) => string;
+  /** What the comment being written is about, when it is on this screen. */
+  picking: string | null;
+  onPick: (placed: Placed, page: { width: number; height: number }, at: { clientX: number; clientY: number }) => void;
+}
+
+function Card({ screen, scheme, full, requests, onPin, onLoad, commenting, project, nameOf, picking, onPick }: CardProps) {
   const picked = shotFile(screen.shot, scheme, full ? "full" : "thumb");
   const open = requests.filter((r) => r.status !== "closed");
+  const placesState = usePlaces(commenting && picked ? screen.shot?.places : undefined);
+  const places = placesState?.status === "ready" ? placesState.value : null;
+  const placed = useMemo(() => (places ? matchPlaces(places.places, project.sites, project.lookalikes) : []), [places, project]);
+  const unplaced = commenting && picked && (!screen.shot?.places || placesState?.status === "error");
+  const picture = (
+    <>
+      {picked ? (
+        <img src={dataUrl(picked.file)} alt="" draggable={false} onLoad={onLoad} className="block w-full select-none" />
+      ) : (
+        <span className="grid h-[200px] place-items-center p-4 text-center text-small text-faint">No screenshot yet</span>
+      )}
+      {places && <PlacesLayer places={places} placed={placed} outline="all" select={picking} pointed={null} nameOf={nameOf} onSelect={(p, at) => p && onPick(p, places.size, at)} />}
+    </>
+  );
   return (
     <article className="shrink-0 space-y-2" style={{ width: CARD_WIDTH }} data-canvas-screen={`${screen.project}:${screen.route}`}>
       <header className="flex min-w-0 items-center gap-2">
@@ -66,12 +129,8 @@ function Card({ screen, scheme, full, requests, onPin, onLoad }: { screen: Scree
           <IssueBadge issues={screen.issues} />
         </span>
       </header>
-      <Link href={screenHref(screen.project, screen.route)} className="relative block overflow-hidden rounded-md border border-line bg-surface shadow-raise" draggable={false} aria-label={`Open ${screen.project} ${routeLabel(screen.route)}`}>
-        {picked ? (
-          <img src={dataUrl(picked.file)} alt="" draggable={false} onLoad={onLoad} className="block w-full select-none" />
-        ) : (
-          <span className="grid h-[200px] place-items-center p-4 text-center text-small text-faint">No screenshot yet</span>
-        )}
+      <PictureFrame href={commenting ? null : screenHref(screen.project, screen.route)} label={`Open ${screen.project} ${routeLabel(screen.route)}`}>
+        {picture}
         {picked &&
           requests.map((request, i) =>
             request.target.box && request.target.page ? (
@@ -81,7 +140,7 @@ function Card({ screen, scheme, full, requests, onPin, onLoad }: { screen: Scree
                 onClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
-                  onPin(request);
+                  onPin(request, event);
                 }}
                 aria-label={`Request ${i + 1} on ${routeLabel(screen.route)} (${request.status}): ${request.body}`}
                 title={request.body}
@@ -96,18 +155,103 @@ function Card({ screen, scheme, full, requests, onPin, onLoad }: { screen: Scree
               </button>
             ) : null,
           )}
-      </Link>
+      </PictureFrame>
+      {unplaced && (
+        <p className="text-caption text-muted" data-canvas-unplaced>
+          No component positions for this screen: <code className="font-mono">youiyoux screens capture</code> places them.
+        </p>
+      )}
     </article>
   );
 }
 
-export function ScreensCanvas({ screens, scheme, requests }: { screens: ScreenIndex; scheme: Scheme; requests: readonly RequestDoc[] }) {
+/** A screen's picture: a link to its page, or, while commenting, a surface to pick on. */
+function PictureFrame({ href, label, children }: { href: string | null; label: string; children: ReactNode }) {
+  const frame = "relative block overflow-hidden rounded-md border border-line bg-surface shadow-raise";
+  if (href === null) return <div className={frame}>{children}</div>;
+  return (
+    <Link href={href} className={frame} draggable={false} aria-label={label}>
+      {children}
+    </Link>
+  );
+}
+
+/** A comment's box on the board, beside where it was clicked and moving with the board, kept inside it. */
+function Bubble({ at, view, frame, label, onClose, children }: { at: Point; view: View; frame: HTMLDivElement | null; label: ReactNode; onClose: () => void; children: ReactNode }) {
+  const width = frame?.clientWidth ?? 0;
+  const height = frame?.clientHeight ?? 0;
+  const left = Math.max(EDGE, Math.min(view.x + at.x * view.scale + EDGE, width - BUBBLE - EDGE));
+  const y = view.y + at.y * view.scale;
+  // In the board's lower half it opens upward from the click, so it never runs off the bottom.
+  const place = height > 0 && y > height / 2 ? { bottom: Math.max(EDGE, height - y - EDGE), maxHeight: Math.max(160, y) } : { top: Math.max(EDGE, y - EDGE), maxHeight: Math.max(160, height - Math.max(EDGE, y - EDGE) - EDGE) };
+  return (
+    <div
+      role="dialog"
+      aria-label="Comment"
+      className="absolute z-30 flex max-h-[min(560px,calc(100%-24px))] w-[min(360px,calc(100%-24px))] flex-col overflow-hidden rounded-lg border border-line bg-surface shadow-popover animate-pop"
+      style={{ left, ...place }}
+      data-canvas-bubble
+    >
+      <header className="flex shrink-0 items-start gap-2 border-b border-line px-3 py-2">
+        <div className="min-w-0 flex-1 text-small">{label}</div>
+        <button type="button" onClick={onClose} aria-label="Close" className="-mr-1 grid size-7 shrink-0 place-items-center rounded-md text-muted hover:bg-raised hover:text-ink max-sm:size-10">
+          <X className="size-4" />
+        </button>
+      </header>
+      <div className="min-h-0 overflow-y-auto p-3">{children}</div>
+    </div>
+  );
+}
+
+interface CanvasProps {
+  screens: ScreenIndex;
+  scheme: Scheme;
+  requests: readonly RequestDoc[];
+  /** A request filed, answered, closed or reopened here, as the service returned it. */
+  onRequest?: (request: RequestDoc) => void;
+  /** A System element's name, for "Every Button". */
+  nameOf?: (element: ElementId) => string;
+}
+
+export function ScreensCanvas({ screens, scheme, requests, onRequest = () => undefined, nameOf: elementName = (id) => id }: CanvasProps) {
   const [, navigate] = useLocation();
   const frame = useRef<HTMLDivElement>(null);
   const board = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<View>({ x: 0, y: 0, scale: 1 });
+  const viewRef = useRef(view);
+  viewRef.current = view;
   const drag = useRef<{ x: number; y: number; view: View; moved: boolean } | null>(null);
   const projects = [...new Set(screens.screens.map((s) => s.project))];
+  const [commenting, setCommenting] = useState(false);
+  const [draft, setDraft] = useState<Draft | null>(null);
+  const [thread, setThread] = useState<{ id: string; at: Point } | null>(null);
+
+  // A place names its own file and line, so it is matched against every site of its project, as on a screen's page.
+  const sitesOf = useMemo(() => {
+    const map = new Map<string, ProjectSites>();
+    for (const project of new Set(screens.screens.map((s) => s.project))) {
+      const own = screens.screens.filter((s) => s.project === project);
+      map.set(project, { sites: own.flatMap((s) => s.elements.flatMap((e) => e.sites)), lookalikes: own.flatMap((s) => s.lookalikes) });
+    }
+    return map;
+  }, [screens]);
+  const nameOf = (p: Placed): string => (p.element ? elementName(p.element) : p.place.name);
+
+  /** Where a click was, on the board. */
+  const boardPoint = (at: { clientX: number; clientY: number }): Point => {
+    const rect = frame.current?.getBoundingClientRect() ?? { left: 0, top: 0 };
+    const v = viewRef.current;
+    return { x: (at.clientX - rect.left - v.x) / v.scale, y: (at.clientY - rect.top - v.y) / v.scale };
+  };
+  const pick = (screen: Screen, placed: Placed, page: { width: number; height: number }, at: { clientX: number; clientY: number }): void => {
+    const element = elementOf(placed);
+    setThread(null);
+    setDraft({ screen, target: requestTarget(screen.route, placed, page), select: placed.at ?? element, name: nameOf(placed), elementName: element ? elementName(element) : null, at: boardPoint(at) });
+  };
+  const openThread = (request: RequestDoc, at: { clientX: number; clientY: number }): void => {
+    setDraft(null);
+    setThread({ id: request.id, at: boardPoint(at) });
+  };
 
   // Once someone pans or zooms, pictures that finish loading no longer refit the board.
   const touched = useRef(false);
@@ -126,18 +270,36 @@ export function ScreensCanvas({ screens, scheme, requests }: { screens: ScreenIn
     setView((v) => zoomAt(v, factor, at?.x ?? f.clientWidth / 2, at?.y ?? f.clientHeight / 2));
   }, []);
 
+  // Esc closes what is open, then stops commenting; it works from inside a comment's text too.
+  const escape = useCallback((): boolean => {
+    if (draft || thread) {
+      setDraft(null);
+      setThread(null);
+      return true;
+    }
+    if (!commenting) return false;
+    setCommenting(false);
+    return true;
+  }, [draft, thread, commenting]);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") {
+        if (escape()) event.preventDefault();
+        return;
+      }
       if (event.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return;
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.key === "+" || event.key === "=") zoom(STEP);
       else if (event.key === "-") zoom(1 / STEP);
       else if (event.key === "0") fit();
+      else if (event.key === "c" || event.key === "C") setCommenting((on) => !on);
       else return;
       event.preventDefault();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [zoom, fit]);
+  }, [zoom, fit, escape]);
 
   // Wheel: pan, or zoom with ⌘/Ctrl (a trackpad pinch arrives as a ctrl-wheel). Not passive, so the page does not scroll too.
   useEffect(() => {
@@ -166,14 +328,21 @@ export function ScreensCanvas({ screens, scheme, requests }: { screens: ScreenIn
     const dx = event.clientX - d.x;
     const dy = event.clientY - d.y;
     if (!d.moved && Math.hypot(dx, dy) < CLICK_SLOP) return;
-    if (!d.moved) frame.current?.setPointerCapture(event.pointerId);
+    if (!d.moved) frame.current?.setPointerCapture?.(event.pointerId);
     d.moved = true;
     touched.current = true;
     setView({ ...d.view, x: d.view.x + dx, y: d.view.y + dy });
   };
   const up = (): void => {
-    // A pan that ends over a link is not a click on it.
-    if (drag.current?.moved) window.addEventListener("click", (e) => e.preventDefault(), { capture: true, once: true });
+    // A pan that ends over a link or a component is not a click on it.
+    if (drag.current?.moved) {
+      const swallow = (e: MouseEvent): void => {
+        e.preventDefault();
+        e.stopPropagation();
+      };
+      window.addEventListener("click", swallow, { capture: true, once: true });
+      setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), 0);
+    }
     drag.current = null;
   };
 
@@ -200,14 +369,64 @@ export function ScreensCanvas({ screens, scheme, requests }: { screens: ScreenIn
                 {screens.screens
                   .filter((s) => s.project === project)
                   .map((screen) => (
-                    <Card key={screen.route} screen={screen} scheme={scheme} full={view.scale >= FULL_AT} requests={forScreen(screen)} onPin={(request) => navigate(`${screenHref(screen.project, screen.route)}?request=${request.id}`)} onLoad={refit} />
+                    <Card
+                      key={screen.route}
+                      screen={screen}
+                      scheme={scheme}
+                      full={view.scale >= FULL_AT}
+                      requests={forScreen(screen)}
+                      onPin={openThread}
+                      onLoad={refit}
+                      commenting={commenting}
+                      project={sitesOf.get(project)!}
+                      nameOf={nameOf}
+                      picking={draft?.screen === screen ? draft.select : null}
+                      onPick={(placed, page, at) => pick(screen, placed, page, at)}
+                    />
                   ))}
               </div>
             </section>
           ))}
         </div>
       </div>
+      {commenting && (
+        <p className="pointer-events-none absolute top-3 left-1/2 z-20 w-max max-w-[calc(100%-24px)] -translate-x-1/2 rounded-md border border-line bg-surface px-3 py-1.5 text-center text-small text-ink-2 shadow-raise" role="status" data-canvas-hint>
+          Click a component on any screen to comment on it. Esc to stop.
+        </p>
+      )}
+      {draft && (
+        <Bubble
+          at={draft.at}
+          view={view}
+          frame={frame.current}
+          onClose={() => setDraft(null)}
+          label={
+            <>
+              <span className="font-medium text-ink">{draft.name}</span>
+              <span className="text-muted"> on {routeLabel(draft.screen.route)}</span>
+              {draft.target.file && draft.target.line && <span className="block truncate font-mono text-mono-sm text-faint">{draft.target.file}:{draft.target.line}</span>}
+            </>
+          }
+        >
+          <RequestComposer
+            key={`${draft.screen.project}:${draft.screen.route}:${draft.select}`}
+            bare
+            target={draft.target}
+            elementName={draft.elementName}
+            onCancel={() => setDraft(null)}
+            onFiled={(request) => {
+              onRequest(request);
+              setDraft(null);
+            }}
+          />
+        </Bubble>
+      )}
+      {thread && <ThreadBubble id={thread.id} at={thread.at} view={view} frame={frame.current} requests={requests} screens={screens} onRequest={onRequest} onClose={() => setThread(null)} onOpen={(href) => navigate(href)} />}
       <div className="absolute right-4 bottom-4 flex items-center gap-1 rounded-md border border-line bg-surface p-1 shadow-raise" data-canvas-controls>
+        <Button variant={commenting ? "primary" : "ghost"} size="sm" onClick={() => setCommenting((on) => !on)} aria-pressed={commenting} title="Comment on a component (C)">
+          <MessageSquarePlus /> Comment
+        </Button>
+        <span className="mx-0.5 h-5 w-px bg-line" aria-hidden />
         <Button variant="ghost" size="icon" onClick={() => zoom(1 / STEP)} aria-label="Zoom out" title="Zoom out (−)">
           <Minus />
         </Button>
@@ -222,5 +441,31 @@ export function ScreensCanvas({ screens, scheme, requests }: { screens: ScreenIn
         </Button>
       </div>
     </div>
+  );
+}
+
+/** A pin's request on the board: its thread, a reply, close or reopen, and the way to its screen's page. */
+function ThreadBubble({ id, at, view, frame, requests, screens, onRequest, onClose, onOpen }: { id: string; at: Point; view: View; frame: HTMLDivElement | null; requests: readonly RequestDoc[]; screens: ScreenIndex; onRequest: (request: RequestDoc) => void; onClose: () => void; onOpen: (href: string) => void }) {
+  const request = requests.find((r) => r.id === id);
+  if (!request) return null;
+  const screen = screens.screens.find((s) => s.project === request.project && s.route === request.target.route);
+  const siblings = requests.filter((r) => r.project === request.project && r.target.route === request.target.route).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  const href = `${screen ? screenHref(screen.project, screen.route) : "/screens"}?request=${request.id}`;
+  return (
+    <Bubble
+      at={at}
+      view={view}
+      frame={frame}
+      onClose={onClose}
+      label={
+        <Link href={href} className="inline-flex items-center gap-1 font-medium text-ink hover:text-accent">
+          {request.project} {routeLabel(request.target.route)} <ArrowUpRight className="size-3.5" aria-hidden />
+        </Link>
+      }
+    >
+      <ol>
+        <RequestThread request={request} number={siblings.indexOf(request) + 1} active={false} onChange={onRequest} onPick={() => onOpen(href)} />
+      </ol>
+    </Bubble>
   );
 }
