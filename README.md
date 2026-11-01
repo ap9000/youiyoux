@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/find-component.png" width="720" alt="youiyoux's ui_find_component asked for a save button on the example app: 1 existing component fits, Button from @/components/ui, with its props, a real usage and where it is used">
+  <img src="docs/images/hub-screen.png" width="820" alt="The youiyoux hub on Toolroll's /flows screen: the captured screenshot with a button picked, and the screen's elements (Button 85, Input 53, Textarea 19) and 37 rule issues">
 </p>
 
 # youiyoux
@@ -40,7 +40,8 @@ New to it? [Getting started](docs/getting-started.md): the report, the top fix, 
 - **Let your agent see what it built.** `npx youiyoux render <file>`: light and dark, desktop and phone, accessibility issues, a diff against main.
 - **Turn the UI you have into a design system.** `npx youiyoux adopt`: your components and your stylesheet's variables become a System in your repo, with rules for your agent; `youiyoux system extract <dir>` moves it into its own repo when a second app needs it.
 
-<img src="docs/images/check-diff.png" width="720" alt="youiyoux check --diff on a new hand-styled Save button: a native button where Button exists, and a radius and two colours the theme's tokens already hold, each with its fix">
+<img src="docs/images/hub-canvas.png" width="820" alt="The Screens canvas in the hub: a change request pinned to a button on Toolroll's /work screen, with before and now captures, marked addressed by the youiyoux CLI, waiting for a person to close it">
+
 
 ## What it finds
 
@@ -72,6 +73,10 @@ Your agent then has:
 | `ui_find_component` (MCP) | Before writing a component: the existing one, its import, props and a real usage |
 | `npx youiyoux check --diff` | After UI edits: what the change adds, each with its fix. `--strict` fails CI |
 | `ui_render` (MCP) | After changing a component: screenshots, accessibility issues, diff against base |
+
+<img src="docs/images/find-component.png" width="720" alt="youiyoux's ui_find_component asked for a save button on the example app: 1 existing component fits, Button from @/components/ui, with its props, a real usage and where it is used">
+
+<img src="docs/images/check-diff.png" width="720" alt="youiyoux check --diff on a new hand-styled Save button: a native button where Button exists, and a radius and two colours the theme's tokens already hold, each with its fix">
 
 Undo with `npx youiyoux agents remove`. Agent reference: [docs/agents.md](docs/agents.md) and [llms.txt](llms.txt).
 
