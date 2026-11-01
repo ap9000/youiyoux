@@ -18,12 +18,12 @@
 import { clsx } from "clsx";
 import { PlugZap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { ProposalDoc, RequestDoc } from "@youiyoux/core";
+import type { RequestDoc } from "@youiyoux/core";
 import { bridgeHead, bridgeMessage, bridgeReply, bridgeSnippet, routeAt, type BridgeMessage, type BridgeReply, type LiveHandle, type LiveProps, type LiveRawPlace, type LiveView } from "../../data/live.ts";
 import { matchPlaces, type Placed } from "../../data/places.ts";
 import type { PlacedComponent } from "../../data/types.ts";
 import type { ProjectLookalike, Site } from "../../data/usage.ts";
-import { workflowApi } from "../../data/workflow.ts";
+import { workflowApi, type ProposalView } from "../../data/workflow.ts";
 import { pct } from "../../lib/format.ts";
 import { Button } from "../../ui/Button.tsx";
 import { CodeBlock } from "../../ui/CodeBlock.tsx";
@@ -62,8 +62,8 @@ interface Props {
   requests: readonly RequestDoc[];
   onPin: (request: RequestDoc, at: { clientX: number; clientY: number }) => void;
   /** An agent's open options on this screen, and opening one with its component in the page. */
-  offers?: readonly ProposalDoc[];
-  onOffer?: (proposal: ProposalDoc, at: { clientX: number; clientY: number }, live: LiveHandle) => void;
+  offers?: readonly ProposalView[];
+  onOffer?: (proposal: ProposalView, at: { clientX: number; clientY: number }, live: LiveHandle) => void;
   selected?: boolean;
 }
 

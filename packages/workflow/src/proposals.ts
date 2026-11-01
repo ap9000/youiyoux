@@ -11,7 +11,7 @@
  * proposes, and reads what was picked. A file that does not validate is listed as unreadable,
  * never dropped and never rewritten.
  */
-import { createHmac, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { lstat, mkdir, readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -70,10 +70,25 @@ export async function decisionsKey(file: string, make: boolean): Promise<string 
   return key;
 }
 
-/** A decision's seal: what was decided, by whom and when, on which proposal, with the person's key. */
-export function decisionSeal(key: string, p: Pick<ProposalDoc, "id" | "for" | "status" | "choice" | "decidedBy" | "decidedAt" | "request" | "options">): string {
-  const what = [p.id, p.for ?? null, p.status, p.choice ?? null, p.decidedBy?.kind ?? null, p.decidedBy?.name ?? null, p.decidedAt ?? null, p.request ?? null, p.options.map((o) => [o.id, o.label, o.set, o.text])];
-  return createHmac("sha256", key).update(`youiyoux-decision:${JSON.stringify(what)}`).digest("hex");
+/** JSON with every object's keys in order: the same text for the same document, however it was written. */
+function canonical(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (value !== null && typeof value === "object") return `{${Object.keys(value).sort().filter((k) => (value as Record<string, unknown>)[k] !== undefined).map((k) => `${JSON.stringify(k)}:${canonical((value as Record<string, unknown>)[k])}`).join(",")}}`;
+  return JSON.stringify(value);
+}
+const without = (doc: ProposalDoc, keys: readonly string[]): Record<string, unknown> => Object.fromEntries(Object.entries(doc).filter(([key]) => !keys.includes(key)));
+
+/** What deciding changes; everything else is the proposal a person saw. */
+const DECISION = ["status", "choice", "decidedBy", "decidedAt", "request", "seal", "updatedAt"] as const;
+
+/** The proposal as a person sees it, apart from any decision: what the hub shows them, and what deciding must still find. */
+export function proposalDigest(p: ProposalDoc): string {
+  return createHash("sha256").update(canonical(without(p, DECISION))).digest("hex");
+}
+
+/** A decision's seal: the whole decided document (its project, screen, component, ask, author, options and the decision), with the person's key. */
+export function decisionSeal(key: string, p: ProposalDoc): string {
+  return createHmac("sha256", key).update(`youiyoux-decision:${canonical(without(p, ["seal", "updatedAt"]))}`).digest("hex");
 }
 
 /** Why a proposal can't be shown, or null. */
@@ -104,8 +119,11 @@ export interface ProposalList {
   readonly unreadable: Array<{ file: string; reason: string }>;
 }
 
-/** A person's decision: one option (and the change request it became, when it couldn't be written), or none of them. */
-export type ProposalDecision = { readonly choice: (typeof OPTION_IDS)[number]; readonly request?: string } | { readonly dismiss: true };
+/**
+ * A person's decision: one option (and the change request it became, when it couldn't be written),
+ * or none of them; `seen` is the proposal they saw (proposalDigest), which deciding must still find.
+ */
+export type ProposalDecision = ({ readonly choice: (typeof OPTION_IDS)[number]; readonly request?: string } | { readonly dismiss: true }) & { readonly seen: string };
 
 export interface ProposalStoreOptions {
   readonly now?: () => Date;
@@ -218,15 +236,24 @@ export class ProposalStore {
     return this.write({ schema: "youi.proposal/v1", id, project: this.project, route: input.route, target: input.target, ask, author: authorOf(actor), createdAt: at, updatedAt: at, options, status: "open", ...(input.for ? { for: input.for } : {}) });
   }
 
-  /** A person picks one option, or dismisses them all; an agent never decides. */
-  async decide(actor: Actor, id: string, decision: ProposalDecision): Promise<ProposalDoc> {
+  /**
+   * A person picks one option, or dismisses them all; an agent never decides. Only on the proposal
+   * they saw (`seen`), still open, and still held to its contract and its request (`check`); sealed
+   * from its own known fields, never whatever else the file holds.
+   */
+  async decide(actor: Actor, id: string, decision: ProposalDecision, check: ProposalCheck): Promise<ProposalDoc> {
     if (actor.kind !== "person") throw new WorkflowError("forbidden", `an ${actor.kind} cannot pick among options: a person picks one on the Screens canvas`);
     const proposal = await this.get(id);
     if (proposal.status !== "open") throw new WorkflowError("conflict", `${id} is already ${proposal.status}`);
+    if (decision.seen !== proposalDigest(proposal)) throw new WorkflowError("stale", `${id}'s options changed since you saw them: look at them again before deciding`);
+    const problem = await proposalProblem(proposal, check);
+    if (problem) throw new WorkflowError("invalid", `${id} can't be decided: ${problem}`);
     const key = await this.options.sealKey?.();
     if (!key) throw new WorkflowError("forbidden", "deciding needs youiyoux's key to seal it: decide in the hub (youiyoux ui --project)");
     const at = this.now();
-    const decided = { ...proposal, updatedAt: at, decidedBy: authorOf(actor), decidedAt: at };
+    const p = proposal;
+    const open: ProposalDoc = { schema: p.schema, id: p.id, project: p.project, route: p.route, target: p.target, ask: p.ask, author: p.author, createdAt: p.createdAt, options: p.options, ...(p.for ? { for: p.for } : {}), status: "open", updatedAt: at };
+    const decided = { ...open, decidedBy: authorOf(actor), decidedAt: at };
     const sealed = (doc: ProposalDoc): ProposalDoc => ({ ...doc, seal: decisionSeal(key, doc) });
     if ("dismiss" in decision) return this.write(sealed({ ...decided, status: "dismissed" }));
     if (!proposal.options.some((o) => o.id === decision.choice)) throw new WorkflowError("bad-request", `${id} has no option ${decision.choice}`);

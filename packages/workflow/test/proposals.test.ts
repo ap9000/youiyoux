@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { ComponentContract, ProposalDoc } from "@youiyoux/core";
-import { decisionsKey, ProposalStore, RequestStore, type ProposalCheck } from "../src/index.ts";
+import { decisionsKey, proposalDigest, ProposalStore, RequestStore, type ProposalCheck } from "../src/index.ts";
 
 const BUTTON = { id: "youi:demo/component/button", name: "Button", props: { variant: { type: "enum", values: ["default", "outline", "ghost"], default: "default", required: false }, onClick: { type: "function", required: false }, old: { type: "string", deprecated: "use label", required: false }, label: { type: "string", required: false } } } as unknown as ComponentContract;
 const TARGET = { route: "/flows", scope: "here", name: "Button", element: "youi:demo/component/button", file: "src/app.tsx", line: 12, box: { x: 10, y: 20, width: 80, height: 32 }, page: { width: 1440, height: 900 } } as const;
@@ -77,9 +77,18 @@ describe("proposals read from disk", () => {
     expect((await store.list(await check())).unreadable[0]!.reason).toBe("it is open but carries a decision");
     write(proposal({ author: PERSON }));
     expect((await store.list(await check())).unreadable[0]!.reason).toBe("its author isn't an agent: options are offered by agents");
-    // Decided in the hub: sealed, and shown.
+    // Decided in the hub on what the person saw: sealed, and shown.
     write(proposal());
-    const decided = await store.decide(PERSON, "p-00000000aa", { choice: "b" });
+    const seen = proposalDigest(proposal());
+    // The file changed after they saw it: nothing is decided.
+    write(proposal({ ask: "Something else" }));
+    await expect(store.decide(PERSON, "p-00000000aa", { choice: "b", seen }, await check())).rejects.toThrow(/options changed since you saw them/);
+    // A proposal that fails its checks is never sealed, whoever saw it.
+    const bad = proposal({ options: [{ id: "a", label: "Loud", why: "x", set: [{ prop: "variant", value: "neon" }], text: null }, { id: "b", label: "B", why: "x", set: [], text: "B" }] });
+    write(bad);
+    await expect(store.decide(PERSON, "p-00000000aa", { choice: "b", seen: proposalDigest(bad) }, await check())).rejects.toThrow(/can't be decided: option a/);
+    write(proposal());
+    const decided = await store.decide(PERSON, "p-00000000aa", { choice: "b", seen }, await check());
     expect(decided.seal).toMatch(/^[0-9a-f]{64}$/);
     expect((await store.list(await check())).proposals.map((p) => [p.id, p.status])).toEqual([["p-00000000aa", "chosen"]]);
     expect((await stat(keyFile)).mode & 0o777).toBe(0o600);
@@ -87,9 +96,14 @@ describe("proposals read from disk", () => {
     expect((await store.list({ ...(await check()), sealKey: "0".repeat(64) })).unreadable).toHaveLength(1);
     write({ ...decided, choice: "a" });
     expect((await store.list(await check())).unreadable[0]!.reason).toBe("its decision wasn't made in your hub: its seal doesn't match");
+    // The seal covers the whole document: moving it to another component, or rewording why, breaks it.
+    write({ ...decided, target: { ...decided.target, box: { x: 1, y: 1, width: 1, height: 1 } } });
+    expect((await store.list(await check())).unreadable[0]!.reason).toBe("its decision wasn't made in your hub: its seal doesn't match");
+    write({ ...decided, options: decided.options.map((o) => ({ ...o, why: "Reworded" })) });
+    expect((await store.list(await check())).unreadable).toHaveLength(1);
     // Without the key, nothing can be decided.
     write(proposal());
-    await expect(new ProposalStore(root, "acme").decide(PERSON, "p-00000000aa", { dismiss: true })).rejects.toThrow(/deciding needs youiyoux's key/);
+    await expect(new ProposalStore(root, "acme").decide(PERSON, "p-00000000aa", { dismiss: true, seen }, await check())).rejects.toThrow(/deciding needs youiyoux's key/);
   });
 
   test("one proposal answers a request: its id is the request's hex, and a second is refused", async () => {

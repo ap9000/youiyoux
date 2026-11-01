@@ -10,7 +10,8 @@ import { ScreensCanvas } from "../src/screens/screens/ScreensCanvas.tsx";
 
 const AT = "2026-11-01T10:00:00.000Z";
 const CONTRACT = { name: "Button", props: { variant: { type: "enum", values: ["default", "outline", "ghost"], default: "default", required: false }, size: { type: "enum", values: ["default", "sm"], default: "default", required: false } } } as unknown as ComponentContract;
-const proposal = (patch: Partial<ProposalDoc> = {}): ProposalDoc => ({
+const proposal = (patch: Partial<ProposalDoc> = {}): ProposalDoc & { digest: string } => ({
+  digest: "d".repeat(64),
   schema: "youi.proposal/v1", id: "p-0123456789", project: "app", route: "/a", ask: "Make the main action clearer", author: { kind: "agent", name: "agent (MCP)" }, createdAt: AT, updatedAt: AT, status: "open",
   target: { name: "Button", element: "youi:demo/component/button", file: "app/index.tsx", line: 13, column: 8, box: { x: 24, y: 80, width: 120, height: 36 }, page: { width: 1440, height: 900 } },
   options: [
@@ -64,7 +65,7 @@ describe("an agent's options", () => {
     await waitFor(() => expect(document.querySelector('[data-offer="written"]')).not.toBeNull());
     expect(posts.slice(-2).map((p) => [p.path, p.body])).toEqual([
       ["/api/live/edit", expect.objectContaining({ write: { hash: HASH } })],
-      ["/api/proposals/p-0123456789/decision", { choice: "b" }],
+      ["/api/proposals/p-0123456789/decision", { choice: "b", seen: "d".repeat(64) }],
     ]);
     expect(changed).toHaveBeenCalledWith(expect.objectContaining({ status: "chosen", choice: "b" }));
     expect(live.forget).toHaveBeenCalled();
@@ -87,14 +88,14 @@ describe("an agent's options", () => {
     await waitFor(() => expect(posts.at(-1)!.path).toBe("/api/proposals/p-0123456789/decision"));
     expect(posts.slice(-2).map((p) => [p.path, p.body])).toEqual([
       ["/api/requests", { kind: "change", body: 'Set variant="default" on Button at app/index.tsx:13, as agent (MCP) offered for "Make the main action clearer" on /a.', target: { route: "/a", scope: "here", name: "Button", element: "youi:demo/component/button", file: "app/index.tsx", line: 13, box: { x: 24, y: 80, width: 120, height: 36 }, page: { width: 1440, height: 900 } } }],
-      ["/api/proposals/p-0123456789/decision", { choice: "a", request: "r-0123456789" }],
+      ["/api/proposals/p-0123456789/decision", { choice: "a", request: "r-0123456789", seen: "d".repeat(64) }],
     ]);
     cleanup();
     const done = vi.fn();
     render(<OfferPanel proposal={proposal()} live={null} contract={CONTRACT} onChange={() => undefined} onRequest={() => undefined} onDone={done} />);
     fireEvent.click(screen.getByRole("button", { name: "Dismiss all" }));
     await waitFor(() => expect(done).toHaveBeenCalled());
-    expect(posts.at(-1)).toEqual({ path: "/api/proposals/p-0123456789/decision", body: { dismiss: true } });
+    expect(posts.at(-1)).toEqual({ path: "/api/proposals/p-0123456789/decision", body: { dismiss: true, seen: "d".repeat(64) } });
   });
 });
 

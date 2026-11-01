@@ -1,12 +1,12 @@
 /** Options an agent puts on the Screens canvas: what it reads first, every option held to the component's contract, and what a person picked. */
-import { cp, mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { screenSlug } from "@youiyoux/scanner";
-import { decisionsKey, ProposalStore, RequestStore } from "@youiyoux/workflow";
+import { decisionsKey, proposalDigest, ProposalStore, RequestStore } from "@youiyoux/workflow";
 import { createServer } from "../src/index.ts";
 
 const EXAMPLES = join(import.meta.dirname, "../../../examples");
@@ -110,12 +110,15 @@ describe("options on the Screens canvas, over MCP", () => {
   test("only a person picks; the agent reads what was picked, and what is left to do", async () => {
     const store = new ProposalStore(app, "demo-app", { sealKey: () => decisionsKey(join(dir, "decisions.key"), true) });
     const [open] = (await store.list()).proposals;
-    await expect(store.decide({ kind: "agent", name: "agent (MCP)" }, open!.id, { choice: "a" })).rejects.toThrow(/a person picks one on the Screens canvas/);
-    await store.decide({ kind: "person", name: "captain" }, open!.id, { choice: "b", request: "r-0123456789" });
+    const button = JSON.parse(await readFile(join(dir, "demo-design/components/button/button.contract.json"), "utf8"));
+    const check = { contractOf: (id: string) => (id === button.id ? button : null), request: async () => null, sealKey: await decisionsKey(join(dir, "decisions.key"), true) };
+    const seen = proposalDigest(open!);
+    await expect(store.decide({ kind: "agent", name: "agent (MCP)" }, open!.id, { choice: "a", seen }, check)).rejects.toThrow(/a person picks one on the Screens canvas/);
+    await store.decide({ kind: "person", name: "captain" }, open!.id, { choice: "b", request: "r-0123456789", seen }, check);
     expect((await call("screens_offers")).data).toEqual({ proposals: [], next: "No open proposals." });
     const [chosen] = (await call("screens_offers", { status: "chosen" })).data.proposals as Array<Record<string, unknown>>;
     expect(chosen).toMatchObject({ choice: "b", request: "r-0123456789", next: "The person picked Quieter, filed as change request r-0123456789: do that request (requests_list)." });
-    await expect(store.decide({ kind: "person", name: "captain" }, open!.id, { dismiss: true })).rejects.toThrow(/is already chosen/);
+    await expect(store.decide({ kind: "person", name: "captain" }, open!.id, { dismiss: true, seen }, check)).rejects.toThrow(/is already chosen/);
   });
 
   test("an options request a person filed is answered for its own component and ask, once; a change request isn't one", async () => {

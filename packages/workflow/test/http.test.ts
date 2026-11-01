@@ -221,8 +221,13 @@ describe("options an agent put on the canvas", () => {
     const proposal = await store.create(agent, { route: "/", target: { name: "Title", box: { x: 0, y: 0, width: 10, height: 10 } }, ask: "Warmer words", options: [{ label: "Hello", why: "Friendly.", set: [], text: "Hello" }, { label: "Welcome", why: "Warmer.", set: [], text: "Welcome back" }] }, null);
     try {
       const listed = await call("GET", "/api/proposals");
-      expect((listed.json.proposals as Array<{ id: string }>).map((p) => p.id)).toEqual([proposal.id]);
-      const decide = (body: unknown, key: string | null = KEY) => call("POST", `/api/proposals/${proposal.id}/decision`, key ? { "x-youi-session": key } : {}, body);
+      const [shown] = listed.json.proposals as Array<{ id: string; digest: string }>;
+      expect(shown!.id).toBe(proposal.id);
+      const seen = shown!.digest;
+      const decide = (body: Record<string, unknown>, key: string | null = KEY) => call("POST", `/api/proposals/${proposal.id}/decision`, key ? { "x-youi-session": key } : {}, { seen, ...body });
+      // A decision names what the person saw; another proposal's isn't this one.
+      expect((await decide({ choice: "a", seen: "0".repeat(64) })).json.code).toBe("stale");
+      expect((await decide({ choice: "a", seen: undefined })).status).toBe(400);
       expect((await decide({ choice: "a" }, null)).status).toBe(401);
       expect((await decide({ choice: "z" })).status).toBe(400);
       expect((await decide({ choice: "c" })).status).toBe(400);

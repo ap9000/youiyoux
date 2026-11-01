@@ -24,7 +24,7 @@ import { clsx } from "clsx";
 import { ArrowUpRight, Hand, Image, Maximize, MessageSquarePlus, Minus, MousePointer2, Plus, Radio, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import { Link, useLocation } from "wouter";
-import type { ComponentContract, ElementId, ProposalDoc, RequestDoc, RequestTarget } from "@youiyoux/core";
+import type { ComponentContract, ElementId, RequestDoc, RequestTarget } from "@youiyoux/core";
 import type { Scheme } from "../../app/theme.tsx";
 import { dataUrl } from "../../data/load.ts";
 import { elementOf, matchPlaces, pickKey, requestTarget, usePlaces, type Placed } from "../../data/places.ts";
@@ -40,7 +40,7 @@ import { LiveEditor } from "./LiveEditor.tsx";
 import { OfferPanel, OfferPin } from "./Offers.tsx";
 import type { LiveHandle } from "../../data/live.ts";
 import { Segmented } from "../../ui/Segmented.tsx";
-import type { LiveInfo } from "../../data/workflow.ts";
+import type { LiveInfo, ProposalView } from "../../data/workflow.ts";
 import { pct } from "../../lib/format.ts";
 
 /** A screen's width on the board, in board pixels. */
@@ -124,8 +124,8 @@ interface CardProps {
   requests: readonly RequestDoc[];
   onPin: (request: RequestDoc, at: { clientX: number; clientY: number }) => void;
   /** An agent's open options on this screen, and opening one (with its component in the page, when live). */
-  offers: readonly ProposalDoc[];
-  onOffer: (proposal: ProposalDoc, at: { clientX: number; clientY: number }, live: LiveHandle | null) => void;
+  offers: readonly ProposalView[];
+  onOffer: (proposal: ProposalView, at: { clientX: number; clientY: number }, live: LiveHandle | null) => void;
   onLoad: () => void;
   /** Commenting: the components are loaded and pickable. */
   commenting: boolean;
@@ -304,8 +304,8 @@ interface CanvasProps {
   /** A System element's contract, for the choices a live edit offers. */
   contractOf?: (element: ElementId) => ComponentContract | null;
   /** Options agents put on the canvas, and one decided here as the service returned it. */
-  proposals?: readonly ProposalDoc[];
-  onProposal?: (proposal: ProposalDoc) => void;
+  proposals?: readonly ProposalView[];
+  onProposal?: (proposal: ProposalView) => void;
 }
 
 export function ScreensCanvas({ screens, scheme, requests, onRequest = () => undefined, nameOf: elementName = (id) => id, live = null, contractOf = () => null, proposals = [], onProposal = () => undefined }: CanvasProps) {
@@ -368,7 +368,7 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
     setDraft({ screen, target: requestTarget(screen.route, placed, page), select: pickKey(placed) ?? element, name: nameOf(placed), elementName: element ? elementName(element) : null, at: boardPoint(at), live });
     setMode(live ? "edit" : "comment");
   };
-  const openOffer = (proposal: ProposalDoc, at: { clientX: number; clientY: number }, handle: LiveHandle | null): void => {
+  const openOffer = (proposal: ProposalView, at: { clientX: number; clientY: number }, handle: LiveHandle | null): void => {
     setDraft(null);
     setThread(null);
     setOffer({ id: proposal.id, at: boardPoint(at), live: handle });
@@ -664,7 +664,7 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
 }
 
 /** An agent's options on the board: previewed on the live screen, then one written or filed, or all dismissed. */
-function OfferBubble({ offer, view, frame, proposals, contractOf, onProposal, onRequest, onClose }: { offer: { id: string; at: Point; live: LiveHandle | null }; view: View; frame: HTMLDivElement | null; proposals: readonly ProposalDoc[]; contractOf: (element: ElementId) => ComponentContract | null; onProposal: (proposal: ProposalDoc) => void; onRequest: (request: RequestDoc) => void; onClose: () => void }) {
+function OfferBubble({ offer, view, frame, proposals, contractOf, onProposal, onRequest, onClose }: { offer: { id: string; at: Point; live: LiveHandle | null }; view: View; frame: HTMLDivElement | null; proposals: readonly ProposalView[]; contractOf: (element: ElementId) => ComponentContract | null; onProposal: (proposal: ProposalView) => void; onRequest: (request: RequestDoc) => void; onClose: () => void }) {
   const proposal = proposals.find((p) => p.id === offer.id);
   if (!proposal) return null;
   return (

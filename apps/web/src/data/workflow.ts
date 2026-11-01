@@ -51,6 +51,9 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   return data as T;
 }
 
+/** A proposal as the hub shows it, with the digest a decision on it names back (what the person saw). */
+export type ProposalView = ProposalDoc & { readonly digest: string };
+
 /** A live edit for the code: the place's file and line, props with their values (and the contract's default), new text. */
 export interface LiveCodeEditInput {
   readonly file: string;
@@ -110,9 +113,9 @@ export const workflowApi = {
   /** A live edit in the code: what it changes on the element at the place's line (or why it can't), and with `write`, written. */
   liveEdit: (edit: LiveCodeEditInput) => call<LiveCodeEdit>("POST", "/live/edit", edit),
   /** Options agents put on the Screens canvas (screens_offer), in the product's .youi/proposals. */
-  proposals: () => call<{ proposals: ProposalDoc[]; unreadable: Array<{ file: string; reason: string }> }>("GET", "/proposals"),
-  /** A person's pick (and the request it became, when it couldn't be written), or none of them. */
-  decideProposal: (id: string, decision: { choice: string; request?: string } | { dismiss: true }) => call<ProposalDoc>("POST", `/proposals/${id}/decision`, decision),
+  proposals: () => call<{ proposals: ProposalView[]; unreadable: Array<{ file: string; reason: string }> }>("GET", "/proposals"),
+  /** A person's pick (and the request it became, when it couldn't be written), or none of them, on the proposal they saw (its digest). */
+  decideProposal: (proposal: ProposalView, decision: { choice: string; request?: string } | { dismiss: true }) => call<ProposalView>("POST", `/proposals/${proposal.id}/decision`, { ...decision, seen: proposal.digest }),
   /** Coding agents on this machine, and which start the youiyoux MCP server in this project. */
   agents: () => call<AgentsView>("GET", "/agents"),
   /** Connect these agents as youiyoux agents install does, then check each server answers. */

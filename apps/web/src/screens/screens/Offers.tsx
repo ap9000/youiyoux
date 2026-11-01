@@ -8,13 +8,13 @@
 import { clsx } from "clsx";
 import { Eye, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { ComponentContract, ProposalDoc, RequestDoc, RequestTarget } from "@youiyoux/core";
+import type { ComponentContract, RequestDoc, RequestTarget } from "@youiyoux/core";
 import type { LiveHandle, LiveValue } from "../../data/live.ts";
-import { asRequestError, workflowApi, type WorkflowRequestError } from "../../data/workflow.ts";
+import { asRequestError, workflowApi, type ProposalView, type WorkflowRequestError } from "../../data/workflow.ts";
 import { Button } from "../../ui/Button.tsx";
 import { WriteToCode } from "./WriteToCode.tsx";
 
-type Option = ProposalDoc["options"][number];
+type Option = ProposalView["options"][number];
 
 /** An option's changes in words: `variant="ghost"`, `text "Create flow"`. */
 export function changesOf(option: Pick<Option, "set" | "text">): string {
@@ -22,13 +22,13 @@ export function changesOf(option: Pick<Option, "set" | "text">): string {
 }
 
 /** The proposal's component as a request names it, for the request an option is filed as. */
-export function offerTarget(proposal: ProposalDoc): RequestTarget {
+export function offerTarget(proposal: ProposalView): RequestTarget {
   const t = proposal.target;
   return { route: proposal.route, scope: "here", name: t.name, ...(t.element ? { element: t.element } : {}), ...(t.file ? { file: t.file } : {}), ...(t.line ? { line: t.line } : {}), box: t.box, ...(t.page ? { page: t.page } : {}) };
 }
 
 /** A pin for an agent's options, where the component is: a spark and how many there are. */
-export function OfferPin({ proposal, onOpen, style }: { proposal: ProposalDoc; onOpen: (at: { clientX: number; clientY: number }) => void; style: { left: string; top: string } }) {
+export function OfferPin({ proposal, onOpen, style }: { proposal: ProposalView; onOpen: (at: { clientX: number; clientY: number }) => void; style: { left: string; top: string } }) {
   return (
     <button
       type="button"
@@ -50,11 +50,11 @@ export function OfferPin({ proposal, onOpen, style }: { proposal: ProposalDoc; o
 }
 
 interface Props {
-  proposal: ProposalDoc;
+  proposal: ProposalView;
   /** The component on the live screen, to preview options in; null on a picture. */
   live: LiveHandle | null;
   contract: ComponentContract | null;
-  onChange: (proposal: ProposalDoc) => void;
+  onChange: (proposal: ProposalView) => void;
   /** A request filed for an option, or the options request closed once decided, as the service returned it. */
   onRequest: (request: RequestDoc) => void;
   onDone: () => void;
@@ -82,7 +82,7 @@ export function OfferPanel({ proposal, live, contract, onChange, onRequest, onDo
   // The pick is recorded for the agent; an options request it answers is closed with it (a person's act).
   const decide = (decision: { choice: string; request?: string } | { dismiss: true }): Promise<void> =>
     workflowApi
-      .decideProposal(proposal.id, decision)
+      .decideProposal(proposal, decision)
       .then(async (decided) => {
         onChange(decided);
         if (!proposal.for) return;

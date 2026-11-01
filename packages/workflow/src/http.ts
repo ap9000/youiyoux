@@ -16,6 +16,7 @@ import { z } from "zod";
 import { COMPONENT_STATES, DefinitionError, ElementId, LibraryEntry, REQUEST_STATUSES, RequestTarget, RuleCheck, RuleRollout } from "@youiyoux/core";
 import { BRIDGE_PATH, liveBridge } from "@youiyoux/scanner";
 import type { Actor, AgentsSetup, ApiError } from "./api.ts";
+import { proposalDigest } from "./proposals.ts";
 import { WorkflowError } from "./policy.ts";
 import type { RuleWorkflow } from "./service.ts";
 
@@ -73,7 +74,8 @@ const LiveEditInput = z.object({
   write: z.object({ hash: z.string().regex(/^[0-9a-f]{64}$/) }).nullable().optional(),
 });
 /** A person's decision on an agent's options: one of them (and the request it became), or none. */
-const DecisionInput = z.union([z.object({ choice: z.enum(["a", "b", "c", "d"]), request: z.string().regex(/^r-[0-9a-f]{10}$/).optional() }).strict(), z.object({ dismiss: z.literal(true) }).strict()]);
+const SEEN = z.string().regex(/^[0-9a-f]{64}$/);
+const DecisionInput = z.union([z.object({ choice: z.enum(["a", "b", "c", "d"]), request: z.string().regex(/^r-[0-9a-f]{10}$/).optional(), seen: SEEN }).strict(), z.object({ dismiss: z.literal(true), seen: SEEN }).strict()]);
 /** The agents to connect to this project (Connect your agent). */
 const AgentsInput = z.object({ agents: z.array(z.enum(["claude", "codex", "cursor"])).min(1).max(3) });
 
@@ -178,9 +180,16 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string, opti
     if (method === "POST") return send(res, 200, await options.agents.connect([...new Set(parse(AgentsInput, await readJson(req)).agents)]));
   }
   if (path === "/api/live" && method === "GET") return send(res, 200, (await workflow.live()).info());
-  if (path === "/api/proposals" && method === "GET") return send(res, 200, await (await workflow.proposals()).list(await workflow.proposalCheck()));
+  // Each with what the hub shows (its digest), which a decision names back.
+  if (path === "/api/proposals" && method === "GET") {
+    const { proposals, unreadable } = await (await workflow.proposals()).list(await workflow.proposalCheck());
+    return send(res, 200, { proposals: proposals.map((p) => ({ ...p, digest: proposalDigest(p) })), unreadable });
+  }
   const proposal = /^\/api\/proposals\/(p-[0-9a-f]{10})\/decision$/.exec(path);
-  if (proposal && method === "POST") return send(res, 200, await (await workflow.proposals()).decide(actor, proposal[1]!, parse(DecisionInput, await readJson(req))));
+  if (proposal && method === "POST") {
+    const decided = await (await workflow.proposals()).decide(actor, proposal[1]!, parse(DecisionInput, await readJson(req)), await workflow.proposalCheck());
+    return send(res, 200, { ...decided, digest: proposalDigest(decided) });
+  }
   if (path === "/api/live/edit" && method === "POST") {
     const { file, write, ...edit } = parse(LiveEditInput, await readJson(req));
     return send(res, 200, await (await workflow.live()).edit(file, { ...edit, column: edit.column ?? null, text: edit.text ?? null }, write ?? null));
