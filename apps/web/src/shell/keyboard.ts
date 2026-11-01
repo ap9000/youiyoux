@@ -136,6 +136,22 @@ export const SHORTCUTS: ReadonlyArray<{ readonly group: string; readonly items: 
     ],
   },
   {
+    group: "Screens canvas",
+    items: [
+      { keys: ["V"], label: "Move: select a screen, use a live one" },
+      { keys: ["H"], label: "Hand: drag to pan" },
+      { keys: ["Space"], label: "Hand while held" },
+      { keys: ["C"], label: "Comment on a component" },
+      { keys: ["Enter"], label: "Open the selected screen" },
+      { keys: ["⇧", "1"], label: "Fit every screen" },
+      { keys: ["⇧", "2"], label: "Zoom to the selected screen" },
+      { keys: ["⇧", "0"], label: "Zoom to 100%" },
+      { keys: ["⌘", "="], label: "Zoom in (or +, ⌘-scroll, pinch)" },
+      { keys: ["⌘", "−"], label: "Zoom out (or −)" },
+      { keys: ["Esc"], label: "Close, then back to Move" },
+    ],
+  },
+  {
     group: "Lists",
     items: [
       { keys: ["j"], label: "Next item" },

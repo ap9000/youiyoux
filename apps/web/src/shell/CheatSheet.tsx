@@ -17,7 +17,7 @@ export function CheatSheet({ onClose }: { onClose: () => void }) {
             </Dialog.Close>
           </header>
           <Dialog.Description className="sr-only">Shortcuts work anywhere except while typing in a field.</Dialog.Description>
-          <div className="grid gap-5 p-5">
+          <div className="grid max-h-[70vh] gap-5 overflow-y-auto p-5">
             {SHORTCUTS.map((group) => (
               <section key={group.group} className="space-y-1.5">
                 <h3 className="text-caption text-muted">{group.group}</h3>

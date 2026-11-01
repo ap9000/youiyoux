@@ -1,20 +1,27 @@
 /**
  * Every screen of every project on one board: each project its pictures in rows of four, each with its
- * open requests as numbered pins. Drag to pan, scroll to pan, ⌘/Ctrl-scroll or pinch to zoom,
- * + / − / 0 on the keyboard, and Fit. A screen opens its page. Pictures are the thumbnails while
- * zoomed out and the full captures when zoomed in.
+ * open requests as numbered pins. Pictures are the thumbnails while zoomed out and the full captures
+ * when zoomed in.
  *
- * Commenting happens on the board, as in a design tool: C (or Comment) turns it on, the component
- * under the pointer is outlined and named on any screen whose capture placed its components, and a
- * click opens a comment or change request on it beside the click. A pin opens its request's thread
- * there too, to reply, close or reopen. Esc closes what is open, then stops commenting.
+ * It is worked as a design tool's canvas is, with its keys (TOOL_KEYS, and SHORTCUTS' Canvas group):
+ *   Move (V)     click a screen to select it, double-click or Enter to open its page; drag the board
+ *                to pan; a live screen takes the pointer, to use the app
+ *   Hand (H)     drag anywhere to pan, live screens included; nothing is clicked. Space held is the
+ *                hand from any tool, until it is let go
+ *   Comment (C)  the component under the pointer is outlined and named on any screen whose capture
+ *                placed its components, and a click opens a comment or change request on it beside
+ *                the click; C again goes back to Move
+ * Scroll pans (Shift: sideways), ⌘/Ctrl-scroll or a pinch zooms at the pointer, + − or ⌘= ⌘− zoom,
+ * ⇧1 fits every screen, ⇧0 is 100% and ⇧2 zooms to the selected screen. A pin opens its request's
+ * thread on the board, to reply, close or reopen. Esc closes what is open, then goes back to Move,
+ * then lets go of the selection.
  *
  * A screen of the product the local service serves can run live (LiveScreen): its card frames the
  * running app at the screen's address, to use as it is and to comment on the same way. At most
  * LIVE_AT_ONCE run at once, each being a whole page of the app; turning on another stops the first.
  */
 import { clsx } from "clsx";
-import { ArrowUpRight, Image, Maximize, MessageSquarePlus, Minus, Plus, Radio, X } from "lucide-react";
+import { ArrowUpRight, Hand, Image, Maximize, MessageSquarePlus, Minus, MousePointer2, Plus, Radio, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import { Link, useLocation } from "wouter";
 import type { ElementId, RequestDoc, RequestTarget } from "@youiyoux/core";
@@ -28,7 +35,7 @@ import { shotFile } from "../../ui/ScreenImage.tsx";
 import { IssueBadge } from "./IssueCounts.tsx";
 import { PlacesLayer } from "./PlacesOverlay.tsx";
 import { RequestComposer, RequestThread } from "./Requests.tsx";
-import { LiveScreen } from "./LiveScreen.tsx";
+import { LiveScreen, SELECTED } from "./LiveScreen.tsx";
 import type { LiveInfo } from "../../data/workflow.ts";
 import { pct } from "../../lib/format.ts";
 
@@ -49,6 +56,17 @@ const BUBBLE = 360;
 const EDGE = 12;
 /** Live screens running at once: each is a whole page of the app. */
 export const LIVE_AT_ONCE = 4;
+
+/** The canvas's tools, by the key that picks each, as in a design tool. */
+export type Tool = "move" | "hand" | "comment";
+export const TOOL_KEYS: Readonly<Record<string, Tool>> = { v: "move", h: "hand", c: "comment" };
+const TOOLS: ReadonlyArray<{ tool: Tool; key: string; label: string; icon: typeof Hand }> = [
+  { tool: "move", key: "V", label: "Move", icon: MousePointer2 },
+  { tool: "hand", key: "H", label: "Hand", icon: Hand },
+  { tool: "comment", key: "C", label: "Comment", icon: MessageSquarePlus },
+];
+/** A key the canvas leaves alone because it is being typed into a field. */
+const typing = (target: EventTarget | null): boolean => target instanceof HTMLElement && (/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) || target.isContentEditable);
 
 export interface View {
   readonly x: number;
@@ -100,8 +118,13 @@ interface CardProps {
   requests: readonly RequestDoc[];
   onPin: (request: RequestDoc, at: { clientX: number; clientY: number }) => void;
   onLoad: () => void;
-  /** Commenting: the components are loaded and pickable, and the picture is no longer a link. */
+  /** Commenting: the components are loaded and pickable. */
   commenting: boolean;
+  /** The hand: the card is a surface to pan from, its live app and pins out of reach. */
+  hand: boolean;
+  selected: boolean;
+  onSelect: () => void;
+  onOpen: () => void;
   project: ProjectSites;
   nameOf: (placed: Placed) => string;
   /** What the comment being written is about, when it is on this screen. */
@@ -113,7 +136,7 @@ interface CardProps {
   onLive: () => void;
 }
 
-function Card({ screen, scheme, full, requests, onPin, onLoad, commenting, project, nameOf, picking, onPick, live, running, onLive }: CardProps) {
+function Card({ screen, scheme, full, requests, onPin, onLoad, commenting, hand, selected, onSelect, onOpen, project, nameOf, picking, onPick, live, running, onLive }: CardProps) {
   const picked = shotFile(screen.shot, scheme, full ? "full" : "thumb");
   const open = requests.filter((r) => r.status !== "closed");
   const placesState = usePlaces(commenting && picked && !running ? screen.shot?.places : undefined);
@@ -131,8 +154,9 @@ function Card({ screen, scheme, full, requests, onPin, onLoad, commenting, proje
     </>
   );
   return (
-    <article className="shrink-0 space-y-2" style={{ width: CARD_WIDTH }} data-canvas-screen={`${screen.project}:${screen.route}`}>
-      <header className="flex min-w-0 items-center gap-2">
+    <article className="relative shrink-0 space-y-2" style={{ width: CARD_WIDTH }} data-canvas-screen={`${screen.project}:${screen.route}`} {...(selected ? { "data-selected": "" } : {})}>
+      {hand && <div className="absolute -inset-2 z-40 cursor-[inherit]" data-canvas-shield aria-hidden />}
+      <header className="flex min-w-0 items-center gap-2" onClick={(event) => !commenting && event.target === event.currentTarget && onSelect()}>
         <Link href={screenHref(screen.project, screen.route)} className="min-w-0 truncate font-mono text-mono text-ink hover:text-accent" draggable={false}>
           {screen.route === EVERY_SCREEN ? "every screen" : routeLabel(screen.route)}
         </Link>
@@ -168,9 +192,10 @@ function Card({ screen, scheme, full, requests, onPin, onLoad, commenting, proje
           onPick={(placed, page, at, route) => onPick(placed, page, at, route)}
           requests={requests}
           onPin={onPin}
+          selected={selected}
         />
       ) : (
-        <PictureFrame href={commenting ? null : screenHref(screen.project, screen.route)} label={`Open ${screen.project} ${routeLabel(screen.route)}`}>
+        <PictureFrame selected={selected} label={`${screen.project} ${routeLabel(screen.route)}`} onSelect={commenting ? null : onSelect} onOpen={commenting ? null : onOpen}>
           {picture}
           {picked &&
             requests.map((request, i) =>
@@ -207,14 +232,18 @@ function Card({ screen, scheme, full, requests, onPin, onLoad, commenting, proje
   );
 }
 
-/** A screen's picture: a link to its page, or, while commenting, a surface to pick on. */
-function PictureFrame({ href, label, children }: { href: string | null; label: string; children: ReactNode }) {
-  const frame = "relative block overflow-hidden rounded-md border border-line bg-surface shadow-raise";
-  if (href === null) return <div className={frame}>{children}</div>;
+/** A screen's picture: with Move, a click selects it and a double-click opens its page; while commenting, a surface to pick on. */
+function PictureFrame({ selected, label, onSelect, onOpen, children }: { selected: boolean; label: string; onSelect: (() => void) | null; onOpen: (() => void) | null; children: ReactNode }) {
   return (
-    <Link href={href} className={frame} draggable={false} aria-label={label}>
+    <div
+      className={clsx("relative block overflow-hidden rounded-md border bg-surface shadow-raise", selected ? SELECTED : "border-line")}
+      onClick={onSelect ?? undefined}
+      onDoubleClick={onOpen ?? undefined}
+      aria-label={label}
+      data-canvas-picture
+    >
       {children}
-    </Link>
+    </div>
   );
 }
 
@@ -266,7 +295,15 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
   viewRef.current = view;
   const drag = useRef<{ x: number; y: number; view: View; moved: boolean } | null>(null);
   const projects = [...new Set(screens.screens.map((s) => s.project))];
-  const [commenting, setCommenting] = useState(false);
+  const [tool, setTool] = useState<Tool>("move");
+  /** Space held: the hand from any tool, until it is let go. */
+  const [space, setSpace] = useState(false);
+  const active: Tool = space ? "hand" : tool;
+  const commenting = tool === "comment";
+  const [selected, setSelected] = useState<string | null>(null);
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
+  const openScreen = (screen: Screen): void => navigate(screenHref(screen.project, screen.route));
   const [draft, setDraft] = useState<Draft | null>(null);
   const [thread, setThread] = useState<{ id: string; at: Point } | null>(null);
   /** The live screens, oldest first, by project and route. */
@@ -323,18 +360,40 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
     touched.current = true;
     setView((v) => zoomAt(v, factor, at?.x ?? f.clientWidth / 2, at?.y ?? f.clientHeight / 2));
   }, []);
+  /** The selected screen filling the frame, as far as the zoom goes. */
+  const zoomToSelected = useCallback(() => {
+    const f = frame.current;
+    const card = selectedRef.current ? f?.querySelector(`[data-canvas-screen="${CSS.escape(selectedRef.current)}"]`) : null;
+    if (!f || !card) return;
+    const box = card.getBoundingClientRect();
+    const at = f.getBoundingClientRect();
+    if (box.width <= 0 || box.height <= 0) return;
+    touched.current = true;
+    setView((v) => {
+      const width = box.width / v.scale;
+      const height = box.height / v.scale;
+      const x = (box.left - at.left - v.x) / v.scale;
+      const y = (box.top - at.top - v.y) / v.scale;
+      const scale = clamp(Math.min((f.clientWidth - 64) / width, (f.clientHeight - 64) / height));
+      return { scale, x: (f.clientWidth - width * scale) / 2 - x * scale, y: (f.clientHeight - height * scale) / 2 - y * scale };
+    });
+  }, []);
 
-  // Esc closes what is open, then stops commenting; it works from inside a comment's text too.
+  // Esc closes what is open, then goes back to Move, then lets go of the selection; it works from inside a comment's text too.
   const escape = useCallback((): boolean => {
     if (draft || thread) {
       setDraft(null);
       setThread(null);
       return true;
     }
-    if (!commenting) return false;
-    setCommenting(false);
+    if (tool !== "move") {
+      setTool("move");
+      return true;
+    }
+    if (!selected) return false;
+    setSelected(null);
     return true;
-  }, [draft, thread, commenting]);
+  }, [draft, thread, tool, selected]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -342,18 +401,51 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
         if (escape()) event.preventDefault();
         return;
       }
-      if (event.target instanceof HTMLElement && /^(INPUT|TEXTAREA|SELECT)$/.test(event.target.tagName)) return;
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      if (event.key === "+" || event.key === "=") zoom(STEP);
+      if (typing(event.target)) return;
+      if (event.metaKey || event.ctrlKey) {
+        // ⌘= and ⌘− zoom the board, not the page.
+        if (event.altKey) return;
+        if (event.key === "=" || event.key === "+") zoom(STEP);
+        else if (event.key === "-") zoom(1 / STEP);
+        else return;
+        event.preventDefault();
+        return;
+      }
+      if (event.altKey) return;
+      if (event.key === " ") {
+        if (!event.repeat) setSpace(true);
+      } else if (event.shiftKey && event.code === "Digit1") fit();
+      else if (event.shiftKey && event.code === "Digit0") zoom(1 / viewRef.current.scale);
+      else if (event.shiftKey && event.code === "Digit2") zoomToSelected();
+      else if (event.key === "+" || event.key === "=") zoom(STEP);
       else if (event.key === "-") zoom(1 / STEP);
       else if (event.key === "0") fit();
-      else if (event.key === "c" || event.key === "C") setCommenting((on) => !on);
-      else return;
+      else if (event.key === "Enter" && selectedRef.current) {
+        const screen = screens.screens.find((s) => `${s.project}:${s.route}` === selectedRef.current);
+        if (!screen) return;
+        openScreen(screen);
+      } else if (TOOL_KEYS[event.key.toLowerCase()] && !event.shiftKey) {
+        const next = TOOL_KEYS[event.key.toLowerCase()]!;
+        // C again puts the comment tool down, as the button does.
+        setTool((now) => (now === next && next === "comment" ? "move" : next));
+      } else return;
       event.preventDefault();
     };
+    const onKeyUp = (event: KeyboardEvent): void => {
+      if (event.key !== " ") return;
+      setSpace(false);
+      if (!typing(event.target)) event.preventDefault();
+    };
+    const letGo = (): void => setSpace(false);
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [zoom, fit, escape]);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", letGo);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", letGo);
+    };
+  }, [zoom, fit, zoomToSelected, escape, screens]);
 
   // Wheel: pan, or zoom with ⌘/Ctrl (a trackpad pinch arrives as a ctrl-wheel). Not passive, so the page does not scroll too.
   useEffect(() => {
@@ -365,7 +457,9 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
       if (event.ctrlKey || event.metaKey) zoom(Math.exp(-event.deltaY * 0.002), { x: event.clientX - rect.left, y: event.clientY - rect.top });
       else {
         touched.current = true;
-        setView((v) => ({ ...v, x: v.x - event.deltaX, y: v.y - event.deltaY }));
+        // Shift turns a mouse wheel's scroll sideways, where the system does not already.
+        const [dx, dy] = event.shiftKey && event.deltaX === 0 ? [event.deltaY, 0] : [event.deltaX, event.deltaY];
+        setView((v) => ({ ...v, x: v.x - dx, y: v.y - dy }));
       }
     };
     f.addEventListener("wheel", onWheel, { passive: false });
@@ -403,19 +497,20 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
   const forScreen = (screen: Screen): RequestDoc[] => requests.filter((r) => r.target.route === screen.route && r.project === screen.project).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
   return (
-    <div className="relative min-h-0 flex-1 overflow-hidden bg-sunken" data-canvas>
+    <div className="relative min-h-0 flex-1 overflow-hidden bg-sunken" data-canvas data-tool={active}>
       <div
         ref={frame}
-        className={clsx("absolute inset-0 touch-none select-none", drag.current?.moved ? "cursor-grabbing" : "cursor-grab")}
+        className={clsx("absolute inset-0 touch-none select-none", active === "hand" ? (drag.current?.moved ? "cursor-grabbing" : "cursor-grab") : "cursor-default")}
         onPointerDown={down}
         onPointerMove={move}
         onPointerUp={up}
         onPointerCancel={up}
+        onClick={(event) => active === "move" && !(event.target as Element).closest("[data-canvas-screen]") && setSelected(null)}
         onWheel={(event: ReactWheelEvent) => event.stopPropagation()}
-        aria-label="Every screen on one board: drag or scroll to pan, ⌘ or Ctrl and scroll to zoom"
+        aria-label="Every screen on one board: V to select, H or Space to pan, C to comment; scroll to pan, ⌘ or Ctrl and scroll to zoom"
         role="region"
       >
-        <div ref={board} className="absolute top-0 left-0 inline-flex origin-top-left flex-col p-8" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`, gap: GAP * 1.5 }} data-board>
+        <div ref={board} className="absolute top-0 left-0 inline-flex origin-top-left flex-col p-8" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.scale})`, gap: GAP * 1.5, ["--unscale" as string]: 1 / view.scale }} data-board>
           {projects.map((project) => (
             <section key={project} aria-label={project} className="space-y-4">
               <h2 className="text-heading">{project}</h2>
@@ -432,6 +527,10 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
                       onPin={openThread}
                       onLoad={refit}
                       commenting={commenting}
+                      hand={active === "hand"}
+                      selected={selected === `${screen.project}:${screen.route}`}
+                      onSelect={() => setSelected(`${screen.project}:${screen.route}`)}
+                      onOpen={() => openScreen(screen)}
                       project={sitesOf.get(project)!}
                       nameOf={nameOf}
                       picking={draft?.screen === screen ? draft.select : null}
@@ -446,9 +545,9 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
           ))}
         </div>
       </div>
-      {commenting && (
+      {commenting && !space && (
         <p className="pointer-events-none absolute top-3 left-1/2 z-20 w-max max-w-[calc(100%-24px)] -translate-x-1/2 rounded-md border border-line bg-surface px-3 py-1.5 text-center text-small text-ink-2 shadow-raise" role="status" data-canvas-hint>
-          Click a component on any screen to comment on it. Esc to stop.
+          Click a component on any screen to comment on it. Esc or V to stop.
         </p>
       )}
       {draft && (
@@ -479,10 +578,14 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
         </Bubble>
       )}
       {thread && <ThreadBubble id={thread.id} at={thread.at} view={view} frame={frame.current} requests={requests} screens={screens} onRequest={onRequest} onClose={() => setThread(null)} onOpen={(href) => navigate(href)} />}
-      <div className="absolute right-4 bottom-4 flex items-center gap-1 rounded-md border border-line bg-surface p-1 shadow-raise" data-canvas-controls>
-        <Button variant={commenting ? "primary" : "ghost"} size="sm" onClick={() => setCommenting((on) => !on)} aria-pressed={commenting} title="Comment on a component (C)">
-          <MessageSquarePlus /> Comment
-        </Button>
+      <div className="absolute right-4 bottom-4 flex items-center gap-1 rounded-md border border-line bg-surface p-1 shadow-raise max-sm:right-2 max-sm:bottom-2" data-canvas-controls>
+        <div role="toolbar" aria-label="Tools" className="flex items-center gap-0.5" data-canvas-tools>
+          {TOOLS.map(({ tool: t, key, label, icon: Icon }) => (
+            <Button key={t} variant={active === t ? "primary" : "ghost"} size="icon" onClick={() => setTool(t)} aria-pressed={active === t} aria-label={`${label} (${key})`} title={`${label} (${key})${t === "hand" ? ", or hold Space" : ""}`}>
+              <Icon />
+            </Button>
+          ))}
+        </div>
         <span className="mx-0.5 h-5 w-px bg-line" aria-hidden />
         <Button variant="ghost" size="icon" onClick={() => zoom(1 / STEP)} aria-label="Zoom out" title="Zoom out (−)">
           <Minus />
@@ -493,8 +596,8 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
         <Button variant="ghost" size="icon" onClick={() => zoom(STEP)} aria-label="Zoom in" title="Zoom in (+)">
           <Plus />
         </Button>
-        <Button variant="ghost" size="sm" onClick={fit} title="Fit every screen (0)">
-          <Maximize /> Fit
+        <Button variant="ghost" size="sm" onClick={fit} title="Fit every screen (⇧1)" aria-label="Fit every screen">
+          <Maximize /> <span className="max-sm:hidden">Fit</span>
         </Button>
       </div>
     </div>

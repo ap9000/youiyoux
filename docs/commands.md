@@ -270,9 +270,9 @@ source maps, fetched from the app's own origin only and never through a redirect
 hub's session key. Run the hub and the app on the same host name (both `localhost`): a sign-in
 cookie is not sent to an app framed from another site.
 
-While commenting is off a live screen takes the pointer, scrolling and keys, as the app would; pan
-and zoom from around it, or turn commenting on (the Comment button: **C** goes to the app while it
-has focus).
+With the Move tool (**V**) a live screen takes the pointer, scrolling and keys, as the app would.
+To pan across it, hold **Space** or pick the Hand (**H**); to comment, pick Comment (**C**). While
+the app has the keyboard, those keys go to it: use the tool bar, or click the board first.
 
 ## The local index
 

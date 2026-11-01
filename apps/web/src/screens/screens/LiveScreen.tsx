@@ -29,6 +29,9 @@ import { Modal } from "../../ui/Modal.tsx";
 export const HELLO_EVERY_MS = 500;
 export const GIVE_UP_MS = 5000;
 
+/** A selected screen's outline: as wide on screen at any zoom (the board sets --unscale), as a design tool draws it. */
+export const SELECTED = "border-accent outline-solid outline-accent [outline-width:calc(2px*var(--unscale,1))] [outline-offset:calc(2px*var(--unscale,1))]";
+
 export type LiveStatus = "connecting" | "live" | "no-bridge";
 
 type Pickable = { readonly placed: Placed; readonly view: LiveView };
@@ -50,11 +53,12 @@ interface Props {
   onPick: (placed: Placed, page: { width: number; height: number }, at: { clientX: number; clientY: number }, route: string) => void;
   requests: readonly RequestDoc[];
   onPin: (request: RequestDoc, at: { clientX: number; clientY: number }) => void;
+  selected?: boolean;
 }
 
 const frameKey = (place: LiveRawPlace): string => `${place.name}|${place.frames.map((f) => `${f.url}:${f.line}:${f.column}`).join("|")}`;
 
-export function LiveScreen({ url, viewport, width, screens, route, commenting, sites, nameOf, picking, onPick, requests, onPin }: Props) {
+export function LiveScreen({ url, viewport, width, screens, route, commenting, sites, nameOf, picking, onPick, requests, onPin, selected = false }: Props) {
   const origin = new URL(url).origin;
   const frame = useRef<HTMLIFrameElement>(null);
   const layer = useRef<HTMLDivElement>(null);
@@ -162,7 +166,7 @@ export function LiveScreen({ url, viewport, width, screens, route, commenting, s
 
   return (
     <div className="space-y-1.5" data-live={status}>
-      <div className="relative overflow-hidden rounded-md border border-line bg-surface shadow-raise" style={{ width, height }}>
+      <div className={clsx("relative overflow-hidden rounded-md border bg-surface shadow-raise", selected ? SELECTED : "border-line")} style={{ width, height }}>
         <iframe
           ref={frame}
           src={url}

@@ -128,12 +128,10 @@ describe("commenting on the board", () => {
     const onRequest = vi.fn();
     render(<ScreensCanvas screens={board} scheme="light" requests={[]} onRequest={onRequest} nameOf={(id) => (id === BUTTON ? "Button" : id)} />);
     const card = (): HTMLElement => document.querySelector<HTMLElement>('[data-canvas-screen="app:/settings"]')!;
-    expect(card().querySelector("a[aria-label]")).not.toBeNull();
     fireEvent.keyDown(window, { key: "c" });
-    expect(screen.getByRole("button", { name: /Comment/ }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Comment (C)" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByRole("status").textContent).toMatch(/Click a component on any screen/);
-    // The picture is no longer a link to the screen's page, and its components load to be picked.
-    expect(card().querySelector("a[aria-label]")).toBeNull();
+    // Its components load to be picked.
     const layer = await waitFor(() => present(card().querySelector<HTMLElement>("[data-places-layer]")));
     fireEvent.click(layer, { clientX: 150, clientY: 120 });
     const bubble = screen.getByRole("dialog", { name: "Comment" });
@@ -148,16 +146,16 @@ describe("commenting on the board", () => {
       { path: "/api/requests", body: { kind: "change", body: "Make it primary", target: { route: "/settings", scope: "here", name: "Button", element: BUTTON, file: "src/settings.tsx", line: 8, box: { x: 100, y: 100, width: 120, height: 40 }, page: { width: 1440, height: 900 } } } },
     ]);
     expect(screen.queryByRole("dialog")).toBeNull();
-    // Still commenting after one; Esc stops, and the picture is a link again.
+    // Still commenting after one; Esc goes back to Move.
     expect(screen.getByRole("status")).toBeTruthy();
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("status")).toBeNull();
-    expect(card().querySelector("a[aria-label]")).not.toBeNull();
+    expect(document.querySelector("[data-canvas]")!.getAttribute("data-tool")).toBe("move");
   });
 
   test("a pan that ends over a component opens nothing; a screen with no component positions says how to get them", async () => {
     render(<ScreensCanvas screens={board} scheme="light" requests={[]} />);
-    fireEvent.click(screen.getByRole("button", { name: /Comment/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Comment (C)" }));
     expect(document.querySelector('[data-canvas-screen="app:/"] [data-canvas-unplaced]')!.textContent).toContain("youiyoux screens capture");
     const layer = await waitFor(() => present(document.querySelector<HTMLElement>('[data-canvas-screen="app:/settings"] [data-places-layer]')));
     const region = screen.getByRole("region", { name: /Every screen on one board/ });
@@ -170,5 +168,82 @@ describe("commenting on the board", () => {
     // The next click is a click again.
     fireEvent.click(layer, { clientX: 150, clientY: 120 });
     expect(screen.getByRole("dialog", { name: "Comment" })).toBeTruthy();
+  });
+});
+
+describe("tools and keys, as in a design tool", () => {
+  const tool = (): string | null => document.querySelector("[data-canvas]")!.getAttribute("data-tool");
+  const card = (key: string): HTMLElement => document.querySelector<HTMLElement>(`[data-canvas-screen="${key}"]`)!;
+
+  test("V, H and C pick a tool, and the tool bar shows which; Space held is the hand, until it is let go", () => {
+    render(<ScreensCanvas screens={index} scheme="light" requests={[]} />);
+    const pressed = () => screen.getAllByRole("button", { pressed: true }).map((b) => b.getAttribute("aria-label"));
+    expect([tool(), pressed()]).toEqual(["move", ["Move (V)"]]);
+    fireEvent.keyDown(window, { key: "h" });
+    expect([tool(), pressed()]).toEqual(["hand", ["Hand (H)"]]);
+    // The hand reaches nothing on a screen: every card is a surface to pan from.
+    expect(document.querySelectorAll("[data-canvas-shield]")).toHaveLength(4);
+    fireEvent.keyDown(window, { key: "c" });
+    expect(tool()).toBe("comment");
+    fireEvent.keyDown(window, { key: " " });
+    fireEvent.keyDown(window, { key: " ", repeat: true });
+    expect(tool()).toBe("hand");
+    expect(screen.queryByRole("status")).toBeNull();
+    fireEvent.keyUp(window, { key: " " });
+    expect(tool()).toBe("comment");
+    fireEvent.keyDown(window, { key: " " });
+    fireEvent.blur(window);
+    expect(tool()).toBe("comment");
+    fireEvent.keyDown(window, { key: "v" });
+    expect(tool()).toBe("move");
+    fireEvent.click(screen.getByRole("button", { name: "Comment (C)" }));
+    expect(tool()).toBe("comment");
+    expect(document.querySelectorAll("[data-canvas-shield]")).toHaveLength(0);
+  });
+
+  test("with Move a click selects a screen and a double-click or Enter opens it; the hand selects nothing; Esc lets go", () => {
+    window.history.replaceState(null, "", "/screens?view=canvas");
+    render(<ScreensCanvas screens={index} scheme="light" requests={[]} />);
+    const picture = (key: string) => card(key).querySelector<HTMLElement>("[data-canvas-picture]")!;
+    fireEvent.click(picture("app:/settings"));
+    expect(card("app:/settings").hasAttribute("data-selected")).toBe(true);
+    expect(window.location.pathname).toBe("/screens");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(card("app:/settings").hasAttribute("data-selected")).toBe(false);
+    fireEvent.keyDown(window, { key: "h" });
+    fireEvent.click(card("app:/").querySelector("[data-canvas-shield]")!);
+    expect(card("app:/").hasAttribute("data-selected")).toBe(false);
+    fireEvent.keyDown(window, { key: "v" });
+    fireEvent.click(picture("app:/"));
+    // A click on the board itself lets go.
+    fireEvent.click(screen.getByRole("region", { name: /Every screen on one board/ }));
+    expect(card("app:/").hasAttribute("data-selected")).toBe(false);
+    fireEvent.click(picture("app:/settings"));
+    fireEvent.keyDown(window, { key: "Enter" });
+    expect(window.location.pathname).toBe("/screens/app/settings");
+    window.history.replaceState(null, "", "/screens?view=canvas");
+    fireEvent.doubleClick(picture("site:/"));
+    expect(window.location.pathname).toBe("/screens/site/root");
+  });
+
+  test("⇧1 fits, ⇧0 is 100%, ⌘= and ⌘− zoom the board, not the page; keys typed into a field are left alone", () => {
+    render(<ScreensCanvas screens={index} scheme="light" requests={[]} />);
+    const zoom = (): string => document.querySelector("[data-zoom]")!.textContent!;
+    fireEvent.keyDown(window, { key: ")", code: "Digit0", shiftKey: true });
+    expect(zoom()).toBe("100%");
+    const zoomIn = new KeyboardEvent("keydown", { key: "=", metaKey: true, cancelable: true });
+    act(() => void window.dispatchEvent(zoomIn));
+    expect(zoomIn.defaultPrevented).toBe(true);
+    expect(zoom()).toBe("125%");
+    fireEvent.keyDown(window, { key: "-", ctrlKey: true });
+    expect(zoom()).toBe("100%");
+    fireEvent.keyDown(window, { key: "!", code: "Digit1", shiftKey: true });
+    expect(zoom()).toBe(`${MIN_SCALE * 100}%`);
+    const field = document.createElement("input");
+    document.body.append(field);
+    fireEvent.keyDown(field, { key: "h" });
+    fireEvent.keyDown(field, { key: " " });
+    expect(tool()).toBe("move");
+    field.remove();
   });
 });
