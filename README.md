@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/card.png" width="720" alt="youiyoux card for Toolroll's console: 605 components defined, 4 duplicated components, 253 hardcoded values, 0 off-library imports">
+  <img src="docs/images/agent.png" width="720" alt="An agent asked to add a Save button calls youiyoux's ui_find_component, is told the project already has Button in components/ui/button.tsx, and reuses it">
 </p>
 
 # youiyoux
@@ -22,7 +22,7 @@ npx youiyoux
 In any repo. No config, no account. You get three files:
 
 - `youiyoux-report.html`: the full report, one offline page
-- `youiyoux-card.png`: the card above
+- `youiyoux-card.png`: a share card with the headline numbers
 - `youiyoux-summary.md`: paste it into a PR or issue
 
 <img src="docs/images/report.png" width="720" alt="The top of a youiyoux report: five summary lines and four headline numbers">
@@ -39,6 +39,8 @@ New to it? [Getting started](docs/getting-started.md): the report, the top fix, 
 - **Share a UI health report.** Send the page or the card to your team or a maintainer.
 - **Let your agent see what it built.** `npx youiyoux render <file>`: light and dark, desktop and phone, accessibility issues, a diff against main.
 - **Turn the UI you have into a design system.** `npx youiyoux adopt`: your components and your stylesheet's variables become a System in your repo, with rules for your agent; `youiyoux system extract <dir>` moves it into its own repo when a second app needs it.
+
+<img src="docs/images/live-edit.png" width="720" alt="Live editing in the hub: Save picked on the running settings screen, its variant set to outline, and the change written to app/settings/index.tsx">
 
 ## What it finds
 
