@@ -13,9 +13,11 @@
  * props set and kept set, and every edit undone. That needs React's renderer, which React hands to
  * the hook the bridge leaves only when the bridge loads first: in the page's head, before the app.
  *
- * It answers only a parent on this machine (`localhost`, `127.0.0.1`, `[::1]`) that said hello,
- * and only that parent's origin: a site elsewhere that frames the app learns nothing. Unframed it
- * does nothing at all.
+ * It answers only the hub that served it: a parent on this machine (`localhost`, `127.0.0.1`,
+ * `[::1]`) on the port the bridge was loaded from (its own script's address), that said hello, and
+ * only that parent's origin. A site elsewhere, or another page on this machine, that frames the app
+ * learns nothing and edits nothing. Unframed it does nothing at all. An edit never sets a prop that
+ * carries a URL, HTML, a style or a handler (EDIT_REFUSED), nor a value that is a script address.
  */
 import { liveEdits, type LiveValue } from "./live-edit.ts";
 import { locateInPage, MAX_PLACES, type RawPlace } from "./locate.ts";
@@ -74,6 +76,10 @@ export interface BridgeEdited {
 
 /** The longest value or text an edit carries. */
 export const EDIT_TEXT_MAX = 2000;
+/** Props an edit never sets, in the page or in the code: what carries a URL, HTML, a style or a handler. */
+export const EDIT_REFUSED = /^(?:children|key|ref|style|className|href|src|srcSet|srcDoc|action|formAction|poster|data|xlinkHref|xmlBase|manifest|ping|background|codebase|cite|longDesc|profile|dangerously.*|on[A-Z].*)$/;
+/** A value that is a script address, never set. */
+export const SCRIPT_VALUE = /^\s*(?:javascript|vbscript|data):/i;
 
 /** The bridge as a script, self-contained: what the service serves at BRIDGE_PATH. */
 export function liveBridge(): string {
@@ -84,6 +90,13 @@ export function liveBridge(): string {
   window.__youiyouxBridge = ${BRIDGE_VERSION};
   const V = ${BRIDGE_VERSION};
   const LOOPBACK = ${LOOPBACK_PARENT.toString()};
+  // The hub that served this script: only it, on its port under any loopback name, is answered.
+  const SELF = (() => { try { return new URL(document.currentScript.src); } catch { return null; } })();
+  const isHub = (origin) => {
+    if (!SELF || !LOOPBACK.test(origin)) return false;
+    const url = new URL(origin);
+    return url.protocol === SELF.protocol && url.port === SELF.port;
+  };
   const locate = ${locateInPage.toString()};
   // First, while the page is still loading when the bridge is in its head: the hook React hands its renderer to.
   const edits = (${liveEdits.toString()})();
@@ -112,7 +125,7 @@ export function liveBridge(): string {
   addEventListener("resize", soon);
   addEventListener("popstate", soon);
   addEventListener("message", (event) => {
-    if (event.source !== window.parent || !LOOPBACK.test(event.origin)) return;
+    if (event.source !== window.parent || !isHub(event.origin)) return;
     const data = event.data;
     if (!data || data.youiyoux !== V) return;
     if (data.type === "hello") {
@@ -124,12 +137,14 @@ export function liveBridge(): string {
     if (event.origin !== hub) return;
     const isBox = (b) => !!b && ["x", "y", "width", "height"].every((k) => Number.isFinite(b[k]));
     const isName = (n) => typeof n === "string" && n.length > 0 && n.length <= 200;
-    const isKey = (k) => typeof k === "string" && /^[A-Za-z_$][\\w$]{0,63}$/.test(k) && k !== "children" && k !== "key" && k !== "ref" && !k.startsWith("dangerously");
-    const isValue = (v) => typeof v === "boolean" || (typeof v === "number" && Number.isFinite(v)) || (typeof v === "string" && v.length <= ${EDIT_TEXT_MAX});
+    // Any prop may be read; one that carries a URL, HTML, a style or a handler is never set.
+    const isProp = (k) => typeof k === "string" && /^[A-Za-z_$][\\w$]{0,63}$/.test(k);
+    const isKey = (k) => isProp(k) && !${EDIT_REFUSED.toString()}.test(k);
+    const isValue = (v) => typeof v === "boolean" || (typeof v === "number" && Number.isFinite(v)) || (typeof v === "string" && v.length <= ${EDIT_TEXT_MAX} && !${SCRIPT_VALUE.toString()}.test(v));
     if (data.type === "reset") return void edits.reset();
     if (data.type === "forget") return void edits.forget();
     if (!Number.isInteger(data.id)) return;
-    if (data.type === "props" && isName(data.name) && isBox(data.box) && Array.isArray(data.ask) && data.ask.length <= 50 && data.ask.every(isKey)) {
+    if (data.type === "props" && isName(data.name) && isBox(data.box) && Array.isArray(data.ask) && data.ask.length <= 50 && data.ask.every(isProp)) {
       const ready = edits.ready();
       const read = edits.read(data.name, data.box, data.ask);
       return send({ youiyoux: V, type: "props", id: data.id, editable: ready.editable, why: ready.why, ...read });

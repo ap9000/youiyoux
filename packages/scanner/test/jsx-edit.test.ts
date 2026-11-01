@@ -73,6 +73,8 @@ describe("a live edit written into the code", () => {
     expect(why(at(3, { set: [{ prop: "variant", value: "ghost" }] }))).toMatch(/no JSX element starts on line 3 any more: .* capture it again/);
     expect(why(at(7, { set: [{ prop: "variant", value: "ghost" }] }))).toMatch(/no Button starts on line 7/);
     expect(why(at(5, { set: [{ prop: "dangerouslySetInnerHTML", value: "x" }] }))).toMatch(/isn't a prop a live edit sets/);
+    for (const prop of ["href", "src", "style", "className", "onClick", "formAction"]) expect(why(at(5, { set: [{ prop, value: "x" }] }))).toMatch(/isn't a prop a live edit sets: it can carry a URL, HTML, a style or a handler/);
+    expect(why(at(5, { set: [{ prop: "variant", value: "javascript:alert(1)" }] }))).toMatch(/value is a script address/);
     expect(why(at(5, { set: [{ prop: "variant", value: "outline" }] }))).toBe("the code already says this");
   });
 });

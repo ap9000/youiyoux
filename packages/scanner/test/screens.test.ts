@@ -143,6 +143,8 @@ describe("capturing a running app", () => {
     "",
   ].join("\n");
   let server: Server;
+  /** Where the app loads the live bridge from: the hub, as the hub's snippet and youiyoux/vite load it. */
+  let bridgeFrom = "";
   let base: string;
   let browser: Browser;
   const app = join(scratch, "app");
@@ -161,9 +163,9 @@ describe("capturing a running app", () => {
       // /late mounts the app after the capture's first look, as a dev server that reloads mid-way does.
       const late = '<!doctype html><meta charset="utf-8"><body style="margin:0"><div id="root"></div><script type="module">setTimeout(() => import("/development.js"), 1500)</script>';
       // /live is the app with the live bridge, as an app loads it from the hub in development.
-      const live = '<!doctype html><meta charset="utf-8"><body style="margin:0"><div id="root"></div><script src="/bridge.js"></script><script type="module" src="/development.js"></script>';
+      const live = `<!doctype html><meta charset="utf-8"><body style="margin:0"><div id="root"></div><script src="${bridgeFrom}/bridge.js"></script><script type="module" src="/development.js"></script>`;
       // /live-late is the app with the bridge added after React loaded, as a line in its entry file adds it.
-      const liveLate = '<!doctype html><meta charset="utf-8"><body style="margin:0"><div id="root"></div><script type="module">await import("/development.js"); document.head.append(Object.assign(document.createElement("script"), { src: "/bridge.js" }));</script>';
+      const liveLate = `<!doctype html><meta charset="utf-8"><body style="margin:0"><div id="root"></div><script type="module">await import("/development.js"); document.head.append(Object.assign(document.createElement("script"), { src: "${bridgeFrom}/bridge.js" }));</script>`;
       if (path === "/bridge.js") return void res.writeHead(200, { "content-type": "text/javascript" }).end(liveBridge());
       const body = path === "/" ? page("development.js") : path === "/prod" ? page("production.js") : path === "/nomaps" ? page("development.js?bare=1") : path === "/late" ? late : path === "/live" ? live : path === "/live-late" ? liveLate : files.get(path);
       if (body === undefined) return void res.writeHead(404).end("not found");
@@ -276,10 +278,12 @@ describe("capturing a running app", () => {
     /** Chrome without its own check on public pages framing this machine, so the bridge's check is what is tested. */
     let open_: Browser;
     beforeAll(async () => {
-      hub = createServer((_req, res) => res.writeHead(200, { "content-type": "text/html" }).end(hubPage(base)));
+      // The hub serves the bridge, as the local service does.
+      hub = createServer((req, res) => (req.url === "/bridge.js" ? res.writeHead(200, { "content-type": "text/javascript" }).end(liveBridge()) : res.writeHead(200, { "content-type": "text/html" }).end(hubPage(base))));
       await new Promise<void>((done) => hub.listen(0, "127.0.0.1", done));
       // localhost, not 127.0.0.1: another origin from the app's on this machine.
       hubOrigin = `http://localhost:${(hub.address() as { port: number }).port}`;
+      bridgeFrom = hubOrigin;
       open_ = await chromium.launch({ headless: true, args: ["--disable-features=LocalNetworkAccessChecks,PrivateNetworkAccessForNavigations,PrivateNetworkAccessRespectPreflightResults,BlockInsecurePrivateNetworkRequests"] });
     });
     afterAll(async () => {
@@ -350,6 +354,9 @@ describe("capturing a running app", () => {
       // A prop the bridge never sets (a key, a ref, raw HTML) or a value that is not plain is not an edit.
       await say({ youiyoux: BRIDGE_VERSION, type: "edit", id: 4, name: button.name, box: button.box, set: { dangerouslySetInnerHTML: "x" }, text: null });
       await say({ youiyoux: BRIDGE_VERSION, type: "edit", id: 5, name: button.name, box: button.box, set: { tone: { evil: true } }, text: null });
+      // A prop that carries a URL or a handler, or a value that is a script address, either.
+      for (const [id, set] of [[11, { href: "https://example.com" }], [12, { onClick: "x" }], [13, { tone: "javascript:alert(1)" }], [14, { tone: " DATA:text/html,x" }]] as const)
+        await say({ youiyoux: BRIDGE_VERSION, type: "edit", id, name: button.name, box: button.box, set, text: null });
       await page.waitForTimeout(300);
       expect((await got()).filter((m) => m.data.type === "edited").map((m) => (m.data as unknown as BridgeEdited).id)).toEqual([3]);
       await say({ youiyoux: BRIDGE_VERSION, type: "reset" });
@@ -363,6 +370,28 @@ describe("capturing a running app", () => {
       await page.waitForTimeout(300);
       expect(await edited.getAttribute("data-tone")).toBe("quiet");
       await page.close();
+    }, 60_000);
+
+    test("another page on this machine that frames the app, on another port than the hub's, learns nothing and edits nothing", async () => {
+      const other = createServer((_req, res) => res.writeHead(200, { "content-type": "text/html" }).end(hubPage(base)));
+      await new Promise<void>((done) => other.listen(0, "127.0.0.1", done));
+      try {
+        const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+        await page.goto(`http://localhost:${(other.address() as { port: number }).port}/`);
+        const app = page.frameLocator("#f");
+        await app.getByRole("button", { name: "Save" }).waitFor();
+        const say = (message: unknown) => page.evaluate(([m, target]) => (document.getElementById("f") as HTMLIFrameElement).contentWindow!.postMessage(m, target as string), [message, base] as const);
+        const box = (await app.getByRole("button", { name: "Save" }).boundingBox())!;
+        await say({ youiyoux: BRIDGE_VERSION, type: "hello" });
+        await say({ youiyoux: BRIDGE_VERSION, type: "at", id: 1, x: box.x + 4, y: box.y + 4 });
+        await say({ youiyoux: BRIDGE_VERSION, type: "edit", id: 2, name: "Button", box: { x: box.x, y: box.y, width: box.width, height: box.height }, set: { tone: "evil" }, text: null });
+        await page.waitForTimeout(500);
+        expect(await page.evaluate(() => (window as unknown as { got: unknown[] }).got)).toEqual([]);
+        expect(await app.locator("button[data-tone]").first().getAttribute("data-tone")).toBe("plain");
+        await page.close();
+      } finally {
+        other.close();
+      }
     }, 60_000);
 
     test("loaded after React, the bridge still comments but says why it can't edit", async () => {

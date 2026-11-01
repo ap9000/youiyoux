@@ -269,9 +269,10 @@ It needs two things:
   from Chat to Tasks inside the card, and a comment there named `src/browser/app.tsx:925` on
   `/work`.
 
-The bridge reads the page the way capture does (React's development stacks), and answers only a
-hub on this machine (`localhost`, `127.0.0.1`, `[::1]`) that framed it: a site elsewhere that
-frames the app learns nothing. The hub reads only what comes from that frame, from the app's own
+The bridge reads the page the way capture does (React's development stacks), and answers only the
+hub that served it: a page on this machine (`localhost`, `127.0.0.1`, `[::1]`) on the port the
+bridge was loaded from, that framed it. A site elsewhere, or another page on this machine, that
+frames the app learns nothing and edits nothing. The hub reads only what comes from that frame, from the app's own
 origin. The hub's local service maps each component's frames to a file and line with the app's
 source maps, fetched from the app's own origin only and never through a redirect; it needs the
 hub's session key. Run the hub and the app on the same host name (both `localhost`): a sign-in
@@ -296,7 +297,10 @@ could set the same prop, text that comes from a value, a place with no file and 
 that moved since the capture is refused with why, and **File as change request** files the exact
 change instead (`Set variant="ghost" on Button at src/app.tsx:624, as previewed live on /flows`),
 for an agent or a runner such as Toolroll. The service writes only a script inside the product, a
-file of its own (never a link), with the hub's session key.
+file of its own (never a link), with the hub's session key. An edit never sets, in the page or in the
+code, a prop that carries a URL, HTML, a style or a handler (`href`, `src`, `style`,
+`className`, `on…`, `dangerously…`), nor a value that is a script address (`javascript:`,
+`data:`).
 
 Editing needs React's development build to hand the bridge its renderer, which it does only if the
 bridge loads first: in the page's head, before the app's scripts, in development. On Vite:

@@ -8,6 +8,7 @@
  * Pure: source in, source out. The service checks the file and writes it (packages/workflow).
  */
 import ts from "typescript";
+import { EDIT_REFUSED, SCRIPT_VALUE } from "./bridge.ts";
 
 export type JsxValue = string | number | boolean;
 
@@ -62,7 +63,10 @@ function literal(init: ts.JsxAttributeValue | undefined): { value: JsxValue } | 
 }
 
 export function editJsx(source: string, fileName: string, edit: JsxEdit): JsxEditResult {
-  for (const change of edit.set) if (!PROP.test(change.prop) || change.prop === "key" || change.prop === "ref" || change.prop.startsWith("dangerously")) return refuse(`${change.prop} isn't a prop a live edit sets`);
+  for (const change of edit.set) {
+    if (!PROP.test(change.prop) || EDIT_REFUSED.test(change.prop)) return refuse(`${change.prop} isn't a prop a live edit sets: it can carry a URL, HTML, a style or a handler`);
+    if (typeof change.value === "string" && SCRIPT_VALUE.test(change.value)) return refuse(`${change.prop}'s value is a script address, which a live edit never writes`);
+  }
   const kind = /\.tsx$/.test(fileName) ? ts.ScriptKind.TSX : /\.jsx$/.test(fileName) ? ts.ScriptKind.JSX : /\.ts$/.test(fileName) ? ts.ScriptKind.TS : ts.ScriptKind.JS;
   const file = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, kind);
   const lineOf = (pos: number): number => file.getLineAndCharacterOfPosition(pos).line + 1;
