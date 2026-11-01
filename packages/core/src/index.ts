@@ -9,6 +9,7 @@ export * from "./ids.ts";
 export * from "./licence.ts";
 export * from "./record.ts";
 export * from "./requests.ts";
+export * from "./proposals.ts";
 export * from "./json-schema.ts";
 export * from "./load.ts";
 export * from "./rules.ts";

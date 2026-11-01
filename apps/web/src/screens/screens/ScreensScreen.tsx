@@ -76,6 +76,7 @@ function ScreenGrid({ model, index, screens }: { model: Model; index: UsageIndex
   const canvas = new URLSearchParams(useSearch()).get("view") === "canvas";
   const requests = useRemote(workflowApi.requests, "requests");
   const live = useRemote(workflowApi.live, "live");
+  const proposals = useRemote(workflowApi.proposals, "proposals");
   const header = (
     <PaneHeader title="Screens" count={screens.screens.length}>
       {requests.state.status === "ready" && <WaitingInRunners requests={requests.state.value.requests} />}
@@ -93,6 +94,8 @@ function ScreenGrid({ model, index, screens }: { model: Model; index: UsageIndex
           onRequest={(next) => (requests.state.status === "ready" ? requests.set({ ...requests.state.value, requests: withRequest(requests.state.value.requests, next) }) : requests.reload())}
           nameOf={(id) => model.byId.get(id)?.name ?? id}
           contractOf={(id) => model.components.get(id)?.contract ?? null}
+          proposals={proposals.state.status === "ready" ? proposals.state.value.proposals : []}
+          onProposal={(next) => (proposals.state.status === "ready" ? proposals.set({ ...proposals.state.value, proposals: proposals.state.value.proposals.map((p) => (p.id === next.id ? next : p)) }) : proposals.reload())}
           live={live.state.status === "ready" ? live.state.value : null}
         />
       </div>

@@ -152,6 +152,28 @@ A change request is filed with the task it asks for, so a runner can queue it wi
 
 A runner that takes a request on writes `.youi/requests/<id>.task.json` beside it (`youi.request-task/v1`, [schema](../schema/youi.request-task.schema.json)): its name, its task's id and an http(s) address to see it, optionally `home` (its page for the project's waiting work), and how far it has got (`queued`, `needs-you`, `building`, `ready`, `done`, `failed` or `stopped`, with its own words in `detail`). The request file stays youiyoux's and the task file the runner's. The hub shows the task on the request with the step that waits for a person as its button (Approve in Toolroll, Review in Toolroll, otherwise Open), and the Screens header counts what waits across requests, linking to `home`; `youiyoux requests` and `requests_list` return it as `run`, and a task file that is not valid is listed as unreadable. Comments never ask for a task. Toolroll does this on its own for a project that uses youiyoux: it files each new open change request once, and the task waits for a person's approval there.
 
+## Options on the canvas
+
+An agent can put options in front of a person, the way a design tool's agents draw variations:
+
+1. `screens_list`: the captured screens, with their pictures.
+2. `screens_show` with a route: what is on it. Each component has its file:line and box, and a
+   System element lists the choices its contract gives (each enum prop's values, its switches,
+   text and numbers, with defaults).
+3. `screens_offer`: two to four options for one component. Each has a short label, why, and the
+   changes: props from those choices, and/or new text. Every option is checked against the
+   contract before anything is written, and a value it doesn't allow (or a prop that carries a
+   URL, HTML, a style or a handler) is refused, option by option, with why. A component that is
+   not a System element can only have its text changed. The box and element come from the capture
+   and the scan, never from the agent. It writes one file, `.youi/proposals/<id>.json`
+   (`youi.proposal/v1`, [schema](../schema/youi.proposal.schema.json)).
+4. The hub pins them on the Screens canvas, at the component. On a live screen each option is
+   previewed in the running app; **Use this** writes it into the code (shown first, as a live
+   edit is) or files it as an exact change request; **Dismiss all** turns them down. Only a
+   person picks.
+5. `screens_offers`: which option was picked, and what is left to do (nothing, when the hub wrote
+   it; the change request, when it filed one).
+
 ## Exit codes
 
 | Code | Means |

@@ -72,6 +72,8 @@ const LiveEditInput = z.object({
   text: z.string().max(2000).nullable().optional(),
   write: z.object({ hash: z.string().regex(/^[0-9a-f]{64}$/) }).nullable().optional(),
 });
+/** A person's decision on an agent's options: one of them (and the request it became), or none. */
+const DecisionInput = z.union([z.object({ choice: z.enum(["a", "b", "c", "d"]), request: z.string().regex(/^r-[0-9a-f]{10}$/).optional() }).strict(), z.object({ dismiss: z.literal(true) }).strict()]);
 /** The agents to connect to this project (Connect your agent). */
 const AgentsInput = z.object({ agents: z.array(z.enum(["claude", "codex", "cursor"])).min(1).max(3) });
 
@@ -176,6 +178,9 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string, opti
     if (method === "POST") return send(res, 200, await options.agents.connect([...new Set(parse(AgentsInput, await readJson(req)).agents)]));
   }
   if (path === "/api/live" && method === "GET") return send(res, 200, (await workflow.live()).info());
+  if (path === "/api/proposals" && method === "GET") return send(res, 200, await (await workflow.proposals()).list());
+  const proposal = /^\/api\/proposals\/(p-[0-9a-f]{10})\/decision$/.exec(path);
+  if (proposal && method === "POST") return send(res, 200, await (await workflow.proposals()).decide(actor, proposal[1]!, parse(DecisionInput, await readJson(req))));
   if (path === "/api/live/edit" && method === "POST") {
     const { file, write, ...edit } = parse(LiveEditInput, await readJson(req));
     return send(res, 200, await (await workflow.live()).edit(file, { ...edit, column: edit.column ?? null, text: edit.text ?? null }, write ?? null));

@@ -10,6 +10,7 @@ export * from "./policy.ts";
 export * from "./preview.ts";
 export * from "./live.ts";
 export * from "./requests.ts";
+export * from "./proposals.ts";
 export * from "./service.ts";
 export * from "./store.ts";
 export * from "./style-drafts.ts";

@@ -9,6 +9,7 @@ import { LibraryEntry } from "./hierarchy.ts";
 import { ElementId, safeId } from "./ids.ts";
 import { GapsReport } from "./gaps.ts";
 import { RequestDoc, RequestRun } from "./requests.ts";
+import { ProposalDoc } from "./proposals.ts";
 import { CiRecord, OrgView } from "./record.ts";
 import { StatusReport, WorkspaceConfig } from "./status.ts";
 import { TokenDocument } from "./tokens.ts";
@@ -704,6 +705,7 @@ export const PUBLISHED_SCHEMAS = {
   "youi.tokens.schema.json": TokenDocument,
   "youi.request.schema.json": RequestDoc,
   "youi.request-task.schema.json": RequestRun,
+  "youi.proposal.schema.json": ProposalDoc,
   "youi.gaps.schema.json": GapsReport,
   "youi.workspace.schema.json": WorkspaceConfig,
   "youi.status.schema.json": StatusReport,

@@ -2,17 +2,14 @@
  * Edit, on a component picked on a live screen: the choices its design-system contract gives (each
  * enum prop's values, its switches, its text and numbers) and its text, applied in the running app
  * as they are changed (LiveHandle), so a person sees the real result. Then the change goes into the
- * code: shown first (the element's lines before and after), and written by the local service only
- * while the file is still the one shown. What can't be written that way (a value computed in code,
- * props spread in, no file and line) is said, and can be filed as an exact change request instead.
+ * code, or is filed as an exact change request (WriteToCode).
  */
 import { useEffect, useRef, useState } from "react";
 import type { ComponentContract, PropSpec, RequestDoc, RequestTarget } from "@youiyoux/core";
 import type { LiveHandle, LiveProps, LiveValue } from "../../data/live.ts";
-import { asRequestError, workflowApi, type LiveCodeEdit, type WorkflowRequestError } from "../../data/workflow.ts";
 import { Button } from "../../ui/Button.tsx";
-import { CodeBlock } from "../../ui/CodeBlock.tsx";
 import { Select, TextInput } from "../../ui/Field.tsx";
+import { WriteToCode } from "./WriteToCode.tsx";
 
 type Editable = Extract<PropSpec, { type: "enum" | "string" | "boolean" | "number" }>;
 
@@ -48,11 +45,7 @@ export function LiveEditor({ live, component, column, name, contract, target, on
   const [set, setSet] = useState<Record<string, LiveValue>>({});
   const [text, setText] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  const [shown, setShown] = useState<Extract<LiveCodeEdit, { ok: true }> | null>(null);
-  const [refused, setRefused] = useState<string | null>(null);
   const [written, setWritten] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<WorkflowRequestError | null>(null);
 
   useEffect(() => {
     let current = true;
@@ -71,14 +64,12 @@ export function LiveEditor({ live, component, column, name, contract, target, on
   const apply = (nextSet: Record<string, LiveValue>, nextText: string | null): void => {
     setSet(nextSet);
     setText(nextText);
-    setShown(null);
-    setRefused(null);
     void live.edit(nextSet, nextText).then((done) => setProblem(done.ok ? null : done.why));
   };
   const valueOf = (key: string, spec: Editable): LiveValue | null => (key in set ? set[key]! : (now?.props[key] ?? spec.default ?? null));
   const change = (key: string, value: LiveValue): void => apply({ ...set, [key]: value }, text);
 
-  const edit = () => ({
+  const edit = {
     file: target.file!,
     line: target.line!,
     column,
@@ -89,42 +80,11 @@ export function LiveEditor({ live, component, column, name, contract, target, on
       return { prop, value, ...(spec?.default !== undefined ? { default: spec.default } : {}) };
     }),
     text,
-  });
-  const show = (): void => {
-    setBusy(true);
-    setError(null);
-    workflowApi
-      .liveEdit(edit())
-      .then(
-        (result) => (result.ok ? setShown(result) : setRefused(result.why)),
-        (e: unknown) => setError(asRequestError(e)),
-      )
-      .finally(() => setBusy(false));
   };
-  const write = (): void => {
-    if (!shown) return;
-    setBusy(true);
-    setError(null);
-    workflowApi
-      .liveEdit({ ...edit(), write: { hash: shown.hash } })
-      .then(
-        (result) => {
-          if (!result.ok) return setRefused(result.why);
-          kept.current = true;
-          live.forget();
-          setWritten(`${result.file}:${result.line}`);
-        },
-        (e: unknown) => setError(asRequestError(e)),
-      )
-      .finally(() => setBusy(false));
-  };
-  const file = (): void => {
-    setBusy(true);
-    setError(null);
-    workflowApi
-      .fileRequest("change", editWords(name, target, set, text), target)
-      .then((request) => onFiled(request), (e: unknown) => setError(asRequestError(e)))
-      .finally(() => setBusy(false));
+  const written_ = (at: string): void => {
+    kept.current = true;
+    live.forget();
+    setWritten(at);
   };
 
   if (written)
@@ -148,7 +108,6 @@ export function LiveEditor({ live, component, column, name, contract, target, on
       </p>
     );
 
-  const canWrite = !!target.file && !!target.line;
   return (
     <div className="space-y-3" data-live-edit="editing">
       {props.length === 0 && now.text === null && <p className="text-small text-muted">{contract ? `${name}'s contract gives no props to choose, and its text comes from code.` : `${name} isn't a design-system component, so there are no choices to offer; its text comes from code.`}</p>}
@@ -196,38 +155,20 @@ export function LiveEditor({ live, component, column, name, contract, target, on
         </div>
       )}
       {problem && <p className="text-small text-danger" role="alert">{problem}</p>}
-      {shown && (
-        <div className="space-y-2" data-live-edit="shown">
-          <CodeBlock code={shown.before} title={`${shown.file}:${shown.line} now`} maxHeight="sm" />
-          <CodeBlock code={shown.after} title="after" maxHeight="sm" />
-        </div>
-      )}
-      {refused && (
-        <p className="text-small text-muted" data-live-edit="refused">
-          This can&rsquo;t be written for you: {refused}.
-        </p>
-      )}
-      {!canWrite && changed && <p className="text-small text-muted">The capture found no file and line for {name}, so this can&rsquo;t be written for you.</p>}
-      {error && (
-        <p className="text-small text-danger" role="alert">
-          {error.message}
-        </p>
-      )}
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button size="sm" variant="ghost" disabled={!changed || busy} onClick={() => (live.reset(), setSet({}), setText(null), setShown(null), setRefused(null), setProblem(null))}>
-          Reset
-        </Button>
-        {(refused || !canWrite) && (
-          <Button size="sm" variant="outline" disabled={!changed || busy} onClick={file}>
-            File as change request
+      <WriteToCode
+        edit={target.file && target.line ? edit : null}
+        name={name}
+        target={target}
+        words={editWords(name, target, set, text)}
+        empty={!changed}
+        onWritten={written_}
+        onFiled={onFiled}
+        before={
+          <Button size="sm" variant="ghost" disabled={!changed} onClick={() => (live.reset(), setSet({}), setText(null), setProblem(null))}>
+            Reset
           </Button>
-        )}
-        {canWrite && !refused && (
-          <Button size="sm" variant="primary" disabled={!changed || busy} onClick={shown ? write : show}>
-            {shown ? `Write to ${shown.file}` : "Write to code"}
-          </Button>
-        )}
-      </div>
+        }
+      />
     </div>
   );
 }

@@ -28,11 +28,11 @@ async function call(name: string, args: Record<string, unknown> = {}): Promise<{
 }
 
 describe("youiyoux MCP server", () => {
-  test("exposes read tools, and writes only a request's reply or addressed mark and a route's capture: nothing publishes, approves, closes or installs", async () => {
+  test("exposes read tools, and writes only a request's reply or addressed mark, a route's capture and options offered for a person to pick: nothing publishes, approves, picks, closes or installs", async () => {
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["discover_search", "discover_show", "index_rule_covers", "index_swap_impact", "index_where_used", "library_request", "library_search", "request_addressed", "request_reply", "requests_list", "screens_capture", "system_check", "system_get_component", "system_get_rules", "system_get_tokens", "system_plan", "system_screen_bom", "system_search", "system_where_used", "ui_find_component", "ui_render"]);
+    expect(tools.map((t) => t.name).sort()).toEqual(["discover_search", "discover_show", "index_rule_covers", "index_swap_impact", "index_where_used", "library_request", "library_search", "request_addressed", "request_reply", "requests_list", "screens_capture", "screens_list", "screens_offer", "screens_offers", "screens_show", "system_check", "system_get_component", "system_get_rules", "system_get_tokens", "system_plan", "system_screen_bom", "system_search", "system_where_used", "ui_find_component", "ui_render"]);
     expect(tools.map((t) => t.name).sort()).toEqual([...MCP_TOOLS].sort());
-    expect(tools.filter((t) => t.annotations?.readOnlyHint !== true).map((t) => t.name).sort()).toEqual(["request_addressed", "request_reply", "screens_capture"]);
+    expect(tools.filter((t) => t.annotations?.readOnlyHint !== true).map((t) => t.name).sort()).toEqual(["request_addressed", "request_reply", "screens_capture", "screens_offer"]);
     for (const tool of tools) expect(tool.annotations?.destructiveHint ?? false).toBe(false);
     expect(tools.some((t) => /propose|publish|approve|merge|close|apply|install|sync/.test(t.name))).toBe(false);
     expect(tools.every((t) => /^(system|library|discover|index|ui|requests?|screens)_/.test(t.name))).toBe(true);

@@ -18,7 +18,7 @@
 import { clsx } from "clsx";
 import { PlugZap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import type { RequestDoc } from "@youiyoux/core";
+import type { ProposalDoc, RequestDoc } from "@youiyoux/core";
 import { bridgeHead, bridgeMessage, bridgeReply, bridgeSnippet, routeAt, type BridgeMessage, type BridgeReply, type LiveHandle, type LiveProps, type LiveRawPlace, type LiveView } from "../../data/live.ts";
 import { matchPlaces, type Placed } from "../../data/places.ts";
 import type { PlacedComponent } from "../../data/types.ts";
@@ -28,6 +28,7 @@ import { pct } from "../../lib/format.ts";
 import { Button } from "../../ui/Button.tsx";
 import { CodeBlock } from "../../ui/CodeBlock.tsx";
 import { Modal } from "../../ui/Modal.tsx";
+import { OfferPin } from "./Offers.tsx";
 
 /** How often hello is said until the bridge answers, and how long until the card says how to load it. */
 export const HELLO_EVERY_MS = 500;
@@ -60,12 +61,15 @@ interface Props {
   onPick: (placed: Placed, page: { width: number; height: number }, at: { clientX: number; clientY: number }, route: string, live: LiveHandle | null) => void;
   requests: readonly RequestDoc[];
   onPin: (request: RequestDoc, at: { clientX: number; clientY: number }) => void;
+  /** An agent's open options on this screen, and opening one with its component in the page. */
+  offers?: readonly ProposalDoc[];
+  onOffer?: (proposal: ProposalDoc, at: { clientX: number; clientY: number }, live: LiveHandle) => void;
   selected?: boolean;
 }
 
 const frameKey = (place: LiveRawPlace): string => `${place.name}|${place.frames.map((f) => `${f.url}:${f.line}:${f.column}`).join("|")}`;
 
-export function LiveScreen({ url, viewport, width, screens, route, commenting, sites, nameOf, picking, onPick, requests, onPin, selected = false }: Props) {
+export function LiveScreen({ url, viewport, width, screens, route, commenting, sites, nameOf, picking, onPick, requests, onPin, offers = [], onOffer = () => undefined, selected = false }: Props) {
   const origin = new URL(url).origin;
   const frame = useRef<HTMLIFrameElement>(null);
   const layer = useRef<HTMLDivElement>(null);
@@ -114,7 +118,7 @@ export function LiveScreen({ url, viewport, width, screens, route, commenting, s
       const at = routeAt(screens, now.path);
       if (!first || !at) return;
       setPicked({ placed: first, view: now });
-      onPick(first, now.page, click, at, first.place.html ? null : handleOn(first));
+      onPick(first, now.page, click, at, first.place.html ? null : handleOn(first.place));
     });
   };
   useEffect(() => {
@@ -146,9 +150,9 @@ export function LiveScreen({ url, viewport, width, screens, route, commenting, s
     return matchPlaces(resolved, sites.sites, sites.lookalikes);
   };
 
-  /** The picked component in the page, by its name and where it is. */
-  const handleOn = (placed: Placed): LiveHandle => {
-    const target = { name: placed.place.name, box: placed.place.box };
+  /** A component in the page, by its name and where it is. */
+  const handleOn = (place: { readonly name: string; readonly box: LiveRawPlace["box"] }): LiveHandle => {
+    const target = { name: place.name, box: place.box };
     const post = (message: Record<string, unknown>): void => frame.current?.contentWindow?.postMessage({ youiyoux: 1, ...message }, origin);
     const question = <T,>(message: Record<string, unknown>, read: (reply: BridgeReply) => T | null, silent: T): Promise<T> =>
       new Promise((resolve) => {
@@ -248,6 +252,15 @@ export function LiveScreen({ url, viewport, width, screens, route, commenting, s
             )}
           </div>
         )}
+        {view &&
+          onRoute === route &&
+          offers.map((proposal) => {
+            const b = proposal.target.box;
+            const x = b.x - view.scroll.x;
+            const y = b.y - view.scroll.y;
+            if (x < 0 || y < 0 || x > viewport.width || y > viewport.height) return null;
+            return <OfferPin key={proposal.id} proposal={proposal} onOpen={(at) => onOffer(proposal, at, handleOn(proposal.target))} style={{ left: pct(x + b.width, viewport.width), top: pct(y, viewport.height) }} />;
+          })}
         {pins.map(({ request, number, x, y }) => (
           <button
             key={request.id}

@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentKind, AgentsConnected, AgentsView, ApiError, DraftContent, LiveCodeEdit, DraftView, LibraryDraftContent, LibraryDraftView, LiveInfo, PublishedRules, StyleDraftContent, StyleDraftView, WorkflowInfo } from "@youiyoux/workflow/api";
-import type { RequestDoc, RequestRun, RequestStatus, RequestTarget, StatusReport } from "@youiyoux/core";
+import type { ProposalDoc, RequestDoc, RequestRun, RequestStatus, RequestTarget, StatusReport } from "@youiyoux/core";
 import type { LiveRawPlace } from "./live.ts";
 import { sessionKey } from "./session-key.ts";
 import type { PlacedComponent } from "./types.ts";
@@ -109,6 +109,10 @@ export const workflowApi = {
   live: () => call<LiveInfo>("GET", "/live"),
   /** A live edit in the code: what it changes on the element at the place's line (or why it can't), and with `write`, written. */
   liveEdit: (edit: LiveCodeEditInput) => call<LiveCodeEdit>("POST", "/live/edit", edit),
+  /** Options agents put on the Screens canvas (screens_offer), in the product's .youi/proposals. */
+  proposals: () => call<{ proposals: ProposalDoc[]; unreadable: Array<{ file: string; reason: string }> }>("GET", "/proposals"),
+  /** A person's pick (and the request it became, when it couldn't be written), or none of them. */
+  decideProposal: (id: string, decision: { choice: string; request?: string } | { dismiss: true }) => call<ProposalDoc>("POST", `/proposals/${id}/decision`, decision),
   /** Coding agents on this machine, and which start the youiyoux MCP server in this project. */
   agents: () => call<AgentsView>("GET", "/agents"),
   /** Connect these agents as youiyoux agents install does, then check each server answers. */

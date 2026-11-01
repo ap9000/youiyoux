@@ -27,6 +27,7 @@ import { authorize, WorkflowError, type Action } from "./policy.ts";
 import { comparePreview, notRunReason } from "./preview.ts";
 import { LiveApp } from "./live.ts";
 import { RequestStore } from "./requests.ts";
+import { ProposalStore } from "./proposals.ts";
 import type { WorkflowStore } from "./store.ts";
 
 const WORKFLOW_VERSION = "0.1.0";
@@ -119,6 +120,12 @@ export class RuleWorkflow {
   async requests(): Promise<RequestStore> {
     const project = await this.project();
     return new RequestStore(project.root, project.config.id, this.options.now ? { now: this.options.now } : {});
+  }
+
+  /** Options agents put on the Screens canvas, in the product's .youi/proposals. */
+  async proposals(): Promise<ProposalStore> {
+    const project = await this.project();
+    return new ProposalStore(project.root, project.config.id, this.options.now ? { now: this.options.now } : {});
   }
 
   /** The project and its design definitions, as they are on disk now. */

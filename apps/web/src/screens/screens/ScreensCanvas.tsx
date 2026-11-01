@@ -24,7 +24,7 @@ import { clsx } from "clsx";
 import { ArrowUpRight, Hand, Image, Maximize, MessageSquarePlus, Minus, MousePointer2, Plus, Radio, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import { Link, useLocation } from "wouter";
-import type { ComponentContract, ElementId, RequestDoc, RequestTarget } from "@youiyoux/core";
+import type { ComponentContract, ElementId, ProposalDoc, RequestDoc, RequestTarget } from "@youiyoux/core";
 import type { Scheme } from "../../app/theme.tsx";
 import { dataUrl } from "../../data/load.ts";
 import { elementOf, matchPlaces, pickKey, requestTarget, usePlaces, type Placed } from "../../data/places.ts";
@@ -37,6 +37,7 @@ import { PlacesLayer } from "./PlacesOverlay.tsx";
 import { RequestComposer, RequestThread } from "./Requests.tsx";
 import { LiveScreen, SELECTED } from "./LiveScreen.tsx";
 import { LiveEditor } from "./LiveEditor.tsx";
+import { OfferPanel, OfferPin } from "./Offers.tsx";
 import type { LiveHandle } from "../../data/live.ts";
 import { Segmented } from "../../ui/Segmented.tsx";
 import type { LiveInfo } from "../../data/workflow.ts";
@@ -122,6 +123,9 @@ interface CardProps {
   full: boolean;
   requests: readonly RequestDoc[];
   onPin: (request: RequestDoc, at: { clientX: number; clientY: number }) => void;
+  /** An agent's open options on this screen, and opening one (with its component in the page, when live). */
+  offers: readonly ProposalDoc[];
+  onOffer: (proposal: ProposalDoc, at: { clientX: number; clientY: number }, live: LiveHandle | null) => void;
   onLoad: () => void;
   /** Commenting: the components are loaded and pickable. */
   commenting: boolean;
@@ -141,7 +145,7 @@ interface CardProps {
   onLive: () => void;
 }
 
-function Card({ screen, scheme, full, requests, onPin, onLoad, commenting, hand, selected, onSelect, onOpen, project, nameOf, picking, onPick, live, running, onLive }: CardProps) {
+function Card({ screen, scheme, full, requests, onPin, offers, onOffer, onLoad, commenting, hand, selected, onSelect, onOpen, project, nameOf, picking, onPick, live, running, onLive }: CardProps) {
   const picked = shotFile(screen.shot, scheme, full ? "full" : "thumb");
   const open = requests.filter((r) => r.status !== "closed");
   const placesState = usePlaces(commenting && picked && !running ? screen.shot?.places : undefined);
@@ -197,6 +201,8 @@ function Card({ screen, scheme, full, requests, onPin, onLoad, commenting, hand,
           onPick={(placed, page, at, route, handle) => onPick(placed, page, at, route, handle)}
           requests={requests}
           onPin={onPin}
+          offers={offers}
+          onOffer={onOffer}
           selected={selected}
         />
       ) : (
@@ -224,6 +230,12 @@ function Card({ screen, scheme, full, requests, onPin, onLoad, commenting, hand,
                 >
                   {i + 1}
                 </button>
+              ) : null,
+            )}
+          {picked &&
+            offers.map((proposal) =>
+              proposal.target.page ? (
+                <OfferPin key={proposal.id} proposal={proposal} onOpen={(at) => onOffer(proposal, at, null)} style={{ left: pct(proposal.target.box.x + proposal.target.box.width, proposal.target.page.width), top: pct(proposal.target.box.y, proposal.target.page.height) }} />
               ) : null,
             )}
         </PictureFrame>
@@ -291,9 +303,12 @@ interface CanvasProps {
   live?: LiveInfo | null;
   /** A System element's contract, for the choices a live edit offers. */
   contractOf?: (element: ElementId) => ComponentContract | null;
+  /** Options agents put on the canvas, and one decided here as the service returned it. */
+  proposals?: readonly ProposalDoc[];
+  onProposal?: (proposal: ProposalDoc) => void;
 }
 
-export function ScreensCanvas({ screens, scheme, requests, onRequest = () => undefined, nameOf: elementName = (id) => id, live = null, contractOf = () => null }: CanvasProps) {
+export function ScreensCanvas({ screens, scheme, requests, onRequest = () => undefined, nameOf: elementName = (id) => id, live = null, contractOf = () => null, proposals = [], onProposal = () => undefined }: CanvasProps) {
   const [, navigate] = useLocation();
   const frame = useRef<HTMLDivElement>(null);
   const board = useRef<HTMLDivElement>(null);
@@ -315,6 +330,8 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
   /** On a live pick, edit it in place or comment on it. */
   const [mode, setMode] = useState<"edit" | "comment">("comment");
   const [thread, setThread] = useState<{ id: string; at: Point } | null>(null);
+  /** An agent's options open in a bubble, with the component in the page when its screen runs live. */
+  const [offer, setOffer] = useState<{ id: string; at: Point; live: LiveHandle | null } | null>(null);
   /** The live screens, oldest first, by project and route. */
   const [running, setRunning] = useState<readonly string[]>([]);
   const liveOf = (screen: Screen): CardProps["live"] => {
@@ -351,7 +368,13 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
     setDraft({ screen, target: requestTarget(screen.route, placed, page), select: pickKey(placed) ?? element, name: nameOf(placed), elementName: element ? elementName(element) : null, at: boardPoint(at), live });
     setMode(live ? "edit" : "comment");
   };
+  const openOffer = (proposal: ProposalDoc, at: { clientX: number; clientY: number }, handle: LiveHandle | null): void => {
+    setDraft(null);
+    setThread(null);
+    setOffer({ id: proposal.id, at: boardPoint(at), live: handle });
+  };
   const openThread = (request: RequestDoc, at: { clientX: number; clientY: number }): void => {
+    setOffer(null);
     setDraft(null);
     setThread({ id: request.id, at: boardPoint(at) });
   };
@@ -393,9 +416,10 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
 
   // Esc closes what is open, then goes back to Move, then lets go of the selection; it works from inside a comment's text too.
   const escape = useCallback((): boolean => {
-    if (draft || thread) {
+    if (draft || thread || offer) {
       setDraft(null);
       setThread(null);
+      setOffer(null);
       return true;
     }
     if (tool !== "move") {
@@ -405,7 +429,7 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
     if (!selected) return false;
     setSelected(null);
     return true;
-  }, [draft, thread, tool, selected]);
+  }, [draft, thread, offer, tool, selected]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -537,6 +561,8 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
                       full={view.scale >= FULL_AT}
                       requests={forScreen(screen)}
                       onPin={openThread}
+                      offers={proposals.filter((p) => p.status === "open" && p.project === screen.project && p.route === screen.route)}
+                      onOffer={openOffer}
                       onLoad={refit}
                       commenting={commenting}
                       hand={active === "hand"}
@@ -609,6 +635,7 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
           )}
         </Bubble>
       )}
+      {offer && <OfferBubble offer={offer} view={view} frame={frame.current} proposals={proposals} contractOf={contractOf} onProposal={onProposal} onRequest={onRequest} onClose={() => setOffer(null)} />}
       {thread && <ThreadBubble id={thread.id} at={thread.at} view={view} frame={frame.current} requests={requests} screens={screens} onRequest={onRequest} onClose={() => setThread(null)} onOpen={(href) => navigate(href)} />}
       <div className="absolute right-4 bottom-4 flex items-center gap-1 rounded-md border border-line bg-surface p-1 shadow-raise max-sm:right-2 max-sm:bottom-2" data-canvas-controls>
         <div role="toolbar" aria-label="Tools" className="flex items-center gap-0.5" data-canvas-tools>
@@ -633,6 +660,29 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
         </Button>
       </div>
     </div>
+  );
+}
+
+/** An agent's options on the board: previewed on the live screen, then one written or filed, or all dismissed. */
+function OfferBubble({ offer, view, frame, proposals, contractOf, onProposal, onRequest, onClose }: { offer: { id: string; at: Point; live: LiveHandle | null }; view: View; frame: HTMLDivElement | null; proposals: readonly ProposalDoc[]; contractOf: (element: ElementId) => ComponentContract | null; onProposal: (proposal: ProposalDoc) => void; onRequest: (request: RequestDoc) => void; onClose: () => void }) {
+  const proposal = proposals.find((p) => p.id === offer.id);
+  if (!proposal) return null;
+  return (
+    <Bubble
+      at={offer.at}
+      view={view}
+      frame={frame}
+      onClose={onClose}
+      label={
+        <>
+          <span className="font-medium text-ink">{proposal.target.name}</span>
+          <span className="text-muted"> on {routeLabel(proposal.route)}</span>
+          {proposal.target.file && proposal.target.line && <span className="block truncate font-mono text-mono-sm text-faint">{proposal.target.file}:{proposal.target.line}</span>}
+        </>
+      }
+    >
+      <OfferPanel key={offer.id} proposal={proposal} live={offer.live} contract={proposal.target.element ? contractOf(proposal.target.element) : null} onChange={onProposal} onFiled={onRequest} onDone={onClose} />
+    </Bubble>
   );
 }
 

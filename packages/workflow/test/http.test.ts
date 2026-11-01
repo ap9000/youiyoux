@@ -2,7 +2,7 @@ import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "nod
 import { request } from "node:http";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { MemoryStore, RuleWorkflow, serveWorkflow, type RunningService } from "../src/index.ts";
+import { MemoryStore, ProposalStore, RuleWorkflow, serveWorkflow, type RunningService } from "../src/index.ts";
 import { sandbox, type Sandbox } from "./helpers.ts";
 
 const KEY = "test-session-key";
@@ -209,6 +209,28 @@ describe("a live edit written into the product's code", () => {
       rmSync(outside, { force: true });
       rmSync(join(box.project, "src/linked.tsx"), { force: true });
       rmSync(join(box.project, "src/notes.md"), { force: true });
+    }
+  });
+});
+
+describe("options an agent put on the canvas", () => {
+  test("are read freely; a person's pick or dismissal needs the session key, names an option the proposal has, and is made once", async () => {
+    const agent = { kind: "agent", name: "agent (MCP)" } as const;
+    const store = new ProposalStore(box.project, "expo-fixture");
+    const proposal = await store.create(agent, { route: "/", target: { name: "Title", box: { x: 0, y: 0, width: 10, height: 10 } }, ask: "Warmer words", options: [{ label: "Hello", why: "Friendly.", set: [], text: "Hello" }, { label: "Welcome", why: "Warmer.", set: [], text: "Welcome back" }] }, null);
+    try {
+      const listed = await call("GET", "/api/proposals");
+      expect((listed.json.proposals as Array<{ id: string }>).map((p) => p.id)).toEqual([proposal.id]);
+      const decide = (body: unknown, key: string | null = KEY) => call("POST", `/api/proposals/${proposal.id}/decision`, key ? { "x-youi-session": key } : {}, body);
+      expect((await decide({ choice: "a" }, null)).status).toBe(401);
+      expect((await decide({ choice: "z" })).status).toBe(400);
+      expect((await decide({ choice: "c" })).status).toBe(400);
+      expect((await decide({ choice: "a", dismiss: true })).status).toBe(400);
+      const chosen = await decide({ choice: "b", request: "r-0123456789" });
+      expect(chosen.json).toMatchObject({ status: "chosen", choice: "b", request: "r-0123456789", decidedBy: { kind: "person", name: "captain" } });
+      expect((await decide({ dismiss: true })).status).toBe(409);
+    } finally {
+      rmSync(join(box.project, ".youi/proposals"), { recursive: true, force: true });
     }
   });
 });

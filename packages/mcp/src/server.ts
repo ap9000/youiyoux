@@ -16,6 +16,9 @@
  *              phone), accessibility issues and a diff against the base commit, as image
  *              paths and plain lines. It writes images to the specimen cache only, never
  *              into the project.
+ *   screens_list, screens_show, screens_offer, screens_offers  the captured screens and
+ *              their components, options put on the Screens canvas for a person to pick from
+ *              (each held to the component's contract), and which one was picked.
  * There is no publish, approve, merge or install tool, so an agent can look things up,
  * plan a change and draft a request, but never ship one.
  *
@@ -31,10 +34,11 @@ import { DISCOVER_RULE, DiscoverConstraints, discoverCacheDir, discoverIndexPath
 import { storeLocation, type Store } from "@youiyoux/store";
 import { adoptionRequest, captureScreens, chosenSession, readScreensSpec, screenSlug, collectComponents, findLibraryEntry, renderShots, type ShotsOptions, componentCard, describeIdentity, failedChecks, findContract, formatProps, loadProject, planChange, PROJECT_FILE, ruleRows, ScanCache, scanProject, screenBom, searchElements, searchLibrary, tokenRows, whereUsed, type PlanInput, type Project, type ProjectComponents, type ScanResult } from "@youiyoux/scanner";
 import { launchBrowser } from "@youiyoux/detect";
-import { RequestStore, requestBrief } from "@youiyoux/workflow";
+import { ProposalStore, proposalBrief, RequestStore, requestBrief } from "@youiyoux/workflow";
 import { z } from "zod";
 import { findComponents, matchesText, noneFitsText } from "./find-component.ts";
 import { choicesText, renderText, ruleCoversText, swapImpactText, whereUsedText } from "./index-tools.ts";
+import { elementAt, findPlace, placesOf, screenComponents, screensDir } from "./screen-tools.ts";
 
 interface ServerOptions {
   readonly projectRoot: string;
@@ -56,6 +60,8 @@ const DEFAULT_TTL = 5_000;
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 /** The request tools write one file in the product's .youi/requests, and nothing else. */
 const WRITES_REQUEST = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } as const;
+/** screens_offer writes one file in the product's .youi/proposals, and nothing else. */
+const WRITES_PROPOSAL = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } as const;
 /** screens_capture writes one route's pictures and places in the product's .youi/screens, and nothing else. */
 const WRITES_SCREEN = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false } as const;
 const AGENT = { kind: "agent", name: "agent (MCP)" } as const;
@@ -64,7 +70,11 @@ type ToolResult = { content: Array<{ type: "text"; text: string }>; isError?: bo
 
 const ok = (value: unknown): ToolResult => ({ content: [{ type: "text", text: JSON.stringify(value) }] });
 const text = (value: string): ToolResult => ({ content: [{ type: "text", text: value }] });
-const fail = (error: unknown): ToolResult => ({ content: [{ type: "text", text: JSON.stringify({ error: error instanceof Error ? error.message : String(error) }) }], isError: true });
+/** An error in words, with each reason when there are several (an option refused, and why). */
+const fail = (error: unknown): ToolResult => {
+  const problems = (error as { problems?: unknown } | null)?.problems;
+  return { content: [{ type: "text", text: JSON.stringify({ error: error instanceof Error ? error.message : String(error), ...(Array.isArray(problems) && problems.length > 0 ? { problems } : {}) }) }], isError: true };
+};
 
 /**
  * The project and its scan, both refreshed after the TTL. The project is reloaded through
@@ -502,6 +512,91 @@ export function createServer(options: ServerOptions): McpServer {
       } finally {
         await browser.close();
       }
+    }),
+  );
+
+  /** The product's proposals, beside its requests. */
+  async function proposals(): Promise<{ store: ProposalStore; root: string }> {
+    const project = await state.loadProject().catch(() => null);
+    const root = project?.root ?? resolve(options.productRoot ?? options.projectRoot);
+    return { store: new ProposalStore(root, project?.config.id ?? basename(root)), root };
+  }
+  /** The scan's usage sites and the System's contracts, or none when there is no System project. */
+  async function system(): Promise<{ usages: readonly import("@youiyoux/core").UsageSite[]; contractOf: (id: string) => import("@youiyoux/core").ComponentContract | null }> {
+    const scanned = await state.scanned().catch(() => null);
+    if (!scanned) return { usages: [], contractOf: () => null };
+    return { usages: scanned.scan.report.usages, contractOf: (id) => scanned.project.system.components.find((c) => c.contract.id === id)?.contract ?? null };
+  }
+
+  server.registerTool(
+    "screens_list" satisfies McpTool,
+    { title: "The captured screens", description: "The screens captured from the running app (the hub's Screens page): each route, its picture (an absolute path: open it), how many components are placed on it, and its open requests and proposals. Start here before screens_show.", inputSchema: {}, annotations: READ_ONLY },
+    guard(async () => {
+      const { root } = await proposals();
+      const dir = screensDir(root);
+      if (!existsSync(join(dir, "screens.json"))) return { screens: [], next: "No screens are captured yet: a person captures them with youiyoux screens capture --base <url>." };
+      const spec = readScreensSpec(dir);
+      const open = (await (await proposals()).store.list()).proposals.filter((p) => p.status === "open");
+      const asked = (await (await requests()).store.list()).requests.filter((r) => r.status !== "closed");
+      return {
+        screens: spec.screens.map(({ route }) => {
+          const places = placesOf(root, route);
+          return { route, picture: join(dir, `${screenSlug(route)}.light.webp`), placed: "error" in places ? null : places.places.filter((p) => !p.html).length, requests: asked.filter((r) => r.target.route === route).length, proposals: open.filter((p) => p.route === route).length };
+        }),
+        ...(spec.base ? { base: spec.base } : {}),
+        next: "Call screens_show with a route to see what is on it, and the choices each System component's contract gives.",
+      };
+    }),
+  );
+
+  server.registerTool(
+    "screens_show" satisfies McpTool,
+    { title: "What is on a screen", description: "One captured screen's components, as the page names them, each with its file:line, its box on the picture (in the picture's pixels) and, for a System element, the props its contract lets an option set (enum values, switches, text, numbers) with their defaults. System elements first. Use one in screens_offer. Plain HTML a server writes is counted, not listed: it can't be changed in place.", inputSchema: { route: z.string().min(1).max(300).describe("The route, as screens_list names it") }, annotations: READ_ONLY },
+    guard(async ({ route }) => {
+      const { root } = await proposals();
+      const places = placesOf(root, route);
+      if ("error" in places) return places;
+      const { usages, contractOf } = await system();
+      const { components, html, more } = screenComponents(places, usages, contractOf);
+      return { route, picture: join(screensDir(root), `${screenSlug(route)}.light.webp`), page: places.size, components, ...(html ? { html } : {}), ...(more ? { more } : {}), next: "Pick one, then screens_offer two to four options for it: each sets props from its choices (or its text), and says why." };
+    }),
+  );
+
+  server.registerTool(
+    "screens_offer" satisfies McpTool,
+    {
+      title: "Put options on the Screens canvas",
+      description: "Offer a person two to four options for one component on a captured screen, pinned where it is on the hub's Screens canvas. Each option has a short label, why, and the changes: props from the component's contract (screens_show lists its choices; any other value is refused) and/or new text. The person previews each on the live app, picks one (the hub writes it into the code, or files a change request) or dismisses them. You never pick; screens_offers says what was picked. Writes only one file in .youi/proposals.",
+      inputSchema: {
+        route: z.string().min(1).max(300),
+        component: z.object({ name: z.string().min(1).max(200), file: z.string().min(1).max(500).optional(), line: z.number().int().positive().optional(), box: z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() }).optional() }).describe("As screens_show lists it"),
+        ask: z.string().min(1).max(1000).describe("What was asked for, in the asker's words"),
+        options: z.array(z.object({ label: z.string().min(1).max(60), why: z.string().min(1).max(500), set: z.array(z.object({ prop: z.string().min(1).max(64), value: z.union([z.string().max(2000), z.number(), z.boolean()]) })).max(20).optional(), text: z.string().min(1).max(2000).optional() })).min(2).max(4),
+      },
+      annotations: WRITES_PROPOSAL,
+    },
+    guard(async ({ route, component, ask, options: offered }) => {
+      const { store, root } = await proposals();
+      const places = placesOf(root, route);
+      if ("error" in places) return places;
+      const place = findPlace(places, component);
+      if (!place) return { error: `no ${component.name}${component.file ? ` at ${component.file}${component.line ? `:${component.line}` : ""}` : ""} on ${route}: screens_show lists what is there` };
+      const { usages, contractOf } = await system();
+      const element = elementAt(usages, place);
+      const target = { name: place.name, ...(element ? { element } : {}), ...(place.file ? { file: place.file } : {}), ...(place.line ? { line: place.line } : {}), ...(place.column != null ? { column: place.column } : {}), box: place.box, page: places.size };
+      const proposal = await store.create(AGENT, { route, target, ask, options: offered.map((o) => ({ label: o.label, why: o.why, set: o.set ?? [], text: o.text ?? null })) }, element ? contractOf(element) : null);
+      return proposalBrief(proposal, root);
+    }),
+  );
+
+  server.registerTool(
+    "screens_offers" satisfies McpTool,
+    { title: "Options on the canvas, and what was picked", description: "The options agents put on the Screens canvas: what was asked, each option's changes, and whether a person picked one (and whether the hub wrote it into the code or filed it as a change request), dismissed them, or hasn't decided. Default: open ones.", inputSchema: { status: z.enum(["open", "chosen", "dismissed", "all"]).optional(), route: z.string().min(1).optional() }, annotations: READ_ONLY },
+    guard(async ({ status, route }) => {
+      const { store, root } = await proposals();
+      const { proposals: all, unreadable } = await store.list();
+      const wanted = all.filter((p) => (status === "all" || p.status === (status ?? "open")) && (!route || p.route === route));
+      return { proposals: wanted.map((p) => proposalBrief(p, root)), ...(unreadable.length ? { unreadable } : {}), ...(wanted.length === 0 ? { next: `No ${status && status !== "all" ? status : "open"} proposals${route ? ` on ${route}` : ""}.` } : {}) };
     }),
   );
 

@@ -187,7 +187,7 @@ describe("youi", () => {
       expect(await main(["schema", "--check"])).toBe(0);
       out = "";
       expect(await main(["schema", "--check", "--design", dir, "--json"])).toBe(1);
-      expect((JSON.parse(out) as { stale: string[] }).stale).toHaveLength(19);
+      expect((JSON.parse(out) as { stale: string[] }).stale).toHaveLength(20);
       expect(await main(["schema", "--write", "--design", dir])).toBe(0);
       out = "";
       expect(await main(["schema", "--check", "--design", dir])).toBe(0);
