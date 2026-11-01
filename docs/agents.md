@@ -184,7 +184,10 @@ files it like a change request, and once its agent has written the file, brings 
 checkout, where the hub pins it. Every proposal youiyoux reads, whoever wrote it, is held to its
 component's contract and, when it answers a request, to that request's own component; one that
 isn't is listed as unreadable and never shown. Picking an option or dismissing them closes the
-options request, saying which.
+options request, saying which. The hub seals each decision with a key only you can read
+(`$XDG_CONFIG_HOME/youiyoux/decisions.key`, or `YOUI_DECISIONS_KEY`), and a proposal that says it
+was decided without that seal (written into the file by anything else) is listed as unreadable, so
+an agent never acts on a decision you didn't make.
 
 ## Exit codes
 

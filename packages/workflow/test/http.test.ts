@@ -11,7 +11,8 @@ let service: RunningService;
 
 beforeAll(async () => {
   box = await sandbox();
-  const workflow = new RuleWorkflow({ projectRoot: box.project, designRoot: box.design, store: new MemoryStore() });
+  // Decisions are sealed with a key in the sandbox, never the person's own config folder.
+  const workflow = new RuleWorkflow({ projectRoot: box.project, designRoot: box.design, store: new MemoryStore(), decisionsKey: join(box.project, "..", "decisions.key") });
   service = await serveWorkflow({ workflow, actor: { kind: "person", name: "captain" }, sessionKey: KEY, port: 0 });
 });
 

@@ -11,10 +11,11 @@
  * proposes, and reads what was picked. A file that does not validate is listed as unreadable,
  * never dropped and never rewritten.
  */
-import { randomBytes } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
-import { join } from "node:path";
+import { lstat, mkdir, readdir, readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
 import { OPTION_IDS, PROPOSAL_ID, ProposalDoc, REQUEST_ID, writeFileAtomic, type ComponentContract, type ElementId, type ProposalOption, type ProposalTarget, type RequestAuthor, type RequestDoc } from "@youiyoux/core";
 import { EDIT_REFUSED, isScriptValue, screenSlug } from "@youiyoux/scanner";
 import { authorize, WorkflowError } from "./policy.ts";
@@ -40,11 +41,49 @@ export interface ProposalInput {
 export interface ProposalCheck {
   readonly contractOf: (element: ElementId) => ComponentContract | null;
   readonly request: (id: string) => Promise<RequestDoc | null>;
+  /** The key decisions are sealed with (decisionsKey); null when there is none: then no decision is shown. */
+  readonly sealKey: string | null;
+}
+
+/** Where the key that seals decisions lives: YOUI_DECISIONS_KEY, else $XDG_CONFIG_HOME/youiyoux/decisions.key; per person, never in a repo. */
+export const decisionsKeyFile = (env: NodeJS.ProcessEnv = process.env): string => env.YOUI_DECISIONS_KEY || join(env.XDG_CONFIG_HOME || join(homedir(), ".config"), "youiyoux", "decisions.key");
+
+/**
+ * The key a person's decisions are sealed with, readable only by them: read, or made when `make`
+ * and there is none. A file others could read, a link, or anything that isn't a key is never used
+ * (reading it gives null; making refuses, saying how to fix it), so a seal proves the decision was
+ * made by a hub of this person's.
+ */
+export async function decisionsKey(file: string, make: boolean): Promise<string | null> {
+  const stat = await lstat(file).catch(() => null);
+  if (stat) {
+    const safe = stat.isFile() && (stat.mode & 0o077) === 0 && (typeof process.getuid !== "function" || stat.uid === process.getuid());
+    const key = safe ? (await readFile(file, "utf8")).trim() : "";
+    if (/^[0-9a-f]{64}$/.test(key)) return key;
+    if (make) throw new WorkflowError("forbidden", `${file} isn't a key only you can read: remove it, and youiyoux makes a new one (decisions sealed with the old one show as unreadable)`);
+    return null;
+  }
+  if (!make) return null;
+  const key = randomBytes(32).toString("hex");
+  await mkdir(dirname(file), { recursive: true, mode: 0o700 });
+  await writeFileAtomic(file, `${key}\n`, { mode: 0o600 });
+  return key;
+}
+
+/** A decision's seal: what was decided, by whom and when, on which proposal, with the person's key. */
+export function decisionSeal(key: string, p: Pick<ProposalDoc, "id" | "for" | "status" | "choice" | "decidedBy" | "decidedAt" | "request" | "options">): string {
+  const what = [p.id, p.for ?? null, p.status, p.choice ?? null, p.decidedBy?.kind ?? null, p.decidedBy?.name ?? null, p.decidedAt ?? null, p.request ?? null, p.options.map((o) => [o.id, o.label, o.set, o.text])];
+  return createHmac("sha256", key).update(`youiyoux-decision:${JSON.stringify(what)}`).digest("hex");
 }
 
 /** Why a proposal can't be shown, or null. */
 export async function proposalProblem(proposal: ProposalDoc, check: ProposalCheck): Promise<string | null> {
   const t = proposal.target;
+  // Options are offered by agents; a decision is a person's, made in the hub, which seals it.
+  if (proposal.author.kind !== "agent") return "its author isn't an agent: options are offered by agents";
+  const decided = proposal.choice !== undefined || proposal.decidedBy !== undefined || proposal.decidedAt !== undefined || proposal.request !== undefined || proposal.seal !== undefined;
+  if (proposal.status === "open" && decided) return "it is open but carries a decision";
+  if (proposal.status !== "open" && (check.sealKey === null || proposal.seal !== decisionSeal(check.sealKey, proposal))) return "its decision wasn't made in your hub: its seal doesn't match";
   const contract = t.element ? check.contractOf(t.element) : null;
   if (t.element && !contract) return `its component ${t.element} has no contract in the design system`;
   for (const option of proposal.options) {
@@ -71,6 +110,8 @@ export type ProposalDecision = { readonly choice: (typeof OPTION_IDS)[number]; r
 export interface ProposalStoreOptions {
   readonly now?: () => Date;
   readonly newId?: () => string;
+  /** The key a person's decisions are sealed with (decisionsKey); without it, nothing can be decided. */
+  readonly sealKey?: () => Promise<string | null>;
 }
 
 const authorOf = (actor: Actor): RequestAuthor => ({ kind: actor.kind, name: actor.name });
@@ -182,12 +223,15 @@ export class ProposalStore {
     if (actor.kind !== "person") throw new WorkflowError("forbidden", `an ${actor.kind} cannot pick among options: a person picks one on the Screens canvas`);
     const proposal = await this.get(id);
     if (proposal.status !== "open") throw new WorkflowError("conflict", `${id} is already ${proposal.status}`);
+    const key = await this.options.sealKey?.();
+    if (!key) throw new WorkflowError("forbidden", "deciding needs youiyoux's key to seal it: decide in the hub (youiyoux ui --project)");
     const at = this.now();
     const decided = { ...proposal, updatedAt: at, decidedBy: authorOf(actor), decidedAt: at };
-    if ("dismiss" in decision) return this.write({ ...decided, status: "dismissed" });
+    const sealed = (doc: ProposalDoc): ProposalDoc => ({ ...doc, seal: decisionSeal(key, doc) });
+    if ("dismiss" in decision) return this.write(sealed({ ...decided, status: "dismissed" }));
     if (!proposal.options.some((o) => o.id === decision.choice)) throw new WorkflowError("bad-request", `${id} has no option ${decision.choice}`);
     if (decision.request !== undefined && !REQUEST_ID.test(decision.request)) throw new WorkflowError("bad-request", "request is r-<10 hex>");
-    return this.write({ ...decided, status: "chosen", choice: decision.choice, ...(decision.request ? { request: decision.request } : {}) });
+    return this.write(sealed({ ...decided, status: "chosen", choice: decision.choice, ...(decision.request ? { request: decision.request } : {}) }));
   }
 }
 

@@ -264,6 +264,10 @@
     "for": {
       "type": "string",
       "pattern": "^r-[0-9a-f]{10}$"
+    },
+    "seal": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
     }
   },
   "required": [

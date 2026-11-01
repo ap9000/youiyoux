@@ -6,7 +6,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { screenSlug } from "@youiyoux/scanner";
-import { ProposalStore, RequestStore } from "@youiyoux/workflow";
+import { decisionsKey, ProposalStore, RequestStore } from "@youiyoux/workflow";
 import { createServer } from "../src/index.ts";
 
 const EXAMPLES = join(import.meta.dirname, "../../../examples");
@@ -36,7 +36,7 @@ beforeAll(async () => {
       { name: 'button "Preview"', html: "button", owner: "Served", file: "app/index.tsx", line: 30, column: 4, box: { x: 0, y: 900, width: 80, height: 30 }, depth: 9, frames: [] },
     ],
   }));
-  const server = createServer({ projectRoot: app, render: { download: false } });
+  const server = createServer({ projectRoot: app, render: { download: false }, decisionsKey: join(dir, "decisions.key") });
   const [a, b] = InMemoryTransport.createLinkedPair();
   client = new Client({ name: "test", version: "0.0.0" });
   await Promise.all([server.connect(b), client.connect(a)]);
@@ -108,7 +108,7 @@ describe("options on the Screens canvas, over MCP", () => {
   });
 
   test("only a person picks; the agent reads what was picked, and what is left to do", async () => {
-    const store = new ProposalStore(app, "demo-app");
+    const store = new ProposalStore(app, "demo-app", { sealKey: () => decisionsKey(join(dir, "decisions.key"), true) });
     const [open] = (await store.list()).proposals;
     await expect(store.decide({ kind: "agent", name: "agent (MCP)" }, open!.id, { choice: "a" })).rejects.toThrow(/a person picks one on the Screens canvas/);
     await store.decide({ kind: "person", name: "captain" }, open!.id, { choice: "b", request: "r-0123456789" });

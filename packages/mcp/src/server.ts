@@ -34,7 +34,7 @@ import { DISCOVER_RULE, DiscoverConstraints, discoverCacheDir, discoverIndexPath
 import { storeLocation, type Store } from "@youiyoux/store";
 import { adoptionRequest, captureScreens, chosenSession, readScreensSpec, screenSlug, collectComponents, findLibraryEntry, renderShots, type ShotsOptions, componentCard, describeIdentity, failedChecks, findContract, formatProps, loadProject, planChange, PROJECT_FILE, ruleRows, ScanCache, scanProject, screenBom, searchElements, searchLibrary, tokenRows, whereUsed, type PlanInput, type Project, type ProjectComponents, type ScanResult } from "@youiyoux/scanner";
 import { launchBrowser } from "@youiyoux/detect";
-import { ProposalStore, proposalBrief, RequestStore, requestBrief, type ProposalCheck } from "@youiyoux/workflow";
+import { decisionsKey, decisionsKeyFile, ProposalStore, proposalBrief, RequestStore, requestBrief, type ProposalCheck } from "@youiyoux/workflow";
 import { z } from "zod";
 import { findComponents, matchesText, noneFitsText } from "./find-component.ts";
 import { choicesText, renderText, ruleCoversText, swapImpactText, whereUsedText } from "./index-tools.ts";
@@ -51,6 +51,8 @@ interface ServerOptions {
   readonly discoverCache?: string;
   /** The store (index.db); default beside an explicit discoverCache, else YOUI_INDEX, else ~/.cache/youiyoux/index.db. DATABASE_URL wins. */
   readonly index?: string;
+  /** Where the key that seals a person's decisions lives (default decisionsKeyFile()). */
+  readonly decisionsKey?: string;
   /** ui_render: tests count renders, choose the cache and never download Chromium. */
   readonly render?: Pick<ShotsOptions, "stats" | "download" | "cache">;
 }
@@ -532,7 +534,8 @@ export function createServer(options: ServerOptions): McpServer {
   async function proposalCheck(): Promise<ProposalCheck> {
     const { contractOf } = await system();
     const { store } = await requests();
-    return { contractOf, request: (id) => store.get(id).catch(() => null) };
+    // An agent reads decisions only as a person's hub sealed them; it can't make one.
+    return { contractOf, request: (id) => store.get(id).catch(() => null), sealKey: await decisionsKey(options.decisionsKey ?? decisionsKeyFile(), false) };
   }
 
   server.registerTool(

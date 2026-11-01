@@ -1,10 +1,11 @@
 /** Options requests and the proposals that answer them: the task a runner's agent needs, one proposal per request, and every proposal read held to its contract and its request. */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { ComponentContract, ProposalDoc } from "@youiyoux/core";
-import { ProposalStore, RequestStore, type ProposalCheck } from "../src/index.ts";
+import { decisionsKey, ProposalStore, RequestStore, type ProposalCheck } from "../src/index.ts";
 
 const BUTTON = { id: "youi:demo/component/button", name: "Button", props: { variant: { type: "enum", values: ["default", "outline", "ghost"], default: "default", required: false }, onClick: { type: "function", required: false }, old: { type: "string", deprecated: "use label", required: false }, label: { type: "string", required: false } } } as unknown as ComponentContract;
 const TARGET = { route: "/flows", scope: "here", name: "Button", element: "youi:demo/component/button", file: "src/app.tsx", line: 12, box: { x: 10, y: 20, width: 80, height: 32 }, page: { width: 1440, height: 900 } } as const;
@@ -49,7 +50,7 @@ describe("proposals read from disk", () => {
   test("a runner's agent's file is shown only when every option is the contract's own and its component is the one its request asked about", async () => {
     const requests = new RequestStore(root, "acme", { newId: () => "r-00000000aa" });
     await requests.create(PERSON, { kind: "options", body: "Make the main action clearer", target: TARGET }, BUTTON);
-    const check: ProposalCheck = { contractOf: (id) => (id === BUTTON.id ? BUTTON : null), request: (id) => requests.get(id).catch(() => null) };
+    const check: ProposalCheck = { contractOf: (id) => (id === BUTTON.id ? BUTTON : null), request: (id) => requests.get(id).catch(() => null), sealKey: null };
     const store = new ProposalStore(root, "acme");
     write(proposal());
     expect((await store.list(check)).proposals.map((p) => p.id)).toEqual(["p-00000000aa"]);
@@ -61,6 +62,34 @@ describe("proposals read from disk", () => {
     expect((await store.list(check)).unreadable.map((u) => u.reason)).toContain("it answers r-00000000bb, which isn't an options request here");
     // Without a check (an agent's own view), it is only read as a youi.proposal/v1.
     expect((await store.list()).proposals).toHaveLength(2);
+  });
+
+  test("a decision is shown only as your hub sealed it: one written into the file, or made with another key, never is; options are an agent's", async () => {
+    const requests = new RequestStore(root, "acme", { newId: () => "r-00000000aa" });
+    await requests.create(PERSON, { kind: "options", body: "Make the main action clearer", target: TARGET }, BUTTON);
+    const keyFile = join(root, "config", "decisions.key");
+    const store = new ProposalStore(root, "acme", { sealKey: () => decisionsKey(keyFile, true) });
+    const check = async (): Promise<ProposalCheck> => ({ contractOf: (id) => (id === BUTTON.id ? BUTTON : null), request: (id) => requests.get(id).catch(() => null), sealKey: await decisionsKey(keyFile, false) });
+    // Forged: decided by a "person" in the file itself.
+    write(proposal({ status: "chosen", choice: "b", decidedBy: PERSON, decidedAt: "2026-11-01T11:00:00Z", request: "r-0123456789" }));
+    expect((await store.list(await check())).unreadable).toEqual([{ file: ".youi/proposals/p-00000000aa.json", reason: "its decision wasn't made in your hub: its seal doesn't match" }]);
+    write(proposal({ decidedBy: PERSON }));
+    expect((await store.list(await check())).unreadable[0]!.reason).toBe("it is open but carries a decision");
+    write(proposal({ author: PERSON }));
+    expect((await store.list(await check())).unreadable[0]!.reason).toBe("its author isn't an agent: options are offered by agents");
+    // Decided in the hub: sealed, and shown.
+    write(proposal());
+    const decided = await store.decide(PERSON, "p-00000000aa", { choice: "b" });
+    expect(decided.seal).toMatch(/^[0-9a-f]{64}$/);
+    expect((await store.list(await check())).proposals.map((p) => [p.id, p.status])).toEqual([["p-00000000aa", "chosen"]]);
+    expect((await stat(keyFile)).mode & 0o777).toBe(0o600);
+    // A seal made with another key, or a decision changed after it was sealed, isn't yours.
+    expect((await store.list({ ...(await check()), sealKey: "0".repeat(64) })).unreadable).toHaveLength(1);
+    write({ ...decided, choice: "a" });
+    expect((await store.list(await check())).unreadable[0]!.reason).toBe("its decision wasn't made in your hub: its seal doesn't match");
+    // Without the key, nothing can be decided.
+    write(proposal());
+    await expect(new ProposalStore(root, "acme").decide(PERSON, "p-00000000aa", { dismiss: true })).rejects.toThrow(/deciding needs youiyoux's key/);
   });
 
   test("one proposal answers a request: its id is the request's hex, and a second is refused", async () => {

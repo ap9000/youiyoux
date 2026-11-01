@@ -76,6 +76,8 @@ export const ProposalDoc = z
     request: z.string().regex(REQUEST_ID, "expected r-<10 hex>").optional(),
     /** The options request it answers, whose hex its id shares. */
     for: z.string().regex(REQUEST_ID, "expected r-<10 hex>").optional(),
+    /** A decision's seal: made by the hub that recorded it, with a key only its person can read. */
+    seal: z.string().regex(/^[0-9a-f]{64}$/).optional(),
   })
   .refine((p) => new Set(p.options.map((o) => o.id)).size === p.options.length, "each option has its own letter")
   .refine((p) => p.for === undefined || p.for.slice(2) === p.id.slice(2), "a proposal for a request shares its id: p-<the request's hex>")

@@ -28,7 +28,7 @@ import { authorize, WorkflowError, type Action } from "./policy.ts";
 import { comparePreview, notRunReason } from "./preview.ts";
 import { LiveApp } from "./live.ts";
 import { RequestStore } from "./requests.ts";
-import { ProposalStore, type ProposalCheck } from "./proposals.ts";
+import { decisionsKey, decisionsKeyFile, ProposalStore, type ProposalCheck } from "./proposals.ts";
 import type { WorkflowStore } from "./store.ts";
 
 const WORKFLOW_VERSION = "0.1.0";
@@ -40,6 +40,8 @@ interface WorkflowOptions extends LoadProjectOptions {
   readonly execution?: RuleExecution;
   readonly now?: () => Date;
   readonly newId?: (prefix: "d" | "p") => string;
+  /** Where the key that seals a person's decisions lives (default decisionsKeyFile()). */
+  readonly decisionsKey?: string;
   /**
    * What swapping a Library item in for an inventory family would touch, from the local index
    * (`youiyoux inventory` records it); null when the index cannot say. Without it, a library
@@ -134,13 +136,15 @@ export class RuleWorkflow {
   async proposalCheck(): Promise<ProposalCheck> {
     const project = await this.project();
     const requests = await this.requests();
-    return { contractOf: (id) => project.system.components.find((c) => c.contract.id === id)?.contract ?? null, request: (id) => requests.get(id).catch(() => null) };
+    const sealKey = await decisionsKey(this.options.decisionsKey ?? decisionsKeyFile(), false);
+    return { contractOf: (id) => project.system.components.find((c) => c.contract.id === id)?.contract ?? null, request: (id) => requests.get(id).catch(() => null), sealKey };
   }
 
-  /** Options agents put on the Screens canvas, in the product's .youi/proposals. */
+  /** Options agents put on the Screens canvas, in the product's .youi/proposals; a person's decisions sealed with their key. */
   async proposals(): Promise<ProposalStore> {
     const project = await this.project();
-    return new ProposalStore(project.root, project.config.id, this.options.now ? { now: this.options.now } : {});
+    const file = this.options.decisionsKey ?? decisionsKeyFile();
+    return new ProposalStore(project.root, project.config.id, { ...(this.options.now ? { now: this.options.now } : {}), sealKey: () => decisionsKey(file, true) });
   }
 
   /** The project and its design definitions, as they are on disk now. */
