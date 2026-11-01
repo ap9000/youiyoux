@@ -25,6 +25,7 @@ import { scannerExecution, type RuleExecution } from "./execution.ts";
 import { branchTip, changesDigest, createReviewBranch, defaultBranch, hasChanges, headCommit, isAncestor, locate, type RepoLocation } from "./git.ts";
 import { authorize, WorkflowError, type Action } from "./policy.ts";
 import { comparePreview, notRunReason } from "./preview.ts";
+import { LiveApp } from "./live.ts";
 import { RequestStore } from "./requests.ts";
 import type { WorkflowStore } from "./store.ts";
 
@@ -100,10 +101,18 @@ export class RuleWorkflow {
   private readonly locks = new Map<string, Promise<unknown>>();
   /** The last scan for the rules list, reused while the design repo and project are unchanged. */
   private scanned: { digest: string; at: string; result: Promise<ScanResult> } | null = null;
+  private liveApp: LiveApp | null = null;
 
   constructor(options: WorkflowOptions) {
     this.options = options;
     this.execution = options.execution ?? scannerExecution;
+  }
+
+  /** The product's running app, for live screens on the hub's canvas (live.ts); one per product root, so its maps are kept. */
+  async live(): Promise<LiveApp> {
+    const { root, config } = await this.project();
+    if (this.liveApp?.root !== root || this.liveApp.project !== config.id) this.liveApp = new LiveApp(root, config.id);
+    return this.liveApp;
   }
 
   /** The product's comments and change requests on its captured screens (requests.ts), in its `.youi/requests`. */

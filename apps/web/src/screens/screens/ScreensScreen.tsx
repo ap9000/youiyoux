@@ -74,6 +74,7 @@ function ScreenGrid({ model, index, screens }: { model: Model; index: UsageIndex
   const [location, navigate] = useLocation();
   const canvas = new URLSearchParams(useSearch()).get("view") === "canvas";
   const requests = useRemote(workflowApi.requests, "requests");
+  const live = useRemote(workflowApi.live, "live");
   const header = (
     <PaneHeader title="Screens" count={screens.screens.length}>
       <Segmented<"grid" | "canvas"> label="Layout" value={canvas ? "canvas" : "grid"} onChange={(v) => navigate(v === "canvas" ? `${location}?view=canvas` : location, { replace: true })} options={[{ value: "grid", label: "Grid" }, { value: "canvas", label: "Canvas" }]} />
@@ -89,6 +90,7 @@ function ScreenGrid({ model, index, screens }: { model: Model; index: UsageIndex
           requests={requests.state.status === "ready" ? requests.state.value.requests : []}
           onRequest={(next) => (requests.state.status === "ready" ? requests.set({ ...requests.state.value, requests: withRequest(requests.state.value.requests, next) }) : requests.reload())}
           nameOf={(id) => model.byId.get(id)?.name ?? id}
+          live={live.state.status === "ready" ? live.state.value : null}
         />
       </div>
     );

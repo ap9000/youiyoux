@@ -1,17 +1,20 @@
 /**
- * The loopback HTTP service: the workflow (rule, style and library drafts, and requests on
- * captured screens) under /api.
+ * The loopback HTTP service: the workflow (rule, style and library drafts, requests on captured
+ * screens, and live screens) under /api.
  *
  * It listens on 127.0.0.1 only. Requests must name a loopback Host (no DNS rebinding) and
  * may not come cross-site; writes must carry this run's session key (printed only in the
  * terminal that started the service, in the link that opens the hub) and, from a browser, a
- * loopback Origin. Pages may not be framed, so nothing can trick a click on Approve.
+ * loopback Origin. Pages may not be framed, so nothing can trick a click on Approve. One file is
+ * served to any page: the live bridge (BRIDGE_PATH), a fixed script the product's app loads in
+ * development from wherever it runs; it holds nothing of this run's.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { z } from "zod";
 import { COMPONENT_STATES, DefinitionError, ElementId, LibraryEntry, REQUEST_STATUSES, RequestTarget, RuleCheck, RuleRollout } from "@youiyoux/core";
+import { BRIDGE_PATH, liveBridge } from "@youiyoux/scanner";
 import type { Actor, ApiError } from "./api.ts";
 import { WorkflowError } from "./policy.ts";
 import type { RuleWorkflow } from "./service.ts";
@@ -53,6 +56,11 @@ const SaveInput = z.object({ revision: z.number().int().positive(), content: z.u
 const RequestInput = z.object({ kind: z.enum(["comment", "change"]), body: z.string().min(1).max(4000), target: RequestTarget });
 const ReplyInput = z.object({ body: z.string().min(1).max(4000) });
 const StatusInput = z.object({ status: z.enum(REQUEST_STATUSES), body: z.string().max(4000).optional() });
+/** The components under the pointer on a live screen, as the bridge saw them: their frames are mapped to lines. */
+const LiveFrame = z.object({ url: z.string().min(1).max(2000), line: z.number().int().positive(), column: z.number().int().nonnegative() });
+const LiveBox = z.object({ x: z.number().finite(), y: z.number().finite(), width: z.number().finite().nonnegative(), height: z.number().finite().nonnegative() });
+const LivePlace = z.object({ name: z.string().min(1).max(200), owner: z.string().max(200).nullable(), frames: z.array(LiveFrame).max(8), box: LiveBox, depth: z.number().int().nonnegative().max(100_000) });
+const LiveResolveInput = z.object({ places: z.array(LivePlace).max(16) });
 
 /** JSON has no undefined: an absent light or dark stays absent (unchanged), null stays null (dark follows light). */
 function styleContent<T extends { tokens: Array<{ light?: unknown; dark?: unknown }> }>(content: T): T {
@@ -147,6 +155,8 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string, opti
     if ("kind" in input && input.kind === "ingest") return send(res, 201, await workflow.create(actor, { kind: "ingest", link: input.link }));
     return send(res, 201, await workflow.create(actor, "kind" in input && input.kind === "style" ? { kind: "style", ...(input.content ? { content: styleContent(input.content) } : {}) } : (input as Exclude<typeof input, { kind: "style" } | { kind: "library" } | { kind: "ingest" }>)));
   }
+  if (path === "/api/live" && method === "GET") return send(res, 200, (await workflow.live()).info());
+  if (path === "/api/live/resolve" && method === "POST") return send(res, 200, { places: await (await workflow.live()).resolve(parse(LiveResolveInput, await readJson(req)).places) });
   if (path === "/api/requests" && method === "GET") return send(res, 200, await (await workflow.requests()).list());
   if (path === "/api/requests" && method === "POST") return send(res, 201, await (await workflow.requests()).create(actor, parse(RequestInput, await readJson(req))));
   const request = /^\/api\/requests\/(r-[0-9a-f]{10})(?:\/(replies|status|compare|before\.webp|after\.webp))?$/.exec(path);
@@ -196,6 +206,11 @@ function createHandler(options: HandlerOptions): (req: IncomingMessage, res: Ser
     void (async () => {
       try {
         const path = new URL(req.url ?? "/", "http://loopback").pathname;
+        if (path === BRIDGE_PATH && (req.method === "GET" || req.method === "HEAD")) {
+          if (!LOOPBACK_HOST.test(req.headers.host ?? "")) throw new HttpError(421, "this service answers loopback hosts only");
+          res.writeHead(200, { ...BASE_HEADERS, "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" });
+          return void res.end(req.method === "HEAD" ? undefined : liveBridge());
+        }
         screen(req, options.sessionKey);
         if (path === "/api" || path.startsWith("/api/")) return await api(req, res, path, options);
         throw new HttpError(404, "not found");

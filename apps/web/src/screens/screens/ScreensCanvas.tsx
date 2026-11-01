@@ -8,9 +8,13 @@
  * under the pointer is outlined and named on any screen whose capture placed its components, and a
  * click opens a comment or change request on it beside the click. A pin opens its request's thread
  * there too, to reply, close or reopen. Esc closes what is open, then stops commenting.
+ *
+ * A screen of the product the local service serves can run live (LiveScreen): its card frames the
+ * running app at the screen's address, to use as it is and to comment on the same way. At most
+ * LIVE_AT_ONCE run at once, each being a whole page of the app; turning on another stops the first.
  */
 import { clsx } from "clsx";
-import { ArrowUpRight, Maximize, MessageSquarePlus, Minus, Plus, X } from "lucide-react";
+import { ArrowUpRight, Image, Maximize, MessageSquarePlus, Minus, Plus, Radio, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import { Link, useLocation } from "wouter";
 import type { ElementId, RequestDoc, RequestTarget } from "@youiyoux/core";
@@ -24,6 +28,8 @@ import { shotFile } from "../../ui/ScreenImage.tsx";
 import { IssueBadge } from "./IssueCounts.tsx";
 import { PlacesLayer } from "./PlacesOverlay.tsx";
 import { RequestComposer, RequestThread } from "./Requests.tsx";
+import { LiveScreen } from "./LiveScreen.tsx";
+import type { LiveInfo } from "../../data/workflow.ts";
 import { pct } from "../../lib/format.ts";
 
 /** A screen's width on the board, in board pixels. */
@@ -41,6 +47,8 @@ const CLICK_SLOP = 4;
 /** A comment's bubble: its width, and how far it keeps from the board's edges. */
 const BUBBLE = 360;
 const EDGE = 12;
+/** Live screens running at once: each is a whole page of the app. */
+export const LIVE_AT_ONCE = 4;
 
 export interface View {
   readonly x: number;
@@ -98,16 +106,20 @@ interface CardProps {
   nameOf: (placed: Placed) => string;
   /** What the comment being written is about, when it is on this screen. */
   picking: string | null;
-  onPick: (placed: Placed, page: { width: number; height: number }, at: { clientX: number; clientY: number }) => void;
+  onPick: (placed: Placed, page: { width: number; height: number }, at: { clientX: number; clientY: number }, route?: string) => void;
+  /** Where this screen runs, when it can run live: its address on the app, and every captured screen's. */
+  live: { url: string; viewport: { width: number; height: number }; screens: LiveInfo["screens"] } | null;
+  running: boolean;
+  onLive: () => void;
 }
 
-function Card({ screen, scheme, full, requests, onPin, onLoad, commenting, project, nameOf, picking, onPick }: CardProps) {
+function Card({ screen, scheme, full, requests, onPin, onLoad, commenting, project, nameOf, picking, onPick, live, running, onLive }: CardProps) {
   const picked = shotFile(screen.shot, scheme, full ? "full" : "thumb");
   const open = requests.filter((r) => r.status !== "closed");
-  const placesState = usePlaces(commenting && picked ? screen.shot?.places : undefined);
+  const placesState = usePlaces(commenting && picked && !running ? screen.shot?.places : undefined);
   const places = placesState?.status === "ready" ? placesState.value : null;
   const placed = useMemo(() => (places ? matchPlaces(places.places, project.sites, project.lookalikes) : []), [places, project]);
-  const unplaced = commenting && picked && (!screen.shot?.places || placesState?.status === "error");
+  const unplaced = commenting && picked && !running && (!screen.shot?.places || placesState?.status === "error");
   const picture = (
     <>
       {picked ? (
@@ -125,37 +137,67 @@ function Card({ screen, scheme, full, requests, onPin, onLoad, commenting, proje
           {screen.route === EVERY_SCREEN ? "every screen" : routeLabel(screen.route)}
         </Link>
         {open.length > 0 && <span className="rounded-full bg-accent px-1.5 text-caption font-medium text-on-accent tabular" title={`${open.length} open or addressed requests`}>{open.length}</span>}
-        <span className="ml-auto">
+        <span className="ml-auto flex items-center gap-1.5">
           <IssueBadge issues={screen.issues} />
+          {live && (
+            <button
+              type="button"
+              onClick={onLive}
+              aria-pressed={running}
+              title={running ? "Show the screenshot" : `Run ${routeLabel(screen.route)} live from ${live.url}`}
+              className={clsx("inline-flex h-6 items-center gap-1 rounded-sm border px-1.5 text-caption font-medium", running ? "border-accent bg-accent-soft text-accent" : "border-line text-muted hover:bg-raised hover:text-ink")}
+              data-live-toggle
+            >
+              {running ? <Image aria-hidden className="size-3.5" /> : <Radio aria-hidden className="size-3.5" />}
+              {running ? "Picture" : "Live"}
+            </button>
+          )}
         </span>
       </header>
-      <PictureFrame href={commenting ? null : screenHref(screen.project, screen.route)} label={`Open ${screen.project} ${routeLabel(screen.route)}`}>
-        {picture}
-        {picked &&
-          requests.map((request, i) =>
-            request.target.box && request.target.page ? (
-              <button
-                key={request.id}
-                type="button"
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  onPin(request, event);
-                }}
-                aria-label={`Request ${i + 1} on ${routeLabel(screen.route)} (${request.status}): ${request.body}`}
-                title={request.body}
-                data-canvas-pin={request.id}
-                className={clsx(
-                  "absolute grid size-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-surface text-caption font-semibold tabular shadow-raise",
-                  request.status === "closed" ? "bg-neutral-soft text-muted" : request.status === "addressed" ? "bg-success text-on-accent" : "bg-accent text-on-accent",
-                )}
-                style={{ left: pct(request.target.box.x, request.target.page.width), top: pct(request.target.box.y, request.target.page.height) }}
-              >
-                {i + 1}
-              </button>
-            ) : null,
-          )}
-      </PictureFrame>
+      {running && live ? (
+        <LiveScreen
+          url={live.url}
+          viewport={live.viewport}
+          width={CARD_WIDTH}
+          screens={live.screens}
+          route={screen.route}
+          commenting={commenting}
+          sites={project}
+          nameOf={nameOf}
+          picking={picking !== null}
+          onPick={(placed, page, at, route) => onPick(placed, page, at, route)}
+          requests={requests}
+          onPin={onPin}
+        />
+      ) : (
+        <PictureFrame href={commenting ? null : screenHref(screen.project, screen.route)} label={`Open ${screen.project} ${routeLabel(screen.route)}`}>
+          {picture}
+          {picked &&
+            requests.map((request, i) =>
+              request.target.box && request.target.page ? (
+                <button
+                  key={request.id}
+                  type="button"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onPin(request, event);
+                  }}
+                  aria-label={`Request ${i + 1} on ${routeLabel(screen.route)} (${request.status}): ${request.body}`}
+                  title={request.body}
+                  data-canvas-pin={request.id}
+                  className={clsx(
+                    "absolute grid size-6 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-surface text-caption font-semibold tabular shadow-raise",
+                    request.status === "closed" ? "bg-neutral-soft text-muted" : request.status === "addressed" ? "bg-success text-on-accent" : "bg-accent text-on-accent",
+                  )}
+                  style={{ left: pct(request.target.box.x, request.target.page.width), top: pct(request.target.box.y, request.target.page.height) }}
+                >
+                  {i + 1}
+                </button>
+              ) : null,
+            )}
+        </PictureFrame>
+      )}
       {unplaced && (
         <p className="text-caption text-muted" data-canvas-unplaced>
           No component positions for this screen: <code className="font-mono">youiyoux screens capture</code> places them.
@@ -211,9 +253,11 @@ interface CanvasProps {
   onRequest?: (request: RequestDoc) => void;
   /** A System element's name, for "Every Button". */
   nameOf?: (element: ElementId) => string;
+  /** Where the served product's app runs, for live screens; null when the service is not running. */
+  live?: LiveInfo | null;
 }
 
-export function ScreensCanvas({ screens, scheme, requests, onRequest = () => undefined, nameOf: elementName = (id) => id }: CanvasProps) {
+export function ScreensCanvas({ screens, scheme, requests, onRequest = () => undefined, nameOf: elementName = (id) => id, live = null }: CanvasProps) {
   const [, navigate] = useLocation();
   const frame = useRef<HTMLDivElement>(null);
   const board = useRef<HTMLDivElement>(null);
@@ -225,6 +269,14 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
   const [commenting, setCommenting] = useState(false);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [thread, setThread] = useState<{ id: string; at: Point } | null>(null);
+  /** The live screens, oldest first, by project and route. */
+  const [running, setRunning] = useState<readonly string[]>([]);
+  const liveOf = (screen: Screen): CardProps["live"] => {
+    if (!live?.base || !live.viewport || live.project !== screen.project) return null;
+    const path = live.screens.find((s) => s.route === screen.route)?.path;
+    return path ? { url: `${live.base}${path}`, viewport: live.viewport, screens: live.screens } : null;
+  };
+  const toggleLive = (key: string): void => setRunning((now) => (now.includes(key) ? now.filter((k) => k !== key) : [...now, key].slice(-LIVE_AT_ONCE)));
 
   // A place names its own file and line, so it is matched against every site of its project, as on a screen's page.
   const sitesOf = useMemo(() => {
@@ -243,7 +295,9 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
     const v = viewRef.current;
     return { x: (at.clientX - rect.left - v.x) / v.scale, y: (at.clientY - rect.top - v.y) / v.scale };
   };
-  const pick = (screen: Screen, placed: Placed, page: { width: number; height: number }, at: { clientX: number; clientY: number }): void => {
+  const pick = (card: Screen, placed: Placed, page: { width: number; height: number }, at: { clientX: number; clientY: number }, route?: string): void => {
+    // A live screen may have been navigated to another captured screen: the comment goes on that one.
+    const screen = (route && screens.screens.find((s) => s.project === card.project && s.route === route)) || card;
     const element = elementOf(placed);
     setThread(null);
     setDraft({ screen, target: requestTarget(screen.route, placed, page), select: placed.at ?? element, name: nameOf(placed), elementName: element ? elementName(element) : null, at: boardPoint(at) });
@@ -381,7 +435,10 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
                       project={sitesOf.get(project)!}
                       nameOf={nameOf}
                       picking={draft?.screen === screen ? draft.select : null}
-                      onPick={(placed, page, at) => pick(screen, placed, page, at)}
+                      onPick={(placed, page, at, route) => pick(screen, placed, page, at, route)}
+                      live={liveOf(screen)}
+                      running={running.includes(`${screen.project}:${screen.route}`)}
+                      onLive={() => toggleLive(`${screen.project}:${screen.route}`)}
                     />
                   ))}
               </div>

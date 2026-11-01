@@ -4,10 +4,10 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build, transform } from "esbuild";
-import type { Browser } from "playwright-core";
+import { chromium, type Browser } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { launchBrowser } from "@youiyoux/detect";
-import { captureScreens, captureText, decodeMap, mapNotes, sourceMapOf, originalPosition, projectPath, readScreensSpec, resolvePlaces, screenSlug, whyNoLines, type PlacesFile } from "../src/index.ts";
+import { BRIDGE_VERSION, captureScreens, captureText, decodeMap, liveBridge, mapNotes, sourceMapOf, originalPosition, projectPath, readScreensSpec, resolvePlaces, screenSlug, whyNoLines, type BridgeAt, type PlacesFile, type SourceMapCache } from "../src/index.ts";
 
 const PACKAGE = join(import.meta.dirname, "..");
 const scratch = mkdtempSync(join(tmpdir(), "youi-screens-"));
@@ -59,6 +59,26 @@ describe("source maps", () => {
     expect(bundled).toMatchObject({ name: "Button", file: "app.tsx", line: 1, column: 1 });
     expect(plain).toMatchObject({ file: "plain.js", line: null });
     expect(none).toMatchObject({ file: null, line: null });
+  });
+
+  test("with a cache, a module served with the same text keeps its decoded map; served differently, it is read again", async () => {
+    const inline = (sources: string[]) => `x\n//# sourceMappingURL=data:application/json;base64,${Buffer.from(JSON.stringify({ version: 3, sources, mappings: "AAAA" })).toString("base64")}`;
+    let served = inline(["before.tsx"]);
+    const fetched: string[] = [];
+    const fetchText = async (url: string) => {
+      fetched.push(url);
+      return served;
+    };
+    const place = { name: "Button", owner: null, frames: [{ url: "http://localhost/app.js", line: 1, column: 1 }], box: { x: 0, y: 0, width: 1, height: 1 }, depth: 0 };
+    const cache: SourceMapCache = new Map();
+    expect((await resolvePlaces([place], fetchText, null, undefined, cache))[0]).toMatchObject({ file: "before.tsx" });
+    expect((await resolvePlaces([place], fetchText, null, undefined, cache))[0]).toMatchObject({ file: "before.tsx" });
+    expect(cache.size).toBe(1);
+    // The file was edited: the dev server serves it with a new map, at the same address.
+    served = inline(["after.tsx"]);
+    expect((await resolvePlaces([place], fetchText, null, undefined, cache))[0]).toMatchObject({ file: "after.tsx" });
+    expect(cache.size).toBe(2);
+    expect(fetched).toHaveLength(3);
   });
 
   test("when no component gets a line, what the maps did says why: no map, a map that cannot be read, or files outside the root", async () => {
@@ -133,7 +153,10 @@ describe("capturing a running app", () => {
       if (path === "/broken") return void req.socket.destroy();
       // /late mounts the app after the capture's first look, as a dev server that reloads mid-way does.
       const late = '<!doctype html><meta charset="utf-8"><body style="margin:0"><div id="root"></div><script type="module">setTimeout(() => import("/development.js"), 1500)</script>';
-      const body = path === "/" ? page("development.js") : path === "/prod" ? page("production.js") : path === "/nomaps" ? page("development.js?bare=1") : path === "/late" ? late : files.get(path);
+      // /live is the app with the live bridge, as an app loads it from the hub in development.
+      const live = '<!doctype html><meta charset="utf-8"><body style="margin:0"><div id="root"></div><script src="/bridge.js"></script><script type="module" src="/development.js"></script>';
+      if (path === "/bridge.js") return void res.writeHead(200, { "content-type": "text/javascript" }).end(liveBridge());
+      const body = path === "/" ? page("development.js") : path === "/prod" ? page("production.js") : path === "/nomaps" ? page("development.js?bare=1") : path === "/late" ? late : path === "/live" ? live : files.get(path);
       if (body === undefined) return void res.writeHead(404).end("not found");
       // ?bare serves a script without its source map comment, as a bundle built without maps is.
       const bare = (req.url ?? "").includes("bare");
@@ -225,4 +248,67 @@ describe("capturing a running app", () => {
     expect(captureText(report)).toMatch(/production build: components are placed but have no lines/);
     expect(report.noLines).toBeNull();
   }, 120_000);
+
+  describe("the live bridge", () => {
+    /** A hub page at `hub` framing the app's /live, collecting what the frame says. */
+    const hubPage = (app: string) => `<!doctype html><meta charset="utf-8"><body style="margin:0"><iframe id="f" src="${app}/live" style="width:800px;height:600px;border:0"></iframe><script>window.got = []; addEventListener("message", (e) => { if (e.source === document.getElementById("f").contentWindow) window.got.push({ origin: e.origin, data: e.data }); });</script>`;
+    let hub: Server;
+    let hubOrigin: string;
+    /** Chrome without its own check on public pages framing this machine, so the bridge's check is what is tested. */
+    let open_: Browser;
+    beforeAll(async () => {
+      hub = createServer((_req, res) => res.writeHead(200, { "content-type": "text/html" }).end(hubPage(base)));
+      await new Promise<void>((done) => hub.listen(0, "127.0.0.1", done));
+      // localhost, not 127.0.0.1: another origin from the app's on this machine.
+      hubOrigin = `http://localhost:${(hub.address() as { port: number }).port}`;
+      open_ = await chromium.launch({ headless: true, args: ["--disable-features=LocalNetworkAccessChecks,PrivateNetworkAccessForNavigations,PrivateNetworkAccessRespectPreflightResults,BlockInsecurePrivateNetworkRequests"] });
+    });
+    afterAll(async () => {
+      hub?.close();
+      await open_?.close();
+    });
+    const open = async (at: "here" | "elsewhere") => {
+      const page = await (at === "here" ? browser : open_).newPage({ viewport: { width: 800, height: 600 } });
+      if (at === "elsewhere") await page.route("http://elsewhere.example/", (route) => route.fulfill({ contentType: "text/html", body: hubPage(base) }));
+      await page.goto(at === "here" ? `${hubOrigin}/` : "http://elsewhere.example/");
+      const app = page.frameLocator("#f");
+      await app.locator("button").waitFor();
+      const say = (message: unknown) => page.evaluate(([m, target]) => (document.getElementById("f") as HTMLIFrameElement).contentWindow!.postMessage(m, target as string), [message, base] as const);
+      const got = () => page.evaluate(() => (window as unknown as { got: Array<{ origin: string; data: { type: string } }> }).got);
+      return { page, app, say, got };
+    };
+
+    test("a hub on this machine is told where the page is, and which components are under a point, mapped to the line that rendered them", async () => {
+      const { page, app, say, got } = await open("here");
+      await say({ youiyoux: BRIDGE_VERSION, type: "hello" });
+      await expect.poll(async () => (await got()).map((m) => m.data.type)).toContain("view");
+      const view = (await got()).find((m) => m.data.type === "view")!;
+      expect(view.origin).toBe(base);
+      expect(view.data).toMatchObject({ path: "/live", scroll: { x: 0, y: 0 }, viewport: { width: 800, height: 600 } });
+      const button = (await app.locator("button").boundingBox())!;
+      await say({ youiyoux: BRIDGE_VERSION, type: "at", id: 7, x: button.x + 4, y: button.y + 4 });
+      await expect.poll(async () => (await got()).some((m) => m.data.type === "at")).toBe(true);
+      const at = (await got()).find((m) => m.data.type === "at")!.data as unknown as BridgeAt;
+      expect(at).toMatchObject({ id: 7, react: true, dev: true });
+      // Smallest first: the button, then the card holding it.
+      expect(at.places.map((p) => p.name)).toEqual(["Button", "Card", "App"]);
+      const fetchText = (url: string) => fetch(url).then((r) => (r.ok ? r.text() : null), () => null);
+      const [placed] = await resolvePlaces(at.places, fetchText, join(scratch, "app"));
+      expect(placed).toMatchObject({ name: "Button", file: "app.tsx", line: lineOf(APP, "<Button>Save</Button>") });
+      await page.close();
+    }, 60_000);
+
+    test("a site elsewhere that frames the app learns nothing, and unframed the bridge does nothing", async () => {
+      const { page, app, say, got } = await open("elsewhere");
+      await say({ youiyoux: BRIDGE_VERSION, type: "hello" });
+      const button = (await app.locator("button").boundingBox())!;
+      await say({ youiyoux: BRIDGE_VERSION, type: "at", id: 1, x: button.x + 4, y: button.y + 4 });
+      await page.waitForTimeout(500);
+      expect(await got()).toEqual([]);
+      await page.goto(`${base}/live`);
+      await page.locator("button").waitFor();
+      expect(await page.evaluate(() => (window as unknown as { __youiyouxBridge?: number }).__youiyouxBridge)).toBeUndefined();
+      await page.close();
+    }, 60_000);
+  });
 });

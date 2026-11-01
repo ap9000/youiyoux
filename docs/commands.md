@@ -236,6 +236,44 @@ Accessibility findings are marked new, pre-existing or fixed against the base re
 - **Chromium.** The headless shell for the pinned `playwright-core`, as `youiyoux detect` uses: the first run downloads it (~100 MB, once) unless `YOUI_CHROMIUM` names another Chromium. The page fetches nothing from the network. The tests use the installed shell and never download it (`node node_modules/playwright-core/cli.js install chromium-headless-shell` in `packages/scanner` installs it).
 - **Licence.** axe-core is MPL-2.0 (file-level copyleft), used unmodified as a dependency of `packages/scanner`; its files are not vendored or changed.
 
+## Live screens
+
+On the Screens canvas (`youiyoux ui --project`, Screens → Canvas), a captured screen of that
+product can run **Live**: its card shows the running app at the screen's address, at the captured
+viewport, to click, type and scroll as usual. Comment mode works on it as on a screenshot: the
+component under the pointer is outlined and named, and a click files a comment or change request
+with its file, line and box. A pin shows where each of the screen's requests is on the page as it
+is scrolled now. Up to four screens run live at once, each a whole page of the app; turning on a
+fifth stops the first.
+
+It needs two things:
+
+- **Where the app runs.** `youiyoux screens capture --base <url>` records it in `screens.json`;
+  the app runs in development there, as for capture.
+- **The live bridge in the app.** One line, in code that runs in the app's browser bundle (its
+  entry file, say), which the hub shows with its own address under *How to connect it*:
+
+  ```js
+  if (window.parent !== window && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname)) {
+    document.head.append(Object.assign(document.createElement("script"), { src: "http://localhost:5173/api/live/bridge.js" }));
+  }
+  ```
+
+  It loads only on this machine and only inside a frame, so a production build that keeps it does
+  nothing. Keep the hub on one port (`youiyoux ui --port`) so the line stays right.
+
+The bridge reads the page the way capture does (React's development stacks), and answers only a
+hub on this machine (`localhost`, `127.0.0.1`, `[::1]`) that framed it: a site elsewhere that
+frames the app learns nothing. The hub reads only what comes from that frame, from the app's own
+origin. The hub's local service maps each component's frames to a file and line with the app's
+source maps, fetched from the app's own origin only and never through a redirect; it needs the
+hub's session key. Run the hub and the app on the same host name (both `localhost`): a sign-in
+cookie is not sent to an app framed from another site.
+
+While commenting is off a live screen takes the pointer, scrolling and keys, as the app would; pan
+and zoom from around it, or turn commenting on (the Comment button: **C** goes to the app while it
+has focus).
+
 ## The local index
 
 Large, derived data lives in one store (`packages/store`): Discover listings, their signals and licences, every inventory run, and a graph of what uses what. Decisions (tokens, contracts, rules, adopted Library items, approvals) stay in git and are never kept there; everything in the store is rebuilt from files youi already writes.

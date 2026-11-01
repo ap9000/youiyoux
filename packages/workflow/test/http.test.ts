@@ -50,6 +50,24 @@ describe("loopback service", () => {
     expect(created.json).toMatchObject({ mode: "create", status: "draft" });
   });
 
+  test("the live bridge is the one file any page may load; finding a live component's line needs the session key", async () => {
+    const bridge = await new Promise<{ status: number; type: string; text: string }>((resolve, reject) => {
+      request(new URL("/api/live/bridge.js", service.url), { headers: { "sec-fetch-site": "cross-site" } }, (res) => {
+        let text = "";
+        res.on("data", (c: Buffer) => (text += c.toString("utf8")));
+        res.on("end", () => resolve({ status: res.statusCode ?? 0, type: String(res.headers["content-type"]), text }));
+      }).on("error", reject).end();
+    });
+    expect(bridge).toMatchObject({ status: 200, type: "text/javascript; charset=utf-8" });
+    expect(bridge.text).toMatch(/^\/\* youiyoux live bridge v1/);
+    expect((await call("GET", "/api/live/bridge.js", { host: "evil.example" })).status).toBe(421);
+    // Everything else stays this hub's own.
+    expect((await call("GET", "/api/live", { "sec-fetch-site": "cross-site" })).status).toBe(403);
+    expect((await call("GET", "/api/live")).json).toMatchObject({ project: "expo-fixture", base: null, why: expect.stringMatching(/screens capture/) });
+    expect((await call("POST", "/api/live/resolve", {}, { places: [] })).status).toBe(401);
+    expect((await call("POST", "/api/live/resolve", { "x-youi-session": KEY }, { places: [{ name: "x" }] })).status).toBe(400);
+  });
+
   test("malformed bodies are refused with the reasons", async () => {
     const { status, json } = await call("POST", "/api/drafts", { "x-youi-session": KEY }, { mode: "rename" });
     expect(status).toBe(400);

@@ -450,3 +450,15 @@ export interface ApiError {
   readonly code: "bad-request" | "not-found" | "conflict" | "forbidden" | "invalid" | "stale" | "internal";
   readonly problems?: readonly string[];
 }
+
+/** Where the product's app runs, for live screens on the hub's canvas (`GET /api/live`). */
+export interface LiveInfo {
+  /** The product whose app this is: its screens' project. */
+  readonly project: string;
+  /** Where the app ran at the last capture (`http://localhost:3000`), or null with `why`. */
+  readonly base: string | null;
+  readonly viewport: { readonly width: number; readonly height: number } | null;
+  /** Each captured screen's route and the address that shows it. */
+  readonly screens: ReadonlyArray<{ readonly route: string; readonly path: string }>;
+  readonly why?: string;
+}

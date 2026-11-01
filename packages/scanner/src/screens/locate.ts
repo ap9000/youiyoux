@@ -10,6 +10,7 @@
  * coordinates. A production build keeps no stacks: its components are still boxed and named
  * (when names survive), but have no line, and `dev` says why.
  */
+import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { posix } from "node:path";
 
@@ -300,23 +301,35 @@ function realOrSelf(path: string): string {
   }
 }
 
+/** Decoded source maps kept between calls, by module and the exact text it was served with. */
+export type SourceMapCache = Map<string, Promise<SourceMap | null>>;
+
 /**
  * Each raw place with its frame mapped back to the project's file and line. Each served module is
- * fetched once, by `fetchText` (the dev server, which served it to the page).
+ * fetched once per call, by `fetchText` (the dev server, which served it to the page). With
+ * `cache`, a module served with the same text as before keeps its decoded map: an edited file is
+ * served differently, so it is never answered from an old one.
  */
-export async function resolvePlaces(raw: readonly RawPlace[], fetchText: (url: string) => Promise<string | null>, root: string | null = null, notes: MapNotes = mapNotes()): Promise<Place[]> {
+export async function resolvePlaces(raw: readonly RawPlace[], fetchText: (url: string) => Promise<string | null>, root: string | null = null, notes: MapNotes = mapNotes(), cache?: SourceMapCache): Promise<Place[]> {
   const maps = new Map<string, Promise<SourceMap | null>>();
   const mapFor = (url: string): Promise<SourceMap | null> => {
     const module = url.replace(/[?#].*$/, "");
     let found = maps.get(module);
     if (!found) {
       const script = module.split("/").at(-1) || module;
+      const decode = async (text: string | null): Promise<SourceMap | null> => {
+        const map = text === null ? "unreadable" : await findSourceMap(url, text, fetchText);
+        if (map === "none") notes.bare.add(script);
+        if (map === "unreadable") notes.unreadable.add(script);
+        return typeof map === "string" ? null : map;
+      };
       found = fetchText(url).then(
-        async (text) => {
-          const map = text === null ? "unreadable" : await findSourceMap(url, text, fetchText);
-          if (map === "none") notes.bare.add(script);
-          if (map === "unreadable") notes.unreadable.add(script);
-          return typeof map === "string" ? null : map;
+        (text) => {
+          if (!cache || text === null) return decode(text);
+          const key = `${module}#${createHash("sha1").update(text).digest("hex")}`;
+          let kept = cache.get(key);
+          if (!kept) cache.set(key, (kept = decode(text)));
+          return kept;
         },
         () => null,
       );

@@ -8,6 +8,7 @@ export * from "./ingest-drafts.ts";
 export * from "./library-drafts.ts";
 export * from "./policy.ts";
 export * from "./preview.ts";
+export * from "./live.ts";
 export * from "./requests.ts";
 export * from "./service.ts";
 export * from "./store.ts";

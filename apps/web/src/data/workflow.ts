@@ -4,11 +4,13 @@
  * state, so nothing here is cached.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { ApiError, DraftContent, DraftView, LibraryDraftContent, LibraryDraftView, PublishedRules, StyleDraftContent, StyleDraftView, WorkflowInfo } from "@youiyoux/workflow/api";
+import type { ApiError, DraftContent, DraftView, LibraryDraftContent, LibraryDraftView, LiveInfo, PublishedRules, StyleDraftContent, StyleDraftView, WorkflowInfo } from "@youiyoux/workflow/api";
 import type { RequestDoc, RequestStatus, RequestTarget, StatusReport } from "@youiyoux/core";
+import type { LiveRawPlace } from "./live.ts";
 import { sessionKey } from "./session-key.ts";
+import type { PlacedComponent } from "./types.ts";
 
-export type { CheckCapability, DraftContent, DraftView, IngestDraftView, LibraryDraftContent, LibraryDraftView, Preview, PreviewFinding, PublishedRules, RuleDraftView, RuleFields, StyleContrast, StyleDraftContent, StyleDraftView, StylePreview, StyleSite, WorkflowInfo } from "@youiyoux/workflow/api";
+export type { CheckCapability, DraftContent, DraftView, IngestDraftView, LibraryDraftContent, LibraryDraftView, LiveInfo, Preview, PreviewFinding, PublishedRules, RuleDraftView, RuleFields, StyleContrast, StyleDraftContent, StyleDraftView, StylePreview, StyleSite, WorkflowInfo } from "@youiyoux/workflow/api";
 
 const API = `${import.meta.env.BASE_URL}api`;
 
@@ -91,6 +93,10 @@ export const workflowApi = {
   compareRequest: (id: string) => call<RequestComparison>("GET", `/requests/${id}/compare`),
   /** Closing and reopening are a person's: the service refuses them from an agent. */
   moveRequest: (id: string, status: RequestStatus, body = "") => call<RequestDoc>("POST", `/requests/${id}/status`, { status, body }),
+  /** Where the product's app runs, for live screens on the canvas. */
+  live: () => call<LiveInfo>("GET", "/live"),
+  /** The components under the pointer on a live screen, their frames mapped to the product's files and lines. */
+  resolveLive: (places: readonly LiveRawPlace[]) => call<{ places: PlacedComponent[] }>("POST", "/live/resolve", { places }),
 };
 
 /** A list of requests with `next` in it: in place of the one it updates, or first when it is new. */
