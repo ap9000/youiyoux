@@ -1,4 +1,6 @@
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
+import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { MemoryStore, RuleWorkflow, serveWorkflow, type RunningService } from "../src/index.ts";
 import { sandbox, type Sandbox } from "./helpers.ts";
@@ -66,6 +68,21 @@ describe("loopback service", () => {
     expect((await call("GET", "/api/live")).json).toMatchObject({ project: "expo-fixture", base: null, why: expect.stringMatching(/screens capture/) });
     expect((await call("POST", "/api/live/resolve", {}, { places: [] })).status).toBe(401);
     expect((await call("POST", "/api/live/resolve", { "x-youi-session": KEY }, { places: [{ name: "x" }] })).status).toBe(400);
+  });
+
+  test("plain HTML under the pointer keeps its tag through the service; a tag that is not one is refused", async () => {
+    const dir = join(box.project, ".youi/screens");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "screens.json"), JSON.stringify({ schema: "youiyoux.screens/v1", project: "expo-fixture", source: "a test app", capturedAt: "", base: "http://127.0.0.1:9", viewport: { width: 800, height: 600 }, screens: [{ route: "/", path: "/" }] }));
+    try {
+      const place = { name: 'button "Approve plan"', owner: "Served", frames: [], box: { x: 0, y: 0, width: 10, height: 10 }, depth: 3 };
+      const resolved = await call("POST", "/api/live/resolve", { "x-youi-session": KEY }, { places: [{ ...place, html: "button" }] });
+      expect(resolved.status).toBe(200);
+      expect(resolved.json.places).toEqual([{ ...place, frames: undefined, html: "button", file: null, line: null, column: null }].map(({ frames: _, ...p }) => p));
+      expect((await call("POST", "/api/live/resolve", { "x-youi-session": KEY }, { places: [{ ...place, html: "<script>" }] })).status).toBe(400);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   test("malformed bodies are refused with the reasons", async () => {

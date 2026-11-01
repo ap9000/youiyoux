@@ -22,6 +22,8 @@ export interface LiveRawPlace {
   readonly frames: readonly LiveFrame[];
   readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
   readonly depth: number;
+  /** Plain HTML React did not create: its tag. */
+  readonly html?: string;
 }
 
 /** Where the framed page is: its path and query, scroll, viewport and whole size, in CSS pixels. */

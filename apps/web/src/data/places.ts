@@ -3,6 +3,8 @@
  * to the usage map: a component whose rendering line is a site of a System element is that
  * element; one rendered where the map found a lookalike (a local component named like an
  * element) is that lookalike; any other is the project's own component at its file and line.
+ * Plain HTML React did not create (`html`) is never an element: it is placed at the line of the
+ * component that put it there, and picked by that line and its own name.
  * The picture is drawn at the page's width, so a box is placed as a share of the page's size.
  */
 import { useEffect, useState } from "react";
@@ -38,15 +40,21 @@ export function matchPlaces(places: readonly PlacedComponent[], sites: readonly 
   const lookalikeAt = new Map(lookalikes.map((l) => [`${l.file}:${l.line}:${l.local}`, l.resembles]));
   return places.map((place) => {
     const at = atOf(place);
-    const candidates = at ? (byLine.get(at) ?? []) : [];
+    const candidates = at && !place.html ? (byLine.get(at) ?? []) : [];
     const site = candidates.find((s) => s.local === place.name || s.export === place.name || s.local.endsWith(`.${place.name}`)) ?? null;
-    const lookalike = !site && at ? (lookalikeAt.get(`${at}:${place.name}`) ?? null) : null;
+    const lookalike = !site && at && !place.html ? (lookalikeAt.get(`${at}:${place.name}`) ?? null) : null;
     return { place, element: site?.element ?? null, site, lookalike, at };
   });
 }
 
-/** Whether a placed component is what `select` names: an element id (its uses and its lookalikes), or `file:line`. */
-export const isSelected = (placed: Placed, select: string | null): boolean => select !== null && (placed.element === select || placed.lookalike === select || placed.at === select);
+/**
+ * What picks a placed component (`?select=`): its element id, or its `file:line`. Plain HTML shares
+ * its line with everything else the component placed, so its own name is added: `file:line name`.
+ */
+export const pickKey = (placed: Placed): string | null => placed.element ?? (placed.place.html ? (placed.at ? `${placed.at} ${placed.place.name}` : null) : placed.at);
+
+/** Whether a placed component is what `select` names: an element id (its uses and its lookalikes), or its pick key. */
+export const isSelected = (placed: Placed, select: string | null): boolean => select !== null && (placed.element === select || placed.lookalike === select || (placed.place.html ? pickKey(placed) : placed.at) === select);
 
 /** The System element a placed component is, or stands in for. */
 export const elementOf = (placed: Placed): ElementId | null => placed.element ?? placed.lookalike;
@@ -66,6 +74,7 @@ export function requestTarget(route: string, placed: Placed, page: PlacesFile["s
     ...(placed.lookalike ? { lookalike: true } : {}),
     ...(place.file ? { file: place.file } : {}),
     ...(place.line ? { line: place.line } : {}),
+    ...(place.html ? { html: place.html } : {}),
     box: place.box,
     page,
   };

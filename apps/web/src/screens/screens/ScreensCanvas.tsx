@@ -27,7 +27,7 @@ import { Link, useLocation } from "wouter";
 import type { ElementId, RequestDoc, RequestTarget } from "@youiyoux/core";
 import type { Scheme } from "../../app/theme.tsx";
 import { dataUrl } from "../../data/load.ts";
-import { elementOf, matchPlaces, requestTarget, usePlaces, type Placed } from "../../data/places.ts";
+import { elementOf, matchPlaces, pickKey, requestTarget, usePlaces, type Placed } from "../../data/places.ts";
 import { routeLabel, screenHref, type Screen, type ScreenIndex } from "../../data/screens.ts";
 import { EVERY_SCREEN, type ProjectLookalike, type Site } from "../../data/usage.ts";
 import { Button } from "../../ui/Button.tsx";
@@ -337,7 +337,7 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
     const screen = (route && screens.screens.find((s) => s.project === card.project && s.route === route)) || card;
     const element = elementOf(placed);
     setThread(null);
-    setDraft({ screen, target: requestTarget(screen.route, placed, page), select: placed.at ?? element, name: nameOf(placed), elementName: element ? elementName(element) : null, at: boardPoint(at) });
+    setDraft({ screen, target: requestTarget(screen.route, placed, page), select: pickKey(placed) ?? element, name: nameOf(placed), elementName: element ? elementName(element) : null, at: boardPoint(at) });
   };
   const openThread = (request: RequestDoc, at: { clientX: number; clientY: number }): void => {
     setDraft(null);

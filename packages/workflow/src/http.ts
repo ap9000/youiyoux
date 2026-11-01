@@ -59,7 +59,7 @@ const StatusInput = z.object({ status: z.enum(REQUEST_STATUSES), body: z.string(
 /** The components under the pointer on a live screen, as the bridge saw them: their frames are mapped to lines. */
 const LiveFrame = z.object({ url: z.string().min(1).max(2000), line: z.number().int().positive(), column: z.number().int().nonnegative() });
 const LiveBox = z.object({ x: z.number().finite(), y: z.number().finite(), width: z.number().finite().nonnegative(), height: z.number().finite().nonnegative() });
-const LivePlace = z.object({ name: z.string().min(1).max(200), owner: z.string().max(200).nullable(), frames: z.array(LiveFrame).max(8), box: LiveBox, depth: z.number().int().nonnegative().max(100_000) });
+const LivePlace = z.object({ name: z.string().min(1).max(200), owner: z.string().max(200).nullable(), frames: z.array(LiveFrame).max(8), box: LiveBox, depth: z.number().int().nonnegative().max(100_000), html: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/).optional() });
 const LiveResolveInput = z.object({ places: z.array(LivePlace).max(16) });
 
 /** JSON has no undefined: an absent light or dark stays absent (unchanged), null stays null (dark follows light). */

@@ -13,7 +13,7 @@ import { type Scheme, useTheme } from "../../app/theme.tsx";
 import { elementHref } from "../../data/ids.ts";
 import { dataUrl } from "../../data/load.ts";
 import type { Model } from "../../data/model.ts";
-import { elementOf, isSelected, matchPlaces, pickOrder, requestTarget, usePlaces, type Placed } from "../../data/places.ts";
+import { elementOf, isSelected, matchPlaces, pickKey, pickOrder, requestTarget, usePlaces, type Placed } from "../../data/places.ts";
 import { useRemote, withRequest, workflowApi } from "../../data/workflow.ts";
 import { type Screen, type ScreenElement, type ScreenIndex, screenHref, routeLabel } from "../../data/screens.ts";
 import { EVERY_SCREEN, type ProjectViolation } from "../../data/usage.ts";
@@ -206,6 +206,19 @@ function StepLink({ target, label, children }: { target: Screen | undefined; lab
   );
 }
 
+/** The share of a screen's components that must be System elements for it to open on Elements. */
+export const ELEMENTS_SHARE = 0.2;
+
+/**
+ * The outline a screen opens on. Where System elements are only a sliver of what is drawn (an app
+ * mostly built by hand, or from a server's HTML), Elements would show a stray box or two and let
+ * nothing else be picked: it opens on every component instead.
+ */
+export const defaultOutline = (placed: readonly Placed[]): Outline => {
+  const elements = placed.filter((p) => elementOf(p) !== null).length;
+  return elements > 0 && elements >= placed.length * ELEMENTS_SHARE ? "elements" : "all";
+};
+
 /** What is picked on the picture: its name and kind, the line that rendered it and where to go from it. */
 function Selection({ placed, all, name, copies, onClear, onComment }: { placed: Placed; all: readonly Placed[]; name: string; copies: string | null; onClear: () => void; onComment: () => void }) {
   const { place, element, lookalike, at } = placed;
@@ -214,12 +227,12 @@ function Selection({ placed, all, name, copies, onClear, onComment }: { placed: 
       <div className="min-w-0 flex-1 space-y-0.5">
         <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <span className="font-medium text-ink">{name}</span>
-          <Badge tone={element ? "accent" : lookalike ? "warning" : "outline"}>{element ? "System element" : lookalike ? `Lookalike of ${copies ?? lookalike}` : "Component"}</Badge>
+          <Badge tone={element ? "accent" : lookalike ? "warning" : "outline"}>{element ? "System element" : lookalike ? `Lookalike of ${copies ?? lookalike}` : place.html ? "HTML" : "Component"}</Badge>
           {all.length > 1 && <span className="tabular text-small text-muted">{all.length} on this screen</span>}
         </p>
         <p className="truncate font-mono text-mono-sm text-muted">
           {at ?? "its line is unknown (a library's own part, or a production build)"}
-          {place.owner && <span className="text-faint"> · in {place.owner}</span>}
+          {place.owner && <span className="text-faint"> · {place.html ? "placed by" : "in"} {place.owner}</span>}
         </p>
       </div>
       <span className="flex items-center gap-1">
@@ -268,9 +281,8 @@ export function ScreenDetail({ model, screens, screen }: { model: Model; screens
     const project = screens.screens.filter((s) => s.project === screen.project);
     return matchPlaces(places.places, project.flatMap((s) => s.elements.flatMap((e) => e.sites)), project.flatMap((s) => s.lookalikes));
   }, [places, screen, screens]);
-  const anyElement = placed.some((p) => elementOf(p) !== null);
   const [outlineChoice, setOutline] = useState<Outline | null>(null);
-  const outline: Outline = outlineChoice ?? (anyElement ? "elements" : "all");
+  const outline: Outline = outlineChoice ?? defaultOutline(placed);
   const [pointed, setPointed] = useState<string | null>(null);
   const nameOf = (p: Placed): string => (p.element ? (model.byId.get(p.element)?.name ?? p.element) : p.place.name);
   const picked = placed.filter((p) => isSelected(p, select)).sort(pickOrder);
@@ -289,7 +301,10 @@ export function ScreenDetail({ model, screens, screen }: { model: Model; screens
   const pins = onScreen.map((r, i) => pinOf(r, i + 1)).filter((p): p is Pin => p !== null);
   const openRequest = (request: RequestDoc): void => {
     const t = request.target;
-    go({ request: request.id, select: t.scope === "element" && t.element ? t.element : t.file && t.line ? `${t.file}:${t.line}` : (t.element ?? null) });
+    const line = t.file && t.line ? `${t.file}:${t.line}` : null;
+    // A request on plain HTML picks it by its line and name, when this capture still has it.
+    const html = line && placed.some((p) => p.place.html && pickKey(p) === `${line} ${t.name}`) ? `${line} ${t.name}` : null;
+    go({ request: request.id, select: t.scope === "element" && t.element ? t.element : (html ?? line ?? t.element ?? null) });
   };
 
   const picture = (id: string): OnPicture | undefined => {
@@ -305,7 +320,7 @@ export function ScreenDetail({ model, screens, screen }: { model: Model; screens
   const suspected = screen.elements.filter((e) => e.sites.length === 0);
   const breakdown = issueBreakdown(screen.issues);
   const image = places ? (
-    <PlacesOverlay shot={screen.shot} scheme={scheme} label={`${screen.project} ${label}`} places={places} placed={placed} outline={outline} select={select} pointed={pointed} nameOf={nameOf} onSelect={(p) => setSelect(p ? (p.element ?? p.at) : null)} pins={pins} activePin={active} onPin={(id) => { const r = onScreen.find((x) => x.id === id); if (r) openRequest(r); }} />
+    <PlacesOverlay shot={screen.shot} scheme={scheme} label={`${screen.project} ${label}`} places={places} placed={placed} outline={outline} select={select} pointed={pointed} nameOf={nameOf} onSelect={(p) => setSelect(p ? pickKey(p) : null)} pins={pins} activePin={active} onPin={(id) => { const r = onScreen.find((x) => x.id === id); if (r) openRequest(r); }} />
   ) : (
     <ScreenImage shot={screen.shot} scheme={scheme} size="full" label={`${screen.project} ${label}`} {...(ratio ? { ratio } : {})} />
   );
@@ -340,7 +355,7 @@ export function ScreenDetail({ model, screens, screen }: { model: Model; screens
                 <Selection placed={picked[0]} all={picked.filter((p) => p.place.name === picked[0]!.place.name)} name={nameOf(picked[0])} copies={picked[0].lookalike ? (model.byId.get(picked[0].lookalike)?.name ?? null) : null} onClear={() => setSelect(null)} onComment={() => setComposing(true)} />
                 {composing && (
                   <RequestComposer
-                    key={picked[0].at ?? picked[0].place.name}
+                    key={pickKey(picked[0]) ?? picked[0].place.name}
                     target={requestTarget(screen.route, picked[0], places.size)}
                     elementName={elementOf(picked[0]) ? (model.byId.get(elementOf(picked[0])!)?.name ?? null) : null}
                     onCancel={() => setComposing(false)}

@@ -9,6 +9,11 @@
  * A component's box is the union of the elements it draws (portals included), in page
  * coordinates. A production build keeps no stacks: its components are still boxed and named
  * (when names survive), but have no line, and `dev` says why.
+ *
+ * HTML that React did not create (server-rendered fragments a component places with
+ * `dangerouslySetInnerHTML` or a ref) has no fibers. Its controls, headings, text and containers
+ * are placed too, named by their tag and text (`html`), at the line of the component that placed
+ * them: that line is where the fragment, and so a change to it, starts.
  */
 import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
@@ -38,6 +43,8 @@ export interface RawPlace {
   readonly box: Box;
   /** How many components it sits inside. */
   readonly depth: number;
+  /** Plain HTML that React did not create: its tag (`button`); `name` then says which one. */
+  readonly html?: string;
 }
 
 export interface PageLocation {
@@ -62,6 +69,8 @@ export interface Place {
   readonly column: number | null;
   readonly box: Box;
   readonly depth: number;
+  /** Plain HTML that React did not create: its tag; the line is the component that placed it. */
+  readonly html?: string;
 }
 
 /** Components recorded per page, at most. */
@@ -126,27 +135,61 @@ export function locateInPage(limit: number, maxFrames = 6): PageLocation {
   const places: RawPlace[] = [];
   let dev = false;
   let capped = false;
-  const visit = (fiber: Fiber | null, depth: number): void => {
+  const add = (place: RawPlace): boolean => {
+    if (places.length >= limit) capped = true;
+    else places.push(place);
+    return !capped;
+  };
+  // HTML React did not create: what a person would point at in it.
+  const NOTABLE = /^(?:a|button|input|select|textarea|summary|details|label|h[1-6]|p|li|ul|ol|dl|dt|dd|img|svg|table|tr|th|td|form|fieldset|section|article|aside|nav|header|footer|figure|pre|code|blockquote)$/;
+  const isReact = (element: Element): boolean => Object.keys(element).some((k) => k.startsWith("__reactFiber$"));
+  const labelOf = (element: Element): string => {
+    const tag = element.localName;
+    const role = element.getAttribute("role");
+    // A field is named by its label attributes, never by what is typed in it; a button by its text
+    // before the form field it submits.
+    const field = /^(?:input|select|textarea)$/.test(tag);
+    const own = element.getAttribute("aria-label") || element.getAttribute("alt") || element.getAttribute("title") || element.getAttribute("placeholder") || (field ? element.getAttribute("name") : null);
+    const inside = field ? element.getAttribute("type") : /^(?:ul|ol|dl|table|form|fieldset|section|article|aside|nav|header|footer|figure|details|tr)$/.test(tag) ? element.querySelector("h1,h2,h3,h4,h5,h6,legend,caption,summary")?.textContent : element.textContent;
+    const text = ((own || inside || "").trim() || element.getAttribute("name") || "").replace(/\s+/g, " ").trim();
+    const what = role ? `${tag}[role=${role}]` : tag;
+    return text ? `${what} "${text.length > 40 ? `${text.slice(0, 39)}…` : text}"` : what;
+  };
+  const foreign = (element: Element, holder: { name: string; frames: RawPlace["frames"] }, depth: number): boolean => {
+    for (const child of element.children) {
+      if (isReact(child)) continue;
+      let inner = depth;
+      const tag = child.localName;
+      if (NOTABLE.test(tag) || child.hasAttribute("role")) {
+        const rect = child.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          if (!add({ name: labelOf(child), owner: holder.name, frames: holder.frames, box: { x: Math.round(rect.left + scrollX), y: Math.round(rect.top + scrollY), width: Math.round(rect.width), height: Math.round(rect.height) }, depth, html: tag })) return false;
+          inner = depth + 1;
+        }
+      }
+      // An svg's insides are its drawing, not things to point at.
+      if (tag !== "svg" && !foreign(child, holder, inner)) return false;
+    }
+    return true;
+  };
+  const visit = (fiber: Fiber | null, depth: number, holder: { name: string; frames: RawPlace["frames"] } | null): void => {
     for (let node = fiber; node; node = node.sibling) {
       let inner = depth;
+      let within = holder;
       if (COMPONENT.has(node.tag)) {
         if (node._debugStack) dev = true;
         const box = boxOf(node);
         const name = nameOf(node.type);
-        if (box && name) {
-          if (places.length >= limit) {
-            capped = true;
-            return;
-          }
-          places.push({ name, owner: nameOf(node._debugOwner?.type), frames: framesOf(node._debugStack?.stack), box, depth });
-        }
+        const frames = framesOf(node._debugStack?.stack);
+        if (name) within = { name, frames };
+        if (box && name && !add({ name, owner: nameOf(node._debugOwner?.type), frames, box, depth })) return;
         inner = depth + 1;
-      }
-      visit(node.child, inner);
+      } else if (node.tag === 5 && within && node.stateNode instanceof Element && !foreign(node.stateNode, within, inner)) return;
+      visit(node.child, inner, within);
       if (capped) return;
     }
   };
-  for (const root of roots) visit(root.child, 0);
+  for (const root of roots) visit(root.child, 0, null);
   return { react: true, dev, size, places, capped };
 }
 
@@ -339,7 +382,7 @@ export async function resolvePlaces(raw: readonly RawPlace[], fetchText: (url: s
   };
   return Promise.all(
     raw.map(async (place): Promise<Place> => {
-      const base = { name: place.name, owner: place.owner, box: place.box, depth: place.depth };
+      const base = { name: place.name, owner: place.owner, box: place.box, depth: place.depth, ...(place.html ? { html: place.html } : {}) };
       for (const frame of place.frames) {
         const map = await mapFor(frame.url);
         const original = map ? originalPosition(map, frame.line, frame.column) : null;

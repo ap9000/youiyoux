@@ -37,6 +37,8 @@ export const RequestTarget = z.object({
   /** Project-relative, and the line that rendered it, when the capture found them. */
   file: z.string().min(1).max(500).optional(),
   line: z.number().int().positive().optional(),
+  /** Plain HTML React did not create (a server's fragment): its tag; `file:line` is the component that placed it. */
+  html: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/).optional(),
   box: Box.optional(),
   page: Size.optional(),
 });

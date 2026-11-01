@@ -116,12 +116,15 @@ describe("screens.json", () => {
 });
 
 describe("capturing a running app", () => {
-  // A small app: a card holding a button, and a list of three rows rendered by one line.
+  // A small app: a card holding a button, a list of three rows rendered by one line, and a form
+  // from the server that a component places as HTML (React makes none of its elements).
+  const SERVED = '<form><h2>Plan</h2><label>Name <input name="title" value="typed-by-someone"></label><button name="decision">Approve plan</button><button name="send"><svg width="8" height="8"></svg></button><svg width="10" height="10"><rect width="10" height="10"/></svg></form>';
   const APP = [
     'import { createRoot } from "react-dom/client";',
     "function Button({ children }: { children: string }) { return <button style={{ padding: 8 }}>{children}</button>; }",
     "function Card({ children }: { children: unknown }) { return <section style={{ margin: 24, padding: 16, border: \"1px solid #ccc\" }}>{children as never}</section>; }",
     "function Row({ label }: { label: string }) { return <li style={{ height: 20 }}>{label}</li>; }",
+    "function Served({ html }: { html: string }) { return <div dangerouslySetInnerHTML={{ __html: html }} />; }",
     "function App() {",
     "  return (",
     "    <main>",
@@ -129,6 +132,7 @@ describe("capturing a running app", () => {
     "        <Button>Save</Button>",
     "      </Card>",
     '      <ul>{["a", "b", "c"].map((label) => <Row key={label} label={label} />)}</ul>',
+    `      <Served html={${JSON.stringify(SERVED)}} />`,
     "    </main>",
     "  );",
     "}",
@@ -199,6 +203,16 @@ describe("capturing a running app", () => {
     const rows = places.places.filter((p) => p.name === "Row");
     expect(rows.map((r) => r.line)).toEqual([lineOf(APP, "<Row key"), lineOf(APP, "<Row key"), lineOf(APP, "<Row key")]);
     expect(new Set(rows.map((r) => r.box.y)).size).toBe(3);
+    // HTML React did not create is placed too, named by its tag and text (a field by its name, never
+    // by what is typed in it), at the line of the component that placed it; what React made is not.
+    const html = places.places.filter((p) => p.html);
+    const served = places.places.find((p) => p.name === "Served")!;
+    expect(html.map((p) => p.name)).toEqual(['form "Plan"', 'h2 "Plan"', 'label "Name"', 'input "title"', 'button "Approve plan"', 'button "send"', "svg", "svg"]);
+    expect(html.map((p) => p.html)).toEqual(["form", "h2", "label", "input", "button", "button", "svg", "svg"]);
+    for (const p of html) expect(p).toMatchObject({ owner: "Served", file: "app.tsx", line: lineOf(APP, "<Served html") });
+    expect(html.find((p) => p.html === "button")!.depth).toBeGreaterThan(html.find((p) => p.html === "form")!.depth);
+    expect(html.find((p) => p.html === "form")!.depth).toBeGreaterThan(served.depth);
+    expect(JSON.stringify(places)).not.toContain("typed-by-someone");
     expect(JSON.parse(readFileSync(join(dir, "screens.json"), "utf8")).capturedAt).toBe("2026-10-22T12:00:00.000Z");
     expect(captureText(report)).toMatch(/1 of 2 screens of app captured[\s\S]*✓ \/: \d+ components placed, \d+ with their line[\s\S]*✖ \/gone/);
   }, 120_000);
@@ -272,7 +286,7 @@ describe("capturing a running app", () => {
       if (at === "elsewhere") await page.route("http://elsewhere.example/", (route) => route.fulfill({ contentType: "text/html", body: hubPage(base) }));
       await page.goto(at === "here" ? `${hubOrigin}/` : "http://elsewhere.example/");
       const app = page.frameLocator("#f");
-      await app.locator("button").waitFor();
+      await app.getByRole("button", { name: "Save" }).waitFor();
       const say = (message: unknown) => page.evaluate(([m, target]) => (document.getElementById("f") as HTMLIFrameElement).contentWindow!.postMessage(m, target as string), [message, base] as const);
       const got = () => page.evaluate(() => (window as unknown as { got: Array<{ origin: string; data: { type: string } }> }).got);
       return { page, app, say, got };
@@ -285,7 +299,7 @@ describe("capturing a running app", () => {
       const view = (await got()).find((m) => m.data.type === "view")!;
       expect(view.origin).toBe(base);
       expect(view.data).toMatchObject({ path: "/live", scroll: { x: 0, y: 0 }, viewport: { width: 800, height: 600 } });
-      const button = (await app.locator("button").boundingBox())!;
+      const button = (await app.getByRole("button", { name: "Save" }).boundingBox())!;
       await say({ youiyoux: BRIDGE_VERSION, type: "at", id: 7, x: button.x + 4, y: button.y + 4 });
       await expect.poll(async () => (await got()).some((m) => m.data.type === "at")).toBe(true);
       const at = (await got()).find((m) => m.data.type === "at")!.data as unknown as BridgeAt;
@@ -295,18 +309,26 @@ describe("capturing a running app", () => {
       const fetchText = (url: string) => fetch(url).then((r) => (r.ok ? r.text() : null), () => null);
       const [placed] = await resolvePlaces(at.places, fetchText, join(scratch, "app"));
       expect(placed).toMatchObject({ name: "Button", file: "app.tsx", line: lineOf(APP, "<Button>Save</Button>") });
+      // In the server's HTML: its button, the form holding it, then the component that placed them.
+      const served = (await app.getByRole("button", { name: "Approve plan" }).boundingBox())!;
+      await say({ youiyoux: BRIDGE_VERSION, type: "at", id: 8, x: served.x + 4, y: served.y + 4 });
+      await expect.poll(async () => (await got()).some((m) => m.data.type === "at" && (m.data as unknown as BridgeAt).id === 8)).toBe(true);
+      const inServed = (await got()).find((m) => m.data.type === "at" && (m.data as unknown as BridgeAt).id === 8)!.data as unknown as BridgeAt;
+      expect(inServed.places.map((p) => p.name)).toEqual(['button "Approve plan"', 'form "Plan"', "Served", "App"]);
+      const [html] = await resolvePlaces(inServed.places, fetchText, join(scratch, "app"));
+      expect(html).toMatchObject({ html: "button", owner: "Served", file: "app.tsx", line: lineOf(APP, "<Served html") });
       await page.close();
     }, 60_000);
 
     test("a site elsewhere that frames the app learns nothing, and unframed the bridge does nothing", async () => {
       const { page, app, say, got } = await open("elsewhere");
       await say({ youiyoux: BRIDGE_VERSION, type: "hello" });
-      const button = (await app.locator("button").boundingBox())!;
+      const button = (await app.getByRole("button", { name: "Save" }).boundingBox())!;
       await say({ youiyoux: BRIDGE_VERSION, type: "at", id: 1, x: button.x + 4, y: button.y + 4 });
       await page.waitForTimeout(500);
       expect(await got()).toEqual([]);
       await page.goto(`${base}/live`);
-      await page.locator("button").waitFor();
+      await page.getByRole("button", { name: "Save" }).waitFor();
       expect(await page.evaluate(() => (window as unknown as { __youiyouxBridge?: number }).__youiyouxBridge)).toBeUndefined();
       await page.close();
     }, 60_000);

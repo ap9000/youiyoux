@@ -123,6 +123,8 @@ export interface PlacedComponent {
   column: number | null;
   box: { x: number; y: number; width: number; height: number };
   depth: number;
+  /** Plain HTML React did not create: its tag, with `name` saying which one and the line the component that placed it. */
+  html?: string;
 }
 
 export interface PlacesFile {

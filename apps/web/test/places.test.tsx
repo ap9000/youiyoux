@@ -9,10 +9,11 @@ import { join } from "node:path";
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { writeScreens } from "../scripts/snapshot.ts";
-import { isSelected, matchPlaces, pickOrder, type Placed } from "../src/data/places.ts";
+import { isSelected, matchPlaces, pickKey, pickOrder, requestTarget, type Placed } from "../src/data/places.ts";
 import type { PlacedComponent, PlacesFile } from "../src/data/types.ts";
 import type { Site } from "../src/data/usage.ts";
 import { PlacesOverlay, type Outline } from "../src/screens/screens/PlacesOverlay.tsx";
+import { defaultOutline, ELEMENTS_SHARE } from "../src/screens/screens/ScreenDetail.tsx";
 
 const BUTTON = "youi:demo/component/button";
 const size = { width: 1000, height: 500 };
@@ -132,5 +133,38 @@ describe("picking a line several components share", () => {
     const shared = matchPlaces([line("DropdownMenuTrigger", 3), line("Primitive.button", 6), line("Button", 4)], [{ ...site, file: "src/tasks.tsx", line: 199 }]);
     const order = shared.filter((p) => isSelected(p, "src/tasks.tsx:199")).sort(pickOrder).map((p) => p.place.name);
     expect(order).toEqual(["Button", "Primitive.button", "DropdownMenuTrigger"]);
+  });
+});
+
+describe("plain HTML a component placed (a server's fragment)", () => {
+  const holder = place("Served", 20, { x: 0, y: 0, width: 600, height: 300 }, 1);
+  const html = (name: string, tag: string, box: PlacedComponent["box"]): PlacedComponent => ({ ...holder, owner: "Served", name, box, depth: 2, html: tag });
+  const approve = html('button "Approve plan"', "button", { x: 10, y: 10, width: 80, height: 20 });
+  const cancel = html('button "Cancel"', "button", { x: 100, y: 10, width: 80, height: 20 });
+
+  test("is never a System element, even on an element's line and by its name", () => {
+    const [onSite] = matchPlaces([{ ...html("Button", "button", approve.box), line: 8 }], [site], [lookalike]);
+    expect([onSite!.element, onSite!.lookalike, onSite!.at]).toEqual([null, null, "src/page.tsx:8"]);
+  });
+
+  test("is picked by its line and its own name: not with the component that placed it, nor its siblings", () => {
+    const all = matchPlaces([holder, approve, cancel], [site]);
+    const key = pickKey(all[1]!);
+    expect(key).toBe('src/page.tsx:20 button "Approve plan"');
+    expect(all.filter((p) => isSelected(p, key)).map((p) => p.place.name)).toEqual(['button "Approve plan"']);
+    expect(all.filter((p) => isSelected(p, "src/page.tsx:20")).map((p) => p.place.name)).toEqual(["Served"]);
+    // A request on it says it is HTML, so its task is scoped by a person: its file is not the one to change.
+    expect(requestTarget("/", all[1]!, size)).toMatchObject({ name: 'button "Approve plan"', html: "button", file: "src/page.tsx", line: 20 });
+    expect(requestTarget("/", all[0]!, size).html).toBeUndefined();
+  });
+
+  test("a screen opens on Elements when System elements are a fair share of it; a sliver, or none, opens on every component", () => {
+    const button = place("Button", 8, { x: 0, y: 0, width: 10, height: 10 }, 1);
+    // 3 elements among 72 components, as on Toolroll's /chat.
+    const others = Array.from({ length: 69 }, () => cancel);
+    expect(defaultOutline(matchPlaces([button, button, button, ...others], [site]))).toBe("all");
+    const fair = Math.ceil(ELEMENTS_SHARE * 10);
+    expect(defaultOutline(matchPlaces([...Array.from({ length: fair }, () => button), ...others.slice(0, 10 - fair)], [site]))).toBe("elements");
+    expect(defaultOutline(matchPlaces([holder, approve], [site]))).toBe("all");
   });
 });
