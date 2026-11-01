@@ -99,6 +99,14 @@ describe("options on the Screens canvas, over MCP", () => {
     expect((await readdir(join(app, ".youi/proposals"))).length).toBe(1);
   });
 
+  test("a prop only an object inherits, or a script address however it is disguised, is never proposed; text with a colon is", async () => {
+    const offer = (set: Array<{ prop: string; value: string }>) => call("screens_offer", { route: "/", component: { name: "Button", file: "app/index.tsx", line: 13 }, ask: "x", options: [{ label: "A", why: "x", set }, { label: "B", why: "x", text: "Note: two lines" }] });
+    expect((await offer([{ prop: "constructor", value: "x" }])).data.problems).toEqual(["option a (A): constructor is never proposed: it can carry a URL, HTML, a style or a handler"]);
+    expect((await offer([{ prop: "toString", value: "x" }])).data.problems).toEqual([expect.stringMatching(/^option a \(A\): Button has no prop toString: its contract offers /)]);
+    for (const value of ["java\tscript:alert(1)", " \u0001javascript:alert(1)", "DATA:text/html,x"]) expect((await offer([{ prop: "variant", value }])).data.problems).toEqual(["option a (A): variant's value is a script address, which is never proposed"]);
+    expect((await readdir(join(app, ".youi/proposals"))).length).toBe(1);
+  });
+
   test("only a person picks; the agent reads what was picked, and what is left to do", async () => {
     const store = new ProposalStore(app, "demo-app");
     const [open] = (await store.list()).proposals;

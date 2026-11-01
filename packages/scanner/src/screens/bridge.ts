@@ -77,9 +77,16 @@ export interface BridgeEdited {
 /** The longest value or text an edit carries. */
 export const EDIT_TEXT_MAX = 2000;
 /** Props an edit never sets, in the page or in the code: what carries a URL, HTML, a style or a handler. */
-export const EDIT_REFUSED = /^(?:children|key|ref|style|className|href|src|srcSet|srcDoc|action|formAction|poster|data|xlinkHref|xmlBase|manifest|ping|background|codebase|cite|longDesc|profile|dangerously.*|on[A-Z].*)$/;
-/** A value that is a script address, never set. */
-export const SCRIPT_VALUE = /^\s*(?:javascript|vbscript|data):/i;
+export const EDIT_REFUSED = /^(?:children|key|ref|style|className|href|src|srcSet|srcDoc|action|formAction|poster|data|xlinkHref|xmlBase|manifest|ping|background|codebase|cite|longDesc|profile|__proto__|constructor|prototype|dangerously.*|on[A-Z].*)$/;
+
+/**
+ * A value that is a script address, never set: read as a browser reads an address, with tabs and
+ * line breaks anywhere taken out and control characters and spaces in front of it (so
+ * `java\tscript:` is one too). Self-contained: the bridge inlines it.
+ */
+export function isScriptValue(value: string): boolean {
+  return /^(?:javascript|vbscript|data):/i.test(value.replace(/[\t\n\r]/g, "").replace(/^[\u0000-\u0020]+/, ""));
+}
 
 /** The bridge as a script, self-contained: what the service serves at BRIDGE_PATH. */
 export function liveBridge(): string {
@@ -138,9 +145,10 @@ export function liveBridge(): string {
     const isBox = (b) => !!b && ["x", "y", "width", "height"].every((k) => Number.isFinite(b[k]));
     const isName = (n) => typeof n === "string" && n.length > 0 && n.length <= 200;
     // Any prop may be read; one that carries a URL, HTML, a style or a handler is never set.
+    const isScript = ${isScriptValue.toString()};
     const isProp = (k) => typeof k === "string" && /^[A-Za-z_$][\\w$]{0,63}$/.test(k);
     const isKey = (k) => isProp(k) && !${EDIT_REFUSED.toString()}.test(k);
-    const isValue = (v) => typeof v === "boolean" || (typeof v === "number" && Number.isFinite(v)) || (typeof v === "string" && v.length <= ${EDIT_TEXT_MAX} && !${SCRIPT_VALUE.toString()}.test(v));
+    const isValue = (v) => typeof v === "boolean" || (typeof v === "number" && Number.isFinite(v)) || (typeof v === "string" && v.length <= ${EDIT_TEXT_MAX} && !isScript(v));
     if (data.type === "reset") return void edits.reset();
     if (data.type === "forget") return void edits.forget();
     if (!Number.isInteger(data.id)) return;

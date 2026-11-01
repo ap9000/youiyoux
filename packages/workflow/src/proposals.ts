@@ -15,7 +15,7 @@ import { randomBytes } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { OPTION_IDS, PROPOSAL_ID, ProposalDoc, REQUEST_ID, writeFileAtomic, type ComponentContract, type ProposalOption, type ProposalTarget, type RequestAuthor } from "@youiyoux/core";
-import { EDIT_REFUSED, SCRIPT_VALUE, screenSlug } from "@youiyoux/scanner";
+import { EDIT_REFUSED, isScriptValue, screenSlug } from "@youiyoux/scanner";
 import { authorize, WorkflowError } from "./policy.ts";
 import type { Actor } from "./api.ts";
 
@@ -49,14 +49,15 @@ export function optionProblem(option: Omit<ProposalOption, "id">, contract: Comp
   if (option.set.length > 0 && !contract) return `${name} isn't a design-system component, so options for it can only change its text`;
   for (const { prop, value } of option.set) {
     if (EDIT_REFUSED.test(prop)) return `${prop} is never proposed: it can carry a URL, HTML, a style or a handler`;
-    if (typeof value === "string" && SCRIPT_VALUE.test(value)) return `${prop}'s value is a script address, which is never proposed`;
-    const spec = contract!.props[prop];
+    if (typeof value === "string" && isScriptValue(value)) return `${prop}'s value is a script address, which is never proposed`;
+    // Only a prop the contract names itself: never one an object inherits (constructor, toString).
+    const spec = Object.hasOwn(contract!.props, prop) ? contract!.props[prop] : undefined;
     const choices = Object.entries(contract!.props).filter(([, s]) => ["enum", "string", "boolean", "number"].includes(s.type) && !s.deprecated).map(([key]) => key);
     if (!spec) return `${contract!.name} has no prop ${prop}: its contract offers ${choices.join(", ") || "none to choose"}`;
+    if (spec.type !== "enum" && spec.type !== "string" && spec.type !== "boolean" && spec.type !== "number") return `${contract!.name}'s ${prop} is a ${spec.type === "node" ? "slot for elements" : String(spec.type)}, not a value to choose`;
     if (spec.deprecated) return `${contract!.name}'s ${prop} is deprecated: ${spec.deprecated}`;
     if (spec.type === "enum" && (typeof value !== "string" || !spec.values.includes(value))) return `${contract!.name}'s ${prop} is one of ${spec.values.join(", ")}, not ${JSON.stringify(value)}`;
     if ((spec.type === "string" && typeof value !== "string") || (spec.type === "boolean" && typeof value !== "boolean") || (spec.type === "number" && typeof value !== "number")) return `${contract!.name}'s ${prop} is a ${spec.type}, not ${JSON.stringify(value)}`;
-    if (spec.type === "function" || spec.type === "node") return `${contract!.name}'s ${prop} is a ${spec.type === "node" ? "slot for elements" : "function"}, not a value to choose`;
   }
   return null;
 }

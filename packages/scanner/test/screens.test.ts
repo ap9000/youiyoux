@@ -355,7 +355,7 @@ describe("capturing a running app", () => {
       await say({ youiyoux: BRIDGE_VERSION, type: "edit", id: 4, name: button.name, box: button.box, set: { dangerouslySetInnerHTML: "x" }, text: null });
       await say({ youiyoux: BRIDGE_VERSION, type: "edit", id: 5, name: button.name, box: button.box, set: { tone: { evil: true } }, text: null });
       // A prop that carries a URL or a handler, or a value that is a script address, either.
-      for (const [id, set] of [[11, { href: "https://example.com" }], [12, { onClick: "x" }], [13, { tone: "javascript:alert(1)" }], [14, { tone: " DATA:text/html,x" }]] as const)
+      for (const [id, set] of [[11, { href: "https://example.com" }], [12, { onClick: "x" }], [13, { tone: "javascript:alert(1)" }], [14, { tone: " DATA:text/html,x" }], [15, { tone: "java\tscript:alert(1)" }], [16, { constructor: "x" }]] as const)
         await say({ youiyoux: BRIDGE_VERSION, type: "edit", id, name: button.name, box: button.box, set, text: null });
       await page.waitForTimeout(300);
       expect((await got()).filter((m) => m.data.type === "edited").map((m) => (m.data as unknown as BridgeEdited).id)).toEqual([3]);
