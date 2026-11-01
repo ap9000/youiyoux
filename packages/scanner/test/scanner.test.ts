@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { normalizeProjectConfig, ScanReport } from "@youiyoux/core";
 import { beforeAll, describe, expect, test } from "vitest";
-import { expoRoute, importSpecifier, loadProject, scanProject, type ScanResult } from "../src/index.ts";
+import { componentForRole, expoRoute, importSpecifier, loadProject, scanProject, type ScanResult } from "../src/index.ts";
 
 const FIXTURE = join(import.meta.dirname, "fixtures/expo-app");
 const BUTTON = "youi:demo/component/button";
@@ -157,6 +157,45 @@ describe("review regressions", () => {
     const code = 'export function Swatch() {\n  return <div style={{ color: "oklch(0.637 0.237 25.331)" }} className="bg-[oklch(0.2_0_0)]" />;\n}\n';
     const report = (await scanProject(project, { overrides: { [file]: code } })).report;
     expect(report.violations.filter((v) => v.file === file && v.rule.endsWith("no-raw-color")).map((v) => v.text)).toEqual(["oklch(0.637 0.237 25.331)", "oklch(0.2_0_0)"]);
+  });
+
+  test("a colour that only stands in for a set variable, or is made from data at run time, is no raw colour; one that renders is", async () => {
+    const project = await loadProject(FIXTURE);
+    const script = "app/fallbacks.tsx";
+    const sheet = "styles/fallbacks.css";
+    const code = [
+      "export function Avatar({ hue }: { hue: number }) {",
+      // A hue from data; a token's fallback (in a style and a class); a variable set nowhere, whose fallback is what shows; a plain rgb().
+      '  return <div style={{ background: `hsl(${hue} 45% 45%)`, color: "var(--demo-color-danger, #c62828)", borderColor: "var(--nowhere, #123456)", outlineColor: "rgb(1 2 3)" }} className="bg-[var(--demo-color-danger,#c62828)]" />;',
+      "}",
+    ].join("\n");
+    const css = ".a { --local: #111111; color: var(--local, #222222); border-color: var(--nowhere, #333333); background: color-mix(in srgb, var(--demo-color-danger, #444444) 50%, transparent); }\n";
+    const report = (await scanProject(project, { overrides: { [script]: code, [sheet]: css } })).report;
+    const raw = (file: string) => report.violations.filter((v) => v.file === file && v.rule.endsWith("no-raw-color")).map((v) => v.text);
+    expect(raw(script)).toEqual(["#123456", "rgb(1 2 3)"]);
+    // The file sets --local itself (with a raw colour, which is reported where it is set).
+    expect(raw(sheet)).toEqual(["--local: #111111", "border-color: #333333"]);
+  });
+
+  test("a native control in another widget's role is that widget: the system's component for it, or nothing when the system has none", async () => {
+    const project = await loadProject(FIXTURE);
+    const file = "app/roles.tsx";
+    const code = [
+      "export function Bar() {",
+      '  return <div><button role="tab">Home</button><button role="switch" aria-checked>On</button><button role="button">Plain</button><button>Save</button></div>;',
+      "}",
+    ].join("\n");
+    const report = (await scanProject(project, { overrides: { [file]: code } })).report;
+    // The demo system has a Button but no Tabs or Switch: "use Button" would be wrong for the first two.
+    expect(report.violations.filter((v) => v.file === file && v.rule.endsWith("no-native-controls")).map((v) => v.text)).toEqual(["<button>", "<button>"]);
+    const contracts = new Map([
+      ["youi:x/component/button", { name: "Button" }],
+      ["youi:x/component/tabs", { name: "Tabs" }],
+      ["youi:x/component/switch", { name: "Switch" }],
+    ]) as unknown as Parameters<typeof componentForRole>[1];
+    expect(componentForRole("tab", contracts)).toEqual({ id: "youi:x/component/tabs", name: "Tabs" });
+    expect(componentForRole("switch", contracts)).toEqual({ id: "youi:x/component/switch", name: "Switch" });
+    expect(componentForRole("menuitem", contracts)).toBeNull();
   });
 
   test("colour context, fragments, ignore scope and default exports", async () => {

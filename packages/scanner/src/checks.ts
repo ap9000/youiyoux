@@ -82,6 +82,50 @@ function hexInContext(text: string, index: number, match: string): boolean {
   return /[;{]/.test(text) && /\s$/.test(before);
 }
 
+/** The fallback of a `var(--name, …)` in a text: the variable, and where its fallback is ([start, end)). */
+export interface VarFallback {
+  readonly name: string;
+  readonly start: number;
+  readonly end: number;
+}
+
+export function varFallbacks(text: string): VarFallback[] {
+  const ranges: VarFallback[] = [];
+  for (const open of text.matchAll(/\bvar\(\s*(--[\w-]+)/gi)) {
+    let depth = 0;
+    let comma = -1;
+    for (let i = open.index! + open[0].length; i < text.length; i++) {
+      const c = text[i];
+      if (c === "(") depth++;
+      else if (c === ")") {
+        if (depth === 0) {
+          if (comma >= 0) ranges.push({ name: open[1]!, start: comma + 1, end: i });
+          break;
+        }
+        depth--;
+      } else if (c === "," && depth === 0 && comma < 0) comma = i;
+    }
+  }
+  return ranges;
+}
+
+/** Custom properties a file sets itself (`--warning: …` in a stylesheet, `"--hue": …` in a style object). */
+const definedIn = (source: string): Set<string> => new Set([...source.matchAll(/(--[\w-]+)["']?\s*:/g)].map((m) => m[1]!));
+
+/**
+ * Whether a colour at `index` is a stand-in that never shows: the fallback of a variable that is a
+ * token, or that the file sets itself. A fallback for a variable set nowhere is the colour that
+ * renders, so it is still a raw colour.
+ */
+function standIn(fallbacks: readonly VarFallback[], index: number, isSet: (name: string) => boolean): boolean {
+  return fallbacks.some((f) => index >= f.start && index < f.end && isSet(f.name));
+}
+
+function variablesSet(module: ModuleInfo, index: TokenIndex): (name: string) => boolean {
+  const own = definedIn(module.source);
+  return (name) => index.byVar.has(name) || own.has(name);
+}
+
 function attributeName(node: SgNode): string | null {
   const parent = node.parent();
   const attribute = parent?.kind() === "jsx_attribute" ? parent : parent?.parent()?.kind() === "jsx_attribute" ? parent.parent() : null;
@@ -90,31 +134,39 @@ function attributeName(node: SgNode): string | null {
 
 export function rawColorsInScript(module: ModuleInfo, index: TokenIndex): Finding[] {
   const findings: Finding[] = [];
+  const isSet = variablesSet(module, index);
   for (const node of stringNodes(module)) {
     const attribute = attributeName(node);
     if (attribute !== null && (NON_COLOR_ATTRIBUTES.has(attribute) || attribute.startsWith("data-"))) continue;
     const original = node.text();
     const text = original.replace(/\$\{[^}]*\}/g, (s) => " ".repeat(s.length));
+    // A colour function with a part filled in at run time (`hsl(${hue} 45% 45%)`) is a colour made from data, not one a token could hold.
+    const computed = original.replace(/\$\{[^}]*\}/g, (s) => "\u0000".repeat(s.length));
+    const fallbacks = varFallbacks(text);
     const start = node.range().start;
+    const within = (at: number): boolean => standIn(fallbacks, at, isSet);
     const add = (match: RegExpMatchArray): void => {
       const literal = original.slice(match.index!, match.index! + match[0].length);
       const suggestion = colorSuggestion(literal, index);
       findings.push({ file: module.file, ...offsetToPosition(text, match.index!, start), text: literal, message: `Raw colour ${literal}; use a colour token.`, ...(suggestion ? { suggestion } : {}) });
     };
-    for (const match of text.matchAll(HEX)) if (hexInContext(text, match.index!, match[0])) add(match);
-    for (const match of text.matchAll(COLOR_FN)) add(match);
+    for (const match of text.matchAll(HEX)) if (hexInContext(text, match.index!, match[0]) && !within(match.index!)) add(match);
+    for (const match of computed.matchAll(COLOR_FN)) if (!within(match.index!)) add(match);
   }
   return findings;
 }
 
 export function rawColorsInCss(module: ModuleInfo, index: TokenIndex, isTokenSource: boolean): Finding[] {
   const findings: Finding[] = [];
+  const isSet = variablesSet(module, index);
   const lines = module.source.split("\n");
   for (const rule of readRules(module.source)) {
     for (const declaration of rule.declarations) {
       if (isTokenSource && declaration.property.startsWith("--")) continue;
       const value = declaration.value.replace(/url\([^)]*\)/g, "");
+      const fallbacks = varFallbacks(value);
       for (const match of [...value.matchAll(HEX), ...value.matchAll(COLOR_FN)]) {
+        if (standIn(fallbacks, match.index!, isSet)) continue;
         const lineText = lines[declaration.line - 1] ?? "";
         const column = Math.max(1, lineText.indexOf(match[0]) + 1);
         const suggestion = colorSuggestion(match[0], index);
@@ -207,6 +259,30 @@ interface NativeOptions {
   allowInputTypes?: string[];
 }
 
+/** The system components, by name, that a widget role asks for: a `<button role="tab">` is a tab, not a Button. */
+const ROLE_COMPONENTS: Readonly<Record<string, readonly string[]>> = {
+  tab: ["Tabs"],
+  switch: ["Switch"],
+  checkbox: ["Checkbox"],
+  radio: ["RadioGroup", "Radio"],
+  menuitem: ["DropdownMenu", "Menu", "Menubar"],
+  menuitemcheckbox: ["DropdownMenu", "Menu", "Menubar"],
+  menuitemradio: ["DropdownMenu", "Menu", "Menubar"],
+  option: ["Select", "Combobox", "Listbox"],
+  combobox: ["Combobox", "Select"],
+  slider: ["Slider"],
+};
+
+/**
+ * The system's component for a native control in a widget role other than its own: by the role's
+ * names, or null when the system has none (then the tag's element is not the fix either).
+ */
+export function componentForRole(role: string, contracts: ElementIndex["contracts"]): { id: ElementId; name: string } | null {
+  const names = ROLE_COMPONENTS[role] ?? [];
+  for (const name of names) for (const [id, contract] of contracts) if (contract.name === name) return { id, name };
+  return null;
+}
+
 function nativeElements(analysis: ModuleAnalysis, options: NativeOptions, elements: ElementIndex): Finding[] {
   const map = options.elements ?? {};
   return analysis.natives.flatMap((site) => {
@@ -214,6 +290,12 @@ function nativeElements(analysis: ModuleAnalysis, options: NativeOptions, elemen
     if (!element || elements.isOwned(site.file)) return [];
     const type = site.props.type;
     if (site.tag === "input" && type && "literal" in type && (options.allowInputTypes ?? []).includes(String(type.literal))) return [];
+    const role = site.props.role && "literal" in site.props.role ? String(site.props.role.literal) : null;
+    if (role && role !== site.tag && role !== "textbox") {
+      const widget = componentForRole(role, elements.contracts);
+      if (!widget) return [];
+      return [{ file: site.file, line: site.line, column: site.column, text: `<${site.tag} role="${role}">`, message: `Native <${site.tag} role="${role}"> built by hand; render ${widget.name} (${widget.id}).`, suggestion: `<${widget.name}>` }];
+    }
     const name = elements.contracts.get(element)?.name ?? element;
     return [{ file: site.file, line: site.line, column: site.column, text: `<${site.tag}>`, message: `Native <${site.tag}> styled by hand; render ${name} (${element}).`, suggestion: `<${name}>` }];
   });
