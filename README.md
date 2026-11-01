@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/images/agent.png" width="720" alt="An agent asked to add a Save button calls youiyoux's ui_find_component, is told the project already has Button in components/ui/button.tsx, and reuses it">
+  <img src="docs/images/find-component.png" width="720" alt="youiyoux's ui_find_component asked for a save button on the example app: 1 existing component fits, Button from @/components/ui, with its props, a real usage and where it is used">
 </p>
 
 # youiyoux
@@ -40,7 +40,7 @@ New to it? [Getting started](docs/getting-started.md): the report, the top fix, 
 - **Let your agent see what it built.** `npx youiyoux render <file>`: light and dark, desktop and phone, accessibility issues, a diff against main.
 - **Turn the UI you have into a design system.** `npx youiyoux adopt`: your components and your stylesheet's variables become a System in your repo, with rules for your agent; `youiyoux system extract <dir>` moves it into its own repo when a second app needs it.
 
-<img src="docs/images/live-edit.png" width="720" alt="Live editing in the hub: Save picked on the running settings screen, its variant set to outline, and the change written to app/settings/index.tsx">
+<img src="docs/images/check-diff.png" width="720" alt="youiyoux check --diff on a new hand-styled Save button: a native button where Button exists, and a radius and two colours the theme's tokens already hold, each with its fix">
 
 ## What it finds
 
