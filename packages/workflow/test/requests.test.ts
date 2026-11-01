@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { RequestDoc } from "@youiyoux/core";
-import { MemoryStore, REQUESTS_DIR, RequestStore, RuleWorkflow, serveWorkflow, WorkflowError, type RunningService } from "../src/index.ts";
+import { MemoryStore, requestBrief, REQUESTS_DIR, RequestStore, RuleWorkflow, serveWorkflow, WorkflowError, type RunningService } from "../src/index.ts";
 import { sandbox, type Sandbox } from "./helpers.ts";
 
 const PERSON = { kind: "person", name: "captain" } as const;
@@ -62,6 +62,57 @@ describe("the request store", () => {
     expect(unreadable.map((u) => u.file)).toEqual([".youi/requests/r-aaaaaaaaaa.json", ".youi/requests/r-bbbbbbbbbb.json", ".youi/requests/r-cccccccccc.json"]);
     expect(unreadable[2]!.reason).toBe("its id is not its file name");
     expect(await readFile(join(dir, "r-aaaaaaaaaa.json"), "utf8")).toBe("{ not json");
+  });
+});
+
+describe("the task a change request asks for, and a runner's progress on it", () => {
+  const root = mkdtempSync(join(tmpdir(), "youi-request-task-"));
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+  let n = 0;
+  const store = new RequestStore(root, "demo-app", { now: () => new Date("2026-11-01T10:00:00Z"), newId: () => `r-${String(++n).padStart(10, "0")}` });
+  const dir = join(root, REQUESTS_DIR);
+
+  test("one component with its line is scoped to its file; every use, server HTML or no line is scoped by a person; a comment asks for no task", async () => {
+    const here = await store.create(PERSON, { kind: "change", body: "Make this the primary action", target: TARGET });
+    expect(here.task).toMatchObject({ title: "/settings · Button: Make this the primary action", touches: ["app/settings/index.tsx"], touchesKnown: true });
+    expect(here.task!.goal).toMatch(/^A change request from captain on the \/settings screen, filed in the youiyoux hub \(request r-0000000001\):\n\nMake this the primary action\n\nWhere: Button at app\/settings\/index.tsx:12, on \/settings\.\nIt is the design system's youi:demo\/component\/button/);
+    expect(here.task!.not).toEqual(["New dependencies, or changes to package manifests and lockfiles", "Changes to files other than app/settings/index.tsx", "Changes to other screens than /settings, unless the request asks for them"]);
+    expect(here.task!.acceptance.map((a) => a.evidence)).toEqual([["screenshot"], ["check"], ["changed-path"]]);
+    // It is on disk, so a runner reads it without youiyoux.
+    expect(JSON.parse(readFileSync(join(dir, `${here.id}.json`), "utf8")).task).toEqual(here.task);
+
+    const every = await store.create(PERSON, { kind: "change", body: "Use the compact size", target: { ...TARGET, scope: "element" } });
+    const html = await store.create(PERSON, { kind: "change", body: "Say Import", target: { ...TARGET, name: 'button "Preview import"', element: undefined, html: "button" } });
+    const unplaced = await store.create(PERSON, { kind: "change", body: "Bigger", target: { route: "/", scope: "here", name: "Hero" } });
+    for (const [request, why] of [[every, /every use of youi:demo\/component\/button/], [html, /written outside React/], [unplaced, /did not find the line/]] as const) {
+      expect(request.task).toMatchObject({ touches: [], touchesKnown: false, why: expect.stringMatching(why) });
+      expect(request.task!.acceptance.map((a) => a.evidence)).toEqual([["screenshot"], ["check"]]);
+    }
+    expect(html.task!.goal).toMatch(/React does not make it: the HTML comes from elsewhere/);
+    expect((await store.create(PERSON, { kind: "comment", body: "Nice", target: TARGET })).task).toBeUndefined();
+  });
+
+  test("a runner's task file beside a request is read with it, never written; one that is not valid, or names another request, is listed as unreadable", async () => {
+    const run = { schema: "youi.request-task/v1", request: "r-0000000001", runner: "Toolroll", task: { id: "task-1a2b", url: "http://127.0.0.1:4180/t/task-1a2b" }, status: "building", detail: "Building", updatedAt: "2026-11-01T10:05:00Z" };
+    writeFileSync(join(dir, "r-0000000001.task.json"), JSON.stringify(run));
+    writeFileSync(join(dir, "r-0000000002.task.json"), JSON.stringify({ ...run, request: "r-0000000002", task: { id: "x", url: "javascript:alert(1)" } }));
+    writeFileSync(join(dir, "r-0000000003.task.json"), JSON.stringify({ ...run, request: "r-0000000001" }));
+    const { requests, unreadable } = await store.list();
+    expect(requests.find((r) => r.id === "r-0000000001")!.run).toEqual(run);
+    expect(requests.filter((r) => r.run).map((r) => r.id)).toEqual(["r-0000000001"]);
+    expect(unreadable.map((u) => [u.file, u.reason])).toEqual([
+      [".youi/requests/r-0000000002.task.json", expect.stringMatching(/http\(s\)/)],
+      [".youi/requests/r-0000000003.task.json", "its request is not its file name"],
+    ]);
+    expect(await store.view("r-0000000001")).toMatchObject({ run: { status: "building" } });
+    expect(await store.run("r-0000000002")).toBeNull();
+    // Writing the request keeps its own file, and the runner's as the runner wrote it.
+    const replied = await store.withRun(await store.reply(AGENT, "r-0000000001", "On it"));
+    expect(replied.run).toEqual(run);
+    expect(JSON.parse(readFileSync(join(dir, "r-0000000001.json"), "utf8")).run).toBeUndefined();
+    expect(JSON.parse(readFileSync(join(dir, "r-0000000001.task.json"), "utf8"))).toEqual(run);
+    const brief = requestBrief(replied, root);
+    expect([brief.task?.touches, brief.run?.task.id]).toEqual([["app/settings/index.tsx"], "task-1a2b"]);
   });
 });
 

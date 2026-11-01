@@ -5,10 +5,10 @@
  * closes a request once the work is right, or reopens it; the thread keeps who said what.
  */
 import { clsx } from "clsx";
-import { Bot, MessageSquare, User } from "lucide-react";
+import { Bot, ExternalLink, MessageSquare, User } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import type { RequestDoc, RequestStatus, RequestTarget } from "@youiyoux/core";
-import { asRequestError, workflowApi, type WorkflowRequestError } from "../../data/workflow.ts";
+import type { RequestDoc, RequestRun, RequestStatus, RequestTarget, RunStatus } from "@youiyoux/core";
+import { asRequestError, workflowApi, type RequestView, type WorkflowRequestError } from "../../data/workflow.ts";
 import { when } from "../../lib/when.ts";
 import { Badge } from "../../ui/Badge.tsx";
 import { Button } from "../../ui/Button.tsx";
@@ -19,6 +19,25 @@ import { BeforeAfter } from "./BeforeAfter.tsx";
 
 const STATUS_TONE: Record<RequestStatus, "warning" | "accent" | "outline"> = { open: "warning", addressed: "accent", closed: "outline" };
 const STATUS_LABEL: Record<RequestStatus, string> = { open: "Open", addressed: "Addressed", closed: "Closed" };
+const RUN_LABEL: Record<RunStatus, string> = { queued: "Queued", "needs-you": "Needs you", building: "Building", ready: "Ready for review", done: "Done", failed: "Failed", stopped: "Stopped" };
+const RUN_TONE: Record<RunStatus, "warning" | "accent" | "outline" | "success" | "danger"> = { queued: "outline", "needs-you": "warning", building: "accent", ready: "success", done: "success", failed: "danger", stopped: "outline" };
+
+/** The runner's task for a request (Toolroll, say): how far it has got, and where to see it. */
+function RunLine({ run }: { run: RequestRun }) {
+  return (
+    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted" data-run={run.status}>
+      <Badge tone={RUN_TONE[run.status]}>{RUN_LABEL[run.status]}</Badge>
+      <span>
+        {run.runner} task {run.detail && run.detail !== RUN_LABEL[run.status] ? <span className="text-faint">· {run.detail}</span> : null}
+      </span>
+      {run.task.url && (
+        <a href={run.task.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">
+          Open in {run.runner} <ExternalLink className="size-3" aria-hidden />
+        </a>
+      )}
+    </p>
+  );
+}
 
 
 /** What failed, in words, with the command when the service is not running. */
@@ -100,11 +119,11 @@ function Who({ author }: { author: RequestDoc["author"] }) {
 }
 
 /** One request with its thread, a reply box, and the person's close or reopen. */
-export function RequestThread({ request, number, active, onChange, onPick }: { request: RequestDoc; number: number; active: boolean; onChange: (request: RequestDoc) => void; onPick: () => void }) {
+export function RequestThread({ request, number, active, onChange, onPick }: { request: RequestView; number: number; active: boolean; onChange: (request: RequestView) => void; onPick: () => void }) {
   const [reply, setReply] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<WorkflowRequestError | null>(null);
-  const run = (work: () => Promise<RequestDoc>): void => {
+  const act = (work: () => Promise<RequestView>): void => {
     setBusy(true);
     setError(null);
     work().then(
@@ -130,6 +149,7 @@ export function RequestThread({ request, number, active, onChange, onPick }: { r
           <span className="block truncate font-mono text-mono-sm text-faint">{target.file && target.line ? `${target.file}:${target.line}` : target.route}</span>
         </span>
       </button>
+      {request.run && <RunLine run={request.run} />}
       {(request.before || request.status !== "open") && <BeforeAfter key={request.updatedAt} id={request.id} route={target.route} worked={request.status !== "open"} />}
       <ol className="space-y-1.5 border-l border-line pl-3" aria-label="Thread">
         <li className="flex flex-wrap items-baseline gap-x-2 text-caption text-faint">
@@ -151,15 +171,15 @@ export function RequestThread({ request, number, active, onChange, onPick }: { r
         {error && <Failure error={error} />}
         <div className="flex flex-wrap items-center justify-end gap-2">
           {request.status === "closed" ? (
-            <Button size="sm" variant="ghost" disabled={busy} onClick={() => run(() => workflowApi.moveRequest(request.id, "open", reply))}>
+            <Button size="sm" variant="ghost" disabled={busy} onClick={() => act(() => workflowApi.moveRequest(request.id, "open", reply))}>
               Reopen
             </Button>
           ) : (
-            <Button size="sm" variant={request.status === "addressed" ? "primary" : "ghost"} disabled={busy} onClick={() => run(() => workflowApi.moveRequest(request.id, "closed", reply))}>
+            <Button size="sm" variant={request.status === "addressed" ? "primary" : "ghost"} disabled={busy} onClick={() => act(() => workflowApi.moveRequest(request.id, "closed", reply))}>
               {request.status === "addressed" ? "Looks right: close" : "Close"}
             </Button>
           )}
-          <Button size="sm" variant="outline" disabled={busy || !reply.trim()} onClick={() => run(() => workflowApi.replyRequest(request.id, reply))}>
+          <Button size="sm" variant="outline" disabled={busy || !reply.trim()} onClick={() => act(() => workflowApi.replyRequest(request.id, reply))}>
             <MessageSquare /> Reply
           </Button>
         </div>

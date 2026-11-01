@@ -7,6 +7,12 @@
  * it and its box on the picture; `scope: "element"` asks for every place the element is used, not
  * only this one. Its thread is the conversation: replies, and the status changes with who made
  * them. An agent may reply and mark a request addressed; opening and closing it is a person's.
+ *
+ * A change request carries the task it asks for (`task`), scoped so a runner can file it as it is:
+ * the goal in plain words, the files it may touch (when they are known), what is out of bounds,
+ * and what shows it is done. A runner that takes it on (Toolroll, say) writes `<id>.task.json`
+ * beside it (`youi.request-task/v1`): its task, where to see it, and how far it has got. The
+ * request file stays youiyoux's and the task file the runner's, so neither overwrites the other.
  */
 import { z } from "zod";
 import { ElementId } from "./ids.ts";
@@ -53,6 +59,27 @@ export const RequestEntry = z.object({
 });
 export type RequestEntry = z.infer<typeof RequestEntry>;
 
+/** What shows a task is done, as a runner checks it. */
+export const TASK_EVIDENCE = ["screenshot", "check", "changed-path", "manual-review"] as const;
+
+/** The task a change request asks for, scoped for a runner to file as it is. */
+export const RequestTask = z.object({
+  /** One line: the screen, the component and what to do. */
+  title: z.string().min(1).max(120),
+  /** In plain words: what was asked, where, and what the design system says about it. */
+  goal: z.string().min(1).max(4000),
+  /** Project-relative files the change may touch; empty when they cannot be known up front. */
+  touches: z.array(z.string().min(1).max(500)).max(50),
+  /** The files are known: a runner may hold the change to them. False: a person scopes it. */
+  touchesKnown: z.boolean(),
+  /** Why the files are not known, when they are not. */
+  why: z.string().min(1).max(500).optional(),
+  /** What the change must not do. */
+  not: z.array(z.string().min(1).max(300)).max(10),
+  acceptance: z.array(z.object({ statement: z.string().min(1).max(300), evidence: z.array(z.enum(TASK_EVIDENCE)).min(1) })).min(1).max(10),
+});
+export type RequestTask = z.infer<typeof RequestTask>;
+
 export const RequestDoc = z.object({
   $schema: z.string().optional(),
   schema: z.literal("youi.request/v1"),
@@ -69,6 +96,30 @@ export const RequestDoc = z.object({
   target: RequestTarget,
   /** The screen as it was when this was filed (`<id>.before.webp` beside it), to compare with after a change. */
   before: z.string().regex(/^r-[0-9a-f]{10}\.before\.webp$/).optional(),
+  /** A change request's task, scoped for a runner (none on a comment, or on a request filed before tasks were). */
+  task: RequestTask.optional(),
   thread: z.array(RequestEntry).max(500),
 });
 export type RequestDoc = z.infer<typeof RequestDoc>;
+
+/** How far a runner's task for a request has got. */
+export const RUN_STATUSES = ["queued", "needs-you", "building", "ready", "done", "failed", "stopped"] as const;
+export type RunStatus = (typeof RUN_STATUSES)[number];
+
+/**
+ * `youi.request-task/v1`: a runner's task for a request (`.youi/requests/<id>.task.json`, the
+ * runner's to write). `url` is where a person sees the task; only http(s) is kept.
+ */
+export const RequestRun = z.object({
+  $schema: z.string().optional(),
+  schema: z.literal("youi.request-task/v1"),
+  request: z.string().regex(REQUEST_ID, "expected r-<10 hex>"),
+  /** The runner's name (`Toolroll`). */
+  runner: z.string().min(1).max(60),
+  task: z.object({ id: z.string().min(1).max(120), url: z.string().url().max(2000).refine((u) => /^https?:\/\//.test(u), "expected an http(s) address").nullable() }),
+  status: z.enum(RUN_STATUSES),
+  /** The runner's own words for where it is (`Ready for review`). */
+  detail: z.string().max(300).optional(),
+  updatedAt: IsoTime,
+});
+export type RequestRun = z.infer<typeof RequestRun>;

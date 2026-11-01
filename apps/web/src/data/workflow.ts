@@ -5,7 +5,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ApiError, DraftContent, DraftView, LibraryDraftContent, LibraryDraftView, LiveInfo, PublishedRules, StyleDraftContent, StyleDraftView, WorkflowInfo } from "@youiyoux/workflow/api";
-import type { RequestDoc, RequestStatus, RequestTarget, StatusReport } from "@youiyoux/core";
+import type { RequestDoc, RequestRun, RequestStatus, RequestTarget, StatusReport } from "@youiyoux/core";
 import type { LiveRawPlace } from "./live.ts";
 import { sessionKey } from "./session-key.ts";
 import type { PlacedComponent } from "./types.ts";
@@ -86,13 +86,13 @@ export const workflowApi = {
   handoff: (id: string) => call<DraftView>("POST", `/drafts/${id}/handoff`),
   discard: (id: string) => call<DraftView>("DELETE", `/drafts/${id}`),
   /** Comments and change requests on captured screens, in the product's .youi/requests. */
-  requests: () => call<{ requests: RequestDoc[]; unreadable: Array<{ file: string; reason: string }> }>("GET", "/requests"),
+  requests: () => call<{ requests: RequestView[]; unreadable: Array<{ file: string; reason: string }> }>("GET", "/requests"),
   fileRequest: (kind: RequestDoc["kind"], body: string, target: RequestTarget) => call<RequestDoc>("POST", "/requests", { kind, body, target }),
-  replyRequest: (id: string, body: string) => call<RequestDoc>("POST", `/requests/${id}/replies`, { body }),
+  replyRequest: (id: string, body: string) => call<RequestView>("POST", `/requests/${id}/replies`, { body }),
   /** The screen when it was filed, and now with the component found again by its line. */
   compareRequest: (id: string) => call<RequestComparison>("GET", `/requests/${id}/compare`),
   /** Closing and reopening are a person's: the service refuses them from an agent. */
-  moveRequest: (id: string, status: RequestStatus, body = "") => call<RequestDoc>("POST", `/requests/${id}/status`, { status, body }),
+  moveRequest: (id: string, status: RequestStatus, body = "") => call<RequestView>("POST", `/requests/${id}/status`, { status, body }),
   /** Where the product's app runs, for live screens on the canvas. */
   live: () => call<LiveInfo>("GET", "/live"),
   /** The components under the pointer on a live screen, their frames mapped to the product's files and lines. */
@@ -100,7 +100,10 @@ export const workflowApi = {
 };
 
 /** A list of requests with `next` in it: in place of the one it updates, or first when it is new. */
-export const withRequest = (list: readonly RequestDoc[], next: RequestDoc): RequestDoc[] => (list.some((r) => r.id === next.id) ? list.map((r) => (r.id === next.id ? next : r)) : [next, ...list]);
+/** A request with the task a runner (Toolroll, say) has for it, once one has taken it on. */
+export type RequestView = RequestDoc & { readonly run?: RequestRun };
+
+export const withRequest = (list: readonly RequestView[], next: RequestView): RequestView[] => (list.some((r) => r.id === next.id) ? list.map((r) => (r.id === next.id ? next : r)) : [next, ...list]);
 
 /** A picture of a request's screen, by the service's URL, and where its component is on it. */
 export interface RequestPictureView {

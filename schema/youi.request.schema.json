@@ -164,6 +164,87 @@
       "type": "string",
       "pattern": "^r-[0-9a-f]{10}\\.before\\.webp$"
     },
+    "task": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "goal": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4000
+        },
+        "touches": {
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        },
+        "touchesKnown": {
+          "type": "boolean"
+        },
+        "why": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "not": {
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          }
+        },
+        "acceptance": {
+          "minItems": 1,
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "statement": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "evidence": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "screenshot",
+                    "check",
+                    "changed-path",
+                    "manual-review"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "statement",
+              "evidence"
+            ]
+          }
+        }
+      },
+      "required": [
+        "title",
+        "goal",
+        "touches",
+        "touchesKnown",
+        "not",
+        "acceptance"
+      ]
+    },
     "thread": {
       "maxItems": 500,
       "type": "array",

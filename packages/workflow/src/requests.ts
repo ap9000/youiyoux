@@ -5,18 +5,77 @@
  * the same everywhere: anyone may comment and reply, an agent may mark a request addressed (with
  * what it did), and only a person closes or reopens one. A file that does not validate is listed
  * as unreadable, never dropped silently, and never rewritten.
+ *
+ * A change request is filed with its task (`proposeTask`), so a runner such as Toolroll can queue
+ * it as it is; the runner's `<id>.task.json` beside it says how far that task has got, and is
+ * shown with the request (`run`).
  */
 import { randomBytes } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import { copyFile, mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { REQUEST_ID, RequestDoc, writeFileAtomic, type RequestAuthor, type RequestStatus, type RequestTarget } from "@youiyoux/core";
+import { REQUEST_ID, RequestDoc, RequestRun, writeFileAtomic, type RequestAuthor, type RequestStatus, type RequestTarget, type RequestTask } from "@youiyoux/core";
 import { PICTURE_SCALE, screenSlug } from "@youiyoux/scanner";
 import { authorize, WorkflowError } from "./policy.ts";
 import type { Actor } from "./api.ts";
 
 export const REQUESTS_DIR = ".youi/requests";
 const FILE = /^(r-[0-9a-f]{10})\.json$/;
+const RUN_FILE = /^(r-[0-9a-f]{10})\.task\.json$/;
+
+/** A request with its runner's task, when one has taken it on. */
+export type RequestView = RequestDoc & { readonly run?: RequestRun };
+
+/** Files a change may never touch, whatever it asks: what it would add or upgrade. */
+const MANIFESTS = "New dependencies, or changes to package manifests and lockfiles";
+
+/**
+ * The task a change request asks for, scoped for a runner to file as it is. The files it may touch
+ * are known only for one component whose line the capture found; every use of an element, plain
+ * HTML a server writes, or a component with no line is scoped by a person (`touchesKnown: false`).
+ */
+export function proposeTask(id: string, body: string, target: RequestTarget, author: RequestAuthor): RequestTask {
+  const t = target;
+  const at = t.file && t.line ? `${t.file}:${t.line}` : null;
+  const every = t.scope === "element" && t.element !== undefined;
+  const ask = body.replace(/\s+/g, " ").trim();
+  const title = `${t.route} · ${t.name}: ${ask}`;
+  const where = every
+    ? `Every use of ${t.element} in the project, not only the one picked (${t.name}${at ? ` at ${at}` : ""} on ${t.route}). \`youiyoux where\` or the MCP tool system_where_used lists them.`
+    : t.html
+      ? `The ${t.name} in HTML that ${at ? `the component at ${at}` : "a component"} places on ${t.route}. React does not make it: the HTML comes from elsewhere (a server template or a string), so find where it is written, from its text.`
+      : at
+        ? `${t.name} at ${at}, on ${t.route}.`
+        : `${t.name} on ${t.route}; the capture did not find its line, so find it from the screen and the route.`;
+  const system = t.element
+    ? t.lookalike
+      ? `It is a hand-built lookalike of the design system's ${t.element}: where that is the fix, use the System's component instead.`
+      : `It is the design system's ${t.element}: change how it is used here, not the System's component itself.`
+    : "It is not a design-system component: use the System's components and tokens for anything new.";
+  const touchesKnown = !every && !t.html && t.file !== undefined && t.line !== undefined;
+  const why = every ? `every use of ${t.element}: the files are wherever it is used` : t.html ? "the HTML is written outside React, so its file is not known" : touchesKnown ? undefined : "the capture did not find the line that rendered it";
+  return {
+    title: title.length > 120 ? `${title.slice(0, 119)}…` : title,
+    goal: [
+      `A change request from ${author.name} on the ${t.route} screen, filed in the youiyoux hub (request ${id}):`,
+      "",
+      body.trim(),
+      "",
+      `Where: ${where}`,
+      system,
+      "Run `youiyoux check --diff` before you finish: the change adds no design-system drift.",
+    ].join("\n").slice(0, 4000),
+    touches: touchesKnown ? [t.file!] : [],
+    touchesKnown,
+    ...(why ? { why } : {}),
+    not: [MANIFESTS, ...(touchesKnown ? [`Changes to files other than ${t.file}`] : []), `Changes to other screens than ${t.route}, unless the request asks for them`],
+    acceptance: [
+      { statement: `The change asked for shows on ${t.route}`, evidence: ["screenshot"] },
+      { statement: "The project's check passes, and youiyoux check --diff finds no new drift", evidence: ["check"] },
+      ...(touchesKnown ? [{ statement: `Only ${t.file} changed`, evidence: ["changed-path" as const] }] : []),
+    ],
+  };
+}
 
 export interface RequestInput {
   readonly kind: RequestDoc["kind"];
@@ -25,7 +84,7 @@ export interface RequestInput {
 }
 
 interface RequestList {
-  readonly requests: readonly RequestDoc[];
+  readonly requests: readonly RequestView[];
   /** Files in the directory that are not valid requests, with why. */
   readonly unreadable: ReadonlyArray<{ readonly file: string; readonly reason: string }>;
 }
@@ -95,8 +154,17 @@ export class RequestStore {
   /** Every request, newest first. */
   async list(): Promise<RequestList> {
     const names = await readdir(this.dir).catch(() => [] as string[]);
-    const requests: RequestDoc[] = [];
+    const requests: RequestView[] = [];
     const unreadable: Array<{ file: string; reason: string }> = [];
+    const runs = new Map<string, RequestRun>();
+    for (const name of names) {
+      const match = RUN_FILE.exec(name);
+      if (!match) continue;
+      const run = await this.readRun(name);
+      if ("reason" in run) unreadable.push({ file: join(REQUESTS_DIR, name), reason: run.reason });
+      else if (run.request !== match[1]) unreadable.push({ file: join(REQUESTS_DIR, name), reason: "its request is not its file name" });
+      else runs.set(run.request, run);
+    }
     for (const name of names.sort()) {
       const match = FILE.exec(name);
       if (!match) continue;
@@ -111,10 +179,42 @@ export class RequestStore {
       const result = RequestDoc.safeParse(value);
       if (!result.success) unreadable.push({ file, reason: result.error.issues.map((i) => `${i.path.join(".") || "file"}: ${i.message}`).join("; ") });
       else if (result.data.id !== match[1]) unreadable.push({ file, reason: "its id is not its file name" });
-      else requests.push(result.data);
+      else {
+        const run = runs.get(result.data.id);
+        requests.push(run ? { ...result.data, run } : result.data);
+      }
     }
     requests.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id));
     return { requests, unreadable };
+  }
+
+  /** A runner's task file, checked; what is wrong with it otherwise. Never written here: it is the runner's. */
+  private async readRun(name: string): Promise<RequestRun | { reason: string }> {
+    try {
+      const result = RequestRun.safeParse(JSON.parse(await readFile(join(this.dir, name), "utf8")));
+      return result.success ? result.data : { reason: result.error.issues.map((i) => `${i.path.join(".") || "file"}: ${i.message}`).join("; ") };
+    } catch (error: unknown) {
+      return { reason: error instanceof Error ? error.message.split("\n")[0]! : String(error) };
+    }
+  }
+
+  /** The runner's task for a request, when one has taken it on and its file is valid. */
+  async run(id: string): Promise<RequestRun | null> {
+    const name = `${this.file(id).split("/").at(-1)!.replace(/\.json$/, "")}.task.json`;
+    if (!existsSync(join(this.dir, name))) return null;
+    const run = await this.readRun(name);
+    return "reason" in run || run.request !== id ? null : run;
+  }
+
+  /** A request with its runner's task, when one has taken it on. */
+  async view(id: string): Promise<RequestView> {
+    return this.withRun(await this.get(id));
+  }
+
+  /** A request as just written, with its runner's task. */
+  async withRun(request: RequestDoc): Promise<RequestView> {
+    const run = await this.run(request.id);
+    return run ? { ...request, run } : request;
   }
 
   async get(id: string): Promise<RequestDoc> {
@@ -139,7 +239,9 @@ export class RequestStore {
       await mkdir(this.dir, { recursive: true });
       await copyFile(shot, join(this.dir, before));
     }
-    return this.write({ schema: "youi.request/v1", id, project: this.project, kind: input.kind, status: "open", body, author: authorOf(actor), createdAt: at, updatedAt: at, target: input.target, ...(before ? { before } : {}), thread: [] });
+    const author = authorOf(actor);
+    const task = input.kind === "change" ? { task: proposeTask(id, body, input.target, author) } : {};
+    return this.write({ schema: "youi.request/v1", id, project: this.project, kind: input.kind, status: "open", body, author, createdAt: at, updatedAt: at, target: input.target, ...(before ? { before } : {}), ...task, thread: [] });
   }
 
   async reply(actor: Actor, id: string, body: string): Promise<RequestDoc> {
@@ -218,10 +320,14 @@ export interface RequestBrief {
   /** The screen was captured after the request was filed (or reopened); null with no picture at all. */
   readonly recaptured: boolean | null;
   readonly thread: readonly string[];
+  /** A change request's task, scoped for a runner to file as it is (null on a comment). */
+  readonly task: RequestTask | null;
+  /** The runner's task for it, once one has taken it on. */
+  readonly run: RequestRun | null;
   readonly next: string;
 }
 
-export function requestBrief(request: RequestDoc, root: string): RequestBrief {
+export function requestBrief(request: RequestView, root: string): RequestBrief {
   const t = request.target;
   const picture = join(root, ".youi/screens", `${screenSlug(t.route)}.light.webp`);
   const at = t.file && t.line ? `${t.file}:${t.line}` : null;
@@ -253,6 +359,8 @@ export function requestBrief(request: RequestDoc, root: string): RequestBrief {
     recaptured,
     box: t.box ? { x: Math.round(t.box.x * PICTURE_SCALE), y: Math.round(t.box.y * PICTURE_SCALE), width: Math.round(t.box.width * PICTURE_SCALE), height: Math.round(t.box.height * PICTURE_SCALE) } : null,
     thread: request.thread.map((e) => `${e.author.kind} ${e.author.name}${e.status ? ` (marked ${e.status})` : ""}: ${e.body || "(no words)"}`),
+    task: request.task ?? null,
+    run: request.run ?? null,
     next,
   };
 }

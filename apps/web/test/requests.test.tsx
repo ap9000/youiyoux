@@ -115,3 +115,18 @@ describe("before and after", () => {
     expect(posts).toEqual([]);
   });
 });
+
+describe("a runner's task for a request", () => {
+  test("shows how far it has got and links to it; with no runner, nothing is shown", () => {
+    const run = { schema: "youi.request-task/v1", request: "r-0123456789", runner: "Toolroll", task: { id: "task-1a2b", url: "http://127.0.0.1:4180/t/task-1a2b" }, status: "ready", detail: "Ready for review", updatedAt: AT } as const;
+    render(<ol><RequestThread request={{ ...request(), run }} number={1} active={false} onChange={() => undefined} onPick={() => undefined} /></ol>);
+    const line = document.querySelector<HTMLElement>("[data-run]")!;
+    expect(line.getAttribute("data-run")).toBe("ready");
+    expect(line.textContent).toContain("Ready for review");
+    const link = within(line).getByRole("link", { name: "Open in Toolroll" });
+    expect([link.getAttribute("href"), link.getAttribute("target"), link.getAttribute("rel")]).toEqual(["http://127.0.0.1:4180/t/task-1a2b", "_blank", "noreferrer"]);
+    cleanup();
+    render(<ol><RequestThread request={request()} number={1} active={false} onChange={() => undefined} onPick={() => undefined} /></ol>);
+    expect(document.querySelector("[data-run]")).toBeNull();
+  });
+});

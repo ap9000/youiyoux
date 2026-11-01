@@ -163,7 +163,7 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string, opti
   if (request) {
     const [, id, action] = request as unknown as [string, string, string | undefined];
     const store = await workflow.requests();
-    if (!action && method === "GET") return send(res, 200, await store.get(id));
+    if (!action && method === "GET") return send(res, 200, await store.view(id));
     if (action === "compare" && method === "GET") {
       const { before, after } = await store.compare(id);
       // Each picture by this service's URL, never by its path on disk.
@@ -177,10 +177,10 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string, opti
       res.end(await readFile(picture.file));
       return;
     }
-    if (action === "replies" && method === "POST") return send(res, 200, await store.reply(actor, id, parse(ReplyInput, await readJson(req)).body));
+    if (action === "replies" && method === "POST") return send(res, 200, await store.withRun(await store.reply(actor, id, parse(ReplyInput, await readJson(req)).body)));
     if (action === "status" && method === "POST") {
       const input = parse(StatusInput, await readJson(req));
-      return send(res, 200, await store.setStatus(actor, id, input.status, input.body ?? ""));
+      return send(res, 200, await store.withRun(await store.setStatus(actor, id, input.status, input.body ?? "")));
     }
   }
   const match = /^\/api\/drafts\/(d-[0-9a-f]{10})(?:\/(preview|approve|rebase|handoff))?$/.exec(path);

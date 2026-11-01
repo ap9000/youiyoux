@@ -1377,10 +1377,10 @@ async function cmdRequests(values: Values, positionals: string[]): Promise<numbe
     return unreadable.length ? 1 : 0;
   }
   if (!id) throw new UsageError(usage);
-  if (action === "show") return one(await store.get(id));
+  if (action === "show") return one(await store.view(id));
   if (action === "reply" || action === "addressed") {
     if (!values.message?.trim()) throw new UsageError(`youiyoux requests ${action} ${id} --message <${action === "reply" ? "text" : "what you changed, with file:line"}>`);
-    return one(action === "reply" ? await store.reply(agent, id, values.message) : await store.setStatus(agent, id, "addressed", values.message));
+    return one(await store.withRun(action === "reply" ? await store.reply(agent, id, values.message) : await store.setStatus(agent, id, "addressed", values.message)));
   }
   throw new UsageError(usage);
 }

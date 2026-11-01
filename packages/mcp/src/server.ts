@@ -437,7 +437,7 @@ export function createServer(options: ServerOptions): McpServer {
     "requests_list" satisfies McpTool,
     {
       title: "Requests on the screens",
-      description: "Comments and change requests people pinned to components on captured screens (the hub's Screens page). Each says what is asked, the route and component, the file:line that rendered it, whether it means this one or every use of the element, the screenshot (an absolute path: open it) with the component's box on it in that picture's pixels, the thread, and what to do next. Call it before UI work. Default: open requests.",
+      description: "Comments and change requests people pinned to components on captured screens (the hub's Screens page). Each says what is asked, the route and component, the file:line that rendered it, whether it means this one or every use of the element, the screenshot (an absolute path: open it) with the component's box on it in that picture's pixels, the thread, the task a change request asks for (its goal, the files it may touch, what is out of bounds and what shows it is done) and a runner's progress on it when one has taken it on, and what to do next. Call it before UI work. Default: open requests.",
       inputSchema: { status: z.enum(["open", "addressed", "closed", "all"]).optional(), route: z.string().min(1).optional().describe("Only this route, e.g. /settings") },
       annotations: READ_ONLY,
     },
@@ -454,7 +454,7 @@ export function createServer(options: ServerOptions): McpServer {
     { title: "Reply on a request", description: "Add a reply to a request's thread: a question when the ask is unclear, or an answer to a comment. Writes only that request's file in .youi/requests.", inputSchema: { id: z.string().regex(/^r-[0-9a-f]{10}$/).describe("The request id, r-<10 hex>"), message: z.string().min(1).max(4000) }, annotations: WRITES_REQUEST },
     guard(async ({ id, message }) => {
       const { store, root } = await requests();
-      return requestBrief(await store.reply(AGENT, id, message), root);
+      return requestBrief(await store.withRun(await store.reply(AGENT, id, message)), root);
     }),
   );
 
@@ -463,7 +463,7 @@ export function createServer(options: ServerOptions): McpServer {
     { title: "Mark a request addressed", description: "Say a change request is done, with what you changed (file:line). A person checks it on the screen and closes it, or reopens it; an agent never closes one. Writes only that request's file in .youi/requests.", inputSchema: { id: z.string().regex(/^r-[0-9a-f]{10}$/).describe("The request id, r-<10 hex>"), message: z.string().min(1).max(4000).describe("What you changed, with file:line") }, annotations: WRITES_REQUEST },
     guard(async ({ id, message }) => {
       const { store, root } = await requests();
-      return requestBrief(await store.setStatus(AGENT, id, "addressed", message), root);
+      return requestBrief(await store.withRun(await store.setStatus(AGENT, id, "addressed", message)), root);
     }),
   );
 

@@ -8,7 +8,7 @@ import { DetectReport } from "./detect.ts";
 import { LibraryEntry } from "./hierarchy.ts";
 import { ElementId, safeId } from "./ids.ts";
 import { GapsReport } from "./gaps.ts";
-import { RequestDoc } from "./requests.ts";
+import { RequestDoc, RequestRun } from "./requests.ts";
 import { CiRecord, OrgView } from "./record.ts";
 import { StatusReport, WorkspaceConfig } from "./status.ts";
 import { TokenDocument } from "./tokens.ts";
@@ -703,6 +703,7 @@ export const PUBLISHED_SCHEMAS = {
   "youi.detect.schema.json": DetectReport,
   "youi.tokens.schema.json": TokenDocument,
   "youi.request.schema.json": RequestDoc,
+  "youi.request-task.schema.json": RequestRun,
   "youi.gaps.schema.json": GapsReport,
   "youi.workspace.schema.json": WorkspaceConfig,
   "youi.status.schema.json": StatusReport,

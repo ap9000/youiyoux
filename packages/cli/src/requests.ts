@@ -19,6 +19,8 @@ export function renderBrief(brief: RequestBrief, full = false): string {
     `  “${brief.ask}” ${style.dim(`· ${brief.from} · ${brief.scope}`)}`,
   ];
   if (brief.picture) lines.push(`  ${style.dim("picture")} ${brief.picture}${brief.box ? style.dim(` (box ${brief.box.x},${brief.box.y} ${brief.box.width}×${brief.box.height} px)`) : ""}`);
+  if (brief.run) lines.push(`  ${style.dim("task")} ${brief.run.runner} ${brief.run.task.id}: ${brief.run.detail ?? brief.run.status}${brief.run.task.url ? style.dim(` · ${brief.run.task.url}`) : ""}`);
+  else if (full && brief.task) lines.push(`  ${style.dim("task")} ${brief.task.touchesKnown ? `touches ${brief.task.touches.join(", ")}` : `a person scopes it: ${brief.task.why}`}`);
   for (const entry of full ? brief.thread : brief.thread.slice(-2)) lines.push(`  ${style.dim("·")} ${entry}`);
   if (!full && brief.thread.length > 2) lines.push(style.dim(`  … ${brief.thread.length - 2} earlier in the thread: youiyoux requests show ${brief.id}`));
   lines.push(`  ${style.dim("next")} ${cliNext(brief)}`);
@@ -27,6 +29,6 @@ export function renderBrief(brief: RequestBrief, full = false): string {
 
 export function renderRequests(briefs: readonly RequestBrief[], status: string, unreadable: ReadonlyArray<{ file: string; reason: string }>): string {
   const lines = briefs.length ? briefs.map((b) => renderBrief(b)) : [`No ${status === "all" ? "" : `${status} `}requests on the screens.`];
-  for (const u of unreadable) lines.push(style.error(`✖ ${u.file} is not a youi.request/v1: ${u.reason}`));
+  for (const u of unreadable) lines.push(style.error(`✖ ${u.file} is not a ${u.file.endsWith(".task.json") ? "youi.request-task/v1" : "youi.request/v1"}: ${u.reason}`));
   return lines.join("\n\n");
 }
