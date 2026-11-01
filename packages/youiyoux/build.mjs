@@ -35,7 +35,7 @@ const layout = {
 
 rmSync(dist, { recursive: true, force: true });
 const result = await build({
-  entryPoints: { youiyoux: join(here, "src/youiyoux.js"), youi: join(here, "src/youi.js"), "tailwind-worker": join(repo, "packages/scanner/src/specimens/tailwind-worker.ts"), "hub-server": join(here, "src/hub-server.js"), "hub-snapshot": join(here, "src/hub-snapshot.js"), "hub-previews": join(here, "src/hub-previews.js") },
+  entryPoints: { youiyoux: join(here, "src/youiyoux.js"), youi: join(here, "src/youi.js"), "tailwind-worker": join(repo, "packages/scanner/src/specimens/tailwind-worker.ts"), "hub-server": join(here, "src/hub-server.js"), "hub-snapshot": join(here, "src/hub-snapshot.js"), "hub-previews": join(here, "src/hub-previews.js"), vite: join(here, "src/vite.js") },
   outdir: dist,
   bundle: true,
   splitting: true,
@@ -58,6 +58,8 @@ const result = await build({
 writeFileSync(join(here, "build-meta.json"), JSON.stringify(result.metafile));
 // TOOL_ROOT is dist: the schemas youiyoux init and youiyoux schema read, and the CLI path hooks and MCP configs run.
 cpSync(join(repo, "schema"), join(dist, "schema"), { recursive: true });
+// youiyoux/vite's types, beside the plugin.
+cpSync(join(here, "src/vite.d.ts"), join(dist, "vite.d.ts"));
 const bin = join(dist, "packages/cli/bin/youi.js");
 mkdirSync(dirname(bin), { recursive: true });
 writeFileSync(bin, '#!/usr/bin/env node\nimport "../../../youi.js";\n');

@@ -281,6 +281,37 @@ With the Move tool (**V**) a live screen takes the pointer, scrolling and keys, 
 To pan across it, hold **Space** or pick the Hand (**H**); to comment, pick Comment (**C**). While
 the app has the keyboard, those keys go to it: use the tool bar, or click the board first.
 
+### Editing a component in place
+
+A component picked on a live screen opens on **Edit**, beside Comment: the choices its contract
+gives (each enum prop's values, its switches, its text and number props) and its text, with the
+values the page has now. Each change is made in the running app at once, the way React DevTools
+changes a prop, and kept when its parent renders it again; closing without writing puts the page
+back. **Write to code** then shows the element's lines before and after, and **Write to
+`<file>`** writes them into the product, while the file is still the one shown; the app's dev
+server reloads it. Setting a prop to its contract default takes the attribute out.
+
+Only what the code writes as a literal is written: a value computed in code, props spread in that
+could set the same prop, text that comes from a value, a place with no file and line, or a line
+that moved since the capture is refused with why, and **File as change request** files the exact
+change instead (`Set variant="ghost" on Button at src/app.tsx:624, as previewed live on /flows`),
+for an agent or a runner such as Toolroll. The service writes only a script inside the product, a
+file of its own (never a link), with the hub's session key.
+
+Editing needs React's development build to hand the bridge its renderer, which it does only if the
+bridge loads first: in the page's head, before the app's scripts, in development. On Vite:
+
+```js
+// vite.config.ts
+import { youiyoux } from "youiyoux/vite";
+export default defineConfig({ plugins: [youiyoux({ hub: "http://localhost:5173" }), /* …the app's own */] });
+```
+
+Anywhere else, the same line in the head of the page the app serves in development:
+`<script src="http://localhost:5173/api/live/bridge.js"></script>`. The bridge does nothing
+unless the hub frames the page on this machine. Loaded later (the one-line way above), commenting
+works and Edit says why it can't.
+
 ## The local index
 
 Large, derived data lives in one store (`packages/store`): Discover listings, their signals and licences, every inventory run, and a graph of what uses what. Decisions (tokens, contracts, rules, adopted Library items, approvals) stay in git and are never kept there; everything in the store is rebuilt from files youi already writes.

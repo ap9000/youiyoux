@@ -55,6 +55,10 @@
     "@youiyoux/scanner": "workspace:*"
   },
   "exports": {
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./vite": {
+      "types": "./dist/vite.d.ts",
+      "default": "./dist/vite.js"
+    }
   }
 }

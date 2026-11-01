@@ -4,13 +4,13 @@
  * state, so nothing here is cached.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AgentKind, AgentsConnected, AgentsView, ApiError, DraftContent, DraftView, LibraryDraftContent, LibraryDraftView, LiveInfo, PublishedRules, StyleDraftContent, StyleDraftView, WorkflowInfo } from "@youiyoux/workflow/api";
+import type { AgentKind, AgentsConnected, AgentsView, ApiError, DraftContent, LiveCodeEdit, DraftView, LibraryDraftContent, LibraryDraftView, LiveInfo, PublishedRules, StyleDraftContent, StyleDraftView, WorkflowInfo } from "@youiyoux/workflow/api";
 import type { RequestDoc, RequestRun, RequestStatus, RequestTarget, StatusReport } from "@youiyoux/core";
 import type { LiveRawPlace } from "./live.ts";
 import { sessionKey } from "./session-key.ts";
 import type { PlacedComponent } from "./types.ts";
 
-export type { AgentCheck, AgentKind, AgentsConnected, AgentsView, AgentView, CheckCapability, DraftContent, DraftView, IngestDraftView, LibraryDraftContent, LibraryDraftView, LiveInfo, Preview, PreviewFinding, PublishedRules, RuleDraftView, RuleFields, StyleContrast, StyleDraftContent, StyleDraftView, StylePreview, StyleSite, WorkflowInfo } from "@youiyoux/workflow/api";
+export type { AgentCheck, AgentKind, AgentsConnected, AgentsView, AgentView, CheckCapability, LiveCodeEdit, DraftContent, DraftView, IngestDraftView, LibraryDraftContent, LibraryDraftView, LiveInfo, Preview, PreviewFinding, PublishedRules, RuleDraftView, RuleFields, StyleContrast, StyleDraftContent, StyleDraftView, StylePreview, StyleSite, WorkflowInfo } from "@youiyoux/workflow/api";
 
 const API = `${import.meta.env.BASE_URL}api`;
 
@@ -49,6 +49,18 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
     throw new WorkflowRequestError(error.error ?? `HTTP ${response.status}`, response.status, error.problems ?? []);
   }
   return data as T;
+}
+
+/** A live edit for the code: the place's file and line, props with their values (and the contract's default), new text. */
+export interface LiveCodeEditInput {
+  readonly file: string;
+  readonly line: number;
+  readonly column: number | null;
+  readonly component: string;
+  readonly set: ReadonlyArray<{ readonly prop: string; readonly value: string | number | boolean; readonly default?: string | number | boolean }>;
+  readonly text: string | null;
+  /** The hash the edit was shown with: writing it needs the file still to be that. */
+  readonly write?: { readonly hash: string };
 }
 
 /** The workspace hub's service (`youiyoux ui` in a workspace): every product's status, and opening another in this hub. */
@@ -95,6 +107,8 @@ export const workflowApi = {
   moveRequest: (id: string, status: RequestStatus, body = "") => call<RequestView>("POST", `/requests/${id}/status`, { status, body }),
   /** Where the product's app runs, for live screens on the canvas. */
   live: () => call<LiveInfo>("GET", "/live"),
+  /** A live edit in the code: what it changes on the element at the place's line (or why it can't), and with `write`, written. */
+  liveEdit: (edit: LiveCodeEditInput) => call<LiveCodeEdit>("POST", "/live/edit", edit),
   /** Coding agents on this machine, and which start the youiyoux MCP server in this project. */
   agents: () => call<AgentsView>("GET", "/agents"),
   /** Connect these agents as youiyoux agents install does, then check each server answers. */

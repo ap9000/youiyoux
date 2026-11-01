@@ -10,12 +10,16 @@
  * loads again), outlined and named as on a picture, and a click picks it for a comment. Comments
  * go on captured screens only, so a page that is none of them says so. The card's requests are
  * pinned where their boxes are, while the page shows that screen.
+ *
+ * A pick also comes with a handle on the component in the page (LiveHandle): its values now, props
+ * set in place and undone, for the Edit tab. Answers are matched to their questions by id; one the
+ * app never gives counts as not editable, never as an edit done.
  */
 import { clsx } from "clsx";
 import { PlugZap } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { RequestDoc } from "@youiyoux/core";
-import { bridgeMessage, bridgeSnippet, routeAt, type BridgeMessage, type LiveRawPlace, type LiveView } from "../../data/live.ts";
+import { bridgeHead, bridgeMessage, bridgeReply, bridgeSnippet, routeAt, type BridgeMessage, type BridgeReply, type LiveHandle, type LiveProps, type LiveRawPlace, type LiveView } from "../../data/live.ts";
 import { matchPlaces, type Placed } from "../../data/places.ts";
 import type { PlacedComponent } from "../../data/types.ts";
 import type { ProjectLookalike, Site } from "../../data/usage.ts";
@@ -28,6 +32,8 @@ import { Modal } from "../../ui/Modal.tsx";
 /** How often hello is said until the bridge answers, and how long until the card says how to load it. */
 export const HELLO_EVERY_MS = 500;
 export const GIVE_UP_MS = 5000;
+/** How long a question about a component waits for the app. */
+export const REPLY_MS = 3000;
 
 /** A selected screen's outline: as wide on screen at any zoom (the board sets --unscale), as a design tool draws it. */
 export const SELECTED = "border-accent outline-solid outline-accent [outline-width:calc(2px*var(--unscale,1))] [outline-offset:calc(2px*var(--unscale,1))]";
@@ -50,7 +56,8 @@ interface Props {
   nameOf: (placed: Placed) => string;
   /** A comment on this card is being written: its component stays outlined. */
   picking: boolean;
-  onPick: (placed: Placed, page: { width: number; height: number }, at: { clientX: number; clientY: number }, route: string) => void;
+  /** `live`: the picked component in the page, to edit in place; null for HTML React did not make. */
+  onPick: (placed: Placed, page: { width: number; height: number }, at: { clientX: number; clientY: number }, route: string, live: LiveHandle | null) => void;
   requests: readonly RequestDoc[];
   onPin: (request: RequestDoc, at: { clientX: number; clientY: number }) => void;
   selected?: boolean;
@@ -72,6 +79,9 @@ export function LiveScreen({ url, viewport, width, screens, route, commenting, s
   const clicked = useRef<{ id: number; clientX: number; clientY: number } | null>(null);
   /** Lines found per component's frames, until the page loads again. */
   const lines = useRef(new Map<string, Promise<Pick<PlacedComponent, "file" | "line" | "column">>>());
+  /** Questions about a component waiting for the app's answer, by id. */
+  const waiting = useRef(new Map<number, (reply: BridgeReply) => void>());
+  const replies = useRef(0);
   const height = viewport.height * (width / viewport.width);
   const onRoute = view ? routeAt(screens, view.path) : null;
 
@@ -104,12 +114,14 @@ export function LiveScreen({ url, viewport, width, screens, route, commenting, s
       const at = routeAt(screens, now.path);
       if (!first || !at) return;
       setPicked({ placed: first, view: now });
-      onPick(first, now.page, click, at);
+      onPick(first, now.page, click, at, first.place.html ? null : handleOn(first));
     });
   };
   useEffect(() => {
     const onMessage = (event: MessageEvent): void => {
       if (event.source !== frame.current?.contentWindow || event.origin !== origin) return;
+      const reply = bridgeReply(event.data);
+      if (reply) return void waiting.current.get(reply.id)?.(reply);
       const message = bridgeMessage(event.data);
       if (message) answer.current(message);
     };
@@ -132,6 +144,33 @@ export function LiveScreen({ url, viewport, width, screens, route, commenting, s
     }
     const resolved = await Promise.all(raw.map(async (place): Promise<PlacedComponent> => ({ ...place, ...(await lines.current.get(frameKey(place))!) })));
     return matchPlaces(resolved, sites.sites, sites.lookalikes);
+  };
+
+  /** The picked component in the page, by its name and where it is. */
+  const handleOn = (placed: Placed): LiveHandle => {
+    const target = { name: placed.place.name, box: placed.place.box };
+    const post = (message: Record<string, unknown>): void => frame.current?.contentWindow?.postMessage({ youiyoux: 1, ...message }, origin);
+    const question = <T,>(message: Record<string, unknown>, read: (reply: BridgeReply) => T | null, silent: T): Promise<T> =>
+      new Promise((resolve) => {
+        const id = ++replies.current;
+        const done = (value: T): void => {
+          waiting.current.delete(id);
+          resolve(value);
+        };
+        waiting.current.set(id, (reply) => {
+          const value = read(reply);
+          if (value !== null) done(value);
+        });
+        setTimeout(() => waiting.current.has(id) && done(silent), REPLY_MS);
+        post({ ...message, ...target, id });
+      });
+    const silent: LiveProps = { editable: false, why: "the app didn't answer: reload it, then pick the component again", found: false, props: {}, text: null };
+    return {
+      ask: (props) => question({ type: "props", ask: props }, (r) => (r.type === "props" ? { editable: r.editable, why: r.why, found: r.found, props: r.props, text: r.text } : null), silent),
+      edit: (set, text) => question({ type: "edit", set, text }, (r) => (r.type === "edited" ? { ok: r.ok, why: r.why } : null), { ok: false, why: silent.why }),
+      reset: () => post({ type: "reset" }),
+      forget: () => post({ type: "forget" }),
+    };
   };
 
   const ask = (event: { clientX: number; clientY: number }): number => {
@@ -256,6 +295,10 @@ export function LiveScreen({ url, viewport, width, screens, route, commenting, s
           }
         >
           <CodeBlock code={bridgeSnippet(location.origin)} title="live bridge" maxHeight="sm" />
+          <p className="text-small text-muted" data-live-head>
+            To edit components in place too, load it in the page&rsquo;s head instead, before the app&rsquo;s scripts, in development (on Vite, <code className="font-mono">youiyoux/vite</code>&rsquo;s plugin does this):
+          </p>
+          <CodeBlock code={bridgeHead(location.origin)} title="live bridge in the head" maxHeight="sm" />
           <p className="text-small text-muted" data-live-policy>
             An app that sends a Content-Security-Policy or X-Frame-Options refuses to be framed, and to load scripts from elsewhere. In development, allow this hub: <code className="font-mono break-all">frame-ancestors {location.origin}</code>, and <code className="font-mono break-all">{location.origin}</code> in <code className="font-mono">script-src</code>.
           </p>

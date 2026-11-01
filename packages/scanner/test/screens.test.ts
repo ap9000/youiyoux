@@ -7,7 +7,7 @@ import { build, transform } from "esbuild";
 import { chromium, type Browser } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { launchBrowser } from "@youiyoux/detect";
-import { BRIDGE_VERSION, captureScreens, captureText, decodeMap, liveBridge, mapNotes, sourceMapOf, originalPosition, projectPath, readScreensSpec, resolvePlaces, screenSlug, whyNoLines, type BridgeAt, type PlacesFile, type SourceMapCache } from "../src/index.ts";
+import { BRIDGE_VERSION, type BridgeEdited, type BridgeProps, captureScreens, captureText, decodeMap, liveBridge, mapNotes, sourceMapOf, originalPosition, projectPath, readScreensSpec, resolvePlaces, screenSlug, whyNoLines, type BridgeAt, type PlacesFile, type SourceMapCache } from "../src/index.ts";
 
 const PACKAGE = join(import.meta.dirname, "..");
 const scratch = mkdtempSync(join(tmpdir(), "youi-screens-"));
@@ -121,11 +121,14 @@ describe("capturing a running app", () => {
   const SERVED = '<form><h2>Plan</h2><label>Name <input name="title" value="typed-by-someone"></label><button name="decision">Approve plan</button><button name="send"><svg width="8" height="8"></svg></button><svg width="10" height="10"><rect width="10" height="10"/></svg></form>';
   const APP = [
     'import { createRoot } from "react-dom/client";',
-    "function Button({ children }: { children: string }) { return <button style={{ padding: 8 }}>{children}</button>; }",
+    'import { useState } from "react";',
+    'function Button({ children, tone = "plain" }: { children: string; tone?: string }) { return <button data-tone={tone} style={{ padding: 8 }}>{children}</button>; }',
     "function Card({ children }: { children: unknown }) { return <section style={{ margin: 24, padding: 16, border: \"1px solid #ccc\" }}>{children as never}</section>; }",
     "function Row({ label }: { label: string }) { return <li style={{ height: 20 }}>{label}</li>; }",
     "function Served({ html }: { html: string }) { return <div dangerouslySetInnerHTML={{ __html: html }} />; }",
     "function App() {",
+    "  const [, setRenders] = useState(0);",
+    "  (window as unknown as { renderAgain: () => void }).renderAgain = () => setRenders((n) => n + 1);",
     "  return (",
     "    <main>",
     "      <Card>",
@@ -159,8 +162,10 @@ describe("capturing a running app", () => {
       const late = '<!doctype html><meta charset="utf-8"><body style="margin:0"><div id="root"></div><script type="module">setTimeout(() => import("/development.js"), 1500)</script>';
       // /live is the app with the live bridge, as an app loads it from the hub in development.
       const live = '<!doctype html><meta charset="utf-8"><body style="margin:0"><div id="root"></div><script src="/bridge.js"></script><script type="module" src="/development.js"></script>';
+      // /live-late is the app with the bridge added after React loaded, as a line in its entry file adds it.
+      const liveLate = '<!doctype html><meta charset="utf-8"><body style="margin:0"><div id="root"></div><script type="module">await import("/development.js"); document.head.append(Object.assign(document.createElement("script"), { src: "/bridge.js" }));</script>';
       if (path === "/bridge.js") return void res.writeHead(200, { "content-type": "text/javascript" }).end(liveBridge());
-      const body = path === "/" ? page("development.js") : path === "/prod" ? page("production.js") : path === "/nomaps" ? page("development.js?bare=1") : path === "/late" ? late : path === "/live" ? live : files.get(path);
+      const body = path === "/" ? page("development.js") : path === "/prod" ? page("production.js") : path === "/nomaps" ? page("development.js?bare=1") : path === "/late" ? late : path === "/live" ? live : path === "/live-late" ? liveLate : files.get(path);
       if (body === undefined) return void res.writeHead(404).end("not found");
       // ?bare serves a script without its source map comment, as a bundle built without maps is.
       const bare = (req.url ?? "").includes("bare");
@@ -317,6 +322,65 @@ describe("capturing a running app", () => {
       expect(inServed.places.map((p) => p.name)).toEqual(['button "Approve plan"', 'form "Plan"', "Served", "App"]);
       const [html] = await resolvePlaces(inServed.places, fetchText, join(scratch, "app"));
       expect(html).toMatchObject({ html: "button", owner: "Served", file: "app.tsx", line: lineOf(APP, "<Served html") });
+      await page.close();
+    }, 60_000);
+
+    test("a component is edited in place: its props and text read, set and kept set when its parent renders again, and every edit undone", async () => {
+      const { page, app, say, got } = await open("here");
+      const reply = async <T,>(type: string, id: number): Promise<T> => {
+        await expect.poll(async () => (await got()).some((m) => m.data.type === type && (m.data as unknown as { id: number }).id === id)).toBe(true);
+        return (await got()).find((m) => m.data.type === type && (m.data as unknown as { id: number }).id === id)!.data as unknown as T;
+      };
+      await say({ youiyoux: BRIDGE_VERSION, type: "hello" });
+      const at0 = (await app.getByRole("button", { name: "Save" }).boundingBox())!;
+      await say({ youiyoux: BRIDGE_VERSION, type: "at", id: 1, x: at0.x + 4, y: at0.y + 4 });
+      const button = (await reply<BridgeAt>("at", 1)).places[0]!;
+      await say({ youiyoux: BRIDGE_VERSION, type: "props", id: 2, name: button.name, box: button.box, ask: ["tone", "style"] });
+      // Only plain values the call passes are read: tone is left to its default, and style is an object.
+      expect(await reply<BridgeProps>("props", 2)).toMatchObject({ editable: true, why: null, found: true, props: { tone: null, style: null }, text: "Save" });
+      await say({ youiyoux: BRIDGE_VERSION, type: "edit", id: 3, name: button.name, box: button.box, set: { tone: "loud" }, text: "Save changes" });
+      expect(await reply<BridgeEdited>("edited", 3)).toMatchObject({ ok: true, why: null });
+      const edited = app.locator("button[data-tone]").first();
+      await expect.poll(() => edited.getAttribute("data-tone")).toBe("loud");
+      expect(await edited.textContent()).toBe("Save changes");
+      // The parent renders it again with the old props: the edit is applied again.
+      await page.frames()[1]!.evaluate(() => (window as unknown as { renderAgain: () => void }).renderAgain());
+      await page.waitForTimeout(200);
+      await expect.poll(() => edited.getAttribute("data-tone")).toBe("loud");
+      // A prop the bridge never sets (a key, a ref, raw HTML) or a value that is not plain is not an edit.
+      await say({ youiyoux: BRIDGE_VERSION, type: "edit", id: 4, name: button.name, box: button.box, set: { dangerouslySetInnerHTML: "x" }, text: null });
+      await say({ youiyoux: BRIDGE_VERSION, type: "edit", id: 5, name: button.name, box: button.box, set: { tone: { evil: true } }, text: null });
+      await page.waitForTimeout(300);
+      expect((await got()).filter((m) => m.data.type === "edited").map((m) => (m.data as unknown as BridgeEdited).id)).toEqual([3]);
+      await say({ youiyoux: BRIDGE_VERSION, type: "reset" });
+      await expect.poll(() => edited.getAttribute("data-tone")).toBe("plain");
+      expect(await edited.textContent()).toBe("Save");
+      // Let go once the code says the same: nothing is undone, and nothing applied again.
+      await say({ youiyoux: BRIDGE_VERSION, type: "edit", id: 6, name: button.name, box: button.box, set: { tone: "quiet" }, text: null });
+      await expect.poll(() => edited.getAttribute("data-tone")).toBe("quiet");
+      await say({ youiyoux: BRIDGE_VERSION, type: "forget" });
+      await say({ youiyoux: BRIDGE_VERSION, type: "reset" });
+      await page.waitForTimeout(300);
+      expect(await edited.getAttribute("data-tone")).toBe("quiet");
+      await page.close();
+    }, 60_000);
+
+    test("loaded after React, the bridge still comments but says why it can't edit", async () => {
+      const page = await browser.newPage({ viewport: { width: 800, height: 600 } });
+      await page.goto(`${hubOrigin}/`);
+      await page.evaluate((src) => ((document.getElementById("f") as HTMLIFrameElement).src = src), `${base}/live-late`);
+      const app = page.frameLocator("#f");
+      await app.getByRole("button", { name: "Save" }).waitFor();
+      const say = (message: unknown) => page.evaluate(([m, target]) => (document.getElementById("f") as HTMLIFrameElement).contentWindow!.postMessage(m, target as string), [message, base] as const);
+      const got = () => page.evaluate(() => (window as unknown as { got: Array<{ data: { type: string; id?: number } }> }).got);
+      await expect.poll(async () => {
+        await say({ youiyoux: BRIDGE_VERSION, type: "hello" });
+        return (await got()).some((m) => m.data.type === "view");
+      }).toBe(true);
+      const at0 = (await app.getByRole("button", { name: "Save" }).boundingBox())!;
+      await say({ youiyoux: BRIDGE_VERSION, type: "props", id: 1, name: "Button", box: { x: at0.x, y: at0.y, width: at0.width, height: at0.height }, ask: ["tone"] });
+      await expect.poll(async () => (await got()).some((m) => m.data.type === "props")).toBe(true);
+      expect((await got()).find((m) => m.data.type === "props")!.data).toMatchObject({ editable: false, why: expect.stringMatching(/loaded after React: load it in the page's head/), found: true });
       await page.close();
     }, 60_000);
 

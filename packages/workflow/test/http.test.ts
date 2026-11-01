@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { request } from "node:http";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -156,5 +156,59 @@ describe("Connect your agent", () => {
     const without = await call("GET", "/api/agents");
     expect(without.status).toBe(404);
     expect(without.json.error).toContain("youiyoux agents install");
+  });
+});
+
+describe("a live edit written into the product's code", () => {
+  const SOURCE = 'export const Bar = () => (\n  <div>\n    <Button variant="outline">New flow</Button>\n    <Button variant={x}>Other</Button>\n  </div>\n);\n';
+  const edit = { file: "src/live-edit-bar.tsx", line: 3, column: 4, component: "Button", set: [{ prop: "variant", value: "default" }], text: "Create flow" };
+  const file = () => join(box.project, edit.file);
+  const post = (body: unknown, key: string | null = KEY) => call("POST", "/api/live/edit", key ? { "x-youi-session": key } : {}, body);
+
+  test("is shown first with the file's hash, and written only with that hash, while the file is still the one shown", async () => {
+    mkdirSync(join(box.project, "src"), { recursive: true });
+    writeFileSync(file(), SOURCE);
+    try {
+      expect((await post(edit, null)).status).toBe(401);
+      const shown = await post(edit);
+      expect(shown.status).toBe(200);
+      expect(shown.json).toMatchObject({ ok: true, written: false, tag: "Button", line: 3, before: '    <Button variant="outline">New flow</Button>', after: '    <Button variant="default">Create flow</Button>' });
+      expect(readFileSync(file(), "utf8")).toBe(SOURCE);
+      // Someone changed the file since: nothing is written.
+      writeFileSync(file(), `${SOURCE}// edited\n`);
+      const stale = await post({ ...edit, write: { hash: shown.json.hash } });
+      expect([stale.status, stale.json.code]).toEqual([409, "stale"]);
+      expect(readFileSync(file(), "utf8")).toBe(`${SOURCE}// edited\n`);
+      const again = await post(edit);
+      const written = await post({ ...edit, write: { hash: again.json.hash } });
+      expect(written.json).toMatchObject({ ok: true, written: true });
+      expect(readFileSync(file(), "utf8").split("\n")[2]).toBe('    <Button variant="default">Create flow</Button>');
+      // A value the code computes is not written: it says why.
+      const computed = await post({ ...edit, line: 4, set: [{ prop: "variant", value: "ghost" }], text: null });
+      expect(computed.json).toMatchObject({ ok: false, why: expect.stringMatching(/^variant is computed in code/) });
+    } finally {
+      rmSync(file(), { force: true });
+    }
+  });
+
+  test("a file outside the product, a link, or one that isn't a script is refused", async () => {
+    mkdirSync(join(box.project, "src"), { recursive: true });
+    const outside = join(box.project, "..", "outside-live-edit.tsx");
+    writeFileSync(outside, SOURCE);
+    symlinkSync(outside, join(box.project, "src/linked.tsx"));
+    writeFileSync(join(box.project, "src/notes.md"), SOURCE);
+    try {
+      for (const name of ["../outside-live-edit.tsx", outside, "src/linked.tsx", "src/notes.md"]) {
+        const refused = await post({ ...edit, file: name });
+        expect([name, refused.status]).toEqual([name, 400]);
+      }
+      expect(readFileSync(outside, "utf8")).toBe(SOURCE);
+      expect((await post({ ...edit, file: "src/missing.tsx" })).status).toBe(404);
+      expect((await post({ ...edit, set: [{ prop: "on click", value: "x" }] })).status).toBe(400);
+    } finally {
+      rmSync(outside, { force: true });
+      rmSync(join(box.project, "src/linked.tsx"), { force: true });
+      rmSync(join(box.project, "src/notes.md"), { force: true });
+    }
   });
 });

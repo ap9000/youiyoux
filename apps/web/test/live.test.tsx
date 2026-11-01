@@ -3,7 +3,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { bridgeSnippet, routeAt } from "../src/data/live.ts";
-import { GIVE_UP_MS, HELLO_EVERY_MS, LiveScreen } from "../src/screens/screens/LiveScreen.tsx";
+import { GIVE_UP_MS, HELLO_EVERY_MS, LiveScreen, REPLY_MS } from "../src/screens/screens/LiveScreen.tsx";
 import { LIVE_AT_ONCE, ScreensCanvas } from "../src/screens/screens/ScreensCanvas.tsx";
 import { NO_ISSUES, type Screen, type ScreenIndex } from "../src/data/screens.ts";
 import type { Site } from "../src/data/usage.ts";
@@ -94,6 +94,49 @@ describe("commenting on a live screen", () => {
     expect([page, at.clientX, route]).toEqual([{ width: 1440, height: 2000 }, 40, "/settings"]);
     // The line was found once for these frames, and kept.
     expect(resolved).toHaveLength(1);
+  });
+
+  test("a pick comes with a handle on the component in the page: asked by name and box, answered only by its own reply; plain HTML gets none", async () => {
+    const { posted, from, onPick } = show({ commenting: true });
+    from(VIEW);
+    const layer = document.querySelector<HTMLElement>("[data-live-layer]")!;
+    vi.spyOn(layer, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, width: 360, height: 225, right: 360, bottom: 225, x: 0, y: 0, toJSON: () => ({}) });
+    fireEvent.click(layer, { clientX: 40, clientY: 55 });
+    from({ ...VIEW, type: "at", id: 1, react: true, dev: true, places: [RAW] });
+    await waitFor(() => expect(onPick).toHaveBeenCalled());
+    const live = onPick.mock.calls[0]![4] as import("../src/data/live.ts").LiveHandle;
+    const asking = live.ask(["variant"]);
+    const question = posted.mock.calls.at(-1)![0] as { id: number };
+    expect(question).toEqual({ youiyoux: 1, type: "props", ask: ["variant"], name: "Button", box: RAW.box, id: question.id });
+    // Another frame's answer, or one to another question, is not this one's.
+    from({ youiyoux: 1, type: "props", id: question.id, editable: true, why: null, found: true, props: { variant: "evil" }, text: null }, APP, window);
+    from({ youiyoux: 1, type: "props", id: question.id + 1, editable: true, why: null, found: true, props: { variant: "other" }, text: null });
+    from({ youiyoux: 1, type: "props", id: question.id, editable: true, why: null, found: true, props: { variant: "outline" }, text: "Save" });
+    expect(await asking).toEqual({ editable: true, why: null, found: true, props: { variant: "outline" }, text: "Save" });
+    live.reset();
+    expect(posted).toHaveBeenLastCalledWith({ youiyoux: 1, type: "reset" }, APP);
+    onPick.mockClear();
+    fireEvent.click(layer, { clientX: 40, clientY: 55 });
+    from({ ...VIEW, type: "at", id: 2, react: true, dev: true, places: [{ ...RAW, name: 'button "Approve"', html: "button" }] });
+    await waitFor(() => expect(onPick).toHaveBeenCalled());
+    expect(onPick.mock.calls[0]![4]).toBeNull();
+  });
+
+  test("an app that never answers a question about a component is not editable, and an edit it never confirms is not done", async () => {
+    vi.useFakeTimers();
+    const { from, onPick } = show({ commenting: true });
+    from(VIEW);
+    const layer = document.querySelector<HTMLElement>("[data-live-layer]")!;
+    vi.spyOn(layer, "getBoundingClientRect").mockReturnValue({ left: 0, top: 0, width: 360, height: 225, right: 360, bottom: 225, x: 0, y: 0, toJSON: () => ({}) });
+    fireEvent.click(layer, { clientX: 40, clientY: 55 });
+    from({ ...VIEW, type: "at", id: 1, react: true, dev: true, places: [RAW] });
+    await vi.waitFor(() => expect(onPick).toHaveBeenCalled());
+    const live = onPick.mock.calls[0]![4] as import("../src/data/live.ts").LiveHandle;
+    const asking = live.ask(["variant"]);
+    const editing = live.edit({ variant: "ghost" }, null);
+    act(() => void vi.advanceTimersByTime(REPLY_MS + 1));
+    expect(await asking).toMatchObject({ editable: false, found: false, why: expect.stringMatching(/didn't answer/) });
+    expect(await editing).toMatchObject({ ok: false });
   });
 
   test("a page that is not a captured screen says so, and is not asked about", () => {

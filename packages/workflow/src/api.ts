@@ -507,3 +507,12 @@ export interface AgentsSetup {
   view(): Promise<AgentsView>;
   connect(kinds: readonly AgentKind[]): Promise<AgentsConnected>;
 }
+
+/**
+ * A live edit in the product's code (`POST /api/live/edit`): what it changes on the element at the
+ * place's line, or why it can't be written, and whether it was written. `hash` is the file as read,
+ * which writing it must name.
+ */
+export type LiveCodeEdit =
+  | { readonly file: string; readonly hash: string; readonly ok: true; readonly tag: string; readonly line: number; readonly before: string; readonly after: string; readonly written: boolean }
+  | { readonly file: string; readonly hash: string; readonly ok: false; readonly why: string };

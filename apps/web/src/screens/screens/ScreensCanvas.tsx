@@ -24,7 +24,7 @@ import { clsx } from "clsx";
 import { ArrowUpRight, Hand, Image, Maximize, MessageSquarePlus, Minus, MousePointer2, Plus, Radio, X } from "lucide-react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
 import { Link, useLocation } from "wouter";
-import type { ElementId, RequestDoc, RequestTarget } from "@youiyoux/core";
+import type { ComponentContract, ElementId, RequestDoc, RequestTarget } from "@youiyoux/core";
 import type { Scheme } from "../../app/theme.tsx";
 import { dataUrl } from "../../data/load.ts";
 import { elementOf, matchPlaces, pickKey, requestTarget, usePlaces, type Placed } from "../../data/places.ts";
@@ -36,6 +36,9 @@ import { IssueBadge } from "./IssueCounts.tsx";
 import { PlacesLayer } from "./PlacesOverlay.tsx";
 import { RequestComposer, RequestThread } from "./Requests.tsx";
 import { LiveScreen, SELECTED } from "./LiveScreen.tsx";
+import { LiveEditor } from "./LiveEditor.tsx";
+import type { LiveHandle } from "../../data/live.ts";
+import { Segmented } from "../../ui/Segmented.tsx";
 import type { LiveInfo } from "../../data/workflow.ts";
 import { pct } from "../../lib/format.ts";
 
@@ -88,6 +91,8 @@ interface Draft {
   readonly name: string;
   readonly elementName: string | null;
   readonly at: Point;
+  /** Picked on a live screen: the component in the page, to edit in place there. */
+  readonly live: { readonly handle: LiveHandle; readonly component: string; readonly column: number | null; readonly contract: ComponentContract | null } | null;
 }
 
 /** What one project's screens render, to tell which placed component is which System element. */
@@ -129,7 +134,7 @@ interface CardProps {
   nameOf: (placed: Placed) => string;
   /** What the comment being written is about, when it is on this screen. */
   picking: string | null;
-  onPick: (placed: Placed, page: { width: number; height: number }, at: { clientX: number; clientY: number }, route?: string) => void;
+  onPick: (placed: Placed, page: { width: number; height: number }, at: { clientX: number; clientY: number }, route?: string, live?: LiveHandle | null) => void;
   /** Where this screen runs, when it can run live: its address on the app, and every captured screen's. */
   live: { url: string; viewport: { width: number; height: number }; screens: LiveInfo["screens"] } | null;
   running: boolean;
@@ -189,7 +194,7 @@ function Card({ screen, scheme, full, requests, onPin, onLoad, commenting, hand,
           sites={project}
           nameOf={nameOf}
           picking={picking !== null}
-          onPick={(placed, page, at, route) => onPick(placed, page, at, route)}
+          onPick={(placed, page, at, route, handle) => onPick(placed, page, at, route, handle)}
           requests={requests}
           onPin={onPin}
           selected={selected}
@@ -284,9 +289,11 @@ interface CanvasProps {
   nameOf?: (element: ElementId) => string;
   /** Where the served product's app runs, for live screens; null when the service is not running. */
   live?: LiveInfo | null;
+  /** A System element's contract, for the choices a live edit offers. */
+  contractOf?: (element: ElementId) => ComponentContract | null;
 }
 
-export function ScreensCanvas({ screens, scheme, requests, onRequest = () => undefined, nameOf: elementName = (id) => id, live = null }: CanvasProps) {
+export function ScreensCanvas({ screens, scheme, requests, onRequest = () => undefined, nameOf: elementName = (id) => id, live = null, contractOf = () => null }: CanvasProps) {
   const [, navigate] = useLocation();
   const frame = useRef<HTMLDivElement>(null);
   const board = useRef<HTMLDivElement>(null);
@@ -305,6 +312,8 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
   selectedRef.current = selected;
   const openScreen = (screen: Screen): void => navigate(screenHref(screen.project, screen.route));
   const [draft, setDraft] = useState<Draft | null>(null);
+  /** On a live pick, edit it in place or comment on it. */
+  const [mode, setMode] = useState<"edit" | "comment">("comment");
   const [thread, setThread] = useState<{ id: string; at: Point } | null>(null);
   /** The live screens, oldest first, by project and route. */
   const [running, setRunning] = useState<readonly string[]>([]);
@@ -332,12 +341,15 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
     const v = viewRef.current;
     return { x: (at.clientX - rect.left - v.x) / v.scale, y: (at.clientY - rect.top - v.y) / v.scale };
   };
-  const pick = (card: Screen, placed: Placed, page: { width: number; height: number }, at: { clientX: number; clientY: number }, route?: string): void => {
+  const pick = (card: Screen, placed: Placed, page: { width: number; height: number }, at: { clientX: number; clientY: number }, route?: string, handle?: LiveHandle | null): void => {
     // A live screen may have been navigated to another captured screen: the comment goes on that one.
     const screen = (route && screens.screens.find((s) => s.project === card.project && s.route === route)) || card;
     const element = elementOf(placed);
     setThread(null);
-    setDraft({ screen, target: requestTarget(screen.route, placed, page), select: pickKey(placed) ?? element, name: nameOf(placed), elementName: element ? elementName(element) : null, at: boardPoint(at) });
+    // A pick on a picture can only be commented on; on a live screen it can be edited too.
+    const live = handle ? { handle, component: placed.place.name, column: placed.place.column ?? null, contract: element ? contractOf(element) : null } : null;
+    setDraft({ screen, target: requestTarget(screen.route, placed, page), select: pickKey(placed) ?? element, name: nameOf(placed), elementName: element ? elementName(element) : null, at: boardPoint(at), live });
+    setMode(live ? "edit" : "comment");
   };
   const openThread = (request: RequestDoc, at: { clientX: number; clientY: number }): void => {
     setDraft(null);
@@ -534,7 +546,7 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
                       project={sitesOf.get(project)!}
                       nameOf={nameOf}
                       picking={draft?.screen === screen ? draft.select : null}
-                      onPick={(placed, page, at, route) => pick(screen, placed, page, at, route)}
+                      onPick={(placed, page, at, route, handle) => pick(screen, placed, page, at, route, handle)}
                       live={liveOf(screen)}
                       running={running.includes(`${screen.project}:${screen.route}`)}
                       onLive={() => toggleLive(`${screen.project}:${screen.route}`)}
@@ -564,17 +576,37 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
             </>
           }
         >
-          <RequestComposer
-            key={`${draft.screen.project}:${draft.screen.route}:${draft.select}`}
-            bare
-            target={draft.target}
-            elementName={draft.elementName}
-            onCancel={() => setDraft(null)}
-            onFiled={(request) => {
-              onRequest(request);
-              setDraft(null);
-            }}
-          />
+          {draft.live && (
+            <Segmented<"edit" | "comment"> label="Edit or comment" value={mode} onChange={setMode} options={[{ value: "edit", label: "Edit" }, { value: "comment", label: "Comment" }]} className="mb-3" />
+          )}
+          {draft.live && mode === "edit" ? (
+            <LiveEditor
+              key={`${draft.screen.project}:${draft.screen.route}:${draft.select}:${draft.at.x}:${draft.at.y}`}
+              live={draft.live.handle}
+              component={draft.live.component}
+              column={draft.live.column}
+              name={draft.name}
+              contract={draft.live.contract}
+              target={draft.target}
+              onDone={() => setDraft(null)}
+              onFiled={(request) => {
+                onRequest(request);
+                setDraft(null);
+              }}
+            />
+          ) : (
+            <RequestComposer
+              key={`${draft.screen.project}:${draft.screen.route}:${draft.select}`}
+              bare
+              target={draft.target}
+              elementName={draft.elementName}
+              onCancel={() => setDraft(null)}
+              onFiled={(request) => {
+                onRequest(request);
+                setDraft(null);
+              }}
+            />
+          )}
         </Bubble>
       )}
       {thread && <ThreadBubble id={thread.id} at={thread.at} view={view} frame={frame.current} requests={requests} screens={screens} onRequest={onRequest} onClose={() => setThread(null)} onOpen={(href) => navigate(href)} />}

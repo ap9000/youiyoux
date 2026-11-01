@@ -61,6 +61,17 @@ const LiveFrame = z.object({ url: z.string().min(1).max(2000), line: z.number().
 const LiveBox = z.object({ x: z.number().finite(), y: z.number().finite(), width: z.number().finite().nonnegative(), height: z.number().finite().nonnegative() });
 const LivePlace = z.object({ name: z.string().min(1).max(200), owner: z.string().max(200).nullable(), frames: z.array(LiveFrame).max(8), box: LiveBox, depth: z.number().int().nonnegative().max(100_000), html: z.string().regex(/^[a-z][a-z0-9-]{0,39}$/).optional() });
 const LiveResolveInput = z.object({ places: z.array(LivePlace).max(16) });
+/** A live edit for the code: the place's file and line, props with their literal values (and the contract's default), new text; `write` names the hash it was shown with. */
+const LiveValueInput = z.union([z.string().max(2000), z.number().finite(), z.boolean()]);
+const LiveEditInput = z.object({
+  file: z.string().min(1).max(500),
+  line: z.number().int().positive(),
+  column: z.number().int().nonnegative().nullable().optional(),
+  component: z.string().min(1).max(200),
+  set: z.array(z.object({ prop: z.string().regex(/^[A-Za-z_$][\w$-]{0,63}$/), value: LiveValueInput, default: LiveValueInput.optional() })).max(20),
+  text: z.string().max(2000).nullable().optional(),
+  write: z.object({ hash: z.string().regex(/^[0-9a-f]{64}$/) }).nullable().optional(),
+});
 /** The agents to connect to this project (Connect your agent). */
 const AgentsInput = z.object({ agents: z.array(z.enum(["claude", "codex", "cursor"])).min(1).max(3) });
 
@@ -165,6 +176,10 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string, opti
     if (method === "POST") return send(res, 200, await options.agents.connect([...new Set(parse(AgentsInput, await readJson(req)).agents)]));
   }
   if (path === "/api/live" && method === "GET") return send(res, 200, (await workflow.live()).info());
+  if (path === "/api/live/edit" && method === "POST") {
+    const { file, write, ...edit } = parse(LiveEditInput, await readJson(req));
+    return send(res, 200, await (await workflow.live()).edit(file, { ...edit, column: edit.column ?? null, text: edit.text ?? null }, write ?? null));
+  }
   if (path === "/api/live/resolve" && method === "POST") return send(res, 200, { places: await (await workflow.live()).resolve(parse(LiveResolveInput, await readJson(req)).places) });
   if (path === "/api/requests" && method === "GET") return send(res, 200, await (await workflow.requests()).list());
   if (path === "/api/requests" && method === "POST") return send(res, 201, await (await workflow.requests()).create(actor, parse(RequestInput, await readJson(req))));

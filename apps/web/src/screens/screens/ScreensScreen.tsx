@@ -92,6 +92,7 @@ function ScreenGrid({ model, index, screens }: { model: Model; index: UsageIndex
           requests={requests.state.status === "ready" ? requests.state.value.requests : []}
           onRequest={(next) => (requests.state.status === "ready" ? requests.set({ ...requests.state.value, requests: withRequest(requests.state.value.requests, next) }) : requests.reload())}
           nameOf={(id) => model.byId.get(id)?.name ?? id}
+          contractOf={(id) => model.components.get(id)?.contract ?? null}
           live={live.state.status === "ready" ? live.state.value : null}
         />
       </div>

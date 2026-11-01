@@ -38,7 +38,25 @@ export type BridgeMessage =
   | (LiveView & { readonly youiyoux: typeof BRIDGE_VERSION; readonly type: "view" })
   | (LiveView & { readonly youiyoux: typeof BRIDGE_VERSION; readonly type: "at"; readonly id: number; readonly react: boolean; readonly dev: boolean; readonly places: readonly LiveRawPlace[] });
 
-/** A message from the bridge, or null for anything else. */
+/** A prop value a live edit sets: what a contract's enum, string, boolean and number props take. */
+export type LiveValue = string | number | boolean;
+
+/** One component's values now, and whether the page can edit it (`editable`, else `why`). */
+export interface LiveProps {
+  readonly editable: boolean;
+  readonly why: string | null;
+  readonly found: boolean;
+  readonly props: Readonly<Record<string, LiveValue | null>>;
+  /** Its text, when its children are text. */
+  readonly text: string | null;
+}
+
+/** An answer about one component (`props`), or to an edit (`edited`), by the id it was asked with. */
+export type BridgeReply =
+  | (LiveProps & { readonly youiyoux: typeof BRIDGE_VERSION; readonly type: "props"; readonly id: number })
+  | { readonly youiyoux: typeof BRIDGE_VERSION; readonly type: "edited"; readonly id: number; readonly ok: boolean; readonly why: string | null };
+
+/** A message from the bridge about the page, or null for anything else. */
 export function bridgeMessage(data: unknown): BridgeMessage | null {
   const message = data as Partial<BridgeMessage> | null;
   if (!message || typeof message !== "object" || message.youiyoux !== BRIDGE_VERSION) return null;
@@ -46,6 +64,27 @@ export function bridgeMessage(data: unknown): BridgeMessage | null {
   if (message.type === "view") return message as BridgeMessage;
   if (message.type === "at" && typeof message.id === "number" && Array.isArray(message.places)) return message as BridgeMessage;
   return null;
+}
+
+/** A reply from the bridge about one component, or null for anything else. */
+export function bridgeReply(data: unknown): BridgeReply | null {
+  const reply = data as Partial<Record<string, unknown>> | null;
+  if (!reply || typeof reply !== "object" || reply["youiyoux"] !== BRIDGE_VERSION || typeof reply["id"] !== "number") return null;
+  if (reply["type"] === "props" && typeof reply["editable"] === "boolean" && typeof reply["found"] === "boolean" && reply["props"] && typeof reply["props"] === "object") return reply as unknown as BridgeReply;
+  if (reply["type"] === "edited" && typeof reply["ok"] === "boolean") return reply as unknown as BridgeReply;
+  return null;
+}
+
+/** Talking to one live screen's bridge about the component picked on it. */
+export interface LiveHandle {
+  /** Its values now for these props, its text, and whether the page can edit it. */
+  ask(props: readonly string[]): Promise<LiveProps>;
+  /** Props set (and text) on it, in place; kept set until reset. */
+  edit(set: Readonly<Record<string, LiveValue>>, text: string | null): Promise<{ ok: boolean; why: string | null }>;
+  /** Every edit undone on the page. */
+  reset(): void;
+  /** The edits let go without undoing them: the code now says the same. */
+  forget(): void;
 }
 
 /**
@@ -59,6 +98,19 @@ export function bridgeSnippet(hubOrigin: string): string {
     `  document.head.append(Object.assign(document.createElement("script"), { src: ${JSON.stringify(`${hubOrigin}${BRIDGE_PATH}`)} }));`,
     "}",
   ].join("\n");
+}
+
+/**
+ * Live editing needs the bridge before React loads, so React hands it the way to change props: the
+ * line in the page's head, in development (an app on Vite adds youiyoux's plugin instead).
+ */
+export function bridgeHead(hubOrigin: string): string {
+  return `<script src=${JSON.stringify(`${hubOrigin}${BRIDGE_PATH}`)}></script>`;
+}
+
+/** The same for an app on Vite: in vite.config, only while it serves in development. */
+export function vitePlugin(hubOrigin: string): string {
+  return ['import { youiyoux } from "youiyoux/vite";', "", "export default defineConfig({", `  plugins: [youiyoux({ hub: ${JSON.stringify(hubOrigin)} }), /* …the app's own plugins */],`, "});"].join("\n");
 }
 
 /** The captured screen a path shows: the route whose address it is, ignoring a trailing slash and the query. */

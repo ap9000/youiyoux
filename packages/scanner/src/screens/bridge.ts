@@ -9,10 +9,15 @@
  * point. Frames go back to the hub as the browser saw them; the hub's local service maps them to
  * a file and line with the app's source maps, as capture does.
  *
+ * It also edits a component in place for the hub (live-edit.ts): its current props and text,
+ * props set and kept set, and every edit undone. That needs React's renderer, which React hands to
+ * the hook the bridge leaves only when the bridge loads first: in the page's head, before the app.
+ *
  * It answers only a parent on this machine (`localhost`, `127.0.0.1`, `[::1]`) that said hello,
  * and only that parent's origin: a site elsewhere that frames the app learns nothing. Unframed it
  * does nothing at all.
  */
+import { liveEdits, type LiveValue } from "./live-edit.ts";
 import { locateInPage, MAX_PLACES, type RawPlace } from "./locate.ts";
 
 /** Where the hub's local service serves the bridge (packages/workflow http.ts). */
@@ -46,6 +51,30 @@ export interface BridgeAt extends Omit<BridgeView, "type"> {
   readonly places: readonly RawPlace[];
 }
 
+/** What the hub asks about one component (`{ type: "props", id, name, box, ask }`): its values now, and whether it can be edited. */
+export interface BridgeProps {
+  readonly youiyoux: typeof BRIDGE_VERSION;
+  readonly type: "props";
+  readonly id: number;
+  readonly editable: boolean;
+  readonly why: string | null;
+  readonly found: boolean;
+  readonly props: Readonly<Record<string, LiveValue | null>>;
+  readonly text: string | null;
+}
+
+/** The answer to an edit (`{ type: "edit", id, name, box, set, text }`); `{ type: "reset" }` undoes them all, `{ type: "forget" }` lets them go as they are. */
+export interface BridgeEdited {
+  readonly youiyoux: typeof BRIDGE_VERSION;
+  readonly type: "edited";
+  readonly id: number;
+  readonly ok: boolean;
+  readonly why: string | null;
+}
+
+/** The longest value or text an edit carries. */
+export const EDIT_TEXT_MAX = 2000;
+
 /** The bridge as a script, self-contained: what the service serves at BRIDGE_PATH. */
 export function liveBridge(): string {
   return `/* youiyoux live bridge v${BRIDGE_VERSION}: answers a youiyoux hub on this machine that frames this page; nothing else. */
@@ -56,6 +85,8 @@ export function liveBridge(): string {
   const V = ${BRIDGE_VERSION};
   const LOOPBACK = ${LOOPBACK_PARENT.toString()};
   const locate = ${locateInPage.toString()};
+  // First, while the page is still loading when the bridge is in its head: the hook React hands its renderer to.
+  const edits = (${liveEdits.toString()})();
   let hub = null;
   let found = null;
   const stale = () => { found = null; };
@@ -90,7 +121,24 @@ export function liveBridge(): string {
       tell();
       return;
     }
-    if (event.origin !== hub || data.type !== "at" || !Number.isFinite(data.x) || !Number.isFinite(data.y) || !Number.isInteger(data.id)) return;
+    if (event.origin !== hub) return;
+    const isBox = (b) => !!b && ["x", "y", "width", "height"].every((k) => Number.isFinite(b[k]));
+    const isName = (n) => typeof n === "string" && n.length > 0 && n.length <= 200;
+    const isKey = (k) => typeof k === "string" && /^[A-Za-z_$][\\w$]{0,63}$/.test(k) && k !== "children" && k !== "key" && k !== "ref" && !k.startsWith("dangerously");
+    const isValue = (v) => typeof v === "boolean" || (typeof v === "number" && Number.isFinite(v)) || (typeof v === "string" && v.length <= ${EDIT_TEXT_MAX});
+    if (data.type === "reset") return void edits.reset();
+    if (data.type === "forget") return void edits.forget();
+    if (!Number.isInteger(data.id)) return;
+    if (data.type === "props" && isName(data.name) && isBox(data.box) && Array.isArray(data.ask) && data.ask.length <= 50 && data.ask.every(isKey)) {
+      const ready = edits.ready();
+      const read = edits.read(data.name, data.box, data.ask);
+      return send({ youiyoux: V, type: "props", id: data.id, editable: ready.editable, why: ready.why, ...read });
+    }
+    if (data.type === "edit" && isName(data.name) && isBox(data.box) && data.set && typeof data.set === "object" && Object.keys(data.set).length <= 20 && Object.entries(data.set).every(([k, v]) => isKey(k) && isValue(v)) && (data.text === null || (typeof data.text === "string" && data.text.length <= ${EDIT_TEXT_MAX}))) {
+      const done = edits.edit(data.name, data.box, data.set, data.text);
+      return send({ youiyoux: V, type: "edited", id: data.id, ok: done.ok, why: done.why });
+    }
+    if (data.type !== "at" || !Number.isFinite(data.x) || !Number.isFinite(data.y)) return;
     if (!found) found = locate(${MAX_PLACES}, 6);
     const x = data.x + scrollX;
     const y = data.y + scrollY;

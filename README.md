@@ -33,6 +33,7 @@ New to it? [Getting started](docs/getting-started.md): the report, the top fix, 
 
 - **Audit before a refactor.** Every near-duplicate, which copy to keep, and the files to change.
 - **Stop your agent duplicating components.** After `npx youiyoux agents install` (or **Connect your agent** in the hub), it asks `ui_find_component` first.
+- **Change the running app, then the code.** In the hub, pick a component on a live screen, try its design-system variants and text in place, and write the change into its file ([live editing](docs/commands.md#editing-a-component-in-place); on Vite, `youiyoux/vite`).
 - **Keep hardcoded colours out of PRs.** `npx youiyoux check --diff` names the token to use instead.
 - **Share a UI health report.** Send the page or the card to your team or a maintainer.
 - **Let your agent see what it built.** `npx youiyoux render <file>`: light and dark, desktop and phone, accessibility issues, a diff against main.
