@@ -25,6 +25,7 @@ import { ScreenImage } from "../../ui/ScreenImage.tsx";
 import { IssueBadge, issueBreakdown } from "./IssueCounts.tsx";
 import { ScreenDetail } from "./ScreenDetail.tsx";
 import { ScreensCanvas } from "./ScreensCanvas.tsx";
+import { WaitingInRunners } from "./Requests.tsx";
 
 const TOP_ELEMENTS = 3;
 
@@ -77,6 +78,7 @@ function ScreenGrid({ model, index, screens }: { model: Model; index: UsageIndex
   const live = useRemote(workflowApi.live, "live");
   const header = (
     <PaneHeader title="Screens" count={screens.screens.length}>
+      {requests.state.status === "ready" && <WaitingInRunners requests={requests.state.value.requests} />}
       <Segmented<"grid" | "canvas"> label="Layout" value={canvas ? "canvas" : "grid"} onChange={(v) => navigate(v === "canvas" ? `${location}?view=canvas` : location, { replace: true })} options={[{ value: "grid", label: "Grid" }, { value: "canvas", label: "Canvas" }]} />
     </PaneHeader>
   );

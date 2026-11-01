@@ -22,23 +22,69 @@ const STATUS_LABEL: Record<RequestStatus, string> = { open: "Open", addressed: "
 const RUN_LABEL: Record<RunStatus, string> = { queued: "Queued", "needs-you": "Needs you", building: "Building", ready: "Ready for review", done: "Done", failed: "Failed", stopped: "Stopped" };
 const RUN_TONE: Record<RunStatus, "warning" | "accent" | "outline" | "success" | "danger"> = { queued: "outline", "needs-you": "warning", building: "accent", ready: "success", done: "success", failed: "danger", stopped: "outline" };
 
+/** What a person does in the runner at each step: approve the task, review its result, or just look. */
+const RUN_ACT: Partial<Record<RunStatus, string>> = { "needs-you": "Approve", ready: "Review" };
+
+/** The way into the runner for a task: the step that waits for a person as the one primary verb. */
+function OpenInRunner({ run }: { run: RequestRun }) {
+  if (!run.task.url) return null;
+  const act = RUN_ACT[run.status];
+  return (
+    <Button asChild size="sm" variant={act ? "primary" : "outline"}>
+      <a href={run.task.url} target="_blank" rel="noreferrer">
+        {act ?? "Open"} in {run.runner} <ExternalLink aria-hidden />
+      </a>
+    </Button>
+  );
+}
+
 /** The runner's task for a request (Toolroll, say): how far it has got, and where to see it. */
 function RunLine({ run }: { run: RequestRun }) {
   return (
-    <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-caption text-muted" data-run={run.status}>
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-caption text-muted" data-run={run.status}>
       <Badge tone={RUN_TONE[run.status]}>{RUN_LABEL[run.status]}</Badge>
       <span>
         {run.runner} task {run.detail && run.detail !== RUN_LABEL[run.status] ? <span className="text-faint">· {run.detail}</span> : null}
       </span>
-      {run.task.url && (
-        <a href={run.task.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-accent hover:underline">
-          Open in {run.runner} <ExternalLink className="size-3" aria-hidden />
-        </a>
-      )}
-    </p>
+      <span className="ml-auto">
+        <OpenInRunner run={run} />
+      </span>
+    </div>
   );
 }
 
+/**
+ * What waits for a person in each runner across these requests, as one way in: the runner's own
+ * page for its waiting work (`home`), or the task itself when only one waits and there is no such page.
+ */
+export function WaitingInRunners({ requests }: { requests: readonly RequestView[] }) {
+  const runs = requests.flatMap((r) => (r.status !== "closed" && r.run && RUN_ACT[r.run.status] ? [r.run] : []));
+  const runners = [...new Set(runs.map((run) => run.runner))];
+  return (
+    <>
+      {runners.map((runner) => {
+        const waiting = runs.filter((run) => run.runner === runner);
+        const approve = waiting.filter((run) => run.status === "needs-you").length;
+        const review = waiting.length - approve;
+        const words = [approve > 0 && `${approve} to approve`, review > 0 && `${review} to review`].filter(Boolean).join(", ");
+        const href = waiting.find((run) => run.home)?.home ?? (waiting.length === 1 ? waiting[0]!.task.url : null);
+        const label = `${words} in ${runner}`;
+        return href ? (
+          <Button key={runner} asChild size="sm" variant="outline" data-waiting={runner}>
+            <a href={href} target="_blank" rel="noreferrer" aria-label={label} title={label}>
+              <span className="size-1.5 rounded-full bg-warning" aria-hidden /> {words}
+              <span className="max-sm:hidden">in {runner}</span> <ExternalLink aria-hidden />
+            </a>
+          </Button>
+        ) : (
+          <span key={runner} className="text-small text-muted" data-waiting={runner}>
+            {label}
+          </span>
+        );
+      })}
+    </>
+  );
+}
 
 /** What failed, in words, with the command when the service is not running. */
 function Failure({ error }: { error: WorkflowRequestError }) {

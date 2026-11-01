@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { RequestDoc } from "@youiyoux/core";
 import { cropOf } from "../src/screens/screens/BeforeAfter.tsx";
-import { RequestComposer, RequestThread } from "../src/screens/screens/Requests.tsx";
+import { RequestComposer, RequestThread, WaitingInRunners } from "../src/screens/screens/Requests.tsx";
 
 const TARGET = { route: "/settings", scope: "here", name: "Button", element: "youi:demo/component/button", file: "app/settings.tsx", line: 12, box: { x: 1, y: 2, width: 3, height: 4 } } as const;
 const AT = "2026-10-22T12:00:00.000Z";
@@ -117,16 +117,39 @@ describe("before and after", () => {
 });
 
 describe("a runner's task for a request", () => {
-  test("shows how far it has got and links to it; with no runner, nothing is shown", () => {
-    const run = { schema: "youi.request-task/v1", request: "r-0123456789", runner: "Toolroll", task: { id: "task-1a2b", url: "http://127.0.0.1:4180/t/task-1a2b" }, status: "ready", detail: "Ready for review", updatedAt: AT } as const;
-    render(<ol><RequestThread request={{ ...request(), run }} number={1} active={false} onChange={() => undefined} onPick={() => undefined} /></ol>);
+  const run = { schema: "youi.request-task/v1", request: "r-0123456789", runner: "Toolroll", task: { id: "task-1a2b", url: "http://127.0.0.1:4180/t/task-1a2b" }, status: "ready", detail: "Ready for review", updatedAt: AT } as const;
+
+  test("shows how far it has got, with the step that waits for a person as the way in; with no runner, nothing is shown", () => {
+    const { rerender } = render(<ol><RequestThread request={{ ...request(), run }} number={1} active={false} onChange={() => undefined} onPick={() => undefined} /></ol>);
     const line = document.querySelector<HTMLElement>("[data-run]")!;
     expect(line.getAttribute("data-run")).toBe("ready");
     expect(line.textContent).toContain("Ready for review");
-    const link = within(line).getByRole("link", { name: "Open in Toolroll" });
+    const link = within(line).getByRole("link", { name: "Review in Toolroll" });
     expect([link.getAttribute("href"), link.getAttribute("target"), link.getAttribute("rel")]).toEqual(["http://127.0.0.1:4180/t/task-1a2b", "_blank", "noreferrer"]);
+    rerender(<ol><RequestThread request={{ ...request(), run: { ...run, status: "needs-you", detail: "Needs you" } }} number={1} active={false} onChange={() => undefined} onPick={() => undefined} /></ol>);
+    expect(screen.getByRole("link", { name: "Approve in Toolroll" })).toBeTruthy();
+    rerender(<ol><RequestThread request={{ ...request(), run: { ...run, status: "building", detail: "Building" } }} number={1} active={false} onChange={() => undefined} onPick={() => undefined} /></ol>);
+    expect(screen.getByRole("link", { name: "Open in Toolroll" })).toBeTruthy();
+    rerender(<ol><RequestThread request={{ ...request(), run: { ...run, task: { id: "task-1a2b", url: null } } }} number={1} active={false} onChange={() => undefined} onPick={() => undefined} /></ol>);
+    expect(screen.queryByRole("link")).toBeNull();
     cleanup();
     render(<ol><RequestThread request={request()} number={1} active={false} onChange={() => undefined} onPick={() => undefined} /></ol>);
     expect(document.querySelector("[data-run]")).toBeNull();
+  });
+
+  test("what waits for a person across requests is one way into the runner: its page for waiting work, or the one task", () => {
+    const waiting = (id: string, status: "needs-you" | "ready" | "building", patch: Partial<RequestDoc> = {}) => ({ ...request({ id, ...patch }), run: { ...run, request: id, task: { id: `t-${id}`, url: `http://127.0.0.1:4180/t/t-${id}` }, status, home: "http://127.0.0.1:4180/inbox" } });
+    const { rerender } = render(<WaitingInRunners requests={[waiting("r-0000000001", "needs-you"), waiting("r-0000000002", "needs-you"), waiting("r-0000000003", "ready"), waiting("r-0000000004", "building"), waiting("r-0000000005", "needs-you", { status: "closed" })]} />);
+    const link = screen.getByRole("link", { name: "2 to approve, 1 to review in Toolroll" });
+    expect(link.getAttribute("href")).toBe("http://127.0.0.1:4180/inbox");
+    // With no page for its waiting work, the one task waiting is the way in; several have none.
+    const { home: _, ...bare } = waiting("r-0000000001", "needs-you").run;
+    rerender(<WaitingInRunners requests={[{ ...request({ id: "r-0000000001" }), run: bare }]} />);
+    expect(screen.getByRole("link", { name: "1 to approve in Toolroll" }).getAttribute("href")).toBe("http://127.0.0.1:4180/t/t-r-0000000001");
+    rerender(<WaitingInRunners requests={[{ ...request({ id: "r-0000000001" }), run: bare }, { ...request({ id: "r-0000000002" }), run: { ...bare, request: "r-0000000002" } }]} />);
+    expect(screen.queryByRole("link")).toBeNull();
+    expect(document.querySelector("[data-waiting]")!.textContent).toBe("2 to approve in Toolroll");
+    rerender(<WaitingInRunners requests={[waiting("r-0000000004", "building"), request()]} />);
+    expect(document.querySelector("[data-waiting]")).toBeNull();
   });
 });

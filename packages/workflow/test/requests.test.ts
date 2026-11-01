@@ -93,16 +93,18 @@ describe("the task a change request asks for, and a runner's progress on it", ()
   });
 
   test("a runner's task file beside a request is read with it, never written; one that is not valid, or names another request, is listed as unreadable", async () => {
-    const run = { schema: "youi.request-task/v1", request: "r-0000000001", runner: "Toolroll", task: { id: "task-1a2b", url: "http://127.0.0.1:4180/t/task-1a2b" }, status: "building", detail: "Building", updatedAt: "2026-11-01T10:05:00Z" };
+    const run = { schema: "youi.request-task/v1", request: "r-0000000001", runner: "Toolroll", task: { id: "task-1a2b", url: "http://127.0.0.1:4180/t/task-1a2b" }, home: "http://127.0.0.1:4180/inbox", status: "building", detail: "Building", updatedAt: "2026-11-01T10:05:00Z" };
     writeFileSync(join(dir, "r-0000000001.task.json"), JSON.stringify(run));
     writeFileSync(join(dir, "r-0000000002.task.json"), JSON.stringify({ ...run, request: "r-0000000002", task: { id: "x", url: "javascript:alert(1)" } }));
     writeFileSync(join(dir, "r-0000000003.task.json"), JSON.stringify({ ...run, request: "r-0000000001" }));
+    writeFileSync(join(dir, "r-0000000004.task.json"), JSON.stringify({ ...run, request: "r-0000000004", home: "javascript:alert(1)" }));
     const { requests, unreadable } = await store.list();
     expect(requests.find((r) => r.id === "r-0000000001")!.run).toEqual(run);
     expect(requests.filter((r) => r.run).map((r) => r.id)).toEqual(["r-0000000001"]);
     expect(unreadable.map((u) => [u.file, u.reason])).toEqual([
       [".youi/requests/r-0000000002.task.json", expect.stringMatching(/http\(s\)/)],
       [".youi/requests/r-0000000003.task.json", "its request is not its file name"],
+      [".youi/requests/r-0000000004.task.json", expect.stringMatching(/http\(s\)/)],
     ]);
     expect(await store.view("r-0000000001")).toMatchObject({ run: { status: "building" } });
     expect(await store.run("r-0000000002")).toBeNull();

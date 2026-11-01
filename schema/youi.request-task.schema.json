@@ -45,6 +45,11 @@
         "url"
       ]
     },
+    "home": {
+      "type": "string",
+      "maxLength": 2000,
+      "format": "uri"
+    },
     "status": {
       "type": "string",
       "enum": [

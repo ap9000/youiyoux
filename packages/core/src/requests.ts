@@ -102,13 +102,17 @@ export const RequestDoc = z.object({
 });
 export type RequestDoc = z.infer<typeof RequestDoc>;
 
+/** A page a person opens: only http(s) is kept. */
+const WebAddress = z.string().url().max(2000).refine((u) => /^https?:\/\//.test(u), "expected an http(s) address");
+
 /** How far a runner's task for a request has got. */
 export const RUN_STATUSES = ["queued", "needs-you", "building", "ready", "done", "failed", "stopped"] as const;
 export type RunStatus = (typeof RUN_STATUSES)[number];
 
 /**
  * `youi.request-task/v1`: a runner's task for a request (`.youi/requests/<id>.task.json`, the
- * runner's to write). `url` is where a person sees the task; only http(s) is kept.
+ * runner's to write). `url` is where a person sees the task and `home` all its waiting work; only
+ * http(s) is kept.
  */
 export const RequestRun = z.object({
   $schema: z.string().optional(),
@@ -116,7 +120,9 @@ export const RequestRun = z.object({
   request: z.string().regex(REQUEST_ID, "expected r-<10 hex>"),
   /** The runner's name (`Toolroll`). */
   runner: z.string().min(1).max(60),
-  task: z.object({ id: z.string().min(1).max(120), url: z.string().url().max(2000).refine((u) => /^https?:\/\//.test(u), "expected an http(s) address").nullable() }),
+  task: z.object({ id: z.string().min(1).max(120), url: WebAddress.nullable() }),
+  /** Where a person sees all the runner's waiting work for this project, to approve it there. */
+  home: WebAddress.optional(),
   status: z.enum(RUN_STATUSES),
   /** The runner's own words for where it is (`Ready for review`). */
   detail: z.string().max(300).optional(),
