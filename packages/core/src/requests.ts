@@ -59,6 +59,28 @@ export const RequestEntry = z.object({
 });
 export type RequestEntry = z.infer<typeof RequestEntry>;
 
+/** What a request asks for. */
+export const REQUEST_KINDS = ["comment", "change", "options"] as const;
+export type RequestKind = (typeof REQUEST_KINDS)[number];
+
+/** A prop an option may set, from the component's contract: its type, an enum's values, its default. */
+export const OptionChoice = z.object({ type: z.enum(["enum", "string", "boolean", "number"]), values: z.array(z.string().min(1).max(200)).max(50).optional(), default: z.union([z.string().max(200), z.number(), z.boolean()]).optional() });
+export type OptionChoice = z.infer<typeof OptionChoice>;
+
+/**
+ * What an options request's task writes (`task.offer`): one `youi.proposal/v1` file for the
+ * component, its id the request's own hex (`p-…` for `r-…`), each option setting only `choices`
+ * (or the text, with `text`). A runner's agent needs no youiyoux tools to do it; youiyoux checks
+ * the file against the contract when it reads it.
+ */
+export const RequestOffer = z.object({
+  proposal: z.string().regex(/^p-[0-9a-f]{10}$/, "expected p-<10 hex>"),
+  file: z.string().regex(/^\.youi\/proposals\/p-[0-9a-f]{10}\.json$/, "expected .youi/proposals/p-<10 hex>.json"),
+  choices: z.record(z.string().regex(/^[A-Za-z_$][\w$]{0,63}$/), OptionChoice),
+  text: z.boolean(),
+});
+export type RequestOffer = z.infer<typeof RequestOffer>;
+
 /** What shows a task is done, as a runner checks it. */
 export const TASK_EVIDENCE = ["screenshot", "check", "changed-path", "manual-review"] as const;
 
@@ -77,6 +99,8 @@ export const RequestTask = z.object({
   /** What the change must not do. */
   not: z.array(z.string().min(1).max(300)).max(10),
   acceptance: z.array(z.object({ statement: z.string().min(1).max(300), evidence: z.array(z.enum(TASK_EVIDENCE)).min(1) })).min(1).max(10),
+  /** An options request's: the one file it writes, and what its options may set. */
+  offer: RequestOffer.optional(),
 });
 export type RequestTask = z.infer<typeof RequestTask>;
 
@@ -87,7 +111,8 @@ export const RequestDoc = z.object({
   /** The project id from youi.project.json. */
   project: z.string().min(1).max(200),
   /** comment: a note; change: something to do. */
-  kind: z.enum(["comment", "change"]),
+  /** comment: words on it; change: make a change; options: offer a few design-system options for a person to pick from. */
+  kind: z.enum(REQUEST_KINDS),
   status: z.enum(REQUEST_STATUSES),
   body: z.string().min(1).max(4000),
   author: RequestAuthor,

@@ -48,7 +48,7 @@ describe("an agent's options", () => {
   test("each is previewed in the live app; the one used is shown in the code, written, and the pick recorded for the agent", async () => {
     const live = handle();
     const changed = vi.fn();
-    render(<OfferPanel proposal={proposal()} live={live} contract={CONTRACT} onChange={changed} onFiled={() => undefined} onDone={() => undefined} />);
+    render(<OfferPanel proposal={proposal()} live={live} contract={CONTRACT} onChange={changed} onRequest={() => undefined} onDone={() => undefined} />);
     expect(document.querySelector('[data-offer="open"]')!.textContent).toContain("Make the main action clearer");
     const b = document.querySelector<HTMLElement>('[data-option="b"]')!;
     expect(b.textContent).toContain('variant="outline", size="sm", text "Start a project"');
@@ -76,7 +76,7 @@ describe("an agent's options", () => {
   test("one that can't be written is filed as a change request, and the pick names it; on a picture there is no preview; dismissing turns them all down", async () => {
     preview = { file: "app/index.tsx", hash: HASH, ok: false, why: "variant is computed in code" };
     const filed = vi.fn();
-    render(<OfferPanel proposal={proposal()} live={null} contract={CONTRACT} onChange={() => undefined} onFiled={filed} onDone={() => undefined} />);
+    render(<OfferPanel proposal={proposal()} live={null} contract={CONTRACT} onChange={() => undefined} onRequest={filed} onDone={() => undefined} />);
     expect(screen.queryByRole("button", { name: "Preview" })).toBeNull();
     expect(screen.getByText("Run this screen live to preview each option in the app.")).toBeTruthy();
     const a = document.querySelector<HTMLElement>('[data-option="a"]')!;
@@ -91,10 +91,31 @@ describe("an agent's options", () => {
     ]);
     cleanup();
     const done = vi.fn();
-    render(<OfferPanel proposal={proposal()} live={null} contract={CONTRACT} onChange={() => undefined} onFiled={() => undefined} onDone={done} />);
+    render(<OfferPanel proposal={proposal()} live={null} contract={CONTRACT} onChange={() => undefined} onRequest={() => undefined} onDone={done} />);
     fireEvent.click(screen.getByRole("button", { name: "Dismiss all" }));
     await waitFor(() => expect(done).toHaveBeenCalled());
     expect(posts.at(-1)).toEqual({ path: "/api/proposals/p-0123456789/decision", body: { dismiss: true } });
+  });
+});
+
+describe("options that answer an options request", () => {
+  test("picking or dismissing closes the request, saying which", async () => {
+    const answered = proposal({ for: "r-0123456789" });
+    preview = { file: "app/index.tsx", hash: HASH, ok: false, why: "variant is computed in code" };
+    const requested = vi.fn();
+    render(<OfferPanel proposal={answered} live={null} contract={CONTRACT} onChange={() => undefined} onRequest={requested} onDone={() => undefined} />);
+    const b = document.querySelector<HTMLElement>('[data-option="b"]')!;
+    fireEvent.click(within(b).getByRole("button", { name: "Use this" }));
+    fireEvent.click(within(b).getByRole("button", { name: "Write to code" }));
+    fireEvent.click(await within(b).findByRole("button", { name: "File as change request" }));
+    await waitFor(() => expect(posts.at(-1)!.path).toBe("/api/requests/r-0123456789/status"));
+    expect(posts.at(-1)!.body).toEqual({ status: "closed", body: "Picked b: Quieter, filed as r-0123456789." });
+    expect(requested).toHaveBeenCalledTimes(2);
+    cleanup();
+    render(<OfferPanel proposal={answered} live={null} contract={CONTRACT} onChange={() => undefined} onRequest={() => undefined} onDone={() => undefined} />);
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss all" }));
+    await waitFor(() => expect(posts.at(-1)!.path).toBe("/api/requests/r-0123456789/status"));
+    expect(posts.at(-1)!.body).toEqual({ status: "closed", body: "Dismissed every option." });
   });
 });
 

@@ -14,7 +14,7 @@ import { randomBytes } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import { copyFile, mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { REQUEST_ID, RequestDoc, RequestRun, writeFileAtomic, type RequestAuthor, type RequestStatus, type RequestTarget, type RequestTask } from "@youiyoux/core";
+import { REQUEST_ID, RequestDoc, RequestRun, writeFileAtomic, type ComponentContract, type OptionChoice, type RequestAuthor, type RequestStatus, type RequestTarget, type RequestTask } from "@youiyoux/core";
 import { PICTURE_SCALE, screenSlug } from "@youiyoux/scanner";
 import { authorize, WorkflowError } from "./policy.ts";
 import type { Actor } from "./api.ts";
@@ -74,6 +74,53 @@ export function proposeTask(id: string, body: string, target: RequestTarget, aut
       { statement: "The project's check passes, and youiyoux check --diff finds no new drift", evidence: ["check"] },
       ...(touchesKnown ? [{ statement: `Only ${t.file} changed`, evidence: ["changed-path" as const] }] : []),
     ],
+  };
+}
+
+/** The props a contract lets an option set: values (not functions or slots), not deprecated. */
+export function contractChoices(contract: ComponentContract | null): Record<string, OptionChoice> {
+  const out: Record<string, OptionChoice> = {};
+  for (const [prop, spec] of Object.entries(contract?.props ?? {})) {
+    if ((spec.type !== "enum" && spec.type !== "string" && spec.type !== "boolean" && spec.type !== "number") || spec.deprecated) continue;
+    out[prop] = { type: spec.type, ...(spec.type === "enum" ? { values: spec.values } : {}), ...(spec.default !== undefined ? { default: spec.default } : {}) };
+  }
+  return out;
+}
+
+/**
+ * The task an options request asks for: one `youi.proposal/v1` file with two to four options for
+ * the component, each setting only what its contract allows (`offer.choices`) or its text, and no
+ * other file. Everything an agent needs is in the goal, so a runner's agent needs no youiyoux tools;
+ * youiyoux checks the file against the contract when it reads it.
+ */
+export function proposeOptions(id: string, project: string, body: string, target: RequestTarget, author: RequestAuthor, choices: Record<string, OptionChoice>): RequestTask {
+  const t = target;
+  const hex = id.slice(2);
+  const file = `.youi/proposals/p-${hex}.json`;
+  const ask = body.replace(/\s+/g, " ").trim();
+  const title = `${t.route} · ${t.name}: options — ${ask}`;
+  const allowed = Object.entries(choices).map(([prop, c]) => `- ${prop}: ${c.type === "enum" ? `one of ${c.values!.join(", ")}` : c.type}${c.default !== undefined ? ` (default ${JSON.stringify(c.default)})` : ""}`);
+  const placed = { name: t.name, ...(t.element ? { element: t.element } : {}), ...(t.file ? { file: t.file } : {}), ...(t.line ? { line: t.line } : {}), box: t.box, ...(t.page ? { page: t.page } : {}) };
+  const template = { schema: "youi.proposal/v1", id: `p-${hex}`, for: id, project, route: t.route, target: placed, ask, author: { kind: "agent", name: "<your name>" }, createdAt: "<now, ISO 8601>", updatedAt: "<the same>", status: "open", options: [{ id: "a", label: "<a few words>", why: "<a sentence or two>", set: [{ prop: "<a prop below>", value: "<one of its values>" }], text: null }] };
+  return {
+    title: title.length > 120 ? `${title.slice(0, 119)}…` : title,
+    goal: [
+      `An options request from ${author.name} on the ${t.route} screen, filed in the youiyoux hub (request ${id}):`,
+      "",
+      body.trim(),
+      "",
+      `Offer two to four options for ${t.name}${t.file && t.line ? ` at ${t.file}:${t.line}` : ""}: a person previews each in the running app and picks one, and the hub writes it into the code. Change no code yourself.`,
+      allowed.length > 0 ? `Each option sets only these props${t.element ? ` (${t.element}'s contract)` : ""}, and/or new text for it:\n${allowed.join("\n")}` : `It is not a design-system component: each option only changes its text.`,
+      "",
+      `Write one file, ${file}, and nothing else: a youi.proposal/v1 document (schema/youi.proposal.schema.json in youiyoux) like this, with options a, b (and c, d), each a short label (at most 60 characters), why (at most 500) and its changes (set, and text or null):`,
+      JSON.stringify(template),
+      "With the youiyoux MCP tools, screens_offer with request " + id + " writes it for you.",
+    ].join("\n").slice(0, 4000),
+    touches: [file],
+    touchesKnown: true,
+    not: [`Changing any file other than ${file}: the person picks an option in the hub, which writes it into the code`, MANIFESTS],
+    acceptance: [{ statement: `${file} offers two to four options for ${t.name}, each from its contract's choices or its text`, evidence: ["changed-path"] }],
+    offer: { proposal: `p-${hex}`, file, choices, text: true },
   };
 }
 
@@ -225,10 +272,12 @@ export class RequestStore {
     return parsed.data;
   }
 
-  async create(actor: Actor, input: RequestInput): Promise<RequestDoc> {
+  /** `contract`: the component's, for what an options request's options may set (none: only its text). */
+  async create(actor: Actor, input: RequestInput, contract: ComponentContract | null = null): Promise<RequestDoc> {
     authorize(actor, "draft");
     const body = input.body.trim();
     if (!body) throw new WorkflowError("invalid", "a request needs words: what to look at, or what to change");
+    if (input.kind === "options" && (input.target.scope !== "here" || !input.target.box || input.target.html)) throw new WorkflowError("invalid", "options are for one component React renders on the screen, where it was picked: pick it on the screen, as this one");
     const at = this.now();
     const id = (this.options.newId ?? (() => `r-${randomBytes(5).toString("hex")}`))();
     // The screen as it is now, kept beside the request: what "after" is compared with.
@@ -240,7 +289,7 @@ export class RequestStore {
       await copyFile(shot, join(this.dir, before));
     }
     const author = authorOf(actor);
-    const task = input.kind === "change" ? { task: proposeTask(id, body, input.target, author) } : {};
+    const task = input.kind === "change" ? { task: proposeTask(id, body, input.target, author) } : input.kind === "options" ? { task: proposeOptions(id, this.project, body, input.target, author, contractChoices(contract)) } : {};
     return this.write({ schema: "youi.request/v1", id, project: this.project, kind: input.kind, status: "open", body, author, createdAt: at, updatedAt: at, target: input.target, ...(before ? { before } : {}), ...task, thread: [] });
   }
 
@@ -341,6 +390,7 @@ export function requestBrief(request: RequestView, root: string): RequestBrief {
       : request.status === "addressed" && recaptured === false ? `Marked addressed, but ${t.route} has not been captured since this was filed, so the person compares against the old picture: run ${capture}. A person then checks it and closes or reopens it.`
       : request.status === "addressed" ? "Marked addressed: a person checks it and closes or reopens it. Reply only if asked."
         : request.kind === "comment" ? `A comment on ${where}: reply with request_reply if it asks something; change code only if it asks for a change.`
+          : request.kind === "options" ? `Offer two to four options for ${t.name} at ${where}: call screens_offer with request ${request.id}, each option setting only task.offer.choices (or the text). Change no code: the person picks one in the hub, which writes it.`
           : `Make the change at ${where}${t.lookalike && t.element ? `, using the System's ${t.element} rather than the hand-built lookalike where that is the fix` : ""}; capture the screen again (${capture}) so the person sees it after; then call request_addressed with what you changed (file:line). Ask with request_reply first if it is unclear. A person closes it.`;
   return {
     id: request.id,

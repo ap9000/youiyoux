@@ -42,6 +42,23 @@ describe("filing a request", () => {
     expect(posts).toEqual([{ path: "/api/requests", body: { kind: "change", body: "Use the primary variant", target: { ...TARGET, scope: "element" } }, key: "k-test" }]);
   });
 
+  test("options are asked for one component with a place on the screen, always this one; HTML a server writes, or no place, can't have them", async () => {
+    const onFiled = vi.fn();
+    render(<RequestComposer target={TARGET} elementName="Button" onFiled={onFiled} onCancel={() => undefined} />);
+    fireEvent.click(within(screen.getByRole("radiogroup", { name: "Kind" })).getByRole("radio", { name: "Options" }));
+    expect(screen.queryByRole("radiogroup", { name: "Applies to" })).toBeNull();
+    fireEvent.change(screen.getByRole("textbox", { name: "What the options should explore" }), { target: { value: "Make it clearer" } });
+    fireEvent.click(screen.getByRole("button", { name: "Ask for options" }));
+    await waitFor(() => expect(onFiled).toHaveBeenCalled());
+    expect(posts).toEqual([{ path: "/api/requests", body: { kind: "options", body: "Make it clearer", target: { ...TARGET, scope: "here" } }, key: "k-test" }]);
+    cleanup();
+    for (const target of [{ ...TARGET, html: "button" }, { ...TARGET, box: undefined }]) {
+      render(<RequestComposer target={target} elementName={null} onFiled={() => undefined} onCancel={() => undefined} />);
+      expect(within(screen.getByRole("radiogroup", { name: "Kind" })).queryByRole("radio", { name: "Options" })).toBeNull();
+      cleanup();
+    }
+  });
+
   test("a comment needs no element; without the service it says how to start it", async () => {
     answer = () => new Response("<!doctype html>", { status: 200, headers: { "content-type": "text/html" } });
     render(<RequestComposer target={{ ...TARGET, element: undefined }} elementName={null} onFiled={() => undefined} onCancel={() => undefined} />);

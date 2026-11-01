@@ -9,6 +9,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ComponentContract, ElementId, UsageSite } from "@youiyoux/core";
 import { readScreensSpec, screenSlug, type PlacesFile, type Place } from "@youiyoux/scanner";
+import { contractChoices } from "@youiyoux/workflow";
 
 /** Components listed per screen: the page's own, each file:line once. */
 export const COMPONENTS_AT_MOST = 80;
@@ -28,12 +29,7 @@ export interface ScreenComponent {
 
 /** The contract's props an option may set: values, not functions or slots, and not deprecated. */
 export function choicesOf(contract: ComponentContract): NonNullable<ScreenComponent["choices"]> {
-  const out: NonNullable<ScreenComponent["choices"]> = {};
-  for (const [prop, spec] of Object.entries(contract.props)) {
-    if (!["enum", "string", "boolean", "number"].includes(spec.type) || spec.deprecated) continue;
-    out[prop] = { type: spec.type, ...(spec.type === "enum" ? { values: spec.values } : {}), ...("default" in spec && spec.default !== undefined ? { default: spec.default } : {}) };
-  }
-  return out;
+  return contractChoices(contract);
 }
 
 export function screensDir(root: string): string {

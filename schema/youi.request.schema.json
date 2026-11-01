@@ -23,7 +23,8 @@
       "type": "string",
       "enum": [
         "comment",
-        "change"
+        "change",
+        "options"
       ]
     },
     "status": {
@@ -234,6 +235,75 @@
               "evidence"
             ]
           }
+        },
+        "offer": {
+          "type": "object",
+          "properties": {
+            "proposal": {
+              "type": "string",
+              "pattern": "^p-[0-9a-f]{10}$"
+            },
+            "file": {
+              "type": "string",
+              "pattern": "^\\.youi\\/proposals\\/p-[0-9a-f]{10}\\.json$"
+            },
+            "choices": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string",
+                "pattern": "^[A-Za-z_$][\\w$]{0,63}$"
+              },
+              "additionalProperties": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "enum",
+                      "string",
+                      "boolean",
+                      "number"
+                    ]
+                  },
+                  "values": {
+                    "maxItems": 50,
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 200
+                    }
+                  },
+                  "default": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "maxLength": 200
+                      },
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "type"
+                ]
+              }
+            },
+            "text": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "proposal",
+            "file",
+            "choices",
+            "text"
+          ]
         }
       },
       "required": [

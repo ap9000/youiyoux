@@ -34,7 +34,7 @@ import { DISCOVER_RULE, DiscoverConstraints, discoverCacheDir, discoverIndexPath
 import { storeLocation, type Store } from "@youiyoux/store";
 import { adoptionRequest, captureScreens, chosenSession, readScreensSpec, screenSlug, collectComponents, findLibraryEntry, renderShots, type ShotsOptions, componentCard, describeIdentity, failedChecks, findContract, formatProps, loadProject, planChange, PROJECT_FILE, ruleRows, ScanCache, scanProject, screenBom, searchElements, searchLibrary, tokenRows, whereUsed, type PlanInput, type Project, type ProjectComponents, type ScanResult } from "@youiyoux/scanner";
 import { launchBrowser } from "@youiyoux/detect";
-import { ProposalStore, proposalBrief, RequestStore, requestBrief } from "@youiyoux/workflow";
+import { ProposalStore, proposalBrief, RequestStore, requestBrief, type ProposalCheck } from "@youiyoux/workflow";
 import { z } from "zod";
 import { findComponents, matchesText, noneFitsText } from "./find-component.ts";
 import { choicesText, renderText, ruleCoversText, swapImpactText, whereUsedText } from "./index-tools.ts";
@@ -528,6 +528,13 @@ export function createServer(options: ServerOptions): McpServer {
     return { usages: scanned.scan.report.usages, contractOf: (id) => scanned.project.system.components.find((c) => c.contract.id === id)?.contract ?? null };
   }
 
+  /** What every proposal read is held to: its contract, and the options request it answers. */
+  async function proposalCheck(): Promise<ProposalCheck> {
+    const { contractOf } = await system();
+    const { store } = await requests();
+    return { contractOf, request: (id) => store.get(id).catch(() => null) };
+  }
+
   server.registerTool(
     "screens_list" satisfies McpTool,
     { title: "The captured screens", description: "The screens captured from the running app (the hub's Screens page): each route, its picture (an absolute path: open it), how many components are placed on it, and its open requests and proposals. Start here before screens_show.", inputSchema: {}, annotations: READ_ONLY },
@@ -536,7 +543,7 @@ export function createServer(options: ServerOptions): McpServer {
       const dir = screensDir(root);
       if (!existsSync(join(dir, "screens.json"))) return { screens: [], next: "No screens are captured yet: a person captures them with youiyoux screens capture --base <url>." };
       const spec = readScreensSpec(dir);
-      const open = (await (await proposals()).store.list()).proposals.filter((p) => p.status === "open");
+      const open = (await (await proposals()).store.list(await proposalCheck())).proposals.filter((p) => p.status === "open");
       const asked = (await (await requests()).store.list()).requests.filter((r) => r.status !== "closed");
       return {
         screens: spec.screens.map(({ route }) => {
@@ -566,26 +573,39 @@ export function createServer(options: ServerOptions): McpServer {
     "screens_offer" satisfies McpTool,
     {
       title: "Put options on the Screens canvas",
-      description: "Offer a person two to four options for one component on a captured screen, pinned where it is on the hub's Screens canvas. Each option has a short label, why, and the changes: props from the component's contract (screens_show lists its choices; any other value is refused) and/or new text. The person previews each on the live app, picks one (the hub writes it into the code, or files a change request) or dismisses them. You never pick; screens_offers says what was picked. Writes only one file in .youi/proposals.",
+      description: "Offer a person two to four options for one component on a captured screen, pinned where it is on the hub's Screens canvas; or answer an options request a person filed (request: its id), for its component. Each option has a short label, why, and the changes: props from the component's contract (screens_show lists its choices; any other value is refused) and/or new text. The person previews each on the live app, picks one (the hub writes it into the code, or files a change request) or dismisses them. You never pick; screens_offers says what was picked. Writes only one file in .youi/proposals.",
       inputSchema: {
-        route: z.string().min(1).max(300),
-        component: z.object({ name: z.string().min(1).max(200), file: z.string().min(1).max(500).optional(), line: z.number().int().positive().optional(), box: z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() }).optional() }).describe("As screens_show lists it"),
-        ask: z.string().min(1).max(1000).describe("What was asked for, in the asker's words"),
+        request: z.string().regex(/^r-[0-9a-f]{10}$/).optional().describe("An options request (requests_list) to answer: its route, component and ask are used, so route, component and ask may be left out"),
+        route: z.string().min(1).max(300).optional(),
+        component: z.object({ name: z.string().min(1).max(200), file: z.string().min(1).max(500).optional(), line: z.number().int().positive().optional(), box: z.object({ x: z.number(), y: z.number(), width: z.number(), height: z.number() }).optional() }).optional().describe("As screens_show lists it"),
+        ask: z.string().min(1).max(1000).optional().describe("What was asked for, in the asker's words"),
         options: z.array(z.object({ label: z.string().min(1).max(60), why: z.string().min(1).max(500), set: z.array(z.object({ prop: z.string().min(1).max(64), value: z.union([z.string().max(2000), z.number(), z.boolean()]) })).max(20).optional(), text: z.string().min(1).max(2000).optional() })).min(2).max(4),
       },
       annotations: WRITES_PROPOSAL,
     },
-    guard(async ({ route, component, ask, options: offered }) => {
+    guard(async ({ request: answering, route: given, component, ask: asked, options: offered }) => {
       const { store, root } = await proposals();
+      const { usages, contractOf } = await system();
+      const options = offered.map((o) => ({ label: o.label, why: o.why, set: o.set ?? [], text: o.text ?? null }));
+      // Answering an options request: its own component, route and ask, as the person picked them.
+      if (answering) {
+        const request = await (await requests()).store.get(answering);
+        if (request.kind !== "options") return { error: `${answering} is a ${request.kind === "change" ? "change request" : "comment"}, not an options request` };
+        if (request.status !== "open") return { error: `${answering} is ${request.status}: nothing to offer` };
+        const t = request.target;
+        if (!t.box) return { error: `${answering} has no place on the screen to pin options at` };
+        const target = { name: t.name, ...(t.element ? { element: t.element } : {}), ...(t.file ? { file: t.file } : {}), ...(t.line ? { line: t.line } : {}), box: t.box, ...(t.page ? { page: t.page } : {}) };
+        return proposalBrief(await store.create(AGENT, { route: t.route, target, ask: request.body, options, for: answering }, t.element ? contractOf(t.element) : null), root);
+      }
+      if (!given || !component || !asked) return { error: "name the route, the component (as screens_show lists it) and what was asked, or answer an options request with request" };
+      const route = given;
       const places = placesOf(root, route);
       if ("error" in places) return places;
       const place = findPlace(places, component);
       if (!place) return { error: `no ${component.name}${component.file ? ` at ${component.file}${component.line ? `:${component.line}` : ""}` : ""} on ${route}: screens_show lists what is there` };
-      const { usages, contractOf } = await system();
       const element = elementAt(usages, place);
       const target = { name: place.name, ...(element ? { element } : {}), ...(place.file ? { file: place.file } : {}), ...(place.line ? { line: place.line } : {}), ...(place.column != null ? { column: place.column } : {}), box: place.box, page: places.size };
-      const proposal = await store.create(AGENT, { route, target, ask, options: offered.map((o) => ({ label: o.label, why: o.why, set: o.set ?? [], text: o.text ?? null })) }, element ? contractOf(element) : null);
-      return proposalBrief(proposal, root);
+      return proposalBrief(await store.create(AGENT, { route, target, ask: asked, options }, element ? contractOf(element) : null), root);
     }),
   );
 
@@ -594,7 +614,7 @@ export function createServer(options: ServerOptions): McpServer {
     { title: "Options on the canvas, and what was picked", description: "The options agents put on the Screens canvas: what was asked, each option's changes, and whether a person picked one (and whether the hub wrote it into the code or filed it as a change request), dismissed them, or hasn't decided. Default: open ones.", inputSchema: { status: z.enum(["open", "chosen", "dismissed", "all"]).optional(), route: z.string().min(1).optional() }, annotations: READ_ONLY },
     guard(async ({ status, route }) => {
       const { store, root } = await proposals();
-      const { proposals: all, unreadable } = await store.list();
+      const { proposals: all, unreadable } = await store.list(await proposalCheck());
       const wanted = all.filter((p) => (status === "all" || p.status === (status ?? "open")) && (!route || p.route === route));
       return { proposals: wanted.map((p) => proposalBrief(p, root)), ...(unreadable.length ? { unreadable } : {}), ...(wanted.length === 0 ? { next: `No ${status && status !== "all" ? status : "open"} proposals${route ? ` on ${route}` : ""}.` } : {}) };
     }),

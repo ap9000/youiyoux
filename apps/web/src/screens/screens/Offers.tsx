@@ -55,11 +55,12 @@ interface Props {
   live: LiveHandle | null;
   contract: ComponentContract | null;
   onChange: (proposal: ProposalDoc) => void;
-  onFiled: (request: RequestDoc) => void;
+  /** A request filed for an option, or the options request closed once decided, as the service returned it. */
+  onRequest: (request: RequestDoc) => void;
   onDone: () => void;
 }
 
-export function OfferPanel({ proposal, live, contract, onChange, onFiled, onDone }: Props) {
+export function OfferPanel({ proposal, live, contract, onChange, onRequest, onDone }: Props) {
   const [previewing, setPreviewing] = useState<string | null>(null);
   const [using, setUsing] = useState<string | null>(null);
   const [written, setWritten] = useState<string | null>(null);
@@ -78,8 +79,17 @@ export function OfferPanel({ proposal, live, contract, onChange, onFiled, onDone
     const set: Record<string, LiveValue> = Object.fromEntries(option.set.map(({ prop, value }) => [prop, value]));
     void live.edit(set, option.text).then((done) => setProblem(done.ok ? null : done.why));
   };
+  // The pick is recorded for the agent; an options request it answers is closed with it (a person's act).
   const decide = (decision: { choice: string; request?: string } | { dismiss: true }): Promise<void> =>
-    workflowApi.decideProposal(proposal.id, decision).then(onChange, (e: unknown) => setError(asRequestError(e)));
+    workflowApi
+      .decideProposal(proposal.id, decision)
+      .then(async (decided) => {
+        onChange(decided);
+        if (!proposal.for) return;
+        const chosen = "choice" in decision ? proposal.options.find((o) => o.id === decision.choice) : null;
+        onRequest(await workflowApi.moveRequest(proposal.for, "closed", chosen ? `Picked ${chosen.id}: ${chosen.label}${"request" in decision && decision.request ? `, filed as ${decision.request}` : ""}.` : "Dismissed every option."));
+      })
+      .catch((e: unknown) => setError(asRequestError(e)));
   const editFor = (option: Option) =>
     target.file && target.line
       ? {
@@ -156,7 +166,7 @@ export function OfferPanel({ proposal, live, contract, onChange, onFiled, onDone
                     void decide({ choice: option.id }).then(() => setWritten(at));
                   }}
                   onFiled={(request) => {
-                    onFiled(request);
+                    onRequest(request);
                     void decide({ choice: option.id, request: request.id });
                   }}
                   before={

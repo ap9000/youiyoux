@@ -53,7 +53,7 @@ const CreateInput = z.union([
 const SaveInput = z.object({ revision: z.number().int().positive(), content: z.union([DraftContentInput, StyleContentInput, LibraryContentInput, IngestKeepInput]) });
 
 /** A comment or change request on a captured screen, and what moves it on (requests.ts). */
-const RequestInput = z.object({ kind: z.enum(["comment", "change"]), body: z.string().min(1).max(4000), target: RequestTarget });
+const RequestInput = z.object({ kind: z.enum(["comment", "change", "options"]), body: z.string().min(1).max(4000), target: RequestTarget });
 const ReplyInput = z.object({ body: z.string().min(1).max(4000) });
 const StatusInput = z.object({ status: z.enum(REQUEST_STATUSES), body: z.string().max(4000).optional() });
 /** The components under the pointer on a live screen, as the bridge saw them: their frames are mapped to lines. */
@@ -178,7 +178,7 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string, opti
     if (method === "POST") return send(res, 200, await options.agents.connect([...new Set(parse(AgentsInput, await readJson(req)).agents)]));
   }
   if (path === "/api/live" && method === "GET") return send(res, 200, (await workflow.live()).info());
-  if (path === "/api/proposals" && method === "GET") return send(res, 200, await (await workflow.proposals()).list());
+  if (path === "/api/proposals" && method === "GET") return send(res, 200, await (await workflow.proposals()).list(await workflow.proposalCheck()));
   const proposal = /^\/api\/proposals\/(p-[0-9a-f]{10})\/decision$/.exec(path);
   if (proposal && method === "POST") return send(res, 200, await (await workflow.proposals()).decide(actor, proposal[1]!, parse(DecisionInput, await readJson(req))));
   if (path === "/api/live/edit" && method === "POST") {
@@ -187,7 +187,11 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string, opti
   }
   if (path === "/api/live/resolve" && method === "POST") return send(res, 200, { places: await (await workflow.live()).resolve(parse(LiveResolveInput, await readJson(req)).places) });
   if (path === "/api/requests" && method === "GET") return send(res, 200, await (await workflow.requests()).list());
-  if (path === "/api/requests" && method === "POST") return send(res, 201, await (await workflow.requests()).create(actor, parse(RequestInput, await readJson(req))));
+  if (path === "/api/requests" && method === "POST") {
+    const input = parse(RequestInput, await readJson(req));
+    // An options request's task names what its options may set: the component's contract.
+    return send(res, 201, await (await workflow.requests()).create(actor, input, input.kind === "options" ? await workflow.contractOf(input.target.element) : null));
+  }
   const request = /^\/api\/requests\/(r-[0-9a-f]{10})(?:\/(replies|status|compare|before\.webp|after\.webp))?$/.exec(path);
   if (request) {
     const [, id, action] = request as unknown as [string, string, string | undefined];

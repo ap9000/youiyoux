@@ -174,6 +174,18 @@ An agent can put options in front of a person, the way a design tool's agents dr
 5. `screens_offers`: which option was picked, and what is left to do (nothing, when the hub wrote
    it; the change request, when it filed one).
 
+A person can ask for options too: **Options** in the hub's request composer (on one component, on
+a captured or live screen) files an options request, `kind: "options"`. Its task carries
+everything an agent needs without youiyoux's tools (`task.offer`): the one file to write,
+`.youi/proposals/p-<the request's hex>.json`, the component's choices from its contract, and the
+file's shape; `touches` is that file alone. An agent with the tools answers it with
+`screens_offer` and `request: <id>`, which takes the request's own component and ask. Toolroll
+files it like a change request, and once its agent has written the file, brings it to the main
+checkout, where the hub pins it. Every proposal youiyoux reads, whoever wrote it, is held to its
+component's contract and, when it answers a request, to that request's own component; one that
+isn't is listed as unreadable and never shown. Picking an option or dismissing them closes the
+options request, saying which.
+
 ## Exit codes
 
 | Code | Means |

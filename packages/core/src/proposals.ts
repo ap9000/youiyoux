@@ -74,8 +74,11 @@ export const ProposalDoc = z
     decidedBy: RequestAuthor.optional(),
     decidedAt: IsoTime.optional(),
     request: z.string().regex(REQUEST_ID, "expected r-<10 hex>").optional(),
+    /** The options request it answers, whose hex its id shares. */
+    for: z.string().regex(REQUEST_ID, "expected r-<10 hex>").optional(),
   })
   .refine((p) => new Set(p.options.map((o) => o.id)).size === p.options.length, "each option has its own letter")
+  .refine((p) => p.for === undefined || p.for.slice(2) === p.id.slice(2), "a proposal for a request shares its id: p-<the request's hex>")
   .refine((p) => (p.status === "chosen") === (p.choice !== undefined), "a chosen proposal names its choice, and only then")
   .refine((p) => p.status === "open" || (p.decidedBy !== undefined && p.decidedAt !== undefined), "a decided proposal says who decided, and when");
 export type ProposalDoc = z.infer<typeof ProposalDoc>;

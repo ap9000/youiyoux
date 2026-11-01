@@ -10,6 +10,7 @@
  * The hand-off creates a review branch in the design repository and never touches the
  * default branch or the working tree.
  */
+import type { ComponentContract } from "@youiyoux/core";
 import { randomBytes } from "node:crypto";
 import { loadProject, ruleCapability, scanProject, SCANNER_VERSION, type LoadProjectOptions, type Project, type ScanResult } from "@youiyoux/scanner";
 import { buildTokens, type ResolvedToken } from "@youiyoux/tokens";
@@ -27,7 +28,7 @@ import { authorize, WorkflowError, type Action } from "./policy.ts";
 import { comparePreview, notRunReason } from "./preview.ts";
 import { LiveApp } from "./live.ts";
 import { RequestStore } from "./requests.ts";
-import { ProposalStore } from "./proposals.ts";
+import { ProposalStore, type ProposalCheck } from "./proposals.ts";
 import type { WorkflowStore } from "./store.ts";
 
 const WORKFLOW_VERSION = "0.1.0";
@@ -120,6 +121,20 @@ export class RuleWorkflow {
   async requests(): Promise<RequestStore> {
     const project = await this.project();
     return new RequestStore(project.root, project.config.id, this.options.now ? { now: this.options.now } : {});
+  }
+
+  /** A System element's contract, or null (not one, or no System). */
+  async contractOf(element: string | undefined): Promise<ComponentContract | null> {
+    if (!element) return null;
+    const project = await this.project();
+    return project.system.components.find((c) => c.contract.id === element)?.contract ?? null;
+  }
+
+  /** What every proposal read is held to: its component's contract, and the options request it answers. */
+  async proposalCheck(): Promise<ProposalCheck> {
+    const project = await this.project();
+    const requests = await this.requests();
+    return { contractOf: (id) => project.system.components.find((c) => c.contract.id === id)?.contract ?? null, request: (id) => requests.get(id).catch(() => null) };
   }
 
   /** Options agents put on the Screens canvas, in the product's .youi/proposals. */

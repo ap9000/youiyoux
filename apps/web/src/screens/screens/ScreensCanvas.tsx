@@ -681,7 +681,7 @@ function OfferBubble({ offer, view, frame, proposals, contractOf, onProposal, on
         </>
       }
     >
-      <OfferPanel key={offer.id} proposal={proposal} live={offer.live} contract={proposal.target.element ? contractOf(proposal.target.element) : null} onChange={onProposal} onFiled={onRequest} onDone={onClose} />
+      <OfferPanel key={offer.id} proposal={proposal} live={offer.live} contract={proposal.target.element ? contractOf(proposal.target.element) : null} onChange={onProposal} onRequest={onRequest} onDone={onClose} />
     </Bubble>
   );
 }

@@ -6,7 +6,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { screenSlug } from "@youiyoux/scanner";
-import { ProposalStore } from "@youiyoux/workflow";
+import { ProposalStore, RequestStore } from "@youiyoux/workflow";
 import { createServer } from "../src/index.ts";
 
 const EXAMPLES = join(import.meta.dirname, "../../../examples");
@@ -116,5 +116,22 @@ describe("options on the Screens canvas, over MCP", () => {
     const [chosen] = (await call("screens_offers", { status: "chosen" })).data.proposals as Array<Record<string, unknown>>;
     expect(chosen).toMatchObject({ choice: "b", request: "r-0123456789", next: "The person picked Quieter, filed as change request r-0123456789: do that request (requests_list)." });
     await expect(store.decide({ kind: "person", name: "captain" }, open!.id, { dismiss: true })).rejects.toThrow(/is already chosen/);
+  });
+
+  test("an options request a person filed is answered for its own component and ask, once; a change request isn't one", async () => {
+    const requests = new RequestStore(app, "demo-app", { newId: () => "r-0000000abc" });
+    const target = { route: "/", scope: "here", name: "Button", element: "youi:demo/component/button", file: "app/index.tsx", line: 19, box: { x: 600, y: 200, width: 60, height: 32 }, page: { width: 1440, height: 1200 } } as const;
+    await requests.create({ kind: "person", name: "captain" }, { kind: "options", body: "Calmer row actions", target }, null);
+    const listed = ((await call("requests_list")).data.requests as Array<Record<string, unknown>>).find((r) => r.id === "r-0000000abc")!;
+    expect(listed.next).toMatch(/^Offer two to four options for Button at app\/index\.tsx:19: call screens_offer with request r-0000000abc/);
+    const options = [{ label: "Ghost", why: "Row tools stay quiet.", set: [{ prop: "variant", value: "ghost" }] }, { label: "Link", why: "Reads as navigation.", set: [{ prop: "variant", value: "link" }] }];
+    // What the agent names is ignored: the request's own component is used.
+    const { data } = await call("screens_offer", { request: "r-0000000abc", route: "/elsewhere", component: { name: "Home" }, options });
+    expect(data).toMatchObject({ id: "p-0000000abc", route: "/", component: "Button", at: "app/index.tsx:19", ask: "Calmer row actions" });
+    const saved = await new ProposalStore(app, "demo-app").get("p-0000000abc");
+    expect([saved.for, saved.target.box]).toEqual(["r-0000000abc", target.box]);
+    expect((await call("screens_offer", { request: "r-0000000abc", options })).data.error).toBe("options for r-0000000abc are already on the canvas (p-0000000abc)");
+    const change = (await new RequestStore(app, "demo-app").create({ kind: "person", name: "captain" }, { kind: "change", body: "x", target })).id;
+    expect((await call("screens_offer", { request: change, options })).data.error).toBe(`${change} is a change request, not an options request`);
   });
 });

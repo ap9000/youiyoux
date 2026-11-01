@@ -19,6 +19,7 @@ import { BeforeAfter } from "./BeforeAfter.tsx";
 
 const STATUS_TONE: Record<RequestStatus, "warning" | "accent" | "outline"> = { open: "warning", addressed: "accent", closed: "outline" };
 const STATUS_LABEL: Record<RequestStatus, string> = { open: "Open", addressed: "Addressed", closed: "Closed" };
+const KIND_LABEL: Record<RequestDoc["kind"], string> = { change: "Change request", options: "Options request", comment: "Comment" };
 const RUN_LABEL: Record<RunStatus, string> = { queued: "Queued", "needs-you": "Needs you", building: "Building", ready: "Ready for review", done: "Done", failed: "Failed", stopped: "Stopped" };
 const RUN_TONE: Record<RunStatus, "warning" | "accent" | "outline" | "success" | "danger"> = { queued: "outline", "needs-you": "warning", building: "accent", ready: "success", done: "success", failed: "danger", stopped: "outline" };
 
@@ -104,7 +105,16 @@ function Failure({ error }: { error: WorkflowRequestError }) {
 }
 
 /** A new comment or change request on what is picked out; `bare` inside something that already frames it. */
+/** What the composer says for each kind of request. */
+const WORDS: Record<RequestDoc["kind"], { placeholder: string; label: string; submit: string }> = {
+  change: { placeholder: "What should change? An agent reads this with the component's file and line.", label: "What should change", submit: "File change request" },
+  options: { placeholder: "What should the options explore? An agent offers two to four from the design system, pinned here to preview and pick.", label: "What the options should explore", submit: "Ask for options" },
+  comment: { placeholder: "What do you notice?", label: "Your comment", submit: "Add comment" },
+};
+
 export function RequestComposer({ target, elementName, onFiled, onCancel, bare = false }: { target: RequestTarget; elementName: string | null; onFiled: (request: RequestDoc) => void; onCancel: () => void; bare?: boolean }) {
+  // Options are pinned where the component is: one React renders, with its place on the screen.
+  const optionable = !!target.box && !target.html;
   const [kind, setKind] = useState<RequestDoc["kind"]>("change");
   const [scope, setScope] = useState<RequestTarget["scope"]>("here");
   const [body, setBody] = useState("");
@@ -115,7 +125,8 @@ export function RequestComposer({ target, elementName, onFiled, onCancel, bare =
     if (!body.trim()) return;
     setBusy(true);
     setError(null);
-    workflowApi.fileRequest(kind, body.trim(), { ...target, scope }).then(
+    // Options are for this one, where it was picked: they are pinned there.
+    workflowApi.fileRequest(kind, body.trim(), { ...target, scope: kind === "options" ? "here" : scope }).then(
       (request) => {
         setBody("");
         onFiled(request);
@@ -126,16 +137,16 @@ export function RequestComposer({ target, elementName, onFiled, onCancel, bare =
   return (
     <form onSubmit={submit} className={clsx("space-y-2.5", !bare && "rounded-lg border border-line bg-surface p-3")} data-request-composer aria-label="New request">
       <div className="flex flex-wrap items-center gap-2">
-        <Segmented<RequestDoc["kind"]> label="Kind" value={kind} onChange={setKind} options={[{ value: "change", label: "Change request" }, { value: "comment", label: "Comment" }]} />
-        {elementName && <Segmented<RequestTarget["scope"]> label="Applies to" value={scope} onChange={setScope} options={[{ value: "here", label: "This one" }, { value: "element", label: `Every ${elementName}` }]} />}
+        <Segmented<RequestDoc["kind"]> label="Kind" value={kind} onChange={setKind} options={[{ value: "change", label: "Change request" }, ...(optionable ? [{ value: "options" as const, label: "Options" }] : []), { value: "comment", label: "Comment" }]} />
+        {elementName && kind !== "options" && <Segmented<RequestTarget["scope"]> label="Applies to" value={scope} onChange={setScope} options={[{ value: "here", label: "This one" }, { value: "element", label: `Every ${elementName}` }]} />}
       </div>
       <TextArea
         value={body}
         onChange={(event) => setBody(event.target.value)}
         rows={3}
         maxLength={4000}
-        placeholder={kind === "change" ? "What should change? An agent reads this with the component's file and line." : "What do you notice?"}
-        aria-label={kind === "change" ? "What should change" : "Your comment"}
+        placeholder={WORDS[kind].placeholder}
+        aria-label={WORDS[kind].label}
         autoFocus
         onKeyDown={(event) => {
           if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) submit(event);
@@ -147,7 +158,7 @@ export function RequestComposer({ target, elementName, onFiled, onCancel, bare =
           Cancel
         </Button>
         <Button type="submit" variant="primary" size="sm" disabled={busy || !body.trim()} aria-busy={busy || undefined}>
-          {kind === "change" ? "File change request" : "Add comment"}
+          {WORDS[kind].submit}
         </Button>
       </div>
     </form>
@@ -188,7 +199,7 @@ export function RequestThread({ request, number, active, onChange, onPick }: { r
         <span className="min-w-0 flex-1 space-y-0.5">
           <span className="flex flex-wrap items-center gap-1.5">
             <Badge tone={STATUS_TONE[request.status]}>{STATUS_LABEL[request.status]}</Badge>
-            <span className="text-caption text-muted">{request.kind === "change" ? "Change request" : "Comment"}</span>
+            <span className="text-caption text-muted">{KIND_LABEL[request.kind]}</span>
             <span className="text-caption text-faint">· {target.scope === "element" ? `every ${target.name}` : target.name}</span>
           </span>
           <span className="block text-small text-ink">{request.body}</span>

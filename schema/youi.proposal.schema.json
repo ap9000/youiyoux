@@ -260,6 +260,10 @@
     "request": {
       "type": "string",
       "pattern": "^r-[0-9a-f]{10}$"
+    },
+    "for": {
+      "type": "string",
+      "pattern": "^r-[0-9a-f]{10}$"
     }
   },
   "required": [

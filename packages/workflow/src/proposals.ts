@@ -12,9 +12,10 @@
  * never dropped and never rewritten.
  */
 import { randomBytes } from "node:crypto";
+import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { OPTION_IDS, PROPOSAL_ID, ProposalDoc, REQUEST_ID, writeFileAtomic, type ComponentContract, type ProposalOption, type ProposalTarget, type RequestAuthor } from "@youiyoux/core";
+import { OPTION_IDS, PROPOSAL_ID, ProposalDoc, REQUEST_ID, writeFileAtomic, type ComponentContract, type ElementId, type ProposalOption, type ProposalTarget, type RequestAuthor, type RequestDoc } from "@youiyoux/core";
 import { EDIT_REFUSED, isScriptValue, screenSlug } from "@youiyoux/scanner";
 import { authorize, WorkflowError } from "./policy.ts";
 import type { Actor } from "./api.ts";
@@ -27,6 +28,36 @@ export interface ProposalInput {
   readonly target: ProposalTarget;
   readonly ask: string;
   readonly options: ReadonlyArray<Omit<ProposalOption, "id">>;
+  /** The options request it answers: its id is then the request's own hex. */
+  readonly for?: string;
+}
+
+/**
+ * What a proposal read from disk is held to, whoever wrote it (a runner's agent writes the file
+ * itself): every option to the component's contract, and one that answers an options request to
+ * that request's own component.
+ */
+export interface ProposalCheck {
+  readonly contractOf: (element: ElementId) => ComponentContract | null;
+  readonly request: (id: string) => Promise<RequestDoc | null>;
+}
+
+/** Why a proposal can't be shown, or null. */
+export async function proposalProblem(proposal: ProposalDoc, check: ProposalCheck): Promise<string | null> {
+  const t = proposal.target;
+  const contract = t.element ? check.contractOf(t.element) : null;
+  if (t.element && !contract) return `its component ${t.element} has no contract in the design system`;
+  for (const option of proposal.options) {
+    const problem = optionProblem(option, contract, t.name);
+    if (problem) return `option ${option.id}: ${problem}`;
+  }
+  if (proposal.for) {
+    const request = await check.request(proposal.for);
+    if (!request || request.kind !== "options") return `it answers ${proposal.for}, which isn't an options request here`;
+    const r = request.target;
+    if (request.target.route !== proposal.route || r.name !== t.name || r.file !== t.file || r.line !== t.line || r.element !== t.element) return `its component isn't the one ${proposal.for} asked about (${r.name}${r.file && r.line ? ` at ${r.file}:${r.line}` : ""} on ${r.route})`;
+  }
+  return null;
 }
 
 export interface ProposalList {
@@ -89,8 +120,8 @@ export class ProposalStore {
     return checked;
   }
 
-  /** Every proposal, newest first. */
-  async list(): Promise<ProposalList> {
+  /** Every proposal, newest first; with `check`, one that fails it is listed as unreadable, never shown. */
+  async list(check?: ProposalCheck): Promise<ProposalList> {
     const names = await readdir(this.dir).catch(() => [] as string[]);
     const proposals: ProposalDoc[] = [];
     const unreadable: Array<{ file: string; reason: string }> = [];
@@ -108,7 +139,11 @@ export class ProposalStore {
       const result = ProposalDoc.safeParse(value);
       if (!result.success) unreadable.push({ file, reason: result.error.issues.map((i) => `${i.path.join(".") || "file"}: ${i.message}`).join("; ") });
       else if (result.data.id !== match[1]) unreadable.push({ file, reason: "its id is not its file name" });
-      else proposals.push(result.data);
+      else {
+        const problem = check ? await proposalProblem(result.data, check) : null;
+        if (problem) unreadable.push({ file, reason: problem });
+        else proposals.push(result.data);
+      }
     }
     proposals.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id));
     return { proposals, unreadable };
@@ -134,9 +169,12 @@ export class ProposalStore {
     });
     if (problems.length > 0) throw new WorkflowError("invalid", "every option must be the design system's own", problems);
     const at = this.now();
-    const id = (this.options.newId ?? (() => `p-${randomBytes(5).toString("hex")}`))();
+    if (input.for !== undefined && !REQUEST_ID.test(input.for)) throw new WorkflowError("bad-request", "for is r-<10 hex>");
+    const id = input.for ? `p-${input.for.slice(2)}` : (this.options.newId ?? (() => `p-${randomBytes(5).toString("hex")}`))();
+    // One proposal answers a request: a person may already be deciding it.
+    if (input.for && existsSync(this.file(id))) throw new WorkflowError("conflict", `options for ${input.for} are already on the canvas (${id})`);
     const options = input.options.map((option, i) => ({ ...option, id: OPTION_IDS[i]! }));
-    return this.write({ schema: "youi.proposal/v1", id, project: this.project, route: input.route, target: input.target, ask, author: authorOf(actor), createdAt: at, updatedAt: at, options, status: "open" });
+    return this.write({ schema: "youi.proposal/v1", id, project: this.project, route: input.route, target: input.target, ask, author: authorOf(actor), createdAt: at, updatedAt: at, options, status: "open", ...(input.for ? { for: input.for } : {}) });
   }
 
   /** A person picks one option, or dismisses them all; an agent never decides. */
