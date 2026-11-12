@@ -23,8 +23,8 @@ describe("consent and the probe's own address", () => {
   const consent = (base: unknown, allowedOrigin?: unknown) => behaviourConsent({ base, ...(allowedOrigin === undefined ? {} : { behaviour: { allowedOrigin } }) });
 
   test("consent holds only for the exact origin of base, on this machine, over http", () => {
-    expect(consent("http://localhost:5173/app", "http://localhost:5173")).toEqual({ ok: true, origin: "http://localhost:5173" });
-    expect(consent("http://[::1]:3000", "http://[::1]:3000")).toEqual({ ok: true, origin: "http://[::1]:3000" });
+    expect(consent("http://localhost:5173/app", "http://localhost:5173")).toEqual({ ok: true, origin: "http://localhost:5173", generation: 0 });
+    expect(consent("http://[::1]:3000", "http://[::1]:3000")).toEqual({ ok: true, origin: "http://[::1]:3000", generation: 0 });
     // No consent: the words people see, and how to switch it on.
     const none = consent("http://127.0.0.1:5173");
     expect(none).toMatchObject({ ok: false, why: expect.stringMatching(/^Probes click buttons that open menus and dialogs in your running app\. Use a dev app with test data\./) });
@@ -48,7 +48,11 @@ describe("consent and the probe's own address", () => {
     const spec = { project: "x", base: "http://localhost:5173", behaviour: { allowedOrigin: "http://localhost:5173" } };
     expect(withBase(spec, "http://localhost:5173/other")).toEqual({ ...spec, base: "http://localhost:5173/other" });
     const moved = withBase(spec, "http://localhost:6006");
-    expect(moved).toEqual({ project: "x", base: "http://localhost:6006" });
+    // Switched off, one generation on: a probe that began under the old consent can tell.
+    expect(moved).toEqual({ project: "x", base: "http://localhost:6006", behaviour: { generation: 1 } });
+    expect(withBase({ ...spec, behaviour: { allowedOrigin: "http://localhost:5173", generation: 7 } }, "http://localhost:6006").behaviour).toEqual({ generation: 8 });
+    expect(withBase({ project: "x", behaviour: { generation: 2 } }, "http://localhost:6006").behaviour).toEqual({ generation: 2 });
+    expect(behaviourConsent({ base: "http://localhost:6006", behaviour: { generation: 2 } })).toMatchObject({ ok: false, why: expect.stringMatching(/Probing isn't switched on/) });
     // Even if a block survived a move (an old youiyoux, a hand edit), it is checked against the origin.
     expect(behaviourConsent({ ...spec, base: "http://localhost:6006" }).ok).toBe(false);
   });

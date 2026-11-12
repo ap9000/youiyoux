@@ -13,13 +13,13 @@ export const SIGN_IN_FIX = "Next: probe screens that work signed out; signed-in 
 /** The only methods a probed page may send; anything else is stopped before it leaves. */
 export const SAFE_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD", "OPTIONS"]);
 
-export type Consent = { readonly ok: true; readonly origin: string } | { readonly ok: false; readonly why: string; readonly fix: string };
+export type Consent = { readonly ok: true; readonly origin: string; readonly generation: number } | { readonly ok: false; readonly why: string; readonly fix: string };
 
 const switchOn = (origin: string | null): string =>
   `Next: switch probing on in the hub's Behaviour tab, or add "behaviour": { "allowedOrigin": "${origin ?? "<the origin of base>"}" } to .youi/screens/screens.json.`;
 
 /** The exact origin of `base` when it is an http address on this machine; else why not. */
-export function probeOrigin(base: unknown): Consent {
+export function probeOrigin(base: unknown): { readonly ok: true; readonly origin: string } | { readonly ok: false; readonly why: string; readonly fix: string } {
   if (typeof base !== "string" || !base) return { ok: false, why: "screens.json does not say where the app runs", fix: "Next: capture again with youiyoux screens capture --base <url of the app in development>." };
   let url: URL;
   try {
@@ -38,25 +38,36 @@ export function probeOrigin(base: unknown): Consent {
 /**
  * Whether `screens.json` consents to probing now: its `behaviour.allowedOrigin` must be exactly the
  * origin of its current `base`, and that origin on this machine. The field being there is never
- * enough: a capture that moves `base` elsewhere leaves no consent.
+ * enough: a capture that moves `base` elsewhere leaves no consent. With it, the consent's
+ * generation, which a running probe compares before every click.
  */
 export function behaviourConsent(spec: { readonly base?: unknown; readonly behaviour?: unknown }): Consent {
-  if (spec.behaviour === undefined) {
+  const off = (): Consent => {
     const at = probeOrigin(spec.base);
     return { ok: false, why: `${CONSENT_WORDS} Probing isn't switched on for this app.`, fix: switchOn(at.ok ? at.origin : null) };
-  }
+  };
+  if (spec.behaviour === undefined) return off();
   const consent = BehaviourConsent.safeParse(spec.behaviour);
   if (!consent.success) return { ok: false, why: `${CONSENT_WORDS} screens.json's behaviour block isn't { "allowedOrigin": "<origin>" }, so probing isn't switched on.`, fix: switchOn(null) };
+  if (consent.data.allowedOrigin === undefined) return off();
   const at = probeOrigin(spec.base);
   if (!at.ok) return at;
   if (consent.data.allowedOrigin !== at.origin)
     return { ok: false, why: `${CONSENT_WORDS} Probing was switched on for ${consent.data.allowedOrigin}, but the app now runs at ${at.origin}.`, fix: switchOn(at.origin) };
-  return at;
+  return { ok: true, origin: at.origin, generation: consent.data.generation };
+}
+
+/** The consent block after a switch: on for `origin`, or off (null); either way one generation on. */
+export function switchedConsent(behaviour: unknown, origin: string | null): { allowedOrigin?: string; generation: number } {
+  const was = BehaviourConsent.safeParse(behaviour);
+  const generation = (was.success ? was.data.generation : 0) + 1;
+  return origin === null ? { generation } : { allowedOrigin: origin, generation };
 }
 
 /**
  * `spec` with a new `base`. Consent to probe is bound to an origin, so it is kept only when the new
- * base is on the origin it names; on any other it is dropped, and probing must be switched on again.
+ * base is on the origin it names; on any other it is switched off (one generation on), and probing
+ * must be switched on again.
  */
 export function withBase<T extends { readonly base?: unknown; readonly behaviour?: unknown }>(spec: T, base: string): T & { base: string } {
   const { behaviour, ...rest } = spec;
@@ -68,7 +79,8 @@ export function withBase<T extends { readonly base?: unknown; readonly behaviour
   } catch {
     // An unreadable base keeps no consent.
   }
-  return (consent.success && consent.data.allowedOrigin === origin ? { ...spec, base } : { ...rest, base }) as T & { base: string };
+  if (consent.success && (consent.data.allowedOrigin === undefined || consent.data.allowedOrigin === origin)) return { ...spec, base };
+  return { ...rest, base, behaviour: switchedConsent(behaviour, null) } as unknown as T & { base: string };
 }
 
 /** A screen's address on the consented origin; a path that leads anywhere else is refused. */

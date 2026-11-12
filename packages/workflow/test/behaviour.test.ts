@@ -42,16 +42,42 @@ const refusal = async (promise: Promise<unknown>): Promise<string> => {
 };
 
 describe("consent", () => {
-  test("switching probing on binds it to the origin of base, keeps the rest of screens.json, and off removes it", async () => {
+  test("switching probing on binds it to the origin of base, keeps the rest of screens.json, and off takes it away; every switch is a new generation", async () => {
     const root = product("on-off", { base: "http://localhost:5173/app", note: "kept" });
     expect(await setBehaviourConsent(root, true)).toEqual({ allowedOrigin: "http://localhost:5173" });
-    expect(screensOf(root)).toMatchObject({ base: "http://localhost:5173/app", note: "kept", behaviour: { allowedOrigin: "http://localhost:5173" } });
+    expect(screensOf(root)).toMatchObject({ base: "http://localhost:5173/app", note: "kept", behaviour: { allowedOrigin: "http://localhost:5173", generation: 1 } });
     expect(await setBehaviourConsent(root, false)).toEqual({ allowedOrigin: null });
-    expect(screensOf(root)).not.toHaveProperty("behaviour");
+    expect(screensOf(root).behaviour).toEqual({ generation: 2 });
     expect(screensOf(root).note).toBe("kept");
+    // Back on is not the consent it was: a probe that began under generation 1 can tell.
+    await setBehaviourConsent(root, true);
+    expect(screensOf(root).behaviour).toEqual({ allowedOrigin: "http://localhost:5173", generation: 3 });
     // Never for an app that isn't on this machine, or with nowhere to point it.
     expect(await refusal(setBehaviourConsent(product("remote", { base: "http://example.com" }), true))).toMatch(/on this machine only/);
     expect(await refusal(setBehaviourConsent(product("nobase"), true))).toMatch(/does not say where the app runs/);
+  });
+
+  test("screens.json writers take turns under one lock; a dead or abandoned holder's lock is broken", async () => {
+    const root = product("locked", { base: "http://localhost:5173" });
+    const lock = join(root, ".youi/screens/screens.json.lock");
+    // A live holder (this process): the write waits until it lets go.
+    writeFileSync(lock, `${process.pid} ${Date.now()} held`);
+    let done = false;
+    const waiting = setBehaviourConsent(root, true).then(() => (done = true));
+    await new Promise((r) => setTimeout(r, 300));
+    expect(done).toBe(false);
+    expect(screensOf(root)).not.toHaveProperty("behaviour");
+    rmSync(lock);
+    await waiting;
+    expect(screensOf(root).behaviour).toEqual({ allowedOrigin: "http://localhost:5173", generation: 1 });
+    // A holder that is gone, or one that has held it far too long, is broken and the write goes on.
+    writeFileSync(lock, `999999999 ${Date.now()} dead`);
+    await setBehaviourConsent(root, false);
+    expect(screensOf(root).behaviour).toEqual({ generation: 2 });
+    writeFileSync(lock, `${process.pid} ${Date.now() - 60_000} abandoned`);
+    await setBehaviourConsent(root, true);
+    expect(screensOf(root).behaviour).toEqual({ allowedOrigin: "http://localhost:5173", generation: 3 });
+    expect(existsSync(lock)).toBe(false);
   });
 
   test("probing is refused, before any browser opens: no consent, consent for another origin, a base off this machine, a path off the app", async () => {
@@ -102,7 +128,7 @@ describe("the service write", () => {
     expect(JSON.parse(readFileSync(file, "utf8"))).not.toHaveProperty("behaviour");
     const on = await call({ "x-youi-session": KEY, origin: "http://localhost:4000" }, { allow: true });
     expect(on).toEqual({ status: 200, json: { allowedOrigin: "http://localhost:5173" } });
-    expect(JSON.parse(readFileSync(file, "utf8")).behaviour).toEqual({ allowedOrigin: "http://localhost:5173" });
+    expect(JSON.parse(readFileSync(file, "utf8")).behaviour).toEqual({ allowedOrigin: "http://localhost:5173", generation: 1 });
     expect((await call({ "x-youi-session": KEY }, { allow: false })).json).toEqual({ allowedOrigin: null });
   });
 });
@@ -146,6 +172,9 @@ describe.skipIf(!HAVE_CHROMIUM)("probing a running app", () => {
   const requests: string[] = [];
   /** Set by a test: what the app does to screens.json when its menu is opened (as a person switching probing off mid-run). */
   let onOpen: (() => void) | null = null;
+  /** Loads of /revoke-on-second-load, and what the second one does. */
+  let loads = 0;
+  let onSecondLoad: (() => void) | null = null;
   /** Another server on this machine (B): nothing a probe does may reach it. */
   let elsewhere: { origin: string; requests: string[]; server: Server } | null = null;
   const MENU = (name: string, id: string) =>
@@ -160,7 +189,8 @@ describe.skipIf(!HAVE_CHROMIUM)("probing a running app", () => {
       }
       // /hostile: a page whose React-looking fiber names a module on another server (B), as a hostile or confused page can.
       const hostile = `${MENU("Actions", "h1")}<script>const b = document.querySelector("button"); b["__reactFiber$x"] = { tag: 5, type: "button", _debugStack: { stack: "Error\\n    at Menu (${elsewhere?.origin}/src/menu.js:1:1)" }, return: { tag: 0, type: function Menu() {}, return: null } };</script>`;
-      const body = req.url === "/menu" ? MENU("Actions", "m1") : req.url === "/two" ? MENU("First", "a") + MENU("Second", "b") : req.url === "/hostile" ? hostile : req.url === "/" ? "<p>home</p>" : null;
+      if (req.url === "/revoke-on-second-load" && ++loads === 2) onSecondLoad?.();
+      const body = req.url === "/revoke-on-second-load" ? MENU("Again", "r1") : req.url === "/never" ? `<button aria-haspopup="menu" aria-controls="nope" onclick="new Image().src='/opened'">Never</button>` : req.url === "/menu" ? MENU("Actions", "m1") : req.url === "/two" ? MENU("First", "a") + MENU("Second", "b") : req.url === "/hostile" ? hostile : req.url === "/" ? "<p>home</p>" : null;
       if (body === null) return void res.writeHead(404).end();
       res.writeHead(200, { "content-type": "text/html" }).end(`<!doctype html><meta charset="utf-8"><body>${body}</body>`);
     });
@@ -197,15 +227,59 @@ describe.skipIf(!HAVE_CHROMIUM)("probing a running app", () => {
     expect(await readBehaviourRun(root, "/menu")).toEqual(run);
   }, 60_000);
 
-  test("consent is asked again before every scenario: switched off mid-run, the rest stops", async () => {
+  test("consent is asked again before every scenario: switched off mid-run by another process, the rest stops", async () => {
     const root = product("mid-run", { base, behaviour: { allowedOrigin: base } }, [{ route: "/two", path: "/two" }]);
-    onOpen = () => void setBehaviourConsent(root, false);
+    // Another process's write: no in-process cancel, only what the file says.
+    onOpen = () => writeFileSync(join(root, ".youi/screens/screens.json"), JSON.stringify({ ...screensOf(root), behaviour: { generation: 1 } }));
     try {
       const { run } = await probeBehaviour({ root, route: "/two", browser, checks: CHECKS, fingerprint: FINGERPRINT });
       expect(run.results.map((r) => r.why)).toEqual([expect.stringMatching(/opened and was identified/), "probing was switched off, or the app moved, during the run, so probing stopped"]);
     } finally {
       onOpen = null;
     }
+  }, 60_000);
+
+  test("consent is read again immediately before the click: switched off and on again during the load, nothing is clicked", async () => {
+    const root = product("pre-click", { base, behaviour: { allowedOrigin: base, generation: 4 } }, [{ route: "/revoke-on-second-load", path: "/revoke-on-second-load" }]);
+    loads = 0;
+    // The scenario's own load (the second, after discovery's) switches consent off and on again, as another process could.
+    onSecondLoad = () => writeFileSync(join(root, ".youi/screens/screens.json"), JSON.stringify({ ...screensOf(root), behaviour: { allowedOrigin: base, generation: 6 } }));
+    const clicks = requests.filter((r) => r === "GET /opened").length;
+    try {
+      const { run } = await probeBehaviour({ root, route: "/revoke-on-second-load", browser, checks: CHECKS, fingerprint: FINGERPRINT });
+      expect(run.results.map((r) => r.why)).toEqual(["probing was switched off, or the app moved, during the run, so probing stopped"]);
+    } finally {
+      onSecondLoad = null;
+    }
+    expect(loads).toBe(2);
+    expect(requests.filter((r) => r === "GET /opened").length).toBe(clicks);
+  }, 60_000);
+
+  test("switching probing off cancels a scenario that is running, at once", async () => {
+    const root = product("cancel", { base, behaviour: { allowedOrigin: base } }, [{ route: "/never", path: "/never" }]);
+    onOpen = () => void setBehaviourConsent(root, false);
+    try {
+      const started = Date.now();
+      const { run } = await probeBehaviour({ root, route: "/never", browser, checks: CHECKS, fingerprint: FINGERPRINT });
+      // Without the cancel it would wait out the 2 s open budget and say nothing opened.
+      expect(run.results.map((r) => r.why)).toEqual(["probing was switched off, or the app moved, during the run, so probing stopped"]);
+      expect(Date.now() - started).toBeLessThan(10_000);
+    } finally {
+      onOpen = null;
+    }
+  }, 60_000);
+
+  test("a capture never writes back an old snapshot: consent switched off while it runs stays off", async () => {
+    const root = product("capture-race", { base, behaviour: { allowedOrigin: base, generation: 1 } }, [{ route: "/", path: "/" }]);
+    // Between capture's read of screens.json and its write, the person switches probing off.
+    await captureScreens(join(root, ".youi/screens"), { base, browser, beforeWrite: async () => void (await setBehaviourConsent(root, false)) });
+    expect(screensOf(root).behaviour).toEqual({ generation: 2 });
+    expect(screensOf(root).capturedAt).not.toBe("");
+    expect(await refusal(probeBehaviour({ root, route: "/", browser: NO_BROWSER, checks: CHECKS, fingerprint: FINGERPRINT }))).toMatch(/Probing isn't switched on/);
+    // Without a race, a capture on the same origin keeps consent as it is.
+    await setBehaviourConsent(root, true);
+    await captureScreens(join(root, ".youi/screens"), { base, browser });
+    expect(screensOf(root).behaviour).toEqual({ allowedOrigin: base, generation: 3 });
   }, 60_000);
 
   test("file and line come only from the consented origin: a base moved to B mid-run, and frames naming B, fetch nothing from B", async () => {
@@ -237,7 +311,7 @@ describe.skipIf(!HAVE_CHROMIUM)("probing a running app", () => {
     const root = product("moved", { base: "http://127.0.0.1:1", behaviour: { allowedOrigin: "http://127.0.0.1:1" } }, [{ route: "/", path: "/" }]);
     await captureScreens(join(root, ".youi/screens"), { base, browser });
     expect(screensOf(root).base).toBe(base);
-    expect(screensOf(root)).not.toHaveProperty("behaviour");
+    expect(screensOf(root).behaviour).toEqual({ generation: 1 });
     expect(await refusal(probeBehaviour({ root, route: "/", browser: NO_BROWSER, checks: CHECKS, fingerprint: FINGERPRINT }))).toMatch(/Probing isn't switched on/);
   }, 60_000);
 });

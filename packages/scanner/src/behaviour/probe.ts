@@ -20,7 +20,7 @@ import { startFence, type FenceRefusal } from "./fence.ts";
 import { describeUrl, requestVerdict, screenUrl } from "./guards.ts";
 import { ambiguousWords, withOrdinals, type TargetKey } from "./identity.ts";
 import { findTargetsInPage, identifyPopupInPage, PROBE_INIT_SCRIPT, showingPopupsInPage, signInFormInPage, type ContractBinding, type FoundTarget, type PopupFound, type TargetsInPage } from "./in-page.ts";
-import { infoFromEvents, openAndIdentify, openScreen, type GuardEvent, type ProbePage, type ScenarioOutcome, type Stop } from "./scenario.ts";
+import { infoFromEvents, openAndIdentify, openScreen, SWITCHED_OFF, type GuardEvent, type ProbePage, type ScenarioOutcome, type Stop } from "./scenario.ts";
 
 export interface ProbeBudgets {
   /** Targets tested per route; the rest are named as untested. */
@@ -56,8 +56,10 @@ export interface ProbeRouteOptions {
   readonly checks: readonly BehaviourCheckId[];
   readonly bindings?: readonly ContractBinding[];
   readonly budgets?: Partial<ProbeBudgets>;
-  /** Asked before every scenario: null while probing is still allowed, else why it isn't. */
+  /** Asked before every scenario and immediately before every click: null while probing is still allowed, else why it isn't. */
   readonly stillAllowed?: () => Promise<Stop | null>;
+  /** Aborted when probing is switched off: the scenario running now is closed, and the rest are not run. */
+  readonly signal?: AbortSignal;
 }
 
 export type TargetScenario = { readonly check: BehaviourCheckId } & (ScenarioOutcome | { readonly state: "not-applicable"; readonly why: string; readonly fix: string; readonly info: readonly string[] });
@@ -342,6 +344,7 @@ export async function probeRoute(options: ProbeRouteOptions): Promise<RouteProbe
         const skip = (stop: Stop): void => void scenarios.push({ check, state: "incomplete", ...stop, info: [] });
         if (n >= budgets.targets) skip(untestedWords("targets", budgets));
         else if (ambiguous) skip(ambiguousWords(key, keyed.filter((k) => k.ambiguous && k.pattern === key.pattern && k.component === key.component && k.accessibleName === key.accessibleName).length));
+        else if (options.signal?.aborted) skip((refusedFrom = SWITCHED_OFF));
         else if (refusedFrom) skip(refusedFrom);
         else if (Date.now() >= routeDeadline) skip(untestedWords("time", budgets));
         else if ((refusedFrom = (await options.stillAllowed?.()) ?? null)) skip(refusedFrom);
@@ -365,13 +368,18 @@ async function scenario(guarded: GuardedContext, start: string, options: ProbeRo
   const deadline = (): number => clock.deadline;
   const page = await guarded.page(start, { bindings, budgets, deadline, loaded: () => void (clock.deadline = Math.min(routeDeadline, Date.now() + budgets.scenarioMs)) });
   const popup = typeof found.via === "object" ? (bindings[found.via.contract]?.binding.popup ?? null) : null;
+  // Switched off while it runs: the page is closed at once, whatever it was doing.
+  const cancel = (): void => void page.close();
+  options.signal?.addEventListener("abort", cancel, { once: true });
   try {
-    return await openAndIdentify(page, { start, origin: options.origin, wanted: key, popup, deadline, budgets: { openMs: budgets.openMs, pollMs: POLL_MS, graceMs: GRACE_MS } });
+    return await openAndIdentify(page, { start, origin: options.origin, wanted: key, popup, deadline, budgets: { openMs: budgets.openMs, pollMs: POLL_MS, graceMs: GRACE_MS }, ...(options.stillAllowed ? { beforeClick: options.stillAllowed } : {}), ...(options.signal ? { signal: options.signal } : {}) });
   } catch (error: unknown) {
     const info = infoFromEvents(page.events());
+    if (options.signal?.aborted) return { state: "incomplete", ...SWITCHED_OFF, info };
     if (error instanceof TimeUp) return { state: "incomplete", why: Date.now() >= routeDeadline ? untestedWords("time", budgets).why.replace("not tested: ", "stopped: ") : `ran out of time: a scenario has ${Math.round(budgets.scenarioMs / 1000)} s once the screen is open`, fix: "Next: make sure the dev server is idle, then run the probe again.", info };
     return { state: "error", why: `the probe failed: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}`, fix: "Next: run the probe again; if it fails again, report it with the screen's route.", info };
   } finally {
+    options.signal?.removeEventListener("abort", cancel);
     await page.close();
   }
 }

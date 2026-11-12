@@ -213,7 +213,9 @@ describe("behaviour rules (slice 0: contracts)", () => {
     expect(BehaviourRouteRun.safeParse({ ...run, state: "incomplete" }).success).toBe(false);
     expect(BehaviourRouteRun.safeParse({ ...run, state: "incomplete", why: "it needs a sign-in", fix: "Next: probe another screen.", results: [] }).success).toBe(true);
     expect(BehaviourRouteRun.safeParse({ ...run, why: "x", fix: "y" }).success).toBe(false);
-    expect(BehaviourConsent.safeParse({ allowedOrigin: "http://localhost:5173" }).success).toBe(true);
+    expect(BehaviourConsent.parse({ allowedOrigin: "http://localhost:5173" })).toEqual({ allowedOrigin: "http://localhost:5173", generation: 0 });
+    expect(BehaviourConsent.parse({ generation: 3 })).toEqual({ generation: 3 });
+    expect(BehaviourConsent.safeParse({ allowedOrigin: "http://localhost:5173", generation: -1 }).success).toBe(false);
     expect(BehaviourConsent.safeParse({ allowedOrigin: "http://localhost:5173", routes: [] }).success).toBe(false);
     expect(BehaviourConsent.safeParse(true).success).toBe(false);
   });

@@ -50,6 +50,9 @@ export type ScenarioOutcome =
 
 const NOTHING_SENT = "Nothing was sent, and nothing was decided.";
 
+/** Why a probe stops when its consent goes away (or changes) during the run. */
+export const SWITCHED_OFF: Stop = { why: "probing was switched off, or the app moved, during the run, so probing stopped", fix: "Next: switch probing on again if you meant to, and run the probe again." };
+
 /** Why the guards' events stop a scenario, if they do: anything refused but a socket, and other origins only once the trigger was clicked. */
 export function stopFromEvents(events: readonly GuardEvent[]): Stop | null {
   const stop = events.find((e) => e.kind !== "socket" && (e.kind !== "origin" || e.phase === "act"));
@@ -115,9 +118,24 @@ export interface Budgets {
  * Open the screen fresh, find `wanted` again, click its trigger, identify the popup. Every stop is
  * `incomplete` with its reason; nothing here ever passes a check.
  */
-export async function openAndIdentify(page: ProbePage, args: { readonly start: string; readonly origin: string; readonly wanted: TargetKey; readonly popup: PartRef | null; readonly deadline: () => number; readonly budgets: Budgets }): Promise<ScenarioOutcome> {
+export async function openAndIdentify(
+  page: ProbePage,
+  args: {
+    readonly start: string;
+    readonly origin: string;
+    readonly wanted: TargetKey;
+    readonly popup: PartRef | null;
+    readonly deadline: () => number;
+    readonly budgets: Budgets;
+    /** Asked immediately before the click: null while probing is still allowed, else why not (nothing is clicked). */
+    readonly beforeClick?: () => Promise<Stop | null>;
+    /** Aborted when probing is switched off while the scenario runs. */
+    readonly signal?: AbortSignal;
+  },
+): Promise<ScenarioOutcome> {
   const { start, origin, wanted, deadline, budgets } = args;
   const incomplete = (stop: Stop): ScenarioOutcome => ({ state: "incomplete", ...stop, info: infoFromEvents(page.events()) });
+  const cancelled = (): Stop | null => (args.signal?.aborted ? SWITCHED_OFF : null);
   const opened = await openScreen(page, start, origin);
   if (opened) return incomplete(opened);
   const found = await page.findTargets();
@@ -125,6 +143,10 @@ export async function openAndIdentify(page: ProbePage, args: { readonly start: s
   if (match.state === "ambiguous") return incomplete(ambiguousWords(wanted, match.count));
   if (match.state === "missing") return incomplete({ why: `the button '${wanted.accessibleName || "(no name)"}' wasn't on the screen when it was opened again`, fix: "Next: run the probe again; a button that shows only after something else happens isn't probed yet." });
   await page.markShowing(wanted.pattern);
+  // Consent is read again at the last moment: switched off, moved or switched again since the run
+  // began (another generation), and nothing is clicked.
+  const refused = cancelled() ?? (await args.beforeClick?.()) ?? cancelled();
+  if (refused) return incomplete(refused);
   page.acting();
   try {
     await page.click(match.index, Math.max(1, deadline() - Date.now()));
@@ -137,7 +159,7 @@ export async function openAndIdentify(page: ProbePage, args: { readonly start: s
   const end = deadline();
   const until = Math.min(end, clicked + budgets.openMs);
   for (;;) {
-    const stopped = stopFromEvents(page.events()) ?? moved(start, await page.location(), origin);
+    const stopped = cancelled() ?? stopFromEvents(page.events()) ?? moved(start, await page.location(), origin);
     if (stopped) return incomplete(stopped);
     const popup = await page.identify(match.index, wanted.pattern, args.popup);
     if (popup.state === "open") {

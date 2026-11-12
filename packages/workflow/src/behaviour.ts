@@ -13,7 +13,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { lstat, mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { BEHAVIOUR_ROUTE_SCHEMA, BehaviourRouteRun, EVIDENCE_PATH, writeFileAtomic, type BehaviourCheckId, type BehaviourResult, type BehaviourTarget } from "@youiyoux/core";
-import { behaviourConsent, probeOrigin, probeRoute, readScreensSpec, screenUrl, type ContractBinding, type ProbeBudgets, type ProbeRouteOptions, type RouteProbe, type ScreensSpec } from "@youiyoux/scanner";
+import { behaviourConsent, probeOrigin, probeRoute, readScreensSpec, screenUrl, switchedConsent, SWITCHED_OFF, updateScreensSpec, type ContractBinding, type ProbeBudgets, type ProbeRouteOptions, type RouteProbe, type ScreensSpec } from "@youiyoux/scanner";
 import { LiveApp } from "./live.ts";
 import { WorkflowError } from "./policy.ts";
 
@@ -127,27 +127,36 @@ function readSpec(root: string): ScreensSpec {
   }
 }
 
+/** Probes running in this process, by the real root of the product they probe: switching consent cancels them. */
+const running = new Map<string, Set<AbortController>>();
+
 /**
  * Switch behaviour probes on (consent bound to the origin of screens.json's current `base`, never
- * one a caller names) or off. The service's authenticated write; the file is replaced atomically.
+ * one a caller names) or off. The service's authenticated write: under screens.json's lock, on the
+ * file as it is now, only the `behaviour` block changed (one generation on), replaced atomically.
+ * Any probe of this product running in this process stops at once; one in another process stops
+ * before its next click, when it reads the new generation.
  */
 export async function setBehaviourConsent(root: string, allow: boolean): Promise<{ readonly allowedOrigin: string | null }> {
-  const file = await youiPath(root, `${SCREENS}/screens.json`, "read").catch((error: unknown) => {
+  await youiPath(root, `${SCREENS}/screens.json`, "read").catch((error: unknown) => {
     if (error instanceof WorkflowError && error.code === "not-found") throw new WorkflowError("conflict", "no screens are captured yet: youiyoux screens capture --base <url> takes them and records where the app runs");
     throw error;
   });
-  readSpec(root);
-  const raw = JSON.parse(await readFile(file, "utf8")) as Record<string, unknown>;
-  if (!allow) {
-    delete raw.behaviour;
-    await writeFileAtomic(file, `${JSON.stringify(raw, null, 2)}\n`);
-    return { allowedOrigin: null };
+  let allowedOrigin: string | null = null;
+  try {
+    await updateScreensSpec(join(await realpath(root), SCREENS), (now) => {
+      if (!allow) return { ...now, behaviour: switchedConsent(now.behaviour, null) };
+      const at = probeOrigin(now.base);
+      if (!at.ok) throw new WorkflowError("conflict", `${at.why}. ${at.fix}`);
+      allowedOrigin = at.origin;
+      return { ...now, behaviour: switchedConsent(now.behaviour, at.origin) };
+    });
+  } catch (error: unknown) {
+    if (error instanceof WorkflowError) throw error;
+    throw new WorkflowError("invalid", error instanceof Error ? error.message : String(error));
   }
-  const at = probeOrigin(raw.base);
-  if (!at.ok) throw new WorkflowError("conflict", `${at.why}. ${at.fix}`);
-  raw.behaviour = { allowedOrigin: at.origin };
-  await writeFileAtomic(file, `${JSON.stringify(raw, null, 2)}\n`);
-  return { allowedOrigin: at.origin };
+  for (const probe of running.get(await realpath(root)) ?? []) probe.abort();
+  return { allowedOrigin };
 }
 
 /** Words for a result whose popup opened and was identified, before any check decides anything. */
@@ -172,6 +181,8 @@ export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<Pr
     throw new WorkflowError("forbidden", error instanceof Error ? error.message : String(error));
   }
   const config = digest(JSON.stringify(spec.behaviour)).slice(0, 16);
+  // Asked before every scenario and immediately before every click: the same origin and the same
+  // generation as when the run began, or the rest stops (switched off, moved, or switched again).
   const stillAllowed = async () => {
     let now: Pick<ScreensSpec, "base" | "behaviour">;
     try {
@@ -180,11 +191,20 @@ export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<Pr
       return { why: "screens.json couldn't be read during the run, so probing stopped", fix: "Next: fix screens.json and run the probe again." };
     }
     const still = behaviourConsent(now);
-    if (still.ok && still.origin === consent.origin && digest(JSON.stringify(now.behaviour)).slice(0, 16) === config) return null;
-    return { why: "probing was switched off, or the app moved, during the run, so probing stopped", fix: still.ok ? "Next: run the probe again." : still.fix };
+    return still.ok && still.origin === consent.origin && still.generation === consent.generation ? null : SWITCHED_OFF;
   };
+  const key = await realpath(options.root);
+  const controller = new AbortController();
+  if (!running.has(key)) running.set(key, new Set());
+  running.get(key)!.add(controller);
   const checks = [...new Set(options.checks.map((c) => c.check))];
-  const probe = await probeRoute({ browser: options.browser, origin: consent.origin, route: options.route, path: screen.path, viewport: spec.viewport, checks, ...(options.bindings ? { bindings: options.bindings } : {}), ...(options.budgets ? { budgets: options.budgets } : {}), stillAllowed });
+  let probe: RouteProbe;
+  try {
+    probe = await probeRoute({ browser: options.browser, origin: consent.origin, route: options.route, path: screen.path, viewport: spec.viewport, checks, ...(options.bindings ? { bindings: options.bindings } : {}), ...(options.budgets ? { budgets: options.budgets } : {}), stillAllowed, signal: controller.signal });
+  } finally {
+    running.get(key)?.delete(controller);
+    if (running.get(key)?.size === 0) running.delete(key);
+  }
   // File and line, for display: fetched only from the consented origin (never a base that moved
   // since, never another origin a frame names), no redirects, bounded in size and time.
   const lines = await new LiveApp(options.root, spec.project)

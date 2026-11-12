@@ -140,10 +140,13 @@ export const LOOPBACK_HOSTNAMES: readonly string[] = ["127.0.0.1", "localhost", 
 
 /**
  * `screens.json`'s `behaviour` block: consent to probe, bound to one exact origin (scheme, host and
- * port), never a boolean. It holds only while the origin of `screens.json`'s `base` is that origin
- * and is on this machine; the field being there is never enough (a capture can move `base`).
+ * port), never a boolean. It holds only while `allowedOrigin` is there, the origin of
+ * `screens.json`'s `base` is exactly it, and it is on this machine; the field being there is never
+ * enough (a capture can move `base`). Switched off, the block keeps only its `generation`, which
+ * every switch (on, off, or consent dropped by a move) raises by one, so a running probe can tell
+ * that consent changed under it, even if it was switched back on.
  */
-export const BehaviourConsent = z.object({ allowedOrigin: z.string().min(1).max(200) }).strict();
+export const BehaviourConsent = z.object({ allowedOrigin: z.string().min(1).max(200).optional(), generation: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(0) }).strict();
 export type BehaviourConsent = z.infer<typeof BehaviourConsent>;
 
 export const BEHAVIOUR_ROUTE_SCHEMA = "youiyoux.behaviour/v1";

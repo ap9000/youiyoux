@@ -21,6 +21,7 @@ import type { Browser, Page } from "playwright-core";
 import { writeFileAtomic } from "@youiyoux/core";
 import { locateInPage, mapNotes, MAX_PLACES, resolvePlaces, whyNoLines, type Place } from "./locate.ts";
 import { withBase } from "../behaviour/guards.ts";
+import { updateScreensSpec } from "./spec-file.ts";
 
 export const SCREENS_SCHEMA = "youiyoux.screens/v1";
 export const PLACES_SCHEMA = "youiyoux.places/v1";
@@ -79,6 +80,11 @@ export function readScreensSpec(dir: string): ScreensSpec {
   } catch (error: unknown) {
     throw new Error(`cannot read ${file}: ${error instanceof Error ? error.message.split("\n")[0] : String(error)}`);
   }
+  return checkScreensSpec(value, file);
+}
+
+/** A parsed screens.json checked as readScreensSpec checks it (`file` names it in the errors). */
+export function checkScreensSpec(value: Partial<ScreensSpec>, file: string): ScreensSpec {
   const valid = value.schema === SCREENS_SCHEMA && typeof value.project === "string" && typeof value.source === "string" && typeof value.viewport?.width === "number" && typeof value.viewport.height === "number" && Array.isArray(value.screens) && value.screens.every((s) => typeof s?.route === "string" && typeof s.path === "string");
   if (!valid) throw new Error(`${file} is not a ${SCREENS_SCHEMA} document: it needs project, source, viewport { width, height } and screens [{ route, path }]`);
   // A path is on the app's own address: `/settings`, never `https://…`, `//host/…` or a backslash a browser reads as a slash.
@@ -105,6 +111,8 @@ export interface CaptureOptions {
   readonly routes?: readonly string[];
   readonly now?: () => Date;
   readonly log?: (line: string) => void;
+  /** Tests: runs after the pages are taken, before screens.json is updated. */
+  readonly beforeWrite?: () => Promise<void>;
 }
 
 export interface ScreenCapture {
@@ -219,9 +227,12 @@ export async function captureScreens(dir: string, options: CaptureOptions): Prom
   const now = (options.now ?? (() => new Date()))().toISOString();
   // capturedAt is the whole set's; a capture of some routes leaves it (each picture's own time is its file's).
   // base is where the app last ran, so one route can be captured again without asking (screens_capture).
-  // A new base on another origin leaves no consent to probe behind (withBase).
-  if (chosen === spec.screens) await writeFileAtomic(join(dir, "screens.json"), `${JSON.stringify({ ...withBase(spec, options.base), capturedAt: now }, null, 2)}\n`);
-  else if (spec.base !== options.base) await writeFileAtomic(join(dir, "screens.json"), `${JSON.stringify(withBase(spec, options.base), null, 2)}\n`);
+  // Only the fields capture owns change (base, and capturedAt for the whole set), on the file as it
+  // is now, under its lock: never this capture's old snapshot of the rest (consent switched off
+  // meanwhile stays off). A new base on another origin switches consent off (withBase).
+  await options.beforeWrite?.();
+  if (chosen === spec.screens) await updateScreensSpec(dir, (current) => ({ ...withBase(current, options.base), capturedAt: now }));
+  else if (spec.base !== options.base) await updateScreensSpec(dir, (current) => withBase(current, options.base));
   const screens = chosen.map((s) => ({ route: s.route, path: s.path, ...(results.get(s.route) ?? { placed: 0, lined: 0, error: "not captured" }) }));
   const placed = screens.reduce((n, s) => n + s.placed, 0);
   const lined = screens.reduce((n, s) => n + s.lined, 0);
