@@ -488,15 +488,24 @@ export async function probeRoute(options: ProbeRouteOptions): Promise<RouteProbe
   try {
     // Discovery: what the screen claims, from its own fresh load.
     let found: readonly FoundTarget[];
+    const switchedOff = (): RouteProbe => ({ url: start, state: "incomplete", ...SWITCHED_OFF, coverage: "Nothing on this screen was probed.", targets: [] });
+    if (options.signal?.aborted) return switchedOff();
     const discovery = await guarded.page(start, { bindings, budgets, deadline: () => routeDeadline });
+    // Switched off while discovering: the page is closed at once, and nothing more happens.
+    const cancel = (): void => void discovery.close();
+    options.signal?.addEventListener("abort", cancel, { once: true });
     try {
       const stop = await openScreen(discovery, start, options.origin);
+      if (options.signal?.aborted) return switchedOff();
       if (stop) return { url: start, state: "incomplete", why: stop.why, fix: stop.fix, coverage: "Nothing on this screen was probed.", targets: [] };
       found = await discovery.findTargets();
+      if (options.signal?.aborted) return switchedOff();
     } catch (error: unknown) {
+      if (options.signal?.aborted) return switchedOff();
       const stop = error instanceof TimeUp ? { why: "the screen took longer to load than the probe's time budget", fix: "Next: make sure the dev server is idle, then run the probe again." } : { why: `the probe couldn't open the screen: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}`, fix: "Next: check the dev server is running, and run the probe again." };
       return { url: start, state: "incomplete", ...stop, coverage: "Nothing on this screen was probed.", targets: [] };
     } finally {
+      options.signal?.removeEventListener("abort", cancel);
       await discovery.close();
     }
     const keyed = withOrdinals(found.map((f) => ({ route: options.route, pattern: f.pattern, component: f.component, accessibleName: f.accessibleName, found: f })));

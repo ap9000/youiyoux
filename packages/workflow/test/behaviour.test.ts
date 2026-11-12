@@ -238,6 +238,7 @@ describe.skipIf(!HAVE_CHROMIUM)("probing a running app", () => {
   const requests: string[] = [];
   /** Set by a test: what the app does to screens.json when its menu is opened (as a person switching probing off mid-run). */
   let onOpen: (() => void) | null = null;
+  let onSlowAsset: (() => void) | null = null;
   /** Loads of /revoke-on-second-load, and what the second one does. */
   let loads = 0;
   let onSecondLoad: (() => void) | null = null;
@@ -249,6 +250,11 @@ describe.skipIf(!HAVE_CHROMIUM)("probing a running app", () => {
   beforeAll(async () => {
     app = createServer((req, res) => {
       requests.push(`${req.method} ${req.url}`);
+      if (req.url === "/slow-asset") {
+        // The screen's load is under way (discovery): the person switches probing off now.
+        onSlowAsset?.();
+        return void setTimeout(() => res.writeHead(200, { "content-type": "image/gif" }).end(), 1_500);
+      }
       if (req.url === "/opened") {
         onOpen?.();
         return void res.writeHead(200, { "content-type": "image/gif" }).end();
@@ -256,7 +262,7 @@ describe.skipIf(!HAVE_CHROMIUM)("probing a running app", () => {
       // /hostile: a page whose React-looking fiber names a module on another server (B), as a hostile or confused page can.
       const hostile = `${MENU("Actions", "h1")}<script>const b = document.querySelector("button"); b["__reactFiber$x"] = { tag: 5, type: "button", _debugStack: { stack: "Error\\n    at Menu (${elsewhere?.origin}/src/menu.js:1:1)" }, return: { tag: 0, type: function Menu() {}, return: null } };</script>`;
       if (req.url === "/revoke-on-second-load" && ++loads === 2) onSecondLoad?.();
-      const body = req.url === "/revoke-on-second-load" ? MENU("Again", "r1") : req.url === "/never" ? `<button aria-haspopup="menu" aria-controls="nope" onclick="new Image().src='/opened'">Never</button>` : req.url === "/menu" ? MENU("Actions", "m1") : req.url === "/fetches" ? MENU("Unread", "f1").replace("new Image().src='/opened';", "fetch('/api/read?id=7').catch(() => {});") : req.url === "/two" ? MENU("First", "a") + MENU("Second", "b") : req.url === "/hostile" ? hostile : req.url === "/" ? "<p>home</p>" : null;
+      const body = req.url === "/revoke-on-second-load" ? MENU("Again", "r1") : req.url === "/never" ? `<button aria-haspopup="menu" aria-controls="nope" onclick="new Image().src='/opened'">Never</button>` : req.url === "/slow-discovery" ? `${MENU("Slow", "s1")}<img src="/slow-asset">` : req.url === "/menu" ? MENU("Actions", "m1") : req.url === "/fetches" ? MENU("Unread", "f1").replace("new Image().src='/opened';", "fetch('/api/read?id=7').catch(() => {});") : req.url === "/two" ? MENU("First", "a") + MENU("Second", "b") : req.url === "/hostile" ? hostile : req.url === "/" ? "<p>home</p>" : null;
       if (body === null) return void res.writeHead(404).end();
       res.writeHead(200, { "content-type": "text/html" }).end(`<!doctype html><meta charset="utf-8"><body>${body}</body>`);
     });
@@ -328,6 +334,20 @@ describe.skipIf(!HAVE_CHROMIUM)("probing a running app", () => {
       onSecondLoad = null;
     }
     expect(loads).toBe(2);
+    expect(requests.filter((r) => r === "GET /opened").length).toBe(clicks);
+  }, 60_000);
+
+  test("switching probing off during discovery stops the run there: nothing is clicked", async () => {
+    const root = product("cancel-discovery", { base, behaviour: { allowedOrigin: base } }, [{ route: "/slow-discovery", path: "/slow-discovery" }]);
+    onSlowAsset = () => void setBehaviourConsent(root, false);
+    const clicks = requests.filter((r) => r === "GET /opened").length;
+    try {
+      const { run } = await probeBehaviour({ root, route: "/slow-discovery", browser, checks: CHECKS, fingerprint: FINGERPRINT });
+      expect(run).toMatchObject({ state: "incomplete", why: "probing was switched off, or the app moved, during the run, so probing stopped", results: [] });
+    } finally {
+      onSlowAsset = null;
+    }
+    expect(requests.filter((r) => r === "GET /slow-discovery")).toHaveLength(1);
     expect(requests.filter((r) => r === "GET /opened").length).toBe(clicks);
   }, 60_000);
 
