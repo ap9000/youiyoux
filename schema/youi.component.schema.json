@@ -322,7 +322,10 @@
                   "properties": {
                     "role": {
                       "type": "string",
-                      "pattern": "^[a-z]{1,32}$"
+                      "enum": [
+                        "button",
+                        "combobox"
+                      ]
                     }
                   },
                   "required": [

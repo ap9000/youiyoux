@@ -169,6 +169,10 @@ describe("behaviour rules (slice 0: contracts)", () => {
     expect(withBinding({ pattern: "menu-button", trigger: { part: "button > .x" } }).success).toBe(false);
     expect(withBinding({ pattern: "menu-button", trigger: { part: "trigger", role: "button" } }).success).toBe(false);
     expect(withBinding({ pattern: "menu-button", trigger: { selector: "#open" } }).success).toBe(false);
+    // A trigger is something that only opens: by role, a button or a combobox, never an item, option, tab or link.
+    expect(withBinding({ pattern: "menu-button", trigger: { role: "button" } }).success).toBe(true);
+    expect(withBinding({ pattern: "combobox-listbox", trigger: { role: "combobox" } }).success).toBe(true);
+    for (const role of ["menuitem", "option", "tab", "link", "menuitemcheckbox"]) expect(withBinding({ pattern: "menu-button", trigger: { role } }).success, role).toBe(false);
     expect(withBinding({ pattern: "modal-dialog", popup: { role: "Dialog" } }).success).toBe(false);
     expect(withBinding({ pattern: "popover", extra: true }).success).toBe(false);
   });
@@ -273,6 +277,7 @@ describe("behaviour rules (slice 0: contracts)", () => {
     const validate = published("youi.component.schema.json");
     expect(validate({ ...minimalContract, a11y: { behaviour: { pattern: "menu-button", trigger: { part: "trigger" }, popup: { role: "menu" } } } })).toBe(true);
     expect(validate({ ...minimalContract, a11y: { behaviour: { pattern: "menu-button", trigger: { part: "button > .x" } } } })).toBe(false);
+    expect(validate({ ...minimalContract, a11y: { behaviour: { pattern: "menu-button", trigger: { role: "menuitem" } } } })).toBe(false);
     expect(validate({ ...minimalContract, a11y: { behaviour: { pattern: "tabs" } } })).toBe(false);
   });
 });

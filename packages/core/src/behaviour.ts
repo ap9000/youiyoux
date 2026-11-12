@@ -37,10 +37,20 @@ export type PartRef = z.infer<typeof PartRef>;
  * A component contract's behaviour binding (`a11y.behaviour`): which pattern it implements, and
  * where its trigger, popup and focus-return parts are. A probe uses it before the DOM's own claims.
  */
+/**
+ * A trigger part: by its `data-part` / `data-slot` value, or by role, and then only `button` or
+ * `combobox`. A probe clicks the trigger, so a binding can never point it at a menu item, an
+ * option, a tab or a link (the probe checks the element itself again before any click).
+ */
+export const TriggerPartRef = z.union([
+  z.object({ part: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/, "expected a data-part or data-slot value (letters, digits, - and _)") }).strict(),
+  z.object({ role: z.enum(["button", "combobox"]) }).strict(),
+]);
+
 export const BehaviourBinding = z
   .object({
     pattern: BehaviourPattern,
-    trigger: PartRef.optional(),
+    trigger: TriggerPartRef.optional(),
     popup: PartRef.optional(),
     /** Where focus goes when the popup closes, when not back to the trigger (e.g. the trigger is removed on close). */
     returnFocusTo: PartRef.optional(),

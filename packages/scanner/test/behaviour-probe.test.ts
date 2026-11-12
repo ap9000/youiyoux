@@ -307,6 +307,7 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
   let app: Fixture;
   let other: Fixture;
   let shuffles = 0;
+  let morph = false;
   const scratch = mkdtempSync(join(tmpdir(), "youi-behave-"));
 
   // Every page reports the clicks and keys it sees back to its server, by a GET (all a probed page may send).
@@ -333,7 +334,9 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
     '  return <span><button data-part="trigger" onClick={() => setOpen(true)}>{label}</button>{open ? createPortal(<div data-part="content">Items</div>, document.body) : null}</span>;',
     "}",
     'function Toolbar() { return <nav><button aria-haspopup="menu" aria-controls="tb" onClick={() => document.getElementById("tb")!.removeAttribute("hidden")}>Tools</button><ul role="menu" id="tb" hidden><li role="menuitem">Cut</li></ul></nav>; }',
-    'createRoot(document.getElementById("root")!).render(<main><Menu label="Account" /><Toolbar /></main>);',
+    // Danger: a component whose parts are a menu item and a link: no binding may make either a trigger.
+    'function Danger() { return <section><ul role="menu"><li role="menuitem" data-log="danger-item" data-part="item">Delete everything</li></ul><a href="/delete" data-part="link" data-log="danger-link">Delete</a><button type="submit" form="f" data-part="submit" data-log="danger-submit">Submit</button><form id="f" action="/submit" method="post"></form></section>; }',
+    'createRoot(document.getElementById("root")!).render(<main><Menu label="Account" /><Toolbar /><Danger /></main>);',
     "",
   ].join("\n");
   let reactBundle = "";
@@ -387,13 +390,40 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
       "/slow-many": () => page(`<button aria-haspopup="menu" aria-controls="x1">One</button><button aria-haspopup="menu" aria-controls="x2">Two</button><button aria-haspopup="menu" aria-controls="x3">Three</button>`),
       "/password": () => page(`<form><input name="u"><input type="password" name="p"></form>${menu("Account", "m12")}`),
       "/login": () => page(`<form><input name="u"><input type="password" name="p"></form>`),
-      "/react": () => `<!doctype html><meta charset="utf-8"><body><div id="root"></div><script type="module" src="/react.js"></script></body>`,
+      "/react": () => `<!doctype html><meta charset="utf-8"><body>${LOGGER}<div id="root"></div><script type="module" src="/react.js"></script></body>`,
+      // Things that claim a popup but aren't launchers, beside one real menu button.
+      "/not-launchers": () =>
+        page(
+          `<form action="/submit" method="post"><button type="submit" aria-expanded="false" aria-controls="p1" data-log="submit">Save</button><button aria-haspopup="menu" aria-controls="p2" data-log="default-submit">In a form</button><input type="submit" aria-haspopup="menu" data-log="input-submit" value="Go"><button type="reset" aria-haspopup="menu" data-log="reset">Reset</button></form>` +
+            `<a href="/elsewhere" aria-haspopup="menu" data-log="link">Link</a><a href="/x"><button aria-haspopup="menu" data-log="button-in-link">In a link</button></a>` +
+            `<div role="menuitem" aria-haspopup="menu" tabindex="0" data-log="menuitem">Item</div><div role="tab" aria-expanded="false" aria-controls="p3" data-log="tab">Tab</div><details><summary aria-haspopup="menu" data-log="summary">More</summary></details>` +
+            `<ul role="menu"><li><button aria-haspopup="menu" data-log="in-open-menu">Submenu</button></li></ul>` +
+            menu("Real", "real"),
+        ),
+      // A menu button that turns into a menu item when the server says so (polled every 50 ms).
+      "/morph": () => page(menu("Morph", "mo"), "setInterval(async () => { if ((await (await fetch('/morph-state')).text()) === 'go') document.querySelector('[data-log=trigger-mo]').setAttribute('role', 'menuitem'); }, 50);"),
+      // A page that rewrites the DOM APIs of its own world to make a span look like the only menu button.
+      "/forged": () =>
+        page(
+          `<span id="evil" data-log="evil">Delete account</span><ul role="menu" id="m-evil" hidden><li>x</li></ul>` + menu("Real", "forged-real").replace("<button ", '<button id="real" '),
+          `const real = Element.prototype.getAttribute;
+           const fake = { role: "button", "aria-haspopup": "menu", "aria-controls": "m-evil" };
+           Element.prototype.getAttribute = function (name) { if (this.id === "evil" && name in fake) return fake[name]; if (this.id === "real" && name === "aria-haspopup") return null; return real.call(this, name); };
+           Element.prototype.hasAttribute = function (name) { return this.getAttribute(name) !== null; };
+           Element.prototype.checkVisibility = function () { return this.id !== "real"; };
+           Element.prototype.matches = function () { return false; };
+           Element.prototype.closest = function () { return null; };
+           const all = Document.prototype.querySelectorAll;
+           Document.prototype.querySelectorAll = function (selector) { return selector === "*" ? [document.getElementById("evil")] : all.call(this, selector); };
+           Object.defineProperty(HTMLButtonElement.prototype, "disabled", { get() { return this.id === "real"; } });`,
+        ),
       "/react.js": () => reactBundle,
     };
     app = await serve((_req, path) => {
       if (path === "/bounce") return { status: 302, body: "", headers: { location: `${OTHER}/stolen` } };
       if (path === "/account") return { status: 302, body: "", headers: { location: "/login?next=/account" } };
       if (path === "/log") return { type: "image/gif", body: "" };
+      if (path === "/morph-state") return { type: "text/plain", body: morph ? "go" : "wait" };
       const body = pages[path];
       return body ? { body: body(), type: path.endsWith(".js") ? "text/javascript" : "text/html" } : null;
     });
@@ -559,5 +589,60 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
     expect(byName.Account!.scenarios[0]).toMatchObject({ state: "opened", popup: { how: "contract" } });
     expect(byName.Tools!.key).toMatchObject({ component: "Toolbar", pattern: "menu-button" });
     expect(byName.Tools!.scenarios[0]).toMatchObject({ state: "opened", popup: { how: "aria-controls" } });
+  }, 60_000);
+
+  test("a binding can't make a menu item, a link or a submit button a trigger: refused, never clicked", async () => {
+    const before = logged("click").length;
+    const hostile = [
+      { component: "Danger", binding: { pattern: "menu-button", trigger: { role: "menuitem" } } },
+      { component: "Danger", binding: { pattern: "menu-button", trigger: { part: "item" } } },
+      { component: "Danger", binding: { pattern: "menu-button", trigger: { part: "link" } } },
+      { component: "Danger", binding: { pattern: "menu-button", trigger: { part: "submit" } } },
+    ] as unknown as ProbeRouteOptions["bindings"];
+    const result = await probe("/react", { bindings: hostile });
+    expect(result.targets.map((t) => t.key.accessibleName).sort()).toEqual(["Tools"]);
+    expect(logged("click").slice(before).filter((c) => c.startsWith("danger"))).toEqual([]);
+    expect(seen(app, "/delete")).toEqual([]);
+    expect(seen(app, "/submit")).toEqual([]);
+  }, 60_000);
+
+  test("only launchers are triggers: submit and reset buttons, a button in a form or a link, links, menu items, tabs, summaries and buttons inside an open menu are never clicked", async () => {
+    const before = logged("click").length;
+    const result = await probe("/not-launchers");
+    expect(result.targets.map((t) => t.key.accessibleName)).toEqual(["Real"]);
+    expect(result.targets[0]!.scenarios[0]).toMatchObject({ state: "opened" });
+    expect(logged("click").slice(before)).toEqual(["trigger-real"]);
+    expect(seen(app, "/submit")).toEqual([]);
+  }, 60_000);
+
+  test("the exact element is checked again immediately before the click: one that stopped being a launcher isn't clicked", async () => {
+    const before = logged("click").length;
+    let asked = 0;
+    morph = false;
+    // Asked before the scenario (1) and immediately before the click (2): at 2, the button turns into a menu item.
+    const stillAllowed = async () => {
+      if (++asked === 2) {
+        morph = true;
+        await new Promise((resolve) => setTimeout(resolve, 400));
+      }
+      return null;
+    };
+    try {
+      const result = await probe("/morph", { stillAllowed, budgets: { settleMs: 300 } });
+      expect(asked).toBe(2);
+      expect(result.targets[0]!.scenarios[0]).toMatchObject({ state: "incomplete", why: "the button 'Morph' couldn't be clicked: the element is no longer a button that only opens something" });
+    } finally {
+      morph = false;
+    }
+    expect(logged("click").slice(before)).toEqual([]);
+  }, 60_000);
+
+  test("a page that rewrites its own DOM APIs can't forge a trigger or hide a real one: discovery and the click run in the probe's own world", async () => {
+    const before = logged("click").length;
+    const result = await probe("/forged");
+    expect(result.targets.map((t) => t.key.accessibleName)).toEqual(["Real"]);
+    expect(result.targets[0]!.scenarios[0]).toMatchObject({ state: "opened", popup: { how: "aria-controls" } });
+    // The page's own click logger uses its own patched closest(), so it names the clicked tag: the button, once, never the span.
+    expect(logged("click").slice(before)).toEqual(["button"]);
   }, 60_000);
 });

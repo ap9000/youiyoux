@@ -14,12 +14,14 @@
  * click its trigger only, identify the popup (scenario.ts). Bounded: targets per route, time per
  * scenario and per route; anything over budget is `incomplete` and named.
  */
-import type { Browser, BrowserContext, JSHandle, Page, Request, Route } from "playwright-core";
+import { randomBytes } from "node:crypto";
+import type { Browser, BrowserContext, CDPSession, Page, Request, Route } from "playwright-core";
 import { BEHAVIOUR_CHECKS, type BehaviourCheckId, type BehaviourPattern, type PartRef } from "@youiyoux/core";
 import { startFence, type FenceRefusal } from "./fence.ts";
 import { describeUrl, requestVerdict, screenUrl } from "./guards.ts";
 import { ambiguousWords, withOrdinals, type TargetKey } from "./identity.ts";
-import { findTargetsInPage, identifyPopupInPage, PROBE_INIT_SCRIPT, showingPopupsInPage, signInFormInPage, type ContractBinding, type FoundTarget, type PopupFound, type TargetsInPage } from "./in-page.ts";
+import type { Frame } from "../screens/locate.ts";
+import { contractPopupsInPage, isolatedLibrary, labelsInPage, nominateContractTriggersInPage, PROBE_INIT_SCRIPT, type ClickPoint, type ContractBinding, type FoundTarget, type IsolatedTarget, type PopupFound } from "./in-page.ts";
 import { infoFromEvents, openAndIdentify, openScreen, SWITCHED_OFF, type GuardEvent, type ProbePage, type ScenarioOutcome, type Stop } from "./scenario.ts";
 
 export interface ProbeBudgets {
@@ -213,10 +215,96 @@ interface PageOptions {
   readonly loaded?: () => void;
 }
 
+type CallResult = { result: { value?: unknown; objectId?: string }; exceptionDetails?: { text?: string; exception?: { description?: string } } };
+
+/**
+ * The page's two worlds over CDP: the probe's own isolated world (isolatedLibrary, which decides
+ * everything about clicking) and the page's main world (React's labels and contract nominations).
+ * Elements cross between them by their backend node id, never by anything the page can forge.
+ */
+class Worlds {
+  private readonly cdp: CDPSession;
+  private readonly isolated: number;
+
+  private constructor(cdp: CDPSession, isolated: number) {
+    this.cdp = cdp;
+    this.isolated = isolated;
+  }
+
+  static async open(page: Page): Promise<Worlds> {
+    const cdp = await page.context().newCDPSession(page);
+    const { frameTree } = await cdp.send("Page.getFrameTree");
+    const { executionContextId } = await cdp.send("Page.createIsolatedWorld", { frameId: frameTree.frame.id, worldName: `youiyoux-probe-${randomBytes(6).toString("hex")}`, grantUniveralAccess: false });
+    const worlds = new Worlds(cdp, executionContextId);
+    worlds.check((await cdp.send("Runtime.callFunctionOn", { functionDeclaration: isolatedLibrary.toString(), executionContextId })) as CallResult);
+    return worlds;
+  }
+
+  private check(answer: CallResult): CallResult {
+    if (answer.exceptionDetails) throw new Error(`the probe's own script failed: ${(answer.exceptionDetails.exception?.description ?? answer.exceptionDetails.text ?? "").split("\n")[0]}`);
+    return answer;
+  }
+
+  /** `__youiyoux[method](arg, elements)` in the isolated world; `elements` are isolated-world object ids. */
+  async call<T>(method: "discover" | "markShowing" | "prepareClick" | "clicked" | "identify" | "signInForm", arg: unknown, elements: readonly string[] = []): Promise<T> {
+    const answer = this.check((await this.cdp.send("Runtime.callFunctionOn", { functionDeclaration: `function (arg, ...elements) { return globalThis.__youiyoux.${method}(arg, elements); }`, executionContextId: this.isolated, arguments: [{ value: arg }, ...elements.map((objectId) => ({ objectId }))], returnByValue: true })) as CallResult);
+    return answer.result.value as T;
+  }
+
+  /** The isolated world's element `index` of the last discovery, as an object id there. */
+  async element(index: number): Promise<string | null> {
+    const answer = this.check((await this.cdp.send("Runtime.callFunctionOn", { functionDeclaration: "function (i) { return globalThis.__youiyoux.element(i); }", executionContextId: this.isolated, arguments: [{ value: index }], returnByValue: false })) as CallResult);
+    return answer.result.objectId ?? null;
+  }
+
+  /** The same DOM nodes, as object ids in the other world (main, or the probe's isolated one). */
+  async into(world: "main" | "isolated", objectIds: readonly string[]): Promise<string[]> {
+    const out: string[] = [];
+    for (const objectId of objectIds) {
+      const { node } = await this.cdp.send("DOM.describeNode", { objectId });
+      const { object } = await this.cdp.send("DOM.resolveNode", { backendNodeId: node.backendNodeId, ...(world === "isolated" ? { executionContextId: this.isolated } : {}) });
+      if (object.objectId) out.push(object.objectId);
+    }
+    return out;
+  }
+
+  /** The main world's document, by way of the isolated world's (the page can't stand in for it). */
+  async mainDocument(): Promise<string> {
+    const answer = this.check((await this.cdp.send("Runtime.callFunctionOn", { functionDeclaration: "function () { return document; }", executionContextId: this.isolated, returnByValue: false })) as CallResult);
+    const [document] = await this.into("main", [answer.result.objectId!]);
+    return document!;
+  }
+
+  /** `fn.call(this = objectId, arg)` in the main world: by value, or as object ids of the array it returns. */
+  async main<T>(objectId: string, fn: (...args: never[]) => unknown, arg: unknown): Promise<T> {
+    return this.check((await this.cdp.send("Runtime.callFunctionOn", { functionDeclaration: fn.toString(), objectId, arguments: [{ value: arg }], returnByValue: true })) as CallResult).result.value as T;
+  }
+
+  async mainList(objectId: string, fn: (...args: never[]) => unknown, arg: unknown): Promise<string[]> {
+    const answer = this.check((await this.cdp.send("Runtime.callFunctionOn", { functionDeclaration: fn.toString(), objectId, arguments: [{ value: arg }], returnByValue: false })) as CallResult);
+    return answer.result.objectId ? this.items(answer.result.objectId) : [];
+  }
+
+  /** An array's items (by index), as object ids; numbers come back as their value in `values`. */
+  async items(objectId: string): Promise<string[]> {
+    const { result } = await this.cdp.send("Runtime.getProperties", { objectId, ownProperties: true });
+    return result.filter((p) => /^\d+$/.test(p.name)).sort((a, b) => Number(a.name) - Number(b.name)).map((p) => p.value?.objectId ?? "");
+  }
+
+  async values(objectId: string): Promise<unknown[]> {
+    const { result } = await this.cdp.send("Runtime.getProperties", { objectId, ownProperties: true });
+    return result.filter((p) => /^\d+$/.test(p.name)).sort((a, b) => Number(a.name) - Number(b.name)).map((p) => p.value?.value);
+  }
+
+  async detach(): Promise<void> {
+    await this.cdp.detach().catch(() => undefined);
+  }
+}
+
 /** ProbePage on a Playwright page, every call bounded by the scenario's deadline. */
 class PlaywrightProbePage implements ProbePage {
-  private targets: JSHandle<TargetsInPage> | null = null;
-  private before: JSHandle<Element[]> | null = null;
+  private worldsOpened: Worlds | null = null;
+  private found: readonly FoundTarget[] = [];
 
   private readonly page: Page;
   private readonly log: PageLog;
@@ -234,6 +322,11 @@ class PlaywrightProbePage implements ProbePage {
     return within(promise, this.options.deadline());
   }
 
+  private async worlds(): Promise<Worlds> {
+    this.worldsOpened ??= await this.bound(Worlds.open(this.page));
+    return this.worldsOpened;
+  }
+
   async load(): Promise<{ status: number | null }> {
     const { loadMs, settleMs } = this.options.budgets;
     const timeout = Math.max(1, Math.min(loadMs, this.options.deadline() - Date.now()));
@@ -249,23 +342,51 @@ class PlaywrightProbePage implements ProbePage {
   }
 
   async location(): Promise<string> {
+    // location.href can't be redefined by the page (it is unforgeable).
     return this.bound(this.page.evaluate(() => location.href)).catch((error: unknown) => {
       if (error instanceof TimeUp) throw error;
       return this.page.url();
     });
   }
 
-  signInForm(): Promise<boolean> {
-    return this.bound(this.page.evaluate(signInFormInPage));
+  async signInForm(): Promise<boolean> {
+    return this.bound((await this.worlds()).call<boolean>("signInForm", null));
   }
 
   async findTargets(): Promise<readonly FoundTarget[]> {
-    this.targets = await this.bound(this.page.evaluateHandle(findTargetsInPage, { bindings: [...this.options.bindings], limit: MAX_FOUND, maxFrames: 6 }));
-    return this.bound(this.targets.evaluate((t) => t.found));
+    const worlds = await this.worlds();
+    const { bindings } = this.options;
+    // Contract nominations come from the main world (React's fibers live there); each is checked in the isolated world.
+    const nominated: Array<{ objectId: string; binding: number }> = [];
+    if (bindings.length) {
+      const pairs = await this.bound(worlds.mainList(await this.bound(worlds.mainDocument()), nominateContractTriggersInPage, bindings.map((b) => ({ component: b.component, trigger: b.binding.trigger ?? null }))));
+      for (const pair of pairs) {
+        const [element] = await this.bound(worlds.items(pair));
+        const [, binding] = await this.bound(worlds.values(pair));
+        if (element && typeof binding === "number" && bindings[binding]) nominated.push({ objectId: element, binding });
+      }
+    }
+    const isolated = await this.bound(worlds.into("isolated", nominated.map((n) => n.objectId)));
+    const { found } = await this.bound(worlds.call<{ found: IsolatedTarget[] }>("discover", { limit: MAX_FOUND, nominated: nominated.map((n) => ({ binding: n.binding, pattern: bindings[n.binding]!.binding.pattern })) }, isolated));
+    const labelled: FoundTarget[] = [];
+    for (const [index, target] of found.entries()) {
+      const contract = typeof target.via === "object" ? (bindings[target.via.contract]?.component ?? null) : null;
+      let labels: { component: string | null; frames: Frame[] } = { component: contract, frames: [] };
+      try {
+        const element = await this.bound(worlds.element(index));
+        const [main] = element ? await this.bound(worlds.into("main", [element])) : [];
+        if (main) labels = await this.bound(worlds.main(main, labelsInPage, { component: contract, maxFrames: 6 }));
+      } catch (error: unknown) {
+        if (error instanceof TimeUp) throw error;
+      }
+      labelled.push({ ...target, component: typeof labels.component === "string" ? labels.component : contract, frames: Array.isArray(labels.frames) ? labels.frames : [] });
+    }
+    this.found = labelled;
+    return labelled;
   }
 
   async markShowing(pattern: BehaviourPattern): Promise<void> {
-    this.before = await this.bound(this.page.evaluateHandle(showingPopupsInPage, { pattern }));
+    await this.bound((await this.worlds()).call("markShowing", pattern));
   }
 
   acting(): void {
@@ -273,18 +394,31 @@ class PlaywrightProbePage implements ProbePage {
   }
 
   async click(index: number, timeoutMs: number): Promise<void> {
-    if (!this.targets) throw new Error("no targets were found on this page");
-    const trigger = (await this.bound(this.targets.evaluateHandle((t, i) => t.elements[i]!, index))).asElement();
-    if (!trigger) throw new Error("the button is gone");
-    // A real click on the trigger only: Playwright refuses to click when anything else would get it.
-    await this.bound(trigger.click({ timeout: Math.max(1, timeoutMs) }));
+    const target = this.found[index];
+    if (!target) throw new Error("no such button was found on this page");
+    const worlds = await this.worlds();
+    // The exact element, checked again in the probe's own world, and the point that hits it.
+    const point = await this.bound(worlds.call<ClickPoint>("prepareClick", { index, pattern: target.pattern, accessibleName: target.accessibleName, dom: target.via === "dom" }));
+    if (!point.ok) throw new Error(point.why);
+    await within(this.page.mouse.click(point.x, point.y), Math.min(this.options.deadline(), Date.now() + Math.max(1, timeoutMs)));
+    const landed = await this.bound(worlds.call<"on" | "elsewhere" | "unseen">("clicked", index));
+    if (landed === "elsewhere") throw new Error("the click landed on something other than the button; nothing more was done");
+    if (landed === "unseen") throw new Error("the page kept the click from being seen, so it can't be told what was clicked; nothing more was done");
   }
 
-  identify(index: number, pattern: BehaviourPattern, popup: PartRef | null): Promise<PopupFound> {
-    if (!this.targets || !this.before) return Promise.resolve({ state: "none" });
-    // The handles stand for the page-side objects identifyPopupInPage reads.
-    const identify = identifyPopupInPage as unknown as (args: unknown) => PopupFound;
-    return this.bound(this.page.evaluate(identify, { targets: this.targets, index, before: this.before, pattern, popup }));
+  async identify(index: number, pattern: BehaviourPattern, popup: PartRef | null): Promise<PopupFound> {
+    const target = this.found[index];
+    if (!target) return { state: "none" };
+    const worlds = await this.worlds();
+    const contract = typeof target.via === "object" ? (this.options.bindings[target.via.contract] ?? null) : null;
+    if (contract && popup) {
+      const element = await this.bound(worlds.element(index));
+      const [main] = element ? await this.bound(worlds.into("main", [element])) : [];
+      const nominated = main ? await this.bound(worlds.mainList(main, contractPopupsInPage, { component: contract.component, part: popup })) : [];
+      const parts = await this.bound(worlds.into("isolated", nominated.filter(Boolean)));
+      return this.bound(worlds.call<PopupFound>("identify", { index, pattern, contract: true }, parts));
+    }
+    return this.bound(worlds.call<PopupFound>("identify", { index, pattern, contract: false }));
   }
 
   events(): readonly GuardEvent[] {
@@ -297,6 +431,7 @@ class PlaywrightProbePage implements ProbePage {
 
   async close(): Promise<void> {
     this.forget();
+    await this.worldsOpened?.detach();
     await this.page.close({ runBeforeUnload: false }).catch(() => undefined);
   }
 }
