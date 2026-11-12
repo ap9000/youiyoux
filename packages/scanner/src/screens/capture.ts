@@ -20,6 +20,7 @@ import { join } from "node:path";
 import type { Browser, Page } from "playwright-core";
 import { writeFileAtomic } from "@youiyoux/core";
 import { locateInPage, mapNotes, MAX_PLACES, resolvePlaces, whyNoLines, type Place } from "./locate.ts";
+import { withBase } from "../behaviour/guards.ts";
 
 export const SCREENS_SCHEMA = "youiyoux.screens/v1";
 export const PLACES_SCHEMA = "youiyoux.places/v1";
@@ -43,6 +44,11 @@ export interface ScreensSpec {
   readonly screens: ReadonlyArray<{ readonly route: string; readonly path: string; readonly note?: string }>;
   /** Where the app ran at the last capture (`http://localhost:3000`). */
   readonly base?: string;
+  /**
+   * Consent to behaviour probes, bound to one origin (`{ allowedOrigin }`, core's BehaviourConsent).
+   * Read only through behaviourConsent, which holds it to the current `base`.
+   */
+  readonly behaviour?: unknown;
 }
 
 export interface PlacesFile {
@@ -213,8 +219,9 @@ export async function captureScreens(dir: string, options: CaptureOptions): Prom
   const now = (options.now ?? (() => new Date()))().toISOString();
   // capturedAt is the whole set's; a capture of some routes leaves it (each picture's own time is its file's).
   // base is where the app last ran, so one route can be captured again without asking (screens_capture).
-  if (chosen === spec.screens) await writeFileAtomic(join(dir, "screens.json"), `${JSON.stringify({ ...spec, capturedAt: now, base: options.base }, null, 2)}\n`);
-  else if (spec.base !== options.base) await writeFileAtomic(join(dir, "screens.json"), `${JSON.stringify({ ...spec, base: options.base }, null, 2)}\n`);
+  // A new base on another origin leaves no consent to probe behind (withBase).
+  if (chosen === spec.screens) await writeFileAtomic(join(dir, "screens.json"), `${JSON.stringify({ ...withBase(spec, options.base), capturedAt: now }, null, 2)}\n`);
+  else if (spec.base !== options.base) await writeFileAtomic(join(dir, "screens.json"), `${JSON.stringify(withBase(spec, options.base), null, 2)}\n`);
   const screens = chosen.map((s) => ({ route: s.route, path: s.path, ...(results.get(s.route) ?? { placed: 0, lined: 0, error: "not captured" }) }));
   const placed = screens.reduce((n, s) => n + s.placed, 0);
   const lined = screens.reduce((n, s) => n + s.lined, 0);
