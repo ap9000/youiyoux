@@ -185,9 +185,10 @@ export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<Pr
   };
   const checks = [...new Set(options.checks.map((c) => c.check))];
   const probe = await probeRoute({ browser: options.browser, origin: consent.origin, route: options.route, path: screen.path, viewport: spec.viewport, checks, ...(options.bindings ? { bindings: options.bindings } : {}), ...(options.budgets ? { budgets: options.budgets } : {}), stillAllowed });
-  // File and line, for display: the live resolver fetches only from the app's own origin, no redirects.
+  // File and line, for display: fetched only from the consented origin (never a base that moved
+  // since, never another origin a frame names), no redirects, bounded in size and time.
   const lines = await new LiveApp(options.root, spec.project)
-    .resolve(probe.targets.map((t) => ({ name: t.key.component ?? t.found.domPath, owner: null, frames: t.found.frames, box: t.found.box, depth: 0 })))
+    .resolve(probe.targets.map((t) => ({ name: t.key.component ?? t.found.domPath, owner: null, frames: t.found.frames, box: t.found.box, depth: 0 })), { origin: consent.origin })
     .catch(() => probe.targets.map(() => ({ file: null, line: null })));
   const runId = randomBytes(8).toString("hex");
   const at = (options.now ?? (() => new Date()))().toISOString();

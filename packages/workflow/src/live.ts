@@ -56,11 +56,19 @@ export class LiveApp {
     return { project: this.project, base, viewport: spec.viewport, screens };
   }
 
-  /** The places' frames mapped to the product's files and lines. */
-  async resolve(places: readonly RawPlace[]): Promise<Place[]> {
-    const { base, why } = this.info();
-    if (!base) throw new WorkflowError("conflict", why ?? "the app's address is not known");
-    const origin = new URL(base).origin;
+  /**
+   * The places' frames mapped to the product's files and lines. `origin` pins where scripts and maps
+   * may be fetched from (a behaviour probe passes the origin it was consented for, so a base that
+   * moves mid-run is never followed); without it, the origin of screens.json's base now.
+   */
+  async resolve(places: readonly RawPlace[], options: { readonly origin?: string } = {}): Promise<Place[]> {
+    let origin: string;
+    if (options.origin) origin = new URL(options.origin).origin;
+    else {
+      const { base, why } = this.info();
+      if (!base) throw new WorkflowError("conflict", why ?? "the app's address is not known");
+      origin = new URL(base).origin;
+    }
     const fetchText = async (url: string): Promise<string | null> => {
       let target: URL;
       try {

@@ -13,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { BehaviourRouteRun } from "@youiyoux/core";
 import { launchBrowser } from "@youiyoux/detect";
 import { captureScreens } from "@youiyoux/scanner";
-import { behaviourFile, MemoryStore, probeBehaviour, readBehaviourRun, readEvidence, RuleWorkflow, serveWorkflow, setBehaviourConsent, WorkflowError, writeEvidence, type RunningService } from "../src/index.ts";
+import { behaviourFile, LiveApp, MemoryStore, probeBehaviour, readBehaviourRun, readEvidence, RuleWorkflow, serveWorkflow, setBehaviourConsent, WorkflowError, writeEvidence, type RunningService } from "../src/index.ts";
 import { sandbox, type Sandbox } from "./helpers.ts";
 
 const CHROMIUM = process.env.YOUI_CHROMIUM ?? chromium.executablePath();
@@ -146,6 +146,8 @@ describe.skipIf(!HAVE_CHROMIUM)("probing a running app", () => {
   const requests: string[] = [];
   /** Set by a test: what the app does to screens.json when its menu is opened (as a person switching probing off mid-run). */
   let onOpen: (() => void) | null = null;
+  /** Another server on this machine (B): nothing a probe does may reach it. */
+  let elsewhere: { origin: string; requests: string[]; server: Server } | null = null;
   const MENU = (name: string, id: string) =>
     `<button aria-haspopup="menu" aria-expanded="false" aria-controls="${id}" onclick="new Image().src='/opened';document.getElementById('${id}').hidden=false">${name}</button><ul role="menu" id="${id}" hidden><li role="menuitem">Item</li></ul>`;
 
@@ -156,17 +158,27 @@ describe.skipIf(!HAVE_CHROMIUM)("probing a running app", () => {
         onOpen?.();
         return void res.writeHead(200, { "content-type": "image/gif" }).end();
       }
-      const body = req.url === "/menu" ? MENU("Actions", "m1") : req.url === "/two" ? MENU("First", "a") + MENU("Second", "b") : req.url === "/" ? "<p>home</p>" : null;
+      // /hostile: a page whose React-looking fiber names a module on another server (B), as a hostile or confused page can.
+      const hostile = `${MENU("Actions", "h1")}<script>const b = document.querySelector("button"); b["__reactFiber$x"] = { tag: 5, type: "button", _debugStack: { stack: "Error\\n    at Menu (${elsewhere?.origin}/src/menu.js:1:1)" }, return: { tag: 0, type: function Menu() {}, return: null } };</script>`;
+      const body = req.url === "/menu" ? MENU("Actions", "m1") : req.url === "/two" ? MENU("First", "a") + MENU("Second", "b") : req.url === "/hostile" ? hostile : req.url === "/" ? "<p>home</p>" : null;
       if (body === null) return void res.writeHead(404).end();
       res.writeHead(200, { "content-type": "text/html" }).end(`<!doctype html><meta charset="utf-8"><body>${body}</body>`);
     });
     await new Promise<void>((done) => app.listen(0, "127.0.0.1", done));
     base = `http://127.0.0.1:${(app.address() as { port: number }).port}`;
+    const requestsB: string[] = [];
+    const serverB = createServer((req, res) => {
+      requestsB.push(`${req.method} ${req.url}`);
+      res.writeHead(200, { "content-type": "text/javascript" }).end(`x\n//# sourceMappingURL=data:application/json;base64,${Buffer.from(JSON.stringify({ version: 3, sources: ["src/Menu.tsx"], mappings: "AAAA" })).toString("base64")}`);
+    });
+    await new Promise<void>((done) => serverB.listen(0, "127.0.0.1", done));
+    elsewhere = { origin: `http://127.0.0.1:${(serverB.address() as { port: number }).port}`, requests: requestsB, server: serverB };
     browser = await launchBrowser(process.env.YOUI_CHROMIUM, { download: false });
   }, 60_000);
   afterAll(async () => {
     await browser?.close();
     app?.close();
+    elsewhere?.server.close();
   });
 
   test("with consent, a route is probed and kept as .youi/behaviour/<route-hash>.json: incomplete or not-applicable, never passed, no invented line", async () => {
@@ -194,6 +206,31 @@ describe.skipIf(!HAVE_CHROMIUM)("probing a running app", () => {
     } finally {
       onOpen = null;
     }
+  }, 60_000);
+
+  test("file and line come only from the consented origin: a base moved to B mid-run, and frames naming B, fetch nothing from B", async () => {
+    const root = product("resolve-pinned", { base, behaviour: { allowedOrigin: base } }, [{ route: "/hostile", path: "/hostile" }]);
+    // When the menu opens, the app's base moves to B (a capture elsewhere, a hand edit).
+    onOpen = () => {
+      const doc = screensOf(root);
+      writeFileSync(join(root, ".youi/screens/screens.json"), JSON.stringify({ ...doc, base: elsewhere!.origin, behaviour: { allowedOrigin: elsewhere!.origin } }));
+    };
+    try {
+      const { probe } = await probeBehaviour({ root, route: "/hostile", browser, checks: CHECKS, fingerprint: FINGERPRINT });
+      expect(probe.targets[0]!.found.frames.map((f) => new URL(f.url).origin)).toEqual([elsewhere!.origin]);
+    } finally {
+      onOpen = null;
+    }
+    expect(elsewhere!.requests).toEqual([]);
+    // And the resolver itself, given the pinned origin, never fetches a frame on another origin, whatever base says.
+    const live = new LiveApp(root, "app");
+    const frame = (url: string) => ({ name: "Menu", owner: null, frames: [{ url, line: 1, column: 1 }], box: { x: 0, y: 0, width: 1, height: 1 }, depth: 0 });
+    const placed = await live.resolve([frame(`${elsewhere!.origin}/src/menu.js`), frame(`${base}/nothing.js`)], { origin: base });
+    expect(placed.map((p) => p.line)).toEqual([null, null]);
+    expect(elsewhere!.requests).toEqual([]);
+    // Without a pin it follows base (now B): what the pin is for.
+    await live.resolve([frame(`${elsewhere!.origin}/src/menu.js`)]);
+    expect(elsewhere!.requests).toEqual(["GET /src/menu.js"]);
   }, 60_000);
 
   test("a capture that moves base to another origin leaves no consent to probe with", async () => {
