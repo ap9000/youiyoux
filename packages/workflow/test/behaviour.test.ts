@@ -9,7 +9,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpath
 import { createServer, request, type Server } from "node:http";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
-import { chromium, type Browser } from "playwright-core";
+import type { Browser } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { BehaviourRouteRun } from "@youiyoux/core";
 import { launchBrowser } from "@youiyoux/detect";
@@ -17,13 +17,25 @@ import { captureScreens } from "@youiyoux/scanner";
 import { behaviourFile, LiveApp, MemoryStore, probeBehaviour, readBehaviourRun, readEvidence, readYouiFile, writeYouiFile, RuleWorkflow, serveWorkflow, setBehaviourConsent, WorkflowError, writeEvidence, type RunningService } from "../src/index.ts";
 import { sandbox, type Sandbox } from "./helpers.ts";
 
-const CHROMIUM = process.env.YOUI_CHROMIUM ?? chromium.executablePath();
-const HAVE_CHROMIUM = existsSync(CHROMIUM);
+/**
+ * Whether there is a Chromium, found exactly as these tests (and youiyoux) launch it:
+ * launchBrowser(process.env.YOUI_CHROMIUM, { download: false }), i.e. YOUI_CHROMIUM when it is set,
+ * else the headless shell of this playwright-core (what CI installs with `playwright-core install
+ * chromium-headless-shell`), never downloading. Present when that launch works.
+ */
+const MISSING = await launchBrowser(process.env.YOUI_CHROMIUM, { download: false }).then(
+  async (browser) => {
+    await browser.close();
+    return null;
+  },
+  (error: unknown) => (error instanceof Error ? error.message : String(error)).split("\n")[0]!,
+);
+const HAVE_CHROMIUM = MISSING === null;
 /** YOUI_SECURITY_GATE=1 (CI): without Chromium the browser security tests fail rather than skip. */
 const GATE = process.env.YOUI_SECURITY_GATE === "1";
-if (!HAVE_CHROMIUM) console.warn(`behaviour probe tests ${GATE ? "FAIL" : "skipped"}: no Chromium at ${CHROMIUM} (set YOUI_CHROMIUM, or install the headless shell)`);
+if (!HAVE_CHROMIUM) console.warn(`behaviour probe tests ${GATE ? "FAIL" : "skipped"}: ${MISSING}`);
 test.runIf(GATE && !HAVE_CHROMIUM)("security gate: probing's browser tests need Chromium", () => {
-  throw new Error(`YOUI_SECURITY_GATE is set and there is no Chromium at ${CHROMIUM}: probing was not tested`);
+  throw new Error(`YOUI_SECURITY_GATE is set and Chromium couldn't be launched (${MISSING}): nothing was tested`);
 });
 
 const CHECKS = [{ rule: "youi:demo/rule/menus-close", check: "dismiss-escape" as const, digest: "0123456789ab" }];

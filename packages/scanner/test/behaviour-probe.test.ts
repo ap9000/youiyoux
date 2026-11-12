@@ -3,26 +3,38 @@
  * here on loopback ports. Each guard is shown active by what the fixture servers saw: their own
  * request logs prove what was, and wasn't, sent.
  */
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, request as httpRequest, type IncomingMessage, type Server } from "node:http";
 import { createSocket, type Socket } from "node:dgram";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build } from "esbuild";
-import { chromium, type Browser } from "playwright-core";
+import type { Browser } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { launchBrowser } from "@youiyoux/detect";
 import { behaviourConsent, probeRoute, screenUrl, startFence, withBase, type Fence, type ProbeRouteOptions, type RouteProbe, type TargetScenario } from "../src/index.ts";
 
 const PACKAGE = join(import.meta.dirname, "..");
-const CHROMIUM = process.env.YOUI_CHROMIUM ?? chromium.executablePath();
-const HAVE_CHROMIUM = existsSync(CHROMIUM);
+/**
+ * Whether there is a Chromium, found exactly as these tests (and youiyoux) launch it:
+ * launchBrowser(process.env.YOUI_CHROMIUM, { download: false }), i.e. YOUI_CHROMIUM when it is set,
+ * else the headless shell of this playwright-core (what CI installs with `playwright-core install
+ * chromium-headless-shell`), never downloading. Present when that launch works.
+ */
+const MISSING = await launchBrowser(process.env.YOUI_CHROMIUM, { download: false }).then(
+  async (browser) => {
+    await browser.close();
+    return null;
+  },
+  (error: unknown) => (error instanceof Error ? error.message : String(error)).split("\n")[0]!,
+);
+const HAVE_CHROMIUM = MISSING === null;
 /** YOUI_SECURITY_GATE=1 (CI): without Chromium the browser security tests fail rather than skip. */
 const GATE = process.env.YOUI_SECURITY_GATE === "1";
-if (!HAVE_CHROMIUM) console.warn(`behaviour probe tests ${GATE ? "FAIL" : "skipped"}: no Chromium at ${CHROMIUM} (set YOUI_CHROMIUM, or install the headless shell)`);
+if (!HAVE_CHROMIUM) console.warn(`behaviour probe tests ${GATE ? "FAIL" : "skipped"}: ${MISSING}`);
 test.runIf(GATE && !HAVE_CHROMIUM)("security gate: the guarded probe's browser tests need Chromium", () => {
-  throw new Error(`YOUI_SECURITY_GATE is set and there is no Chromium at ${CHROMIUM}: the probe's guards were not tested`);
+  throw new Error(`YOUI_SECURITY_GATE is set and Chromium couldn't be launched (${MISSING}): nothing was tested`);
 });
 
 describe("consent and the probe's own address", () => {
