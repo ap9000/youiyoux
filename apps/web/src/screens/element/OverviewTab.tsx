@@ -16,7 +16,7 @@ export function UsageGlance({ model, contract, index }: { model: Model; contract
   const sites = index.sitesByElement.get(contract.id) ?? [];
   const summary = summarize(sites);
   const issues = elementIssues(index, contract);
-  const onScreens = screensOfElement(screensOf(index, model.manifest), contract.id);
+  const onScreens = screensOfElement(screensOf(index, model.manifest, model.rules), contract.id);
   const usage = elementHref(contract.id, "usage");
   if (sites.length === 0 && issues.total === 0) {
     return <p className="rounded-lg border border-dashed border-line px-4 py-3 text-small text-muted">No scanned project renders {contract.name} yet.</p>;

@@ -7,6 +7,9 @@ import * as nodePath from "node:path";
 import { dirname, join, relative, sep } from "node:path";
 import { parse as parseYaml } from "yaml";
 import type { z } from "zod";
+import { GLOB_SYNTAX, globRegExp, SIMPLE_GLOB } from "./glob.ts";
+
+export { GLOB_SYNTAX, globRegExp } from "./glob.ts";
 
 /** A validation or read failure that names the file and the failing field. */
 export class DefinitionError extends Error {
@@ -35,59 +38,7 @@ export function relPath(root: string, absolute: string): string {
  */
 const nativeMatch = (nodePath as { matchesGlob?: (path: string, pattern: string) => boolean }).matchesGlob;
 const nativeGlob = (fsp as { glob?: (pattern: string[], options: { cwd: string; exclude: (path: string) => boolean }) => AsyncIterable<string> }).glob;
-const compiled = new Map<string, RegExp>();
-
-/** A glob as a regular expression: `**` spans directories (zero or more), `*` and `?` stay in one, `{a,b}` and `[…]` as in a shell; `*` skips dot names. */
-export function globRegExp(pattern: string): RegExp {
-  let cached = compiled.get(pattern);
-  if (cached) return cached;
-  let out = "";
-  let braces = 0;
-  for (let i = 0; i < pattern.length; i++) {
-    const c = pattern[i]!;
-    if (c === "*" && pattern[i + 1] === "*") {
-      const whole = (i === 0 || pattern[i - 1] === "/") && (i + 2 === pattern.length || pattern[i + 2] === "/");
-      if (whole && pattern[i + 2] === "/") {
-        out += "(?:(?!\\.)[^/]*/)*";
-        i += 2;
-      } else {
-        out += whole ? "(?:(?!\\.)[^/]*(?:/(?!\\.)[^/]*)*)?" : "[^/]*";
-        i += 1;
-      }
-    } else if (c === "*") out += (i === 0 || pattern[i - 1] === "/" ? "(?!\\.)" : "") + "[^/]*";
-    else if (c === "?") out += "[^/]";
-    else if (c === "{") {
-      braces++;
-      out += "(?:";
-    } else if (c === "}" && braces > 0) {
-      braces--;
-      out += ")";
-    } else if (c === "," && braces > 0) out += "|";
-    else if (c === "[") {
-      const end = pattern.indexOf("]", i + 1);
-      if (end < 0) out += "\\[";
-      else {
-        out += `[${pattern.slice(i + 1, end).replace(/^!/, "^").replace(/\\/g, "\\\\")}]`;
-        i = end;
-      }
-    } else out += /[.+^$()|\\\]]/.test(c) ? `\\${c}` : c;
-  }
-  cached = new RegExp(`^${out}$`);
-  compiled.set(pattern, cached);
-  return cached;
-}
-
 const matchesGlob = nativeMatch ?? ((path: string, pattern: string): boolean => globRegExp(pattern).test(path));
-
-/**
- * What makes a pattern a glob: `*`, `?`, `[…]`, `{…}`, an escape, an extglob (`@(…)`, `!(…)`,
- * `+(…)`) or a leading `!`. A Next.js route group's `(ee)` is plain text. Without these, a
- * pattern names one path.
- */
-export const GLOB_SYNTAX = /[*?[{\\]|[@!+]\(|^!/;
-
-/** A glob of `**`, `*`, `{a,b}` and plain characters: the shape globRegExp is proven to match as Node does (files.test.ts), compiled once. */
-const SIMPLE_GLOB = /^(?:[\w.\-/{},]|\*)+$/;
 
 export function matchesAny(path: string, patterns: readonly string[]): boolean {
   // A plain path matches only itself, and a simple glob is a cached expression: a file walk asks for every entry it meets.

@@ -227,6 +227,47 @@ describe("countIssues", () => {
   });
 });
 
+describe("rules that did not run, per screen", () => {
+  const ADMIN = "youi:demo/rule/admin.escape";
+  const ALL = "youi:demo/rule/popup.escape";
+  const run = (rule: string) => ({ rule, state: "incomplete" as const, reason: "behaviour rules are checked by a probe run" });
+  const scoped: ScanReport = {
+    ...report,
+    violations: [],
+    lookalikes: [],
+    unknowns: [],
+    usages: [
+      site({ file: "src/admin/page.tsx", routes: ["/admin"] }),
+      site({ file: "src/checkout/page.tsx", routes: ["/checkout"] }),
+      // A route whose file the map does not attribute: unknown, so it keeps every rule.
+      site({ file: "src/legacy/page.tsx", routes: ["/legacy"] }),
+    ],
+    fileRoutes: {
+      "src/admin/page.tsx": { routes: ["/admin"], routeSource: "route-file" },
+      "src/checkout/page.tsx": { routes: ["/checkout"], routeSource: "route-file" },
+    },
+    checks: [run(ADMIN), run(ALL)],
+  };
+  const rules = new Map([
+    [ADMIN, { files: ["src/admin/**"] }],
+    [ALL, { files: ["**/*.{ts,tsx,css}"] }],
+  ]);
+  const notRunOn = (r: ScanReport, ruleFiles?: Parameters<typeof buildScreens>[2]) => Object.fromEntries(buildScreens(indexUsage([r]), manifest, ruleFiles).screens.map((s) => [s.route, s.notRun.map((n) => n.rule).sort()]));
+
+  test("a rule scoped to src/admin/** taints /admin but not /checkout; an all-files rule reaches every screen; a route with unknown attribution keeps both", () => {
+    expect(notRunOn(scoped, rules)).toEqual({ "/admin": [ADMIN, ALL], "/checkout": [ALL], "/legacy": [ADMIN, ALL] });
+    const checkout = buildScreens(indexUsage([scoped]), manifest, rules).screens.find((s) => s.route === "/checkout")!;
+    expect(checkout.issues).toMatchObject({ notChecked: 1, behaviourNotChecked: 1 });
+  });
+
+  test("when it cannot tell, the rule stays: no rule definitions, no file attribution, or a glob only Node can match", () => {
+    const every = { "/admin": [ADMIN, ALL], "/checkout": [ADMIN, ALL], "/legacy": [ADMIN, ALL] };
+    expect(notRunOn(scoped)).toEqual(every);
+    expect(notRunOn({ ...scoped, fileRoutes: undefined }, rules)).toEqual(every);
+    expect(notRunOn(scoped, new Map([...rules, [ADMIN, { files: ["src/+(admin|ops)/**"] }]]))).toEqual(every);
+  });
+});
+
 describe("components placed on a captured screen", () => {
   const box = (x: number, y: number, width: number, height: number) => ({ x, y, width, height });
   const place = (name: string, file: string | null, line: number | null, b = box(0, 0, 100, 40), depth = 1): PlacedComponent => ({ name, owner: "Work", file, line, column: 5, box: b, depth });

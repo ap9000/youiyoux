@@ -6,8 +6,10 @@
  * Unrouted sites and issues share one list, with the scanner's reason for each file.
  */
 import type { RuleRun } from "@youiyoux/core";
+import { matchesSimply } from "@youiyoux/core/glob";
+import { append } from "../lib/append.ts";
 import { ruleDidNotRun } from "@youiyoux/core/rules";
-import type { ElementId, Manifest, ProjectShots, ScanReport, ScreenShot } from "./types.ts";
+import type { ElementId, Manifest, ProjectShots, RuleSpec, ScanReport, ScreenShot } from "./types.ts";
 import { EVERY_SCREEN, type ProjectLookalike, type ProjectUnknown, type ProjectViolation, type Site, UNROUTED, type UsageIndex } from "./usage.ts";
 
 /** `/work (task detail)` → `work-task-detail`, `*` → `app-shell`. Used in URLs and screenshot file names. */
@@ -95,7 +97,11 @@ export interface Screen {
   readonly violations: readonly ProjectViolation[];
   readonly lookalikes: readonly ProjectLookalike[];
   readonly unresolved: readonly ProjectUnknown[];
-  /** Rules this project's scan did not run: they apply to every screen, so none of them is known clean. */
+  /**
+   * Rules this project's scan did not run whose `files` reach this screen's files, so the screen is
+   * not known to follow them. Kept whenever that cannot be told (no file attribution, no rule
+   * definition, a glob only Node can match): unknown is never "does not apply".
+   */
   readonly notRun: readonly ProjectRuleRun[];
   readonly issues: IssueCounts;
   readonly shot: ScreenShot | null;
@@ -148,8 +154,21 @@ class ScreenDraft {
   }
 }
 
+/** The rule definitions a screen needs: each rule's `files` globs. */
+export type RuleFiles = ReadonlyMap<ElementId, Pick<RuleSpec, "files">>;
+
+/**
+ * Whether a rule that did not run may reach a route: its globs match a file the scan attributes to
+ * that route (the attribution violations use). True whenever this cannot be told.
+ */
+function reaches(run: RuleRun, files: readonly string[] | undefined, rules: RuleFiles | undefined): boolean {
+  const globs = rules?.get(run.rule)?.files;
+  if (!globs || !files || files.length === 0) return true;
+  return files.some((file) => matchesSimply(file, globs) !== false);
+}
+
 /** One project's screens, plus what could not be placed on any of them. */
-function projectScreens(report: ScanReport, sites: readonly Site[], shots: ProjectShots | undefined): { screens: Screen[]; unattributed: IssueCounts; unattributedFiles: UnattributedFile[] } {
+function projectScreens(report: ScanReport, sites: readonly Site[], shots: ProjectShots | undefined, rules?: RuleFiles): { screens: Screen[]; unattributed: IssueCounts; unattributedFiles: UnattributedFile[] } {
   const { project } = report;
   const unattributedFiles = new Map<string, UnattributedFile>();
   const unplaced = (file: string, siteCount = 0, reason?: string): void => {
@@ -209,9 +228,15 @@ function projectScreens(report: ScanReport, sites: readonly Site[], shots: Proje
   }
 
   const notRun = rulesNotRun(report).map((run): ProjectRuleRun => ({ ...run, project }));
+  // Each route's files, by the same attribution as violations; none when the map has no attribution.
+  const routeFiles = new Map<string, string[]>();
+  for (const [file, attribution] of Object.entries(report.fileRoutes ?? {})) for (const route of attribution.routes) append(routeFiles, route, file);
+  const notRunOn = (route: string): ProjectRuleRun[] => notRun.filter((run) => reaches(run, report.fileRoutes ? routeFiles.get(route) : undefined, rules));
   const screens = [...drafts]
     .sort(([a], [b]) => routeRank(a) - routeRank(b) || a.localeCompare(b))
-    .map(([route, d]): Screen => ({
+    .map(([route, d]): Screen => {
+      const onRoute = notRunOn(route);
+      return {
       project,
       route,
       slug: screenSlug(route),
@@ -220,15 +245,16 @@ function projectScreens(report: ScanReport, sites: readonly Site[], shots: Proje
       violations: d.violations,
       lookalikes: d.lookalikes,
       unresolved: d.unresolved,
-      notRun,
-      issues: countIssues(d.violations, d.lookalikes, d.unresolved, notRun),
+      notRun: onRoute,
+      issues: countIssues(d.violations, d.lookalikes, d.unresolved, onRoute),
       shot: shots?.screens.find((s) => s.route === route) ?? null,
-    }));
+      };
+    });
   return { screens, unattributed: countIssues(lost.violations, lost.lookalikes, lost.unresolved), unattributedFiles: [...unattributedFiles.values()].sort((a, b) => a.file.localeCompare(b.file)) };
 }
 
 /** Every screen of every project, by project, app shell first, then routes by name. */
-export function buildScreens(index: UsageIndex, manifest: Manifest): ScreenIndex {
+export function buildScreens(index: UsageIndex, manifest: Manifest, rules?: RuleFiles): ScreenIndex {
   const shots = projectShots(manifest);
   const sitesByProject = new Map<string, Site[]>();
   for (const sites of index.sitesByElement.values()) {
@@ -239,7 +265,7 @@ export function buildScreens(index: UsageIndex, manifest: Manifest): ScreenIndex
     }
   }
   const reports = [...index.reports].sort((a, b) => a.project.localeCompare(b.project));
-  const built = reports.map((report) => projectScreens(report, sitesByProject.get(report.project) ?? [], shots.get(report.project)));
+  const built = reports.map((report) => projectScreens(report, sitesByProject.get(report.project) ?? [], shots.get(report.project), rules));
   const screens = built.flatMap((b) => b.screens);
   return {
     screens,
@@ -269,11 +295,11 @@ export function screensOfElement(screens: ScreenIndex, id: ElementId): ElementSc
 
 const built = new WeakMap<UsageIndex, ScreenIndex>();
 
-/** buildScreens, once per usage index (the index and the manifest load together and never change). */
-export function screensOf(index: UsageIndex, manifest: Manifest): ScreenIndex {
+/** buildScreens, once per usage index (the index, the manifest and the catalog's rules load together and never change). */
+export function screensOf(index: UsageIndex, manifest: Manifest, rules?: RuleFiles): ScreenIndex {
   const cached = built.get(index);
   if (cached) return cached;
-  const result = buildScreens(index, manifest);
+  const result = buildScreens(index, manifest, rules);
   built.set(index, result);
   return result;
 }
