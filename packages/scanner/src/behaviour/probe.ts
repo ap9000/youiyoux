@@ -269,7 +269,7 @@ class Worlds {
   }
 
   /** `__youiyoux[method](arg, elements)` in the isolated world; `elements` are isolated-world object ids. */
-  async call<T>(method: "discover" | "markShowing" | "prepareClick" | "clicked" | "identify" | "signInForm", arg: unknown, elements: readonly string[] = []): Promise<T> {
+  async call<T>(method: "discover" | "markShowing" | "prepareClick" | "confirmAt" | "clicked" | "identify" | "signInForm", arg: unknown, elements: readonly string[] = []): Promise<T> {
     const answer = this.check((await this.cdp.send("Runtime.callFunctionOn", { functionDeclaration: `function (arg, ...elements) { return globalThis.__youiyoux.${method}(arg, elements); }`, executionContextId: this.isolated, arguments: [{ value: arg }, ...elements.map((objectId) => ({ objectId }))], returnByValue: true })) as CallResult);
     return answer.result.value as T;
   }
@@ -422,9 +422,17 @@ class PlaywrightProbePage implements ProbePage {
     if (!target) throw new Error("no such button was found on this page");
     const worlds = await this.worlds();
     // The exact element, checked again in the probe's own world, and the point that hits it.
-    const point = await this.bound(worlds.call<ClickPoint>("prepareClick", { index, pattern: target.pattern, accessibleName: target.accessibleName, dom: target.via === "dom" }));
+    const wanted = { index, pattern: target.pattern, accessibleName: target.accessibleName, dom: target.via === "dom" };
+    const point = await this.bound(worlds.call<ClickPoint>("prepareClick", wanted));
     if (!point.ok) throw new Error(point.why);
-    await within(this.page.mouse.click(point.x, point.y), Math.min(this.options.deadline(), Date.now() + Math.max(1, timeoutMs)));
+    const until = Math.min(this.options.deadline(), Date.now() + Math.max(1, timeoutMs));
+    // The pointer goes there first (hover handlers run now), then the element is checked again at
+    // that point, and only then pressed and released there, with no further move.
+    await within(this.page.mouse.move(point.x, point.y), until);
+    const confirmed = await this.bound(worlds.call<ClickPoint>("confirmAt", { ...wanted, x: point.x, y: point.y }));
+    if (!confirmed.ok) throw new Error(confirmed.why);
+    await within(this.page.mouse.down(), until);
+    await within(this.page.mouse.up(), until);
     const landed = await this.bound(worlds.call<"on" | "elsewhere" | "unseen">("clicked", index));
     if (landed === "elsewhere") throw new Error("the click landed on something other than the button; nothing more was done");
     if (landed === "unseen") throw new Error("the page kept the click from being seen, so it can't be told what was clicked; nothing more was done");

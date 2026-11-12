@@ -157,6 +157,25 @@ export function isolatedLibrary(): void {
     const rect = element.getBoundingClientRect();
     return { pattern, accessibleName: accessibleName(element), via, domPath: domPath(element), box: { x: Math.round(rect.left + scrollX), y: Math.round(rect.top + scrollY), width: Math.round(rect.width), height: Math.round(rect.height) } };
   };
+  /** Why the exact element found can't be clicked now, or null when it still can. */
+  const recheck = (element: Element | undefined, wanted: { readonly pattern: Pattern; readonly accessibleName: string; readonly dom: boolean }): string | null => {
+    if (!element || !element.isConnected) return "the button is no longer on the screen";
+    if (!launcher(element)) return "the element is no longer a button that only opens something";
+    if (!shown(element) || !enabled(element)) return "the button is hidden or disabled now";
+    if (insideOpenPopup(element)) return "the button is inside a popup that is open";
+    if (accessibleName(element) !== wanted.accessibleName || (wanted.dom && claimed(element) !== wanted.pattern)) return "the button changed (its name or what it opens) before it could be clicked";
+    return null;
+  };
+  /** The point hits the element (or something inside it), shadow roots included. */
+  const hits = (element: Element, x: number, y: number): boolean => {
+    let hit: Element | null = document.elementFromPoint(x, y);
+    while (hit?.shadowRoot) {
+      const inner = hit.shadowRoot.elementFromPoint(x, y);
+      if (!inner || inner === hit) break;
+      hit = inner;
+    }
+    return !!hit && (hit === element || element.contains(hit) || !!element.shadowRoot?.contains(hit));
+  };
   const library = {
     /**
      * Every usable trigger: those contract bindings nominated (each checked here; `nominated[i]`
@@ -198,28 +217,31 @@ export function isolatedLibrary(): void {
      */
     prepareClick(wanted: { readonly index: number; readonly pattern: Pattern; readonly accessibleName: string; readonly dom: boolean }): ClickPoint {
       const element = state.elements[wanted.index];
-      if (!element || !element.isConnected) return { ok: false, why: "the button is no longer on the screen" };
-      if (!launcher(element)) return { ok: false, why: "the element is no longer a button that only opens something" };
-      if (!shown(element) || !enabled(element)) return { ok: false, why: "the button is hidden or disabled now" };
-      if (insideOpenPopup(element)) return { ok: false, why: "the button is inside a popup that is open" };
-      if (accessibleName(element) !== wanted.accessibleName || (wanted.dom && claimed(element) !== wanted.pattern)) return { ok: false, why: "the button changed (its name or what it opens) before it could be clicked" };
+      const refused = recheck(element, wanted);
+      if (refused || !element) return { ok: false, why: refused ?? "the button is no longer on the screen" };
       element.scrollIntoView({ block: "center", inline: "center" });
       const rect = element.getBoundingClientRect();
       const x = rect.left + rect.width / 2;
       const y = rect.top + rect.height / 2;
-      let hit: Element | null = document.elementFromPoint(x, y);
-      while (hit?.shadowRoot) {
-        const inner = hit.shadowRoot.elementFromPoint(x, y);
-        if (!inner || inner === hit) break;
-        hit = inner;
-      }
-      if (!hit || (hit !== element && !element.contains(hit) && !element.shadowRoot?.contains(hit))) return { ok: false, why: "something else covers the button, so it wasn't clicked" };
+      if (!hits(element, x, y)) return { ok: false, why: "something else covers the button, so it wasn't clicked" };
+      return { ok: true, x, y };
+    },
+    /**
+     * With the pointer already at (x, y) (hover handlers have run): the same element, still a usable
+     * launcher, the same name and pattern, and still what that point hits. Only then is it pressed.
+     * Nothing is scrolled here, so the point stays where the pointer is.
+     */
+    confirmAt(wanted: { readonly index: number; readonly pattern: Pattern; readonly accessibleName: string; readonly dom: boolean; readonly x: number; readonly y: number }): ClickPoint {
+      const element = state.elements[wanted.index];
+      const refused = recheck(element, wanted);
+      if (refused || !element) return { ok: false, why: `${refused ?? "the button is no longer on the screen"} once the pointer reached it` };
+      if (!hits(element, wanted.x, wanted.y)) return { ok: false, why: "something else was under the pointer once it reached the button, so it wasn't clicked" };
       state.clicked = null;
       if (!state.watching) {
         state.watching = true;
         addEventListener("click", (event) => void (state.clicked = event.composedPath()[0] ?? event.target), { capture: true });
       }
-      return { ok: true, x, y };
+      return { ok: true, x: wanted.x, y: wanted.y };
     },
     /** Where the click landed: on the button (or inside it), elsewhere, or not seen at all. */
     clicked(index: number): "on" | "elsewhere" | "unseen" {

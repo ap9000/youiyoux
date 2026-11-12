@@ -473,6 +473,13 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
         ),
       // A menu button that turns into a menu item when the server says so (polled every 50 ms).
       "/morph": () => page(menu("Morph", "mo"), "setInterval(async () => { if ((await (await fetch('/morph-state')).text()) === 'go') document.querySelector('[data-log=trigger-mo]').setAttribute('role', 'menuitem'); }, 50);"),
+      // Buttons that change as the pointer reaches them: into a menu item, or swapped for a submit button in a form.
+      "/hover-role": () => page(menu("Hover role", "hr").replace("<button ", `<button onmouseover="this.setAttribute('role', 'menuitem')" `)),
+      "/hover-swap": () =>
+        page(
+          `<form id="hf" action="/api/hover-submit" method="post"></form>` +
+            menu("Hover swap", "hs").replace("<button ", `<button onmouseover="const b = document.createElement('button'); b.type = 'submit'; b.setAttribute('form', 'hf'); b.dataset.log = 'swapped'; b.textContent = this.textContent; b.style.cssText = 'width:' + this.offsetWidth + 'px;height:' + this.offsetHeight + 'px'; this.replaceWith(b)" `),
+        ),
       // A page that rewrites the DOM APIs of its own world to make a span look like the only menu button.
       "/forged": () =>
         page(
@@ -782,6 +789,14 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
       morph = false;
     }
     expect(logged("click").slice(before)).toEqual([]);
+  }, 60_000);
+
+  test("hovering can't swap the target: a button that becomes a menu item, or is replaced by a submit button, as the pointer reaches it is not pressed", async () => {
+    const before = logged("click").length;
+    expect(only(await probe("/hover-role"))).toMatchObject({ state: "incomplete", why: "the button 'Hover role' couldn't be clicked: the element is no longer a button that only opens something once the pointer reached it" });
+    expect(only(await probe("/hover-swap"))).toMatchObject({ state: "incomplete", why: "the button 'Hover swap' couldn't be clicked: the button is no longer on the screen once the pointer reached it" });
+    expect(logged("click").slice(before)).toEqual([]);
+    expect(seen(app, "/api/hover-submit")).toEqual([]);
   }, 60_000);
 
   test("a page that rewrites its own DOM APIs can't forge a trigger or hide a real one: discovery and the click run in the probe's own world", async () => {
