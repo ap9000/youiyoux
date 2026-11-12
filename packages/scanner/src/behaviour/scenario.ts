@@ -11,7 +11,7 @@ import type { FoundTarget, PopupFound } from "./in-page.ts";
 
 /** What the guards refused (or, for sockets, blocked) while a page was open, and when. */
 export interface GuardEvent {
-  readonly kind: "write" | "origin" | "socket" | "navigation" | "window" | "dialog" | "service-worker";
+  readonly kind: "write" | "origin" | "socket" | "navigation" | "window" | "dialog" | "service-worker" | "busy";
   readonly words: string;
   /** Before the trigger was clicked (load), or after (act). */
   readonly phase: "load" | "act";
@@ -61,6 +61,7 @@ export function stopFromEvents(events: readonly GuardEvent[]): Stop | null {
     window: "Next: probes open no other windows; a button that opens one isn't a popup to probe.",
     dialog: "Next: a browser dialog (alert, confirm) isn't a popup a probe can check; use an in-page dialog.",
     "service-worker": "Next: service workers are blocked while probing; run the probe again.",
+    busy: "Next: a screen that keeps many requests open at once can't be probed reliably; run the probe again when the dev server is idle.",
     socket: "",
   };
   return { why: stop.words, fix: fix[stop.kind] };

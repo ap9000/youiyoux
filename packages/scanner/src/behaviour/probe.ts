@@ -120,7 +120,7 @@ class GuardedContext {
     let context: BrowserContext | null = null;
     try {
       // No storage state, no permissions, no downloads; every request through the fence, loopback included.
-      context = await browser.newContext({ viewport, serviceWorkers: "block", acceptDownloads: false, permissions: [], proxy: { server: fence.server, bypass: "<-loopback>" } });
+      context = await browser.newContext({ viewport, serviceWorkers: "block", acceptDownloads: false, permissions: [], proxy: { server: fence.server, username: fence.username, password: fence.password, bypass: "<-loopback>" } });
       guarded = new GuardedContext(context, origin);
       await guarded.install();
     } catch (error: unknown) {

@@ -12,7 +12,7 @@ import { build } from "esbuild";
 import { chromium, type Browser } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { launchBrowser } from "@youiyoux/detect";
-import { behaviourConsent, probeRoute, screenUrl, startFence, withBase, type ProbeRouteOptions, type RouteProbe, type TargetScenario } from "../src/index.ts";
+import { behaviourConsent, probeRoute, screenUrl, startFence, withBase, type Fence, type ProbeRouteOptions, type RouteProbe, type TargetScenario } from "../src/index.ts";
 
 const PACKAGE = join(import.meta.dirname, "..");
 const CHROMIUM = process.env.YOUI_CHROMIUM ?? chromium.executablePath();
@@ -67,7 +67,7 @@ describe("consent and the probe's own address", () => {
 interface Fixture {
   readonly server: Server;
   readonly origin: string;
-  readonly requests: Array<{ method: string; path: string; query: string }>;
+  readonly requests: Array<{ method: string; path: string; query: string; headers: IncomingMessage["headers"] }>;
   readonly upgrades: string[];
 }
 
@@ -76,7 +76,7 @@ async function serve(handler: (req: IncomingMessage, path: string) => { status?:
   const upgrades: string[] = [];
   const server = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://fixture");
-    requests.push({ method: req.method ?? "GET", path: url.pathname, query: url.search });
+    requests.push({ method: req.method ?? "GET", path: url.pathname, query: url.search, headers: req.headers });
     const answer = handler(req, url.pathname);
     if (!answer) return void res.writeHead(404).end("not found");
     res.writeHead(answer.status ?? 200, { "content-type": answer.type ?? "text/html", ...answer.headers }).end(answer.body);
@@ -90,11 +90,12 @@ async function serve(handler: (req: IncomingMessage, path: string) => { status?:
 }
 
 describe("the network fence", () => {
-  /** A request as a browser sends it to its proxy: the whole address on the request line. */
-  const through = (proxy: string, method: string, url: string, headers: Record<string, string> = {}): Promise<{ status: number; body: string; location?: string }> =>
+  const authOf = (fence: Fence): string => `Basic ${Buffer.from(`${fence.username}:${fence.password}`).toString("base64")}`;
+  /** A request as a browser sends it to its proxy (the whole address on the request line), with the fence's credentials unless told otherwise. */
+  const through = (fence: Fence, method: string, url: string, headers: Record<string, string> = {}, auth = true): Promise<{ status: number; body: string; location?: string }> =>
     new Promise((resolve, reject) => {
-      const { port } = new URL(proxy);
-      const req = httpRequest({ host: "127.0.0.1", port, method, path: url, headers }, (res) => {
+      const { port } = new URL(fence.server);
+      const req = httpRequest({ host: "127.0.0.1", port, method, path: url, headers: { ...(auth ? { "proxy-authorization": authOf(fence) } : {}), ...headers } }, (res) => {
         let body = "";
         res.on("data", (c: Buffer) => (body += c.toString("utf8")));
         res.on("end", () => resolve({ status: res.statusCode ?? 0, body, ...(res.headers.location ? { location: res.headers.location } : {}) }));
@@ -102,14 +103,26 @@ describe("the network fence", () => {
       req.on("error", reject);
       req.end(method === "GET" || method === "HEAD" ? undefined : "x");
     });
-  const tunnel = (proxy: string, authority: string): Promise<number> =>
+  const tunnel = (fence: Fence, authority: string, auth = true): Promise<number> =>
     new Promise((resolve, reject) => {
-      const { port } = new URL(proxy);
-      httpRequest({ host: "127.0.0.1", port, method: "CONNECT", path: authority }).on("connect", (res, socket) => {
+      const { port } = new URL(fence.server);
+      httpRequest({ host: "127.0.0.1", port, method: "CONNECT", path: authority, headers: auth ? { "proxy-authorization": authOf(fence) } : {} }).on("connect", (res, socket) => {
         socket.destroy();
         resolve(res.statusCode ?? 0);
       }).on("error", reject).end();
     });
+  /** Raw bytes to the fence over a plain TCP socket, and everything it answers until it closes or goes quiet. */
+  const raw = (fence: Fence, bytes: string): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const socket = connect(Number(new URL(fence.server).port), "127.0.0.1");
+      let answer = "";
+      socket.on("data", (c: Buffer) => (answer += c.toString("latin1")));
+      socket.on("close", () => resolve(answer));
+      socket.on("error", reject);
+      socket.setTimeout(1_000, () => socket.destroy());
+      socket.write(bytes);
+    });
+  const auth = (fence: Fence) => `proxy-authorization: ${authOf(fence)}\r\n`;
 
   test("reads reach the one origin; writes, other origins, tunnels and upgrades never leave, and a redirect isn't followed", async () => {
     const target = await serve((_req, path) => (path === "/away" ? { status: 302, body: "", headers: { location: "http://127.0.0.1:9/elsewhere" } } : { body: `page ${path}` }));
@@ -117,14 +130,14 @@ describe("the network fence", () => {
     const refused: string[] = [];
     const fence = await startFence(target.origin, (r) => refused.push(`${r.kind}: ${r.words}`));
     try {
-      expect(await through(fence.server, "GET", `${target.origin}/menu?q=1`)).toMatchObject({ status: 200, body: "page /menu" });
-      expect(await through(fence.server, "GET", `${target.origin}/away`)).toMatchObject({ status: 302, location: "http://127.0.0.1:9/elsewhere" });
-      for (const method of ["POST", "PUT", "PATCH", "DELETE"]) expect((await through(fence.server, method, `${target.origin}/api/save?secret=1`)).status).toBe(403);
-      expect((await through(fence.server, "GET", `${elsewhere.origin}/steal`)).status).toBe(403);
-      expect((await through(fence.server, "GET", `${target.origin.replace("127.0.0.1", "localhost")}/x`)).status).toBe(403);
-      expect((await through(fence.server, "GET", "/no-address")).status).toBe(400);
-      expect(await tunnel(fence.server, new URL(target.origin).host)).toBe(403);
-      expect((await through(fence.server, "GET", `${target.origin}/socket`, { connection: "Upgrade", upgrade: "websocket", "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==", "sec-websocket-version": "13" }).catch(() => ({ status: 0 }))).status).not.toBe(101);
+      expect(await through(fence, "GET", `${target.origin}/menu?q=1`)).toMatchObject({ status: 200, body: "page /menu" });
+      expect(await through(fence, "GET", `${target.origin}/away`)).toMatchObject({ status: 302, location: "http://127.0.0.1:9/elsewhere" });
+      for (const method of ["POST", "PUT", "PATCH", "DELETE"]) expect((await through(fence, method, `${target.origin}/api/save?secret=1`)).status).toBe(403);
+      expect((await through(fence, "GET", `${elsewhere.origin}/steal`)).status).toBe(403);
+      expect((await through(fence, "GET", `${target.origin.replace("127.0.0.1", "localhost")}/x`)).status).toBe(403);
+      expect((await through(fence, "GET", "/no-address")).status).toBe(400);
+      expect(await tunnel(fence, new URL(target.origin).host)).toBe(403);
+      expect((await through(fence, "GET", `${target.origin}/socket`, { connection: "Upgrade", upgrade: "websocket", "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==", "sec-websocket-version": "13" }).catch(() => ({ status: 0 }))).status).not.toBe(101);
       expect(target.requests.map((r) => `${r.method} ${r.path}`)).toEqual(["GET /menu", "GET /away"]);
       expect(target.upgrades).toEqual([]);
       expect(elsewhere.requests).toEqual([]);
@@ -137,21 +150,50 @@ describe("the network fence", () => {
       elsewhere.server.close();
     }
   });
-});
 
-describe("the network fence survives malformed requests", () => {
-  /** Raw bytes to the fence over a plain TCP socket, and everything it answers until it closes. */
-  const raw = (proxy: string, bytes: string): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const socket = connect(Number(new URL(proxy).port), "127.0.0.1");
-      let answer = "";
-      socket.on("data", (c: Buffer) => (answer += c.toString("latin1")));
-      socket.on("close", () => resolve(answer));
-      socket.on("error", reject);
-      // Answered requests close (400, 403), or go quiet (a 200 kept alive): either ends the read.
-      socket.setTimeout(1_000, () => socket.destroy());
-      socket.write(bytes);
-    });
+  test("only the probe's own context may use it: without its credentials, a request or a tunnel gets 407 and nothing else", async () => {
+    const target = await serve(() => ({ body: "page" }));
+    const refused: string[] = [];
+    const fence = await startFence(target.origin, (r) => refused.push(r.words));
+    const other = await startFence(target.origin, () => undefined);
+    try {
+      expect(await through(fence, "GET", `${target.origin}/a`, {}, false)).toMatchObject({ status: 407 });
+      // Another fence's credentials are not this one's.
+      expect(await through(fence, "GET", `${target.origin}/b`, { "proxy-authorization": authOf(other) }, false)).toMatchObject({ status: 407 });
+      expect(await through(fence, "GET", `${target.origin}/c`, { "proxy-authorization": "Basic Zm9vOmJhcg==" }, false)).toMatchObject({ status: 407 });
+      expect(await tunnel(fence, new URL(target.origin).host, false)).toBe(407);
+      expect(await raw(fence, `GET ${target.origin}/d HTTP/1.1\r\nhost: x\r\nupgrade: websocket\r\nconnection: Upgrade\r\n\r\n`)).toMatch(/^HTTP\/1\.1 407 [\s\S]*proxy-authenticate: Basic/i);
+      expect(target.requests).toEqual([]);
+      expect(refused).toEqual([]);
+    } finally {
+      await fence.close();
+      await other.close();
+      target.server.close();
+    }
+  });
+
+  test("what it forwards is rebuilt: Host from the checked target, no header the client's Connection names, and no body at all", async () => {
+    const target = await serve(() => ({ body: "page" }));
+    const refused: string[] = [];
+    const fence = await startFence(target.origin, (r) => refused.push(r.words));
+    try {
+      const host = new URL(target.origin).host;
+      expect(await raw(fence, `GET ${target.origin}/h HTTP/1.1\r\n${auth(fence)}host: evil.example\r\nconnection: close, x-secret\r\nx-secret: 1\r\nx-kept: 2\r\nproxy-connection: keep-alive\r\n\r\n`)).toMatch(/^HTTP\/1\.1 200 /);
+      expect(target.requests).toHaveLength(1);
+      expect(target.requests[0]!.headers).toMatchObject({ host, "x-kept": "2" });
+      expect(target.requests[0]!.headers).not.toHaveProperty("x-secret");
+      expect(target.requests[0]!.headers).not.toHaveProperty("proxy-authorization");
+      expect(target.requests[0]!.headers).not.toHaveProperty("proxy-connection");
+      // A body on a read, by length or chunked, never leaves.
+      expect(await raw(fence, `GET ${target.origin}/body HTTP/1.1\r\n${auth(fence)}host: ${host}\r\ncontent-length: 6\r\n\r\nsecret`)).toMatch(/^HTTP\/1\.1 400 /);
+      expect(await raw(fence, `OPTIONS ${target.origin}/chunked HTTP/1.1\r\n${auth(fence)}host: ${host}\r\ntransfer-encoding: chunked\r\n\r\n6\r\nsecret\r\n0\r\n\r\n`)).toMatch(/^HTTP\/1\.1 400 /);
+      expect(target.requests.map((r) => r.path)).toEqual(["/h"]);
+      expect(refused).toContain("the page tried to send data with a GET to /body; nothing was sent");
+    } finally {
+      await fence.close();
+      target.server.close();
+    }
+  });
 
   test("a request line naming an address that doesn't parse is answered 400, and the fence keeps serving", async () => {
     const target = await serve(() => ({ body: "still here" }));
@@ -159,27 +201,27 @@ describe("the network fence survives malformed requests", () => {
     const fence = await startFence(target.origin, (r) => refused.push(r.words));
     try {
       for (const line of ["GET http:// HTTP/1.1", "GET http://[ HTTP/1.1", "POST http://%zz HTTP/1.1"]) {
-        const answer = await raw(fence.server, `${line}\r\nhost: x\r\ncontent-length: 0\r\n\r\n`);
+        const answer = await raw(fence, `${line}\r\n${auth(fence)}host: x\r\ncontent-length: 0\r\n\r\n`);
         expect(answer, line).toMatch(/^HTTP\/1\.1 400 /);
       }
       // An upgrade header without "connection: upgrade" reaches the request listener, not the upgrade one:
       // the fence once parsed its address there unguarded, and a throw ended the process.
-      expect(await raw(fence.server, "GET http://[ HTTP/1.1\r\nhost: x\r\nupgrade: websocket\r\n\r\n")).toMatch(/^HTTP\/1\.1 400 /);
+      expect(await raw(fence, `GET http://[ HTTP/1.1\r\n${auth(fence)}host: x\r\nupgrade: websocket\r\n\r\n`)).toMatch(/^HTTP\/1\.1 400 /);
       // As a real upgrade it reaches the upgrade listener: refused, never thrown on.
-      expect(await raw(fence.server, "GET http://[ HTTP/1.1\r\nhost: x\r\nupgrade: websocket\r\nconnection: Upgrade\r\n\r\n")).toMatch(/^HTTP\/1\.1 (?:400|403) /);
+      expect(await raw(fence, `GET http://[ HTTP/1.1\r\n${auth(fence)}host: x\r\nupgrade: websocket\r\nconnection: Upgrade\r\n\r\n`)).toMatch(/^HTTP\/1\.1 (?:400|403) /);
       // Tunnels naming garbage are refused, not thrown on.
-      for (const authority of ["[", "http://[", "%%%", ""]) expect(await raw(fence.server, `CONNECT ${authority} HTTP/1.1\r\nhost: x\r\n\r\n`), authority).toMatch(/^HTTP\/1\.1 (?:403|400) /);
+      for (const authority of ["[", "http://[", "%%%", ""]) expect(await raw(fence, `CONNECT ${authority} HTTP/1.1\r\n${auth(fence)}host: x\r\n\r\n`), authority).toMatch(/^HTTP\/1\.1 (?:403|400) /);
       // A listener that throws can't take it down either.
       const touchy = await startFence(target.origin, () => {
         throw new Error("listener failed");
       });
       try {
-        expect(await raw(touchy.server, "GET http:// HTTP/1.1\r\nhost: x\r\n\r\n")).toMatch(/^HTTP\/1\.1 400 /);
-        expect(await raw(touchy.server, `POST ${target.origin}/x HTTP/1.1\r\nhost: x\r\ncontent-length: 0\r\n\r\n`)).toMatch(/^HTTP\/1\.1 403 /);
+        expect(await raw(touchy, `GET http:// HTTP/1.1\r\n${auth(touchy)}host: x\r\n\r\n`)).toMatch(/^HTTP\/1\.1 400 /);
+        expect(await raw(touchy, `POST ${target.origin}/x HTTP/1.1\r\n${auth(touchy)}host: x\r\ncontent-length: 0\r\n\r\n`)).toMatch(/^HTTP\/1\.1 403 /);
       } finally {
         await touchy.close();
       }
-      const ok = await raw(fence.server, `GET ${target.origin}/after HTTP/1.1\r\nhost: ${new URL(target.origin).host}\r\nconnection: close\r\n\r\n`);
+      const ok = await raw(fence, `GET ${target.origin}/after HTTP/1.1\r\n${auth(fence)}host: ${new URL(target.origin).host}\r\nconnection: close\r\n\r\n`);
       expect(ok).toMatch(/^HTTP\/1\.1 200 [\s\S]*still here/);
       expect(target.requests.map((r) => r.path)).toEqual(["/after"]);
       expect(refused).toContain("a request that named no http address was refused");
@@ -188,6 +230,72 @@ describe("the network fence survives malformed requests", () => {
       target.server.close();
     }
   });
+
+  test("upstream requests end with their client, at their time limit, and when the fence closes; past the cap, requests are refused", async () => {
+    // A stream that never ends (an EventSource), and the connections it holds open.
+    let open = 0;
+    const seen: string[] = [];
+    const streaming = createServer((req, res) => {
+      open++;
+      seen.push(req.url ?? "");
+      req.socket.on("close", () => open--);
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.write("data: hi\n\n");
+    });
+    await new Promise<void>((done) => streaming.listen(0, "127.0.0.1", done));
+    const origin = `http://127.0.0.1:${(streaming.address() as { port: number }).port}`;
+    const refused: string[] = [];
+    // A time limit far away, so only the client going away (or the cap, or close) can end a request here.
+    const fence = await startFence(origin, (r) => refused.push(`${r.kind}: ${r.words}`), { maxUpstreams: 4, requestTimeoutMs: 60_000 });
+    const quick = await startFence(origin, () => undefined, { requestTimeoutMs: 500 });
+    /** A client that opens the stream through `through` and keeps its socket until told to drop it. */
+    const hold = async (path: string, through: Fence = fence): Promise<{ head: string; drop: () => void }> => {
+      const socket = connect(Number(new URL(through.server).port), "127.0.0.1");
+      let head = "";
+      await new Promise<void>((resolve) => {
+        socket.on("data", (c: Buffer) => {
+          head += c.toString("latin1");
+          resolve();
+        });
+        socket.on("close", () => resolve());
+        socket.write(`GET ${origin}${path} HTTP/1.1\r\n${auth(through)}host: x\r\n\r\n`);
+      });
+      return { head, drop: () => socket.destroy() };
+    };
+    const until = async (check: () => boolean): Promise<void> => {
+      for (let i = 0; i < 100 && !check(); i++) await new Promise((r) => setTimeout(r, 20));
+      expect(check()).toBe(true);
+    };
+    try {
+      // Opened and dropped, again and again (more times than the cap): each upstream connection ends with its client.
+      for (let i = 0; i < 10; i++) {
+        const client = await hold(`/drop-${i}`);
+        expect(client.head).toMatch(/^HTTP\/1\.1 200 /);
+        client.drop();
+        await until(() => open === 0);
+      }
+      // Four at once is the cap; the fifth is refused, and nothing upstream sees it.
+      const held = await Promise.all([0, 1, 2, 3].map((i) => hold(`/held-${i}`)));
+      expect((await hold("/fifth")).head).toMatch(/^HTTP\/1\.1 503 /);
+      expect(seen).not.toContain("/fifth");
+      expect(refused.some((r) => r.startsWith("busy: "))).toBe(true);
+      expect(open).toBe(4);
+      // Closing the fence ends every upstream request it carries, its clients still holding on.
+      await fence.close();
+      await until(() => open === 0);
+      for (const client of held) client.drop();
+      // An endless stream still ends at its time limit, its client still holding on.
+      const slow = await hold("/endless", quick);
+      expect(slow.head).toMatch(/^HTTP\/1\.1 200 /);
+      expect(open).toBe(1);
+      await until(() => open === 0);
+      slow.drop();
+    } finally {
+      await fence.close();
+      await quick.close();
+      streaming.close();
+    }
+  }, 30_000);
 });
 
 describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
