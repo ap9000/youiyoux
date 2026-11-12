@@ -17,12 +17,12 @@
 import { randomBytes } from "node:crypto";
 import type { Browser, BrowserContext, CDPSession, Page, Request, Route } from "playwright-core";
 import { BEHAVIOUR_CHECKS, type BehaviourCheckId, type BehaviourPattern, type PartRef } from "@youiyoux/core";
-import { startFence, type FenceRefusal } from "./fence.ts";
-import { describeUrl, requestVerdict, screenUrl } from "./guards.ts";
+import { startFence, type Fence, type FenceRefusal } from "./fence.ts";
+import { dataWords, describeUrl, requestVerdict, screenUrl, STATIC_RESOURCE_TYPES } from "./guards.ts";
 import { ambiguousWords, withOrdinals, type TargetKey } from "./identity.ts";
 import type { Frame } from "../screens/locate.ts";
 import { contractPopupsInPage, isolatedLibrary, labelsInPage, nominateContractTriggersInPage, PROBE_INIT_SCRIPT, type ClickPoint, type ContractBinding, type FoundTarget, type IsolatedTarget, type PopupFound } from "./in-page.ts";
-import { infoFromEvents, openAndIdentify, openScreen, SWITCHED_OFF, type GuardEvent, type ProbePage, type ScenarioOutcome, type Stop } from "./scenario.ts";
+import { dataBlockedIn, infoFromEvents, openAndIdentify, openScreen, SWITCHED_OFF, type GuardEvent, type ProbePage, type ScenarioOutcome, type Stop } from "./scenario.ts";
 
 export interface ProbeBudgets {
   /** Targets tested per route; the rest are named as untested. */
@@ -112,10 +112,12 @@ class GuardedContext {
 
   private readonly context: BrowserContext;
   private readonly origin: string;
+  private readonly fence: Fence;
 
-  constructor(context: BrowserContext, origin: string) {
+  constructor(context: BrowserContext, origin: string, fence: Fence) {
     this.context = context;
     this.origin = origin;
+    this.fence = fence;
   }
 
   static async open(browser: Browser, origin: string, viewport: ProbeRouteOptions["viewport"]): Promise<{ guarded: GuardedContext; close: () => Promise<void> }> {
@@ -125,7 +127,7 @@ class GuardedContext {
     try {
       // No storage state, no permissions, no downloads; every request through the fence, loopback included.
       context = await browser.newContext({ viewport, serviceWorkers: "block", acceptDownloads: false, permissions: [], proxy: { server: fence.server, username: fence.username, password: fence.password, bypass: "<-loopback>" } });
-      guarded = new GuardedContext(context, origin);
+      guarded = new GuardedContext(context, origin, fence);
       await guarded.install();
     } catch (error: unknown) {
       await context?.close().catch(() => undefined);
@@ -180,6 +182,12 @@ class GuardedContext {
       if (log.committed || request.url() !== log.start) return refuse({ kind: "navigation", words: `the page tried to leave for ${describeUrl(request.url(), this.origin)}; it was stopped before it left` });
       log.committed = true;
     }
+    // From the click on, the page (and its workers) may load only its own static files; every data
+    // request is refused, and the scenario goes on, tested with its data blocked.
+    if ((log ?? this.current)?.phase === "act") {
+      const method = request.method().toUpperCase();
+      if (!STATIC_RESOURCE_TYPES.has(request.resourceType()) || !(method === "GET" || method === "HEAD")) return refuse({ kind: "data", words: dataWords(method, request.url(), this.origin) });
+    }
     await route.continue().catch(() => undefined);
   }
 
@@ -195,13 +203,17 @@ class GuardedContext {
     const log: PageLog = { start, events: [], phase: "load", committed: false };
     this.logs.set(page, log);
     this.current = log;
+    this.fence.setAfterClick(false);
     page.on("dialog", (dialog) => {
       this.record(log, { kind: "dialog", words: `the page showed a browser dialog (${dialog.type()}); it was dismissed` });
       void dialog.dismiss().catch(() => undefined);
     });
-    return new PlaywrightProbePage(page, log, options, () => {
+    return new PlaywrightProbePage(page, log, { ...options, acting: () => this.fence.setAfterClick(true) }, () => {
       this.logs.delete(page);
-      if (this.current === log) this.current = null;
+      if (this.current === log) {
+        this.current = null;
+        this.fence.setAfterClick(false);
+      }
     });
   }
 }
@@ -213,6 +225,8 @@ interface PageOptions {
   readonly deadline: () => number;
   /** Told once the screen has loaded (a scenario's own budget starts then). */
   readonly loaded?: () => void;
+  /** Told when the trigger is about to be clicked (the fence turns to static files only). */
+  readonly acting?: () => void;
 }
 
 type CallResult = { result: { value?: unknown; objectId?: string }; exceptionDetails?: { text?: string; exception?: { description?: string } } };
@@ -391,6 +405,7 @@ class PlaywrightProbePage implements ProbePage {
 
   acting(): void {
     this.log.phase = "act";
+    this.options.acting?.();
   }
 
   async click(index: number, timeoutMs: number): Promise<void> {
@@ -510,9 +525,10 @@ async function scenario(guarded: GuardedContext, start: string, options: ProbeRo
     return await openAndIdentify(page, { start, origin: options.origin, wanted: key, popup, deadline, budgets: { openMs: budgets.openMs, pollMs: POLL_MS, graceMs: GRACE_MS }, ...(options.stillAllowed ? { beforeClick: options.stillAllowed } : {}), ...(options.signal ? { signal: options.signal } : {}) });
   } catch (error: unknown) {
     const info = infoFromEvents(page.events());
-    if (options.signal?.aborted) return { state: "incomplete", ...SWITCHED_OFF, info };
-    if (error instanceof TimeUp) return { state: "incomplete", why: Date.now() >= routeDeadline ? untestedWords("time", budgets).why.replace("not tested: ", "stopped: ") : `ran out of time: a scenario has ${Math.round(budgets.scenarioMs / 1000)} s once the screen is open`, fix: "Next: make sure the dev server is idle, then run the probe again.", info };
-    return { state: "error", why: `the probe failed: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}`, fix: "Next: run the probe again; if it fails again, report it with the screen's route.", info };
+    const dataBlocked = dataBlockedIn(page.events());
+    if (options.signal?.aborted) return { state: "incomplete", ...SWITCHED_OFF, info, dataBlocked };
+    if (error instanceof TimeUp) return { state: "incomplete", why: Date.now() >= routeDeadline ? untestedWords("time", budgets).why.replace("not tested: ", "stopped: ") : `ran out of time: a scenario has ${Math.round(budgets.scenarioMs / 1000)} s once the screen is open`, fix: "Next: make sure the dev server is idle, then run the probe again.", info, dataBlocked };
+    return { state: "error", why: `the probe failed: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}`, fix: "Next: run the probe again; if it fails again, report it with the screen's route.", info, dataBlocked };
   } finally {
     options.signal?.removeEventListener("abort", cancel);
     await page.close();

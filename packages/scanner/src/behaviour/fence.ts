@@ -18,11 +18,11 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, request as httpRequest, type ClientRequest, type IncomingHttpHeaders, type IncomingMessage, type OutgoingHttpHeaders, type ServerResponse } from "node:http";
 import type { Socket } from "node:net";
 import type { Duplex } from "node:stream";
-import { describeUrl, requestVerdict } from "./guards.ts";
+import { dataWords, describeUrl, requestVerdict, STATIC_FETCH_DESTS } from "./guards.ts";
 
 export interface FenceRefusal {
-  /** busy: more requests at once than the fence carries. */
-  readonly kind: "write" | "origin" | "socket" | "busy";
+  /** busy: more requests at once than the fence carries. data: a data request after the click. */
+  readonly kind: "write" | "origin" | "socket" | "busy" | "data";
   /** Plain words: what was tried, its path only, and that nothing was sent. */
   readonly words: string;
 }
@@ -33,6 +33,12 @@ export interface Fence {
   /** This fence's own credentials, for the context's `proxy.username` and `proxy.password`. */
   readonly username: string;
   readonly password: string;
+  /**
+   * From the trigger's click until the scenario ends: only GET/HEAD of static page files pass (by
+   * Sec-Fetch-Dest: script, style, image, font, audio, video, track); every other request is refused
+   * as a data request. Sec-Fetch-Dest is set by the browser; a page's script can't set or change it.
+   */
+  setAfterClick(on: boolean): void;
   close(): Promise<void>;
 }
 
@@ -69,6 +75,7 @@ export async function startFence(origin: string, refused: (refusal: FenceRefusal
   const sockets = new Set<Socket | Duplex>();
   const upstreams = new Set<ClientRequest>();
   let closing = false;
+  let afterClick = false;
   // The listener that hears a refusal can't take the fence down either.
   const tell = (refusal: FenceRefusal): void => {
     try {
@@ -129,6 +136,14 @@ export async function startFence(origin: string, refused: (refusal: FenceRefusal
     if (req.headers["transfer-encoding"] !== undefined || (length !== undefined && length !== "0")) {
       tell({ kind: "write", words: `the page tried to send data with a ${String(req.method).toUpperCase()} to ${describeUrl(parsed.href, origin)}; nothing was sent` });
       return answer(req, res, 400, "blocked by the youiyoux probe");
+    }
+    if (afterClick) {
+      const method = String(req.method).toUpperCase();
+      const dest = String(req.headers["sec-fetch-dest"] ?? "").toLowerCase();
+      if (!(method === "GET" || method === "HEAD") || !STATIC_FETCH_DESTS.has(dest)) {
+        tell({ kind: "data", words: dataWords(method, parsed.href, origin) });
+        return answer(req, res, 403, "blocked by the youiyoux probe");
+      }
     }
     if (closing || upstreams.size >= maxUpstreams) {
       tell({ kind: "busy", words: `the page kept more than ${maxUpstreams} requests open at once; ${describeUrl(parsed.href, origin)} was refused` });
@@ -210,6 +225,7 @@ export async function startFence(origin: string, refused: (refusal: FenceRefusal
     server: `http://127.0.0.1:${address.port}`,
     username,
     password,
+    setAfterClick: (on: boolean) => void (afterClick = on),
     close: () =>
       new Promise<void>((resolve) => {
         closing = true;

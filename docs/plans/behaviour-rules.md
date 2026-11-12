@@ -127,6 +127,19 @@ handlers can mutate, service workers and WebSockets bypass page routes (finding 
   reloading is caught by the navigation guard and reported; fixtures prove Vite and Next dev pages still probe with
   their socket blocked. An abort marks the scenario `incomplete` with "the page tried to send a POST to /api/…; nothing
   was sent" (path shown, query string dropped).
+- **After the click, no data requests** (Alex, finding 1: block data requests after the click, keep testing, label
+  the result). Before the trigger is clicked the page loads as it does when the person opens it (unsafe methods
+  and other origins already refused). After a trigger is clicked, the page may load only its own scripts, styles,
+  images, fonts and media; every data request is blocked and the result says it was tested with its data blocked.
+  Enforced twice: the context route allows only GET/HEAD of resource type script, stylesheet, image, font or media
+  (fetch, XHR, EventSource, WebSocket, beacons, manifests, documents, anything unclassified and every worker's
+  request are refused); the fence, in its after-click mode, allows only GET/HEAD whose `Sec-Fetch-Dest` is script,
+  style, image, font, audio, video or track (set by the browser, not by page script). A blocked data request doesn't
+  make the scenario incomplete: it adds the info line "the popup asked for data when it opened (GET /path); it was
+  blocked, so this was tested with its data blocked" and `dataBlocked: true` to every result of that scenario. A
+  popup that never opens because its data was blocked is the usual "didn't open" incomplete, naming the request.
+  The consent words still say: use a dev app with test data. **Residual, accepted:** an app that changes data on a
+  GET for a static file (an image or script URL that records or mutates) is out of reach of these guards.
 - **Stays on the screen.** Cross-document navigations are aborted before they leave (route on `document` requests);
   `window.open` is replaced by a no-op in an init script and the context refuses new pages; SPA changes (history/hash)
   are detected after every step by comparing `location` with the scenario's start URL → `incomplete`.

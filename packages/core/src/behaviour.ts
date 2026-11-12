@@ -120,6 +120,11 @@ export const BehaviourResult = z
     fix: z.string().min(1),
     /** Facts that are not pass or fail (Home moves to the first item: yes; arrow keys wrap). */
     info: z.array(z.string().min(1)).default([]),
+    /**
+     * After the trigger was clicked the page asked for data (fetch, XHR, EventSource, a worker's
+     * request…) and the probe blocked it: this was tested with the popup's data blocked.
+     */
+    dataBlocked: z.boolean().default(false),
     /** Screenshots, as project-relative paths under `.youi/`. */
     evidence: z.array(EvidencePath).default([]),
     /**

@@ -257,7 +257,7 @@ describe.skipIf(!HAVE_CHROMIUM)("probing a running app", () => {
       // /hostile: a page whose React-looking fiber names a module on another server (B), as a hostile or confused page can.
       const hostile = `${MENU("Actions", "h1")}<script>const b = document.querySelector("button"); b["__reactFiber$x"] = { tag: 5, type: "button", _debugStack: { stack: "Error\\n    at Menu (${elsewhere?.origin}/src/menu.js:1:1)" }, return: { tag: 0, type: function Menu() {}, return: null } };</script>`;
       if (req.url === "/revoke-on-second-load" && ++loads === 2) onSecondLoad?.();
-      const body = req.url === "/revoke-on-second-load" ? MENU("Again", "r1") : req.url === "/never" ? `<button aria-haspopup="menu" aria-controls="nope" onclick="new Image().src='/opened'">Never</button>` : req.url === "/menu" ? MENU("Actions", "m1") : req.url === "/two" ? MENU("First", "a") + MENU("Second", "b") : req.url === "/hostile" ? hostile : req.url === "/" ? "<p>home</p>" : null;
+      const body = req.url === "/revoke-on-second-load" ? MENU("Again", "r1") : req.url === "/never" ? `<button aria-haspopup="menu" aria-controls="nope" onclick="new Image().src='/opened'">Never</button>` : req.url === "/menu" ? MENU("Actions", "m1") : req.url === "/fetches" ? MENU("Unread", "f1").replace("new Image().src='/opened';", "fetch('/api/read?id=7').catch(() => {});") : req.url === "/two" ? MENU("First", "a") + MENU("Second", "b") : req.url === "/hostile" ? hostile : req.url === "/" ? "<p>home</p>" : null;
       if (body === null) return void res.writeHead(404).end();
       res.writeHead(200, { "content-type": "text/html" }).end(`<!doctype html><meta charset="utf-8"><body>${body}</body>`);
     });
@@ -288,10 +288,20 @@ describe.skipIf(!HAVE_CHROMIUM)("probing a running app", () => {
     expect(run.results.map((r) => [r.check, r.state])).toEqual([["dismiss-escape", "incomplete"], ["focus-trap", "not-applicable"]]);
     expect(run.results[0]).toMatchObject({ target: { route: "/menu", pattern: "menu-button", component: null, accessibleName: "Actions" }, why: expect.stringMatching(/opened and was identified \(by aria-controls\), but this youiyoux doesn't decide dismiss-escape yet/), freshness: { origin: base, app: FINGERPRINT.app, tool: FINGERPRINT.tool } });
     expect(run.results[0]!.target).not.toHaveProperty("file");
+    // Its click only loads an image (a static file): nothing was blocked.
+    expect(run.results.map((r) => r.dataBlocked)).toEqual([false, false]);
     expect(run.results.some((r) => r.state === "passed" || r.state === "failed")).toBe(false);
     // The opening itself is known to the caller, internally, not as a pass.
     expect(probe.targets[0]!.scenarios[0]).toMatchObject({ state: "opened" });
     expect(await readBehaviourRun(root, "/menu")).toEqual(run);
+  }, 60_000);
+
+  test("a popup that asks for data when it opens is tested with its data blocked, and every result of that scenario says so", async () => {
+    const root = product("data-blocked", { base, behaviour: { allowedOrigin: base } }, [{ route: "/fetches", path: "/fetches" }]);
+    const { run } = await probeBehaviour({ root, route: "/fetches", browser, checks: [...CHECKS, { rule: "youi:demo/rule/menus-close-too", check: "dismiss-escape", digest: "0123456789ab" }], fingerprint: FINGERPRINT });
+    expect(run.results.map((r) => [r.state, r.dataBlocked])).toEqual([["incomplete", true], ["incomplete", true]]);
+    expect(run.results[0]!.info).toContain("the popup asked for data when it opened (GET /api/read); it was blocked, so this was tested with its data blocked");
+    expect(requests.filter((r) => r.startsWith("GET /api/read"))).toEqual([]);
   }, 60_000);
 
   test("consent is asked again before every scenario: switched off mid-run by another process, the rest stops", async () => {

@@ -11,7 +11,8 @@ import type { FoundTarget, PopupFound } from "./in-page.ts";
 
 /** What the guards refused (or, for sockets, blocked) while a page was open, and when. */
 export interface GuardEvent {
-  readonly kind: "write" | "origin" | "socket" | "navigation" | "window" | "dialog" | "service-worker" | "busy";
+  /** data: a data request after the click, blocked; the scenario goes on, tested with its data blocked. */
+  readonly kind: "write" | "origin" | "socket" | "navigation" | "window" | "dialog" | "service-worker" | "busy" | "data";
   readonly words: string;
   /** Before the trigger was clicked (load), or after (act). */
   readonly phase: "load" | "act";
@@ -43,10 +44,10 @@ export interface Stop {
 
 export type ScenarioOutcome =
   /** Internal only: the popup opened and was identified. Never a pass by itself. */
-  | { readonly state: "opened"; readonly popup: Extract<PopupFound, { state: "open" }>; readonly info: readonly string[] }
-  | ({ readonly state: "incomplete"; readonly info: readonly string[] } & Stop)
+  | { readonly state: "opened"; readonly popup: Extract<PopupFound, { state: "open" }>; readonly info: readonly string[]; readonly dataBlocked?: boolean }
+  | ({ readonly state: "incomplete"; readonly info: readonly string[]; readonly dataBlocked?: boolean } & Stop)
   /** The probe itself failed (not the app). */
-  | ({ readonly state: "error"; readonly info: readonly string[] } & Stop);
+  | ({ readonly state: "error"; readonly info: readonly string[]; readonly dataBlocked?: boolean } & Stop);
 
 const NOTHING_SENT = "Nothing was sent, and nothing was decided.";
 /** How long a refusal the page set off is waited for, when the page stopped answering. */
@@ -57,7 +58,7 @@ export const SWITCHED_OFF: Stop = { why: "probing was switched off, or the app m
 
 /** Why the guards' events stop a scenario, if they do: anything refused but a socket, and other origins only once the trigger was clicked. */
 export function stopFromEvents(events: readonly GuardEvent[]): Stop | null {
-  const stop = events.find((e) => e.kind !== "socket" && (e.kind !== "origin" || e.phase === "act"));
+  const stop = events.find((e) => e.kind !== "socket" && e.kind !== "data" && (e.kind !== "origin" || e.phase === "act"));
   if (!stop) return null;
   const fix: Record<GuardEvent["kind"], string> = {
     write: stop.phase === "load" ? `Next: this screen sends data as it loads, so it can't be probed safely; probe a screen that doesn't. ${NOTHING_SENT}` : `Next: a popup that sends data as it opens can't be probed safely. ${NOTHING_SENT}`,
@@ -66,16 +67,20 @@ export function stopFromEvents(events: readonly GuardEvent[]): Stop | null {
     window: "Next: probes open no other windows; a button that opens one isn't a popup to probe.",
     dialog: "Next: a browser dialog (alert, confirm) isn't a popup a probe can check; use an in-page dialog.",
     "service-worker": "Next: service workers are blocked while probing; run the probe again.",
+    data: "",
     busy: "Next: a screen that keeps many requests open at once can't be probed reliably; run the probe again when the dev server is idle.",
     socket: "",
   };
   return { why: stop.words, fix: fix[stop.kind] };
 }
 
-/** Facts worth saying that don't stop anything: blocked sockets, other addresses refused while loading. */
+/** Facts worth saying that don't stop anything: blocked sockets, other addresses refused while loading, data blocked after the click. */
 export function infoFromEvents(events: readonly GuardEvent[]): string[] {
-  return [...new Set(events.filter((e) => e.kind === "socket" || (e.kind === "origin" && e.phase === "load")).map((e) => e.words))];
+  return [...new Set(events.filter((e) => e.kind === "socket" || e.kind === "data" || (e.kind === "origin" && e.phase === "load")).map((e) => e.words))];
 }
+
+/** Whether the scenario ran with its data blocked (a data request after the click was refused). */
+export const dataBlockedIn = (events: readonly GuardEvent[]): boolean => events.some((e) => e.kind === "data");
 
 /** Where the page is, compared with where the scenario opened it: null while it hasn't moved. */
 export function moved(start: string, now: string, origin: string): Stop | null {
@@ -136,7 +141,7 @@ export async function openAndIdentify(
   },
 ): Promise<ScenarioOutcome> {
   const { start, origin, wanted, deadline, budgets } = args;
-  const incomplete = (stop: Stop): ScenarioOutcome => ({ state: "incomplete", ...stop, info: infoFromEvents(page.events()) });
+  const incomplete = (stop: Stop): ScenarioOutcome => ({ state: "incomplete", ...stop, info: infoFromEvents(page.events()), dataBlocked: dataBlockedIn(page.events()) });
   const cancelled = (): Stop | null => (args.signal?.aborted ? SWITCHED_OFF : null);
   const opened = await openScreen(page, start, origin);
   if (opened) return incomplete(opened);
@@ -178,13 +183,14 @@ export async function openAndIdentify(
       // Watch a moment longer: a page that leaves, sends or opens a window just after opening is still stopped.
       await page.wait(Math.max(0, Math.min(budgets.graceMs, deadline() - Date.now())));
       const after = stopFromEvents(page.events()) ?? moved(start, await page.location(), origin);
-      return after ? incomplete(after) : { state: "opened", popup, info: infoFromEvents(page.events()) };
+      return after ? incomplete(after) : { state: "opened", popup, info: infoFromEvents(page.events()), dataBlocked: dataBlockedIn(page.events()) };
     }
     if (popup.state === "several") return incomplete({ why: `couldn't tell which of ${popup.count} ${wanted.pattern === "modal-dialog" ? "dialogs" : "popups"} this button opened`, fix: "Next: point the button at its popup with aria-controls (or popovertarget), or declare the contract's popup part." });
     if (popup.state === "was-open") return incomplete({ why: `the popup the button names (${popup.how}) was already showing before the click, so we couldn't tell the click opened it`, fix: "Next: keep the popup closed until its button is clicked, then run the probe again." });
     if (Date.now() + budgets.pollMs > until) {
       const late = end < clicked + budgets.openMs;
-      return incomplete(late ? { why: "ran out of time before the popup could be identified", fix: "Next: make sure the dev server is idle, then run the probe again." } : { why: "clicking the button didn't open anything we could identify", fix: "Next: give the button aria-controls naming its popup (or popovertarget), or declare the contract's popup part; a popup must show (not hidden, inert or aria-hidden) within 2 s." });
+      const blocked = page.events().filter((e) => e.kind === "data").map((e) => /\((\S+ [^)]+)\)/.exec(e.words)?.[1]).filter(Boolean);
+      return incomplete(late ? { why: "ran out of time before the popup could be identified", fix: "Next: make sure the dev server is idle, then run the probe again." } : { why: `clicking the button didn't open anything we could identify${blocked.length ? ` (its data was blocked: ${[...new Set(blocked)].join(", ")})` : ""}`, fix: "Next: give the button aria-controls naming its popup (or popovertarget), or declare the contract's popup part; a popup must show (not hidden, inert or aria-hidden) within 2 s." });
     }
     await page.wait(budgets.pollMs);
   }

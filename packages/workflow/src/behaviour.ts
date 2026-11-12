@@ -313,6 +313,8 @@ export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<Pr
         why: words.why,
         fix: words.fix,
         info: [...scenario.info],
+        // Tested with the popup's data requests blocked (after the click): said on every result of the scenario.
+        dataBlocked: "dataBlocked" in scenario ? scenario.dataBlocked === true : false,
         evidence: [],
         freshness: { rule: request.digest, tool: options.fingerprint.tool, origin: consent.origin, config, app: options.fingerprint.app },
       });

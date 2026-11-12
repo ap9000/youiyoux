@@ -117,5 +117,18 @@ export function requestVerdict(url: string, method: string, origin: string): Req
   return { allow: true };
 }
 
+/**
+ * After the trigger is clicked, the only requests that may leave: a page's own static files. Route
+ * level, by Playwright's resource type; in the fence, by Sec-Fetch-Dest, which the browser sets and a
+ * page's script can't (it is a forbidden request header).
+ */
+export const STATIC_RESOURCE_TYPES: ReadonlySet<string> = new Set(["script", "stylesheet", "image", "font", "media"]);
+export const STATIC_FETCH_DESTS: ReadonlySet<string> = new Set(["script", "style", "image", "font", "audio", "video", "track"]);
+
+/** The words for a data request blocked after the click: its method and path, never its query. */
+export function dataWords(method: string, url: string, origin: string): string {
+  return `the popup asked for data when it opened (${String(method).toUpperCase()} ${describeUrl(url, origin)}); it was blocked, so this was tested with its data blocked`;
+}
+
 /** A path that looks like a sign-in page: where an app sends a visitor who isn't signed in. */
 export const SIGN_IN_PATH = /(?:^|\/)(?:sign[-_]?in|log[-_]?in|auth|sso|session|account\/login)(?:\/|$|\.)/i;
