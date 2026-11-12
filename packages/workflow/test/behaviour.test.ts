@@ -4,7 +4,7 @@
  * run kept under the real .youi/, and evidence paths that never leave it. Real headless Chromium
  * against fixture apps on loopback ports.
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer, request, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -13,7 +13,7 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { BehaviourRouteRun } from "@youiyoux/core";
 import { launchBrowser } from "@youiyoux/detect";
 import { captureScreens } from "@youiyoux/scanner";
-import { behaviourFile, LiveApp, MemoryStore, probeBehaviour, readBehaviourRun, readEvidence, RuleWorkflow, serveWorkflow, setBehaviourConsent, WorkflowError, writeEvidence, type RunningService } from "../src/index.ts";
+import { behaviourFile, LiveApp, MemoryStore, probeBehaviour, readBehaviourRun, readEvidence, readYouiFile, writeYouiFile, RuleWorkflow, serveWorkflow, setBehaviourConsent, WorkflowError, writeEvidence, type RunningService } from "../src/index.ts";
 import { sandbox, type Sandbox } from "./helpers.ts";
 
 const CHROMIUM = process.env.YOUI_CHROMIUM ?? chromium.executablePath();
@@ -164,6 +164,68 @@ describe("evidence and run files stay inside the real .youi/", () => {
       expect(BehaviourRouteRun.safeParse(run).success).toBe(true);
       writeFileSync(join(root, behaviourFile("/menu")), JSON.stringify(run));
       await expect(readBehaviourRun(root, "/menu")).rejects.toThrow(/goes through a link/);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("the check and the use of a .youi/ path are the same file", () => {
+  const setup = (name: string) => {
+    const root = product(name);
+    const outside = mkdtempSync(join(tmpdir(), "youi-outside-"));
+    writeFileSync(join(outside, "secret.png"), "secret");
+    return { root, outside };
+  };
+
+  test("reading: a file swapped for a link after its check is refused by O_NOFOLLOW; one swapped for another file, by its device and inode", async () => {
+    const { root, outside } = setup("swap-read");
+    try {
+      await writeEvidence(root, ".youi/behaviour/shots/a.png", Buffer.from("mine"));
+      // After the check, the checked file becomes a link out of .youi/: the open refuses to follow it.
+      const toLink = (file: string) => async () => {
+        rmSync(file);
+        symlinkSync(join(outside, "secret.png"), file);
+      };
+      const asLink = await readYouiFile(root, ".youi/behaviour/shots/a.png", { beforeOpen: (file) => toLink(file)() }).then((b) => b.toString(), (e: unknown) => e);
+      expect(asLink).toBeInstanceOf(WorkflowError);
+      expect((asLink as WorkflowError).message).toMatch(/is a link/);
+      // Another regular file put in its place after the check: not the file that was checked.
+      rmSync(join(root, ".youi/behaviour/shots/a.png"));
+      await writeEvidence(root, ".youi/behaviour/shots/a.png", Buffer.from("mine"));
+      const swapped = await readYouiFile(root, ".youi/behaviour/shots/a.png", {
+        beforeOpen: async (file) => {
+          writeFileSync(`${file}.other`, "planted");
+          renameSync(`${file}.other`, file);
+        },
+      }).then((b) => b.toString(), (e: unknown) => e);
+      expect(swapped).toBeInstanceOf(WorkflowError);
+      expect((swapped as WorkflowError).message).toMatch(/changed between its check and its reading/);
+      // Untouched, it reads.
+      await writeEvidence(root, ".youi/behaviour/shots/b.png", Buffer.from("fine"));
+      expect((await readEvidence(root, ".youi/behaviour/shots/b.png")).toString()).toBe("fine");
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  test("writing: a link planted where the temp file goes, or swapped in after the rename, never writes outside; what was written is removed", async () => {
+    const { root, outside } = setup("swap-write");
+    try {
+      const planted = await writeYouiFile(root, ".youi/behaviour/c.png", Buffer.from("x"), { beforeOpen: async (temp) => symlinkSync(join(outside, "secret.png"), temp) }).catch((e: unknown) => e);
+      expect(planted).toBeInstanceOf(WorkflowError);
+      expect(readFileSync(join(outside, "secret.png"), "utf8")).toBe("secret");
+      const moved = await writeYouiFile(root, ".youi/behaviour/d.png", Buffer.from("written"), {
+        afterRename: async (file) => {
+          rmSync(file);
+          symlinkSync(join(outside, "secret.png"), file);
+        },
+      }).catch((e: unknown) => e);
+      expect(moved).toBeInstanceOf(WorkflowError);
+      expect((moved as WorkflowError).message).toMatch(/didn't end up inside/);
+      expect(existsSync(join(root, ".youi/behaviour/d.png"))).toBe(false);
+      expect(readFileSync(join(outside, "secret.png"), "utf8")).toBe("secret");
+      expect(readdirSync(outside)).toEqual(["secret.png"]);
     } finally {
       rmSync(outside, { recursive: true, force: true });
     }

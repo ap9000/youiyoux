@@ -243,6 +243,11 @@ dismissal, roving focus) from a small static table. youiyoux never suggests addi
    scenarios, target identity, locate + resolve; adversarial tests. No checks yet beyond "open and identify".
    Evidence paths: the schema only admits `.youi/…` with plain segments (slice 0); writing and reading evidence
    must also resolve each path against the real `.youi/` (symlinks included) and refuse anything that escapes.
+   Check and use are tied (Alex, finding 5: cheap guard, accept the rest): reads open with `O_NOFOLLOW` and refuse a
+   handle whose device/inode isn't the checked file's; writes go to an exclusive `O_NOFOLLOW` temp file in the
+   checked folder, then rename, then a `realpath` re-check (outside the real `.youi/` → removed and refused).
+   Residual, out of scope: a process on the same account that swaps a parent folder between the check and the open
+   (it could already change the files themselves).
 2. **One check end to end** — `dismiss-escape` through `behave`, storage, freshness/stale, `check` reading stored
    results, exit codes.
 3. **The other five checks** — with the pattern table, effective focus, budgets; fixtures per pattern.

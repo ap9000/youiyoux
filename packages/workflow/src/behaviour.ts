@@ -10,9 +10,10 @@
  * popup opening and being identified is reported as `incomplete` until the checks themselves run.
  */
 import { createHash, randomBytes } from "node:crypto";
-import { lstat, mkdir, readFile, realpath, rename, writeFile } from "node:fs/promises";
-import { isAbsolute, join, relative, sep } from "node:path";
-import { BEHAVIOUR_ROUTE_SCHEMA, BehaviourRouteRun, EVIDENCE_PATH, writeFileAtomic, type BehaviourCheckId, type BehaviourResult, type BehaviourTarget } from "@youiyoux/core";
+import { constants } from "node:fs";
+import { lstat, mkdir, open, realpath, rename, unlink, type FileHandle } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import { BEHAVIOUR_ROUTE_SCHEMA, BehaviourRouteRun, EVIDENCE_PATH, type BehaviourCheckId, type BehaviourResult, type BehaviourTarget } from "@youiyoux/core";
 import { behaviourConsent, probeOrigin, probeRoute, readScreensSpec, screenUrl, switchedConsent, SWITCHED_OFF, updateScreensSpec, type ContractBinding, type ProbeBudgets, type ProbeRouteOptions, type RouteProbe, type ScreensSpec } from "@youiyoux/scanner";
 import { LiveApp } from "./live.ts";
 import { WorkflowError } from "./policy.ts";
@@ -91,29 +92,99 @@ export async function youiPath(root: string, path: string, mode: "read" | "write
   return file;
 }
 
+/** Tests only: what happens between the path's check and its use (a race, staged). */
+export interface YouiFileHooks {
+  /** After the path is checked, before the file (or, writing, its temp file) is opened. */
+  readonly beforeOpen?: (path: string) => Promise<void>;
+  /** Writing: after the temp file is renamed into place, before the result is checked. */
+  readonly afterRename?: (file: string) => Promise<void>;
+}
+
+/**
+ * A file under the real `.youi/` read safely: the path checked (youiPath), then opened without
+ * following a link (O_NOFOLLOW), and the handle's file must be the very file that was checked
+ * (same device and inode), else refused.
+ *
+ * Residual, accepted: a process on the same account that swaps a parent folder between the check
+ * and the open is out of scope; it could already change the files themselves.
+ */
+export async function readYouiFile(root: string, path: string, hooks: YouiFileHooks = {}): Promise<Buffer> {
+  const file = await youiPath(root, path, "read");
+  const checked = await lstat(file);
+  await hooks.beforeOpen?.(file);
+  let handle: FileHandle;
+  try {
+    handle = await open(file, constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch (error: unknown) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ELOOP" || code === "EMLINK") throw new WorkflowError("forbidden", `${path} is a link: youiyoux reads only files inside the project's own .youi/`);
+    if (code === "ENOENT") throw new WorkflowError("not-found", `${path} doesn't exist`);
+    throw error;
+  }
+  try {
+    const opened = await handle.stat();
+    if (!opened.isFile() || opened.dev !== checked.dev || opened.ino !== checked.ino) throw new WorkflowError("forbidden", `${path} changed between its check and its reading; nothing was read`);
+    return await handle.readFile();
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * A file under the real `.youi/` written safely: the path checked (youiPath), the bytes written to
+ * a new temp file in that checked folder (created exclusively, never through a link), renamed into
+ * place, and the result checked again: still a file, really inside the real `.youi/`. If not, what
+ * was written is removed where possible and the write refused. Same residual as readYouiFile.
+ */
+export async function writeYouiFile(root: string, path: string, bytes: Buffer | string, hooks: YouiFileHooks = {}): Promise<string> {
+  const file = await youiPath(root, path, "write");
+  const realYoui = await realpath(join(await realpath(root), ".youi"));
+  const temp = join(dirname(file), `.${process.pid}.${randomBytes(6).toString("hex")}.tmp`);
+  await hooks.beforeOpen?.(temp);
+  let handle: FileHandle;
+  try {
+    handle = await open(temp, constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW | constants.O_WRONLY, 0o644);
+  } catch (error: unknown) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "EEXIST" || code === "ELOOP") throw new WorkflowError("forbidden", `${path} couldn't be written safely (something was put in its place); nothing was written`);
+    throw error;
+  }
+  try {
+    await handle.writeFile(bytes);
+  } finally {
+    await handle.close();
+  }
+  await rename(temp, file);
+  await hooks.afterRename?.(file);
+  const written = await lstat(file).catch(() => null);
+  const real = await realpath(file).catch(() => null);
+  const r = real ? relative(realYoui, real) : "..";
+  if (!written?.isFile() || r === "" || r === ".." || r.startsWith(`..${sep}`) || isAbsolute(r)) {
+    if (written && !written.isDirectory()) await unlink(file).catch(() => undefined);
+    throw new WorkflowError("forbidden", `${path} didn't end up inside the project's own .youi/; what was written was removed`);
+  }
+  return file;
+}
+
 /** Evidence (a screenshot) written under the real `.youi/`; the path is refused if it leads anywhere else. */
 export async function writeEvidence(root: string, path: string, bytes: Buffer): Promise<void> {
-  const file = await youiPath(root, path, "write");
-  // writeFileAtomic takes text; evidence is binary, so it is written the same atomic way, byte for byte.
-  const temp = `${file}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
-  await writeFile(temp, bytes, { flag: "wx" });
-  await rename(temp, file);
+  await writeYouiFile(root, path, bytes);
 }
 
 export async function readEvidence(root: string, path: string): Promise<Buffer> {
-  return readFile(await youiPath(root, path, "read"));
+  return readYouiFile(root, path);
 }
 
 /** A route's last run, if there is one; its evidence paths are each proved to stay in the real `.youi/`. */
 export async function readBehaviourRun(root: string, route: string): Promise<BehaviourRouteRun | null> {
-  let file: string;
+  let text: string;
   try {
-    file = await youiPath(root, behaviourFile(route), "read");
+    text = (await readYouiFile(root, behaviourFile(route))).toString("utf8");
   } catch (error: unknown) {
     if (error instanceof WorkflowError && error.code === "not-found") return null;
     throw error;
   }
-  const parsed = BehaviourRouteRun.safeParse(JSON.parse(await readFile(file, "utf8")));
+  const parsed = BehaviourRouteRun.safeParse(JSON.parse(text));
   if (!parsed.success || parsed.data.route !== route) throw new WorkflowError("invalid", `${behaviourFile(route)} isn't a behaviour run for ${route}: run the probe again`);
   for (const result of parsed.data.results) for (const path of result.evidence) await youiPath(root, path, "read");
   return parsed.data;
@@ -250,7 +321,6 @@ export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<Pr
   // This probe decides nothing: a passed or failed result here would be a bug, never stored.
   if (results.some((r) => r.state === "passed" || r.state === "failed")) throw new WorkflowError("internal", "the probe made a result it can't make yet; nothing was stored");
   const run = BehaviourRouteRun.parse({ schema: BEHAVIOUR_ROUTE_SCHEMA, route: options.route, runId, at, origin: consent.origin, viewport: spec.viewport, state: probe.state, why: probe.why, fix: probe.fix, coverage: probe.coverage, results });
-  const file = await youiPath(options.root, behaviourFile(options.route), "write");
-  await writeFileAtomic(file, `${JSON.stringify(run, null, 2)}\n`);
+  const file = await writeYouiFile(options.root, behaviourFile(options.route), `${JSON.stringify(run, null, 2)}\n`);
   return { run, file, probe };
 }
