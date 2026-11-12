@@ -2,9 +2,11 @@
  * The rule checks: the built-ins (`check.engine: youi`) and plain ast-grep rules
  * (`check.engine: ast-grep`). Each returns raw findings; runChecks applies rule
  * severity, file globs and `youi-ignore` comments, and reports how every rule ran.
+ * Behaviour rules (`check.engine: behaviour`) are never run here: a probe run in the
+ * running app checks them, so the scan reports them `incomplete`, never clean.
  */
 import type { SgNode } from "@ast-grep/napi";
-import { matchesAny, type ElementId, type OutputConfig, type RuleRun, type RuleSpec, type Violation } from "@youiyoux/core";
+import { BEHAVIOUR_NOT_RUN, matchesAny, type ElementId, type OutputConfig, type RuleRun, type RuleSpec, type Violation } from "@youiyoux/core";
 import { cssVariable, parseCssColor, readRules, sameColor, tailwindTheme, type DtcgColor, type ResolvedToken } from "@youiyoux/tokens";
 import { AST_GREP_FILE_LANG, ruleCapability } from "./capabilities.ts";
 import type { ElementIndex } from "./elements.ts";
@@ -408,6 +410,8 @@ function runRule(rule: RuleSpec, input: CheckInput, out: { violations: Violation
   const execution = ruleCapability(rule);
   if (execution.state === "off" || execution.state === "advisory") return { rule: rule.id, state: execution.state };
   if (execution.state === "unsupported") return { rule: rule.id, state: "unsupported", reason: execution.reason };
+  // The code scan cannot see behaviour; without probe results its outcome is unknown, never zero findings.
+  if (execution.state === "probe") return { rule: rule.id, state: "incomplete", reason: BEHAVIOUR_NOT_RUN };
   let findings = 0;
   for (const module of input.modules.values()) {
     if (module.file.startsWith(`${input.generatedDir}/`) || !matchesAny(module.file, rule.files)) continue;
@@ -434,7 +438,16 @@ export function runChecks(input: CheckInput): CheckOutput {
   return { violations: out.violations, suppressed: out.suppressed, checks };
 }
 
-/** True when a rule that should have run did not: its zero findings are not a pass. */
+/** Rules that should have run and did not (unsupported, errored, or a behaviour rule with no probe results): their zero findings are not a pass. */
 export function failedChecks(checks: readonly RuleRun[]): RuleRun[] {
+  return checks.filter((c) => c.state === "unsupported" || c.state === "error" || c.state === "incomplete");
+}
+
+/**
+ * Rules the code scan itself could not run (unsupported or errored): these make the scan partial.
+ * A behaviour rule's `incomplete` is not one: the scan never runs it, so its usage map stays complete
+ * while `youiyoux check` still reports the rule as not run.
+ */
+export function scanFailures(checks: readonly RuleRun[]): RuleRun[] {
   return checks.filter((c) => c.state === "unsupported" || c.state === "error");
 }

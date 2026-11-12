@@ -289,6 +289,114 @@
           "items": {
             "type": "string"
           }
+        },
+        "behaviour": {
+          "type": "object",
+          "properties": {
+            "pattern": {
+              "type": "string",
+              "enum": [
+                "menu-button",
+                "combobox-listbox",
+                "modal-dialog",
+                "popover"
+              ]
+            },
+            "trigger": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "part": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+                    }
+                  },
+                  "required": [
+                    "part"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "role": {
+                      "type": "string",
+                      "pattern": "^[a-z]{1,32}$"
+                    }
+                  },
+                  "required": [
+                    "role"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "popup": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "part": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+                    }
+                  },
+                  "required": [
+                    "part"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "role": {
+                      "type": "string",
+                      "pattern": "^[a-z]{1,32}$"
+                    }
+                  },
+                  "required": [
+                    "role"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            "returnFocusTo": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "part": {
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"
+                    }
+                  },
+                  "required": [
+                    "part"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "role": {
+                      "type": "string",
+                      "pattern": "^[a-z]{1,32}$"
+                    }
+                  },
+                  "required": [
+                    "role"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "pattern"
+          ],
+          "additionalProperties": false
         }
       }
     },

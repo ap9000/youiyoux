@@ -125,6 +125,36 @@
           "properties": {
             "engine": {
               "type": "string",
+              "const": "behaviour"
+            },
+            "id": {
+              "type": "string",
+              "enum": [
+                "trigger-state",
+                "dismiss-escape",
+                "focus-into",
+                "focus-return",
+                "focus-trap",
+                "arrow-keys"
+              ]
+            },
+            "options": {
+              "default": {},
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "engine",
+            "id"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "engine": {
+              "type": "string",
               "const": "advisory"
             }
           },

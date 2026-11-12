@@ -255,6 +255,7 @@ export function ruleRows(project: Project): Array<Record<string, unknown>> {
         enforced: execution.state === "enforced",
         execution: execution.state,
         ...(execution.state === "unsupported" ? { notChecked: execution.reason } : {}),
+        ...(execution.state === "probe" ? { notChecked: `a behaviour rule (${execution.by.slice(10)}): a probe run in the running app checks it, not the code scan; follow it yourself and check it by hand (keyboard: Esc, Tab, arrow keys) until a probe has run` } : {}),
         do: r.agent,
         ...(r.examples.bad.length ? { bad: r.examples.bad[0] } : {}),
         ...(r.examples.good.length ? { good: r.examples.good[0] } : {}),

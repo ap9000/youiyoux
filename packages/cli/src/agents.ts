@@ -63,6 +63,11 @@ function generatedNote(project: Project): string {
 const enforced = (rules: readonly RuleSpec[]): RuleSpec[] => rules.filter((r) => ruleCapability(r).state === "enforced");
 /** Rules agents still follow though nothing checks them: advisory prose, and checks this youi cannot run. */
 const unchecked = (rules: readonly RuleSpec[]): RuleSpec[] => rules.filter((r) => ["advisory", "unsupported"].includes(ruleCapability(r).state));
+/** Behaviour rules: a probe run in the running app checks them, never `youiyoux check` on code. */
+const behavioural = (rules: readonly RuleSpec[]): RuleSpec[] => rules.filter((r) => ruleCapability(r).state === "probe");
+
+/** How an agent verifies a behaviour rule. `behave` is not shipped yet, so it says so rather than implying the rule was checked. */
+const BEHAVIOUR_VERIFY = "a behaviour rule, which `youiyoux check` cannot see in code: verify it with `youiyoux behave --route <route>` (or `ui_behave`), coming in a later youiyoux; until then check it yourself with the keyboard (Esc, Tab, arrow keys)";
 
 export interface UnknownToolMention {
   readonly rule: string;
@@ -72,7 +77,7 @@ export interface UnknownToolMention {
 /** Tool names in the agent text of rules copied into AGENTS.md and SKILL.md (checked or not) that the MCP server does not expose. */
 export function unknownToolMentions(project: Project): UnknownToolMention[] {
   const known = new Set<string>(MCP_TOOLS);
-  return [...enforced(project.system.rules), ...unchecked(project.system.rules)].flatMap((r) => [...new Set(r.agent.match(/\b(?:system|library|discover|index|youi|ui)_[a-z_]+\b/g) ?? [])].filter((tool) => !known.has(tool)).map((tool) => ({ rule: r.id, tool })));
+  return [...enforced(project.system.rules), ...unchecked(project.system.rules), ...behavioural(project.system.rules)].flatMap((r) => [...new Set(r.agent.match(/\b(?:system|library|discover|index|youi|ui)_[a-z_]+\b/g) ?? [])].filter((tool) => !known.has(tool)).map((tool) => ({ rule: r.id, tool })));
 }
 
 function enumSummary(contract: ComponentContract): string {
@@ -106,6 +111,7 @@ export function agentsBlock(project: Project): string {
     "- Before using a component's props, call `system_get_component` or run `youiyoux show <component>`; use only the listed values.",
     ...enforced(system.rules).map((r) => `- ${r.agent}`),
     ...unchecked(system.rules).map((r) => `- ${r.agent} (not checked by \`youiyoux check\`: follow it yourself)`),
+    ...behavioural(system.rules).map((r) => `- ${r.agent} (${BEHAVIOUR_VERIFY})`),
     `- Never edit files marked \`${GENERATED_MARK}\` (\`${config.outputs.dir}/*\`, ${config.agents.designMd}, the youiyoux skill). Change the design language and run \`youiyoux sync\`.`,
     `- Owned component files in \`${config.componentsDir}\` may be edited; \`youiyoux sync\` 3-way merges upstream changes into them and reports drift.`,
     "- After changing a component, call `ui_render` with its file (or run `youiyoux render <file>`) and look at the images: light and dark, desktop and phone, its accessibility issues and the diff against the base. Fix what it reports.",
@@ -256,6 +262,18 @@ export function skillMd(project: Project, uncontracted: readonly string[] = []):
     "| --- | --- | --- |",
     ...fixes,
     "",
+    ...(behavioural(system.rules).length > 0
+      ? [
+          "## Behaviour rules",
+          "",
+          `How popups (menus, comboboxes, dialogs, popovers) must behave. Each is ${BEHAVIOUR_VERIFY}.`,
+          "",
+          "| Rule | Severity | Check | Do |",
+          "| --- | --- | --- | --- |",
+          ...behavioural(system.rules).map((r) => `| \`${ruleSlug(r.id)}\` | ${r.severity} | ${r.check.engine === "behaviour" ? r.check.id : ""} | ${r.agent} |`),
+          "",
+        ]
+      : []),
     "## Find where something is used",
     "",
     "`youiyoux where button` lists sites by screen, with prop usage and anything the scanner could not resolve (unknown is never counted as zero). Filter with `--route /settings`. MCP: `system_where_used`, and `system_screen_bom {\"route\": \"/settings\"}` for everything on one screen.",

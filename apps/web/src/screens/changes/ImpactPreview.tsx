@@ -32,7 +32,9 @@ export function ImpactPreview({ preview, project, stale }: { preview: Preview; p
     <div className={clsx("space-y-4", stale && "opacity-60")}>
       <div className="space-y-1">
         <p className="text-title">
-          {preview.enforced ? (
+          {preview.notOnSnapshot ? (
+            "Not counted on the code"
+          ) : preview.enforced ? (
             <>
               Would flag <span className="tabular">{plural(preview.flagged, "place")}</span>
               {preview.flagged > 0 && <span className="text-muted"> in {plural(preview.files, "file")}</span>}
@@ -41,15 +43,17 @@ export function ImpactPreview({ preview, project, stale }: { preview: Preview; p
             "Flags nothing"
           )}
         </p>
-        <p className="text-small text-muted">
-          <span className="tabular">{preview.counts.new}</span> new · <span className="tabular">{preview.counts.kept}</span> already flagged · <span className="tabular">{preview.counts.resolved}</span> no longer flagged
-          {preview.counts.suppressed > 0 && (
-            <>
-              {" "}
-              · <span className="tabular">{preview.counts.suppressed}</span> silenced by youi-ignore
-            </>
-          )}
-        </p>
+        {!preview.notOnSnapshot && (
+          <p className="text-small text-muted">
+            <span className="tabular">{preview.counts.new}</span> new · <span className="tabular">{preview.counts.kept}</span> already flagged · <span className="tabular">{preview.counts.resolved}</span> no longer flagged
+            {preview.counts.suppressed > 0 && (
+              <>
+                {" "}
+                · <span className="tabular">{preview.counts.suppressed}</span> silenced by youi-ignore
+              </>
+            )}
+          </p>
+        )}
         <p className="font-mono text-mono-sm text-muted">
           {project}
           {preview.snapshot.projectCommit ? ` @ ${preview.snapshot.projectCommit.slice(0, 7)}` : ""}

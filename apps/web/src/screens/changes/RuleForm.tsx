@@ -18,6 +18,7 @@ interface RuleFormProps {
 
 type Check = RuleFields["check"];
 type YouiCheck = Extract<Check, { engine: "youi" }>;
+type BehaviourCheck = Extract<Check, { engine: "behaviour" }>;
 type AstGrepCheck = Extract<Check, { engine: "ast-grep" }>;
 type NativeOptions = { elements: Record<string, string>; allowInputTypes: string[] };
 
@@ -37,11 +38,14 @@ function problemFor(problems: readonly string[], field: string): string | undefi
 
 const lines = (text: string): string[] => text.split("\n");
 const slug = (title: string): string => title.toLowerCase().replace(/[^a-z0-9.]+/g, "-").replace(/^[-.]+|[-.]+$/g, "");
-const checkKey = (check: Check): string => (check.engine === "youi" ? check.id : check.engine);
+/** One key per offered check: built-in ids, `behaviour:<id>` (their ids are another list), or the engine. */
+const checkKey = (check: Check): string => (check.engine === "youi" ? check.id : check.engine === "behaviour" ? `behaviour:${check.id}` : check.engine);
+const capabilityKey = (c: CheckCapability): string => (c.engine === "behaviour" ? `behaviour:${c.id}` : (c.id ?? c.engine));
 
 function checkFor(key: string, capabilities: readonly CheckCapability[]): Check {
-  const capability = capabilities.find((c) => (c.id ?? c.engine) === key);
+  const capability = capabilities.find((c) => capabilityKey(c) === key);
   if (!capability || capability.engine === "advisory") return { engine: "advisory" };
+  if (capability.engine === "behaviour") return { engine: "behaviour", id: capability.id as BehaviourCheck["id"], options: {} };
   return { engine: "youi", id: capability.id as YouiCheck["id"], options: { ...capability.defaults } };
 }
 
@@ -50,7 +54,7 @@ export function RuleForm({ value, onChange, info, mode, readOnly, problems }: Ru
   const set = (patch: Partial<RuleFields>): void => onChange({ ...value, rule: { ...rule, ...patch } });
   const prefix = `youi:${info.project.system}/rule/`;
   const name = rule.id.startsWith(prefix) ? rule.id.slice(prefix.length) : rule.id;
-  const capability = info.checks.find((c) => (c.id ?? c.engine) === checkKey(rule.check));
+  const capability = info.checks.find((c) => capabilityKey(c) === checkKey(rule.check));
   // An existing ast-grep rule keeps its body as written; youiyoux check runs it, and the service says if it cannot.
   const [custom] = useState<AstGrepCheck | null>(rule.check.engine === "ast-grep" ? rule.check : null);
   const error = (field: string): string | undefined => problemFor(problems, field);
@@ -116,7 +120,7 @@ export function RuleForm({ value, onChange, info, mode, readOnly, problems }: Ru
                 {custom && <option value="ast-grep">Custom ast-grep rule ({custom.language}, kept as written)</option>}
                 {!capability && rule.check.engine !== "ast-grep" && <option value="unsupported">Custom check (cannot run yet)</option>}
                 {info.checks.map((c) => (
-                  <option key={c.id ?? c.engine} value={c.id ?? c.engine}>
+                  <option key={capabilityKey(c)} value={capabilityKey(c)}>
                     {c.label}
                   </option>
                 ))}

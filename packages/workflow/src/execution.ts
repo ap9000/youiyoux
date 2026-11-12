@@ -4,10 +4,10 @@
  *
  * `scannerExecution` is the scanner's one rule execution model, the same one `youiyoux check`,
  * `youiyoux rules`, the MCP server and the hub use: built-in checks with their options checked,
- * ast-grep bodies compiled, advisory rules never run. A draft can never claim enforcement
+ * ast-grep bodies compiled, advisory rules never run, behaviour rules left to a probe run (incomplete here). A draft can never claim enforcement
  * the scanner does not perform, and a check that did not run never reads as zero findings.
  */
-import { BUILT_IN_CHECKS, type BuiltInCheckId, type RuleRun, type RuleSpec, type Violation } from "@youiyoux/core";
+import { BEHAVIOUR_CHECKS, BUILT_IN_CHECKS, type BehaviourCheck, type BuiltInCheckId, type RuleRun, type RuleSpec, type Violation } from "@youiyoux/core";
 import { checkInputFor, ruleCapability, runChecks, type Project, type ScanResult } from "@youiyoux/scanner";
 import type { CheckCapability } from "./api.ts";
 
@@ -38,8 +38,26 @@ const BUILT_IN_FORM: Readonly<Record<BuiltInCheckId, Pick<CheckCapability, "labe
   "lookalike-component": { label: "Lookalike components", options: "none", defaults: {} },
 };
 
+/** How the form labels each behaviour check; what it verifies comes from core's own list. */
+const BEHAVIOUR_FORM: Readonly<Record<BehaviourCheck, string>> = {
+  "trigger-state": "Behaviour: the opening button says it is open",
+  "dismiss-escape": "Behaviour: Esc closes the popup",
+  "focus-into": "Behaviour: opening moves focus in",
+  "focus-return": "Behaviour: closing returns focus",
+  "focus-trap": "Behaviour: Tab stays inside a modal dialog",
+  "arrow-keys": "Behaviour: arrow keys move through items",
+};
+
 const OFFERED: readonly CheckCapability[] = [
   ...(Object.keys(BUILT_IN_FORM) as BuiltInCheckId[]).map((id) => ({ engine: "youi" as const, id, description: BUILT_IN_CHECKS[id], ...BUILT_IN_FORM[id] })),
+  ...(Object.keys(BEHAVIOUR_FORM) as BehaviourCheck[]).map((id) => ({
+    engine: "behaviour" as const,
+    id,
+    label: BEHAVIOUR_FORM[id],
+    description: `${BEHAVIOUR_CHECKS[id].description} Checked by a probe run in the running app, not by the code scan: youiyoux check reports it incomplete until one has run.`,
+    options: "none" as const,
+    defaults: {},
+  })),
   { engine: "advisory", id: null, label: "Advisory (not checked)", description: "Guidance for people and agents. Nothing is flagged, and the rule is never shown as enforced.", options: "none", defaults: {} },
 ];
 

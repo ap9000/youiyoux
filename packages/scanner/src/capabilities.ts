@@ -2,14 +2,14 @@
  * What youi can check, and what a rule would find: the capability API the rule
  * editor, the CLI and the MCP server share.
  *
- *   ruleCapability(rule)        enforced / advisory / off / unsupported, with ast-grep bodies compiled
+ *   ruleCapability(rule)        enforced / advisory / off / unsupported / probe, with ast-grep bodies compiled
  *   checkCapabilities()         every check this youi runs, for an editor's check picker
  *   evaluateRule(p, scan, d)    a draft rule run against an existing scan snapshot, compared with the published rule
  *
  * A draft that does not validate or cannot run never comes back as zero findings.
  */
 import { Lang, parse } from "@ast-grep/napi";
-import { AST_GREP_LANGUAGES, BUILT_IN_CHECKS, RuleSpec, ruleExecution, type AstGrepLanguage, type RuleExecution, type Violation } from "@youiyoux/core";
+import { AST_GREP_LANGUAGES, BEHAVIOUR_CHECKS, BUILT_IN_CHECKS, RuleSpec, ruleExecution, type AstGrepLanguage, type RuleExecution, type Violation } from "@youiyoux/core";
 import { runChecks, type CheckInput } from "./checks.ts";
 import type { ModuleInfo } from "./parse.ts";
 import type { Project } from "./project.ts";
@@ -66,6 +66,8 @@ export interface CheckCapabilities {
   readonly scanner: string;
   readonly builtIn: ReadonlyArray<{ readonly id: string; readonly finds: string }>;
   readonly astGrep: ReadonlyArray<{ readonly language: string; readonly runsOn: string }>;
+  /** Behaviour checks: run by a probe in the running app, never by the code scan. */
+  readonly behaviour: ReadonlyArray<{ readonly id: string; readonly checks: string; readonly patterns: readonly string[] }>;
   readonly notes: readonly string[];
 }
 
@@ -74,10 +76,12 @@ export function checkCapabilities(): CheckCapabilities {
     scanner: SCANNER_VERSION,
     builtIn: Object.entries(BUILT_IN_CHECKS).map(([id, finds]) => ({ id, finds })),
     astGrep: Object.entries(AST_GREP_LANGUAGES).map(([language, runsOn]) => ({ language, runsOn })),
+    behaviour: Object.entries(BEHAVIOUR_CHECKS).map(([id, check]) => ({ id, checks: check.description, patterns: check.patterns })),
     notes: [
       "`check.engine: advisory` rules are prose: shown to people and agents, never checked.",
       "`severity: off` rules are not checked and not shown to agents.",
       "An ast-grep body that does not compile is unsupported: never enforced, and a scan that meets it is partial.",
+      "`check.engine: behaviour` rules are checked by a probe run in the running app, never by the code scan; until one has run, `youiyoux check` reports them incomplete.",
       "Rules apply to the files their `files` globs match; generated token outputs are never checked.",
     ],
   };

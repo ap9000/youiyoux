@@ -187,7 +187,7 @@ describe("youi", () => {
       expect(await main(["schema", "--check"])).toBe(0);
       out = "";
       expect(await main(["schema", "--check", "--design", dir, "--json"])).toBe(1);
-      expect((JSON.parse(out) as { stale: string[] }).stale).toHaveLength(20);
+      expect((JSON.parse(out) as { stale: string[] }).stale).toHaveLength(21);
       expect(await main(["schema", "--write", "--design", dir])).toBe(0);
       out = "";
       expect(await main(["schema", "--check", "--design", dir])).toBe(0);
@@ -360,6 +360,37 @@ describe("youi", () => {
       expect(check.notRun).toEqual([expect.objectContaining({ rule: "youi:demo/rule/test.broken", state: "unsupported" })]);
       out = "";
       expect(await main(["rules", "--project", FIXTURE, "--design", design, "--preview", join(design, "rules/test.broken.rule.yaml")])).toBe(1);
+      expect(out).toContain("this is not a clean result");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("behaviour rules before any probe run", () => {
+  test("check is incomplete (exit 1) and says why, rules lists it as a probe, never as enforced or clean", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "youi-behaviour-"));
+    try {
+      const design = join(dir, "design");
+      await cp(DEMO, design, { recursive: true });
+      const escape = ["schema: youi.rule/v1", "id: youi:demo/rule/popup.escape", "title: Esc closes popups", "severity: error", "statement: Esc closes every popup.", "agent: Close popups on Esc.", "check:", "  engine: behaviour", "  id: dismiss-escape", ""].join("\n");
+      await writeFile(join(design, "rules/popup.escape.rule.yaml"), escape);
+      expect(await main(["check", "--project", FIXTURE, "--design", design, "--json"])).toBe(1);
+      const check = JSON.parse(out) as { incomplete: boolean; notRun: Array<{ rule: string; state: string; reason: string }>; checks: Array<{ rule: string; state: string; findings?: number }> };
+      expect(check.incomplete).toBe(true);
+      expect(check.notRun).toEqual([{ rule: "youi:demo/rule/popup.escape", state: "incomplete", reason: expect.stringContaining("checked by a probe run in the running app") }]);
+      expect(check.checks.find((c) => c.rule === "youi:demo/rule/popup.escape")).not.toMatchObject({ state: "ran" });
+      out = "";
+      expect(await main(["check", "--project", FIXTURE, "--design", design, "--rule", "popup.escape"])).toBe(1);
+      expect(out).toContain("! incomplete: popup.escape did not run, so this result is incomplete, not a pass");
+      expect(out).toContain("! rule popup.escape did not run: behaviour rules are checked by a probe run");
+      out = "";
+      expect(await main(["rules", "--project", FIXTURE, "--design", design, "--json"])).toBe(0);
+      const { rules } = JSON.parse(out) as { rules: Array<{ id: string; state: string }> };
+      expect(rules.find((r) => r.id === "youi:demo/rule/popup.escape")?.state).toBe("probe");
+      out = "";
+      expect(await main(["rules", "--project", FIXTURE, "--design", design, "--preview", join(design, "rules/popup.escape.rule.yaml")])).toBe(1);
+      expect(out).toContain("checked by a probe run in the running app");
       expect(out).toContain("this is not a clean result");
     } finally {
       await rm(dir, { recursive: true, force: true });

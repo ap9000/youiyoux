@@ -6,7 +6,7 @@
  */
 import { dirname, join, resolve } from "node:path";
 import { Baseline, readDefinition, readTextOrNull, relPath, ruleSlug, writeFileAtomic, type CheckIdentity, type RuleRun, type Violation } from "@youiyoux/core";
-import { BASELINE_FILE, compareToBaseline, createBaseline, failedChecks, PROJECT_FILE, ratchetBaseline, scanProject, type BaselineComparison, type Project, type ScanCache, type ScanResult } from "@youiyoux/scanner";
+import { BASELINE_FILE, compareToBaseline, createBaseline, failedChecks, PROJECT_FILE, ratchetBaseline, scanFailures, scanProject, type BaselineComparison, type Project, type ScanCache, type ScanResult } from "@youiyoux/scanner";
 import { analyseChange, type ChangeSet, type DiffReport } from "./check-diff.ts";
 import { verifyLock, verifyWiring, type LockIssue } from "./sync.ts";
 
@@ -37,7 +37,7 @@ export interface CheckResult {
   readonly unmatched: readonly string[];
   /** Files that could not be fully analysed: a clean result there is not a pass. */
   readonly failed: ReadonlyArray<{ file: string; reason: string }>;
-  /** Rules that should have run and could not (unsupported or errored): their findings are unknown, never zero. */
+  /** Rules that should have run and could not (unsupported, errored, or behaviour rules with no probe results): their findings are unknown, never zero. */
   readonly notRun: readonly RuleRun[];
   readonly violations: readonly Violation[];
   readonly lock: readonly LockIssue[] | null;
@@ -114,7 +114,7 @@ interface BaselineWrite {
 export async function writeBaseline(project: Project, file: string, options: { force?: boolean; cache?: ScanCache } = {}): Promise<BaselineWrite> {
   const scan = await scanProject(project, options.cache ? { cache: options.cache } : {});
   if (scan.report.status !== "complete" && !options.force) {
-    const gaps = [...scan.report.coverage.failed.map((f) => f.file), ...failedChecks(scan.report.checks).map((c) => `rule ${ruleSlug(c.rule)}`)];
+    const gaps = [...scan.report.coverage.failed.map((f) => f.file), ...scanFailures(scan.report.checks).map((c) => `rule ${ruleSlug(c.rule)}`)];
     throw new Error(`the scan is partial (${gaps.join(", ")}): findings there would later look new. Fix what could not be analysed or run, or record anyway with --force`);
   }
   const existing = await readBaseline(file);

@@ -79,7 +79,7 @@ export type CreateInput = { kind?: "rule"; mode: "edit"; ruleId: string } | { ki
 
 /** A preview's headline, for history notes and commit messages. */
 function previewSummary(draft: Draft): string {
-  if (draft.kind === "rule") return draft.preview ? `flags ${draft.preview.flagged} place(s)` : "no preview";
+  if (draft.kind === "rule") return draft.preview ? (draft.preview.notOnSnapshot ? "a behaviour rule: checked by a probe run, not counted on code" : `flags ${draft.preview.flagged} place(s)`) : "no preview";
   if (draft.kind === "ingest") {
     const q = draft.preview;
     if (!q) return "no preview";
@@ -623,7 +623,7 @@ export class RuleWorkflow {
         ...comparison,
         limits: [...comparison.limits, ...designLimits],
       };
-      const note = `Flags ${preview.flagged} place(s) in ${report.project}: ${preview.counts.new} new, ${preview.counts.kept} already flagged, ${preview.counts.resolved} no longer flagged.`;
+      const note = preview.notOnSnapshot ? `Not counted on ${report.project}'s code: ${preview.notOnSnapshot}` : `Flags ${preview.flagged} place(s) in ${report.project}: ${preview.counts.new} new, ${preview.counts.kept} already flagged, ${preview.counts.resolved} no longer flagged.`;
       const next: Draft = { ...draft, preview, updatedAt: this.now(), events: [...draft.events, this.event(actor, "previewed", note)] };
       await this.options.store.put(next);
       return this.refreshed(next, after);

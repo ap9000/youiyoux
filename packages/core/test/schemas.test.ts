@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, test } from "vitest";
-import { ComponentContract, DefinitionError, formatId, InventoryLook, loadDesignRepo, matchesQuery, parseDefinition, parseId, ProjectConfig, renderJsonSchemas, RuleSpec } from "../src/index.ts";
+import { BEHAVIOUR_CHECK_IDS, BEHAVIOUR_CHECKS, BEHAVIOUR_NOT_RUN, BEHAVIOUR_PATTERNS, BehaviourResult, ComponentContract, DefinitionError, executionLabel, formatId, InventoryLook, loadDesignRepo, matchesQuery, parseDefinition, parseId, ProjectConfig, renderJsonSchemas, RuleRun, ruleExecution, RuleSpec } from "../src/index.ts";
 
 const REPO = join(import.meta.dirname, "../../..");
 const DEMO = join(REPO, "examples/demo-design");
@@ -79,7 +79,7 @@ describe("other formats", () => {
 
   test("every published schema is emitted as JSON Schema 2020-12 and matches the committed copy", async () => {
     const rendered = renderJsonSchemas();
-    expect(rendered.map((s) => s.file)).toHaveLength(20);
+    expect(rendered.map((s) => s.file)).toHaveLength(21);
     for (const { file, content } of rendered) {
       const parsed = JSON.parse(content) as Record<string, unknown>;
       expect(parsed.$schema).toBe("https://json-schema.org/draft/2020-12/schema");
@@ -116,5 +116,98 @@ describe("design repos", () => {
 
   test("the tool's own repo holds no design system: it is not a design repo", async () => {
     await expect(loadDesignRepo(REPO)).rejects.toThrowError(/not a design repo/);
+  });
+});
+
+describe("behaviour rules (slice 0: contracts)", () => {
+  const behaviourRule = (check: Record<string, unknown>) => ({ schema: "youi.rule/v1", id: "youi:demo/rule/popup.escape", title: "Esc closes popups", severity: "error", statement: "Esc closes every popup.", agent: "Close popups on Esc.", check });
+
+  test("a rule may declare one check from the closed behaviour list; options default to none", () => {
+    const parsed = RuleSpec.parse(behaviourRule({ engine: "behaviour", id: "dismiss-escape" }));
+    expect(parsed.check).toEqual({ engine: "behaviour", id: "dismiss-escape", options: {} });
+    for (const id of BEHAVIOUR_CHECK_IDS) expect(RuleSpec.safeParse(behaviourRule({ engine: "behaviour", id })).success).toBe(true);
+  });
+
+  test("an unknown check id or an option no check reads is refused", () => {
+    expect(RuleSpec.safeParse(behaviourRule({ engine: "behaviour", id: "typeahead" })).success).toBe(false);
+    expect(RuleSpec.safeParse(behaviourRule({ engine: "behaviour", id: "dismiss-escape", options: { timeout: 5 } })).success).toBe(false);
+    expect(RuleSpec.safeParse(behaviourRule({ engine: "behaviour" })).success).toBe(false);
+  });
+
+  test("every behaviour check is described after its APG pattern, with the patterns it applies to", () => {
+    expect(Object.keys(BEHAVIOUR_CHECKS).sort()).toEqual([...BEHAVIOUR_CHECK_IDS].sort());
+    for (const check of Object.values(BEHAVIOUR_CHECKS)) {
+      expect(check.description).toMatch(/APG/);
+      expect(check.patterns.length).toBeGreaterThan(0);
+    }
+    expect(BEHAVIOUR_CHECKS["focus-trap"].patterns).toEqual(["modal-dialog"]);
+    expect(BEHAVIOUR_CHECKS["focus-into"].patterns).not.toContain("combobox-listbox");
+    expect(BEHAVIOUR_CHECKS["dismiss-escape"].patterns).toEqual([...BEHAVIOUR_PATTERNS]);
+  });
+
+  test("a behaviour rule executes as a probe, never as enforced; off stays off", () => {
+    const rule = RuleSpec.parse(behaviourRule({ engine: "behaviour", id: "focus-return" }));
+    const execution = ruleExecution(rule);
+    expect(execution).toEqual({ state: "probe", by: "behaviour:focus-return" });
+    expect(executionLabel(execution)).toBe("Behaviour (focus-return): checked by a probe run in the running app, not by the code scan; incomplete until one has run");
+    expect(ruleExecution({ ...rule, severity: "off" })).toEqual({ state: "off" });
+  });
+
+  test("a rule run can be incomplete, with a reason", () => {
+    expect(RuleRun.parse({ rule: "youi:demo/rule/popup.escape", state: "incomplete", reason: BEHAVIOUR_NOT_RUN })).toMatchObject({ state: "incomplete" });
+    expect(RuleRun.safeParse({ rule: "youi:demo/rule/popup.escape", state: "pending" }).success).toBe(false);
+  });
+
+  test("a contract binds its popup pattern and parts by data-part/data-slot or role, nothing else", () => {
+    const withBinding = (behaviour: unknown) => ComponentContract.safeParse({ ...minimalContract, a11y: { behaviour } });
+    const ok = withBinding({ pattern: "menu-button", trigger: { part: "trigger" }, popup: { role: "menu" }, returnFocusTo: { part: "menu_trigger-2" } });
+    expect(ok.success).toBe(true);
+    if (ok.success) expect(ok.data.a11y.behaviour).toEqual({ pattern: "menu-button", trigger: { part: "trigger" }, popup: { role: "menu" }, returnFocusTo: { part: "menu_trigger-2" } });
+    expect(ComponentContract.parse(minimalContract).a11y.behaviour).toBeUndefined();
+    expect(withBinding({ pattern: "tabs" }).success).toBe(false);
+    expect(withBinding({ pattern: "menu-button", trigger: { part: "button > .x" } }).success).toBe(false);
+    expect(withBinding({ pattern: "menu-button", trigger: { part: "trigger", role: "button" } }).success).toBe(false);
+    expect(withBinding({ pattern: "menu-button", trigger: { selector: "#open" } }).success).toBe(false);
+    expect(withBinding({ pattern: "modal-dialog", popup: { role: "Dialog" } }).success).toBe(false);
+    expect(withBinding({ pattern: "popover", extra: true }).success).toBe(false);
+  });
+
+  const result = {
+    runId: "run-1",
+    at: "2026-11-12T10:00:00.000Z",
+    viewport: { width: 1280, height: 800 },
+    route: "/flows",
+    rule: "youi:demo/rule/popup.escape",
+    target: { route: "/flows", pattern: "menu-button", component: "Menu", accessibleName: "More", file: "src/flows.tsx", line: 12 },
+    pattern: "menu-button",
+    check: "dismiss-escape",
+    state: "failed",
+    why: "The menu was still open 1.5 s after Esc.",
+    fix: "Close the menu when Esc is pressed while focus is inside it.",
+    evidence: ["behaviour/run-1/menu-before.png"],
+    freshness: { rule: "a".repeat(64), tool: "0.1.29", origin: "http://localhost:5173", config: "b".repeat(12), app: "c".repeat(64) },
+  };
+
+  test("a behaviour result is the canonical record: one check, one target, a state and what to do", () => {
+    expect(BehaviourResult.parse(result)).toMatchObject({ state: "failed", info: [], target: { accessibleName: "More" } });
+    for (const state of ["passed", "failed", "not-applicable", "incomplete", "error"]) expect(BehaviourResult.safeParse({ ...result, state }).success).toBe(true);
+  });
+
+  test("a result refuses a made-up state, a missing fix, evidence outside .youi/, a target on another route and an unknown key", () => {
+    expect(BehaviourResult.safeParse({ ...result, state: "clean" }).success).toBe(false);
+    expect(BehaviourResult.safeParse({ ...result, fix: "" }).success).toBe(false);
+    expect(BehaviourResult.safeParse({ ...result, evidence: ["../../etc/passwd"] }).success).toBe(false);
+    expect(BehaviourResult.safeParse({ ...result, evidence: ["/tmp/shot.png"] }).success).toBe(false);
+    expect(BehaviourResult.safeParse({ ...result, target: { ...result.target, route: "/other" } }).success).toBe(false);
+    expect(BehaviourResult.safeParse({ ...result, target: { ...result.target, pattern: "popover" } }).success).toBe(false);
+    expect(BehaviourResult.safeParse({ ...result, check: "typeahead" }).success).toBe(false);
+    expect(BehaviourResult.safeParse({ ...result, violations: [] }).success).toBe(false);
+    const { freshness: _freshness, ...stale } = result;
+    expect(BehaviourResult.safeParse(stale).success).toBe(false);
+  });
+
+  test("the behaviour result is published as a JSON Schema", () => {
+    const published = renderJsonSchemas().find((s) => s.file === "youi.behaviour-result.schema.json");
+    expect(published?.content).toContain('"dismiss-escape"');
   });
 });

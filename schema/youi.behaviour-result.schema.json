@@ -1,0 +1,229 @@
+{
+  "$id": "https://design-language.local/schema/youi.behaviour-result.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "runId": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{1,64}$"
+    },
+    "at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$"
+    },
+    "viewport": {
+      "type": "object",
+      "properties": {
+        "width": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "height": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "width",
+        "height"
+      ],
+      "additionalProperties": false
+    },
+    "route": {
+      "type": "string",
+      "pattern": "^\\/"
+    },
+    "rule": {
+      "type": "string",
+      "pattern": "^youi:([a-z][a-z0-9-]*)\\/(token|component|rule|migration)\\/([a-z0-9][a-z0-9.\\-]*)$"
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "route": {
+          "type": "string",
+          "pattern": "^\\/"
+        },
+        "pattern": {
+          "type": "string",
+          "enum": [
+            "menu-button",
+            "combobox-listbox",
+            "modal-dialog",
+            "popover"
+          ]
+        },
+        "component": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "accessibleName": {
+          "type": "string"
+        },
+        "ordinal": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "file": {
+          "type": "string",
+          "minLength": 1
+        },
+        "line": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        },
+        "domPath": {
+          "type": "string",
+          "minLength": 1
+        },
+        "box": {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "number"
+            },
+            "y": {
+              "type": "number"
+            },
+            "width": {
+              "type": "number",
+              "minimum": 0
+            },
+            "height": {
+              "type": "number",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "x",
+            "y",
+            "width",
+            "height"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "route",
+        "pattern",
+        "component",
+        "accessibleName"
+      ],
+      "additionalProperties": false
+    },
+    "pattern": {
+      "type": "string",
+      "enum": [
+        "menu-button",
+        "combobox-listbox",
+        "modal-dialog",
+        "popover"
+      ]
+    },
+    "check": {
+      "type": "string",
+      "enum": [
+        "trigger-state",
+        "dismiss-escape",
+        "focus-into",
+        "focus-return",
+        "focus-trap",
+        "arrow-keys"
+      ]
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "passed",
+        "failed",
+        "not-applicable",
+        "incomplete",
+        "error"
+      ]
+    },
+    "why": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fix": {
+      "type": "string",
+      "minLength": 1
+    },
+    "info": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "evidence": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "freshness": {
+      "type": "object",
+      "properties": {
+        "rule": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{12,64}$"
+        },
+        "tool": {
+          "type": "string",
+          "minLength": 1
+        },
+        "origin": {
+          "type": "string",
+          "format": "uri"
+        },
+        "config": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{12,64}$"
+        },
+        "app": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{12,64}$"
+        }
+      },
+      "required": [
+        "rule",
+        "tool",
+        "origin",
+        "config",
+        "app"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "runId",
+    "at",
+    "viewport",
+    "route",
+    "rule",
+    "target",
+    "pattern",
+    "check",
+    "state",
+    "why",
+    "fix",
+    "freshness"
+  ],
+  "additionalProperties": false
+}

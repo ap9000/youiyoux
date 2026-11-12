@@ -1,3 +1,4 @@
+export * from "./behaviour.ts";
 export * from "./detect.ts";
 export * from "./detect-draft.ts";
 export * from "./diff.ts";

@@ -13,6 +13,7 @@ const MAX_FINDINGS = 400;
 
 interface Comparison {
   readonly enforced: boolean;
+  readonly notOnSnapshot?: string;
   readonly flagged: number;
   readonly counts: { readonly new: number; readonly kept: number; readonly resolved: number; readonly suppressed: number };
   readonly baseline: number;
@@ -29,8 +30,11 @@ function finding(v: Violation, change: PreviewFinding["change"]): PreviewFinding
   return { file: v.file, line: v.line, column: v.column, text: v.text, message: v.message, ...(v.suggestion ? { suggestion: v.suggestion } : {}), severity: v.severity, change };
 }
 
-/** Why a check that should have run did not (unsupported, or it failed on this snapshot), or null. */
-export const notRunReason = (run: RuleRun | undefined): string | null => (run && (run.state === "unsupported" || run.state === "error") ? (run.reason ?? run.state) : null);
+/** Why a check that should have run did not (unsupported, it failed on this snapshot, or a behaviour rule with no probe results), or null. */
+export const notRunReason = (run: RuleRun | undefined): string | null => (run && (run.state === "unsupported" || run.state === "error" || run.state === "incomplete") ? (run.reason ?? run.state) : null);
+
+/** What a behaviour draft's preview says instead of a count: the code snapshot cannot show behaviour. */
+export const BEHAVIOUR_PREVIEW = "Behaviour rules are checked by a probe run in the running app, not on the code snapshot, so this preview cannot count what the rule would flag.";
 
 function limitsOf(rule: RuleSpec, baseline: RuleSpec | null, scan: ScanResult, flagged: number, kept: number, baselineNotRun: string | null): string[] {
   const limits: string[] = [];
@@ -49,6 +53,11 @@ function limitsOf(rule: RuleSpec, baseline: RuleSpec | null, scan: ScanResult, f
 
 export function comparePreview(input: { project: Project; scan: ScanResult; execution: RuleExecution; draft: RuleSpec; baseline: RuleSpec | null }): Comparison {
   const { project, scan, execution, draft, baseline } = input;
+  // A behaviour rule never runs on a snapshot: say so, rather than run it and read "incomplete" as an error or as zero.
+  if (ruleCapability(draft).state === "probe") {
+    const severity = draft.severity === "off" ? ["Severity is off: once published, this rule flags nothing anywhere."] : [];
+    return { enforced: false, notOnSnapshot: BEHAVIOUR_PREVIEW, flagged: 0, counts: { new: 0, kept: 0, resolved: 0, suppressed: 0 }, baseline: 0, files: 0, findings: [], truncated: false, limits: [BEHAVIOUR_PREVIEW, ...severity] };
+  }
   const next = execution.evaluate(project, scan, [draft]);
   // A draft whose check did not run has no findings to show: an empty preview would read as "flags nothing".
   const draftNotRun = notRunReason(next.checks[0]);

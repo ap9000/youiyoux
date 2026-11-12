@@ -223,7 +223,7 @@ export function createServer(options: ServerOptions): McpServer {
 
   server.registerTool(
     "system_get_rules" satisfies McpTool,
-    { title: "Get System rules", description: "Every System rule that is on: severity, whether `youiyoux check` enforces it (execution: enforced, advisory or unsupported), the instruction to follow, and a bad/good example. Follow advisory and unsupported rules yourself: nothing checks them.", inputSchema: {}, annotations: READ_ONLY },
+    { title: "Get System rules", description: "Every System rule that is on: severity, whether `youiyoux check` enforces it (execution: enforced, advisory, unsupported, or probe for behaviour rules a probe run in the running app checks), the instruction to follow, and a bad/good example. Follow advisory, unsupported and probe rules yourself: nothing checks them in code.", inputSchema: {}, annotations: READ_ONLY },
     guard(async () => ({ rules: ruleRows(await state.loadProject()) })),
   );
 

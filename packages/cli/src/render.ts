@@ -11,7 +11,9 @@ function coverageLine(report: Pick<ScanReport, "coverage" | "commit" | "status" 
     ...(report.coverage.failed.length > 0 ? [`${plural(report.coverage.failed.length, "file")} not fully parsed`] : []),
     ...(failedChecks(report.checks).length > 0 ? [`${plural(failedChecks(report.checks).length, "rule")} could not run`] : []),
   ];
-  const status = report.status === "complete" ? style.ok("complete") : style.warn(`partial: ${problems.join(", ") || "incomplete"}`);
+  // A complete code scan can still leave rules unrun (behaviour rules wait for a probe run): never print a bare "complete" then.
+  const notRun = failedChecks(report.checks).length;
+  const status = report.status === "complete" ? (notRun > 0 ? style.warn(`code scan complete; ${plural(notRun, "rule")} not run`) : style.ok("complete")) : style.warn(`partial: ${problems.join(", ") || "incomplete"}`);
   const dirty = report.content?.dirtyCount ? ` + ${plural(report.content.dirtyCount, "uncommitted file")}` : "";
   return style.dim(`scanned ${plural(report.coverage.filesScanned, "file")}${report.commit ? ` at ${report.commit.slice(0, 12)}${dirty}` : ""} in ${ms(report.durationMs)} · `) + status;
 }
@@ -156,7 +158,7 @@ export function renderPlan(plan: ChangePlan): string {
   return lines.join("\n");
 }
 
-const EXECUTION_STYLE: Record<RuleExecution["state"], (s: string) => string> = { enforced: style.ok, advisory: style.dim, off: style.dim, unsupported: style.warn };
+const EXECUTION_STYLE: Record<RuleExecution["state"], (s: string) => string> = { enforced: style.ok, advisory: style.dim, off: style.dim, unsupported: style.warn, probe: style.warn };
 
 export function renderRules(rules: ReadonlyArray<{ rule: RuleSpec; execution: RuleExecution }>): string {
   const width = Math.max(...rules.map(({ rule }) => ruleSlug(rule.id).length), 8);

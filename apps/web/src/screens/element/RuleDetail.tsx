@@ -1,5 +1,5 @@
 /** A rule's page: the statement, why it exists, examples, who declares it, and where projects break it. */
-import type { RuleExecution } from "@youiyoux/core/rules";
+import { BEHAVIOUR_NOT_RUN, type RuleExecution } from "@youiyoux/core/rules";
 import { ShieldCheck } from "lucide-react";
 import { useMemo } from "react";
 import { Link } from "wouter";
@@ -17,7 +17,7 @@ import { checkLabel, executionOf } from "./RulesTab.tsx";
 
 const MAX_LISTED = 40;
 
-const BADGE: Record<RuleExecution["state"], string> = { enforced: "Enforced", advisory: "Advisory", off: "Off", unsupported: "Not checked" };
+const BADGE: Record<RuleExecution["state"], string> = { enforced: "Enforced", advisory: "Advisory", off: "Off", unsupported: "Not checked", probe: "Behaviour" };
 
 /**
  * Projects whose scan did not run this rule, with why. Scans from before rules reported how they ran
@@ -38,6 +38,8 @@ function Violations({ rule }: { rule: CatalogRule }) {
   const usage = useUsageState();
   const violations = useMemo(() => (usage.status === "ready" ? (usage.value.violationsByRule.get(rule.id) ?? []) : []), [usage, rule.id]);
   const execution = executionOf(rule);
+  // A behaviour rule is never checked by the code scan: until a probe has run, whether it is broken is unknown, not clean.
+  if (execution.state === "probe") return <p className="text-body text-muted">Not run yet: {BEHAVIOUR_NOT_RUN}, so whether projects break it is unknown.</p>;
   if (execution.state !== "enforced") return <p className="text-body text-muted">Not checked, so no project is measured against it.</p>;
   if (usage.status !== "ready") return <ResourceState state={usage} onRetry={retryUsage} what="the usage map" />;
   const notRun = notRunIn(usage.value.reports, rule);
