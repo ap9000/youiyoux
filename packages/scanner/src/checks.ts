@@ -6,7 +6,7 @@
  * running app checks them, so the scan reports them `incomplete`, never clean.
  */
 import type { SgNode } from "@ast-grep/napi";
-import { BEHAVIOUR_NOT_RUN, matchesAny, type ElementId, type OutputConfig, type RuleRun, type RuleSpec, type Violation } from "@youiyoux/core";
+import { BEHAVIOUR_NOT_RUN, matchesAny, ruleDidNotRun, type ElementId, type OutputConfig, type RuleRun, type RuleSpec, type Violation } from "@youiyoux/core";
 import { cssVariable, parseCssColor, readRules, sameColor, tailwindTheme, type DtcgColor, type ResolvedToken } from "@youiyoux/tokens";
 import { AST_GREP_FILE_LANG, ruleCapability } from "./capabilities.ts";
 import type { ElementIndex } from "./elements.ts";
@@ -440,7 +440,7 @@ export function runChecks(input: CheckInput): CheckOutput {
 
 /** Rules that should have run and did not (unsupported, errored, or a behaviour rule with no probe results): their zero findings are not a pass. */
 export function failedChecks(checks: readonly RuleRun[]): RuleRun[] {
-  return checks.filter((c) => c.state === "unsupported" || c.state === "error" || c.state === "incomplete");
+  return checks.filter(ruleDidNotRun);
 }
 
 /**

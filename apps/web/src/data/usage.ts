@@ -1,4 +1,5 @@
 /** Usage-map aggregation: where an element lives, grouped project → screen → site. */
+import { ruleDidNotRun } from "@youiyoux/core/rules";
 import { append } from "../lib/append.ts";
 import type { ComponentContract, ElementId, Lookalike, PropValue, ScanReport, UnknownSite, UsageSite, Violation } from "./types.ts";
 
@@ -27,6 +28,8 @@ export interface UsageIndex {
   readonly lookalikesByElement: ReadonlyMap<ElementId, readonly ProjectLookalike[]>;
   /** Sites the scanner could not resolve that might be the element, by name only. */
   readonly unknownsByCandidate: ReadonlyMap<ElementId, readonly ProjectUnknown[]>;
+  /** Rules some project's scan should have run and did not (unsupported, errored, behaviour waiting for a probe): their 0 is unknown, never clean. */
+  readonly notRunRules: ReadonlySet<ElementId>;
 }
 
 export const EVERY_SCREEN = "*";
@@ -37,14 +40,17 @@ export function indexUsage(reports: readonly ScanReport[]): UsageIndex {
   const violationsByRule = new Map<ElementId, ProjectViolation[]>();
   const lookalikesByElement = new Map<ElementId, ProjectLookalike[]>();
   const unknownsByCandidate = new Map<ElementId, ProjectUnknown[]>();
+  const notRunRules = new Set<ElementId>();
   for (const report of reports) {
     const { project } = report;
     for (const usage of report.usages) append(sitesByElement, usage.element, { ...usage, project, commit: report.commit });
     for (const violation of report.violations) append(violationsByRule, violation.rule, { ...violation, project });
     for (const lookalike of report.lookalikes) append(lookalikesByElement, lookalike.resembles, { ...lookalike, project });
     for (const unknown of report.unknowns) if (unknown.candidate) append(unknownsByCandidate, unknown.candidate, { ...unknown, project });
+    // Snapshots are read without validation: an older map has no `checks`.
+    for (const run of report.checks ?? []) if (ruleDidNotRun(run)) notRunRules.add(run.rule);
   }
-  return { reports, sitesByElement, violationsByRule, lookalikesByElement, unknownsByCandidate };
+  return { reports, sitesByElement, violationsByRule, lookalikesByElement, unknownsByCandidate, notRunRules };
 }
 
 export interface UsageSummary {

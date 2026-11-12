@@ -5,6 +5,8 @@
  * Issues use the scanner's fileRoutes map, including files with no element sites.
  * Unrouted sites and issues share one list, with the scanner's reason for each file.
  */
+import type { RuleRun } from "@youiyoux/core";
+import { ruleDidNotRun } from "@youiyoux/core/rules";
 import type { ElementId, Manifest, ProjectShots, ScanReport, ScreenShot } from "./types.ts";
 import { EVERY_SCREEN, type ProjectLookalike, type ProjectUnknown, type ProjectViolation, type Site, UNROUTED, type UsageIndex } from "./usage.ts";
 
@@ -34,14 +36,35 @@ export interface IssueCounts {
   readonly lookalikes: number;
   readonly unresolved: number;
   readonly total: number;
+  /**
+   * Rules that should have checked this screen and did not (unsupported, errored, or behaviour rules
+   * with no probe run): not issues, but unknowns, so a screen with any is never shown as clean.
+   */
+  readonly notChecked: number;
+  /** Of those, behaviour rules waiting on a probe run. */
+  readonly behaviourNotChecked: number;
 }
 
-export const NO_ISSUES: IssueCounts = { errors: 0, warnings: 0, lookalikes: 0, unresolved: 0, total: 0 };
+export const NO_ISSUES: IssueCounts = { errors: 0, warnings: 0, lookalikes: 0, unresolved: 0, total: 0, notChecked: 0, behaviourNotChecked: 0 };
 
-export function countIssues(violations: readonly ProjectViolation[], lookalikes: readonly unknown[], unresolved: readonly unknown[]): IssueCounts {
+/** A rule that did not run in one project's scan. */
+export type ProjectRuleRun = RuleRun & { readonly project: string };
+
+/** The rules a scan should have run and did not. Snapshots are read without validation: an older map has no `checks`. */
+export const rulesNotRun = (report: Pick<ScanReport, "checks">): RuleRun[] => (report.checks ?? []).filter(ruleDidNotRun);
+
+export function countIssues(violations: readonly ProjectViolation[], lookalikes: readonly unknown[], unresolved: readonly unknown[], notRun: readonly Pick<RuleRun, "state">[] = []): IssueCounts {
   const errors = violations.filter((v) => v.severity === "error").length;
   const warnings = violations.length - errors;
-  return { errors, warnings, lookalikes: lookalikes.length, unresolved: unresolved.length, total: violations.length + lookalikes.length + unresolved.length };
+  return {
+    errors,
+    warnings,
+    lookalikes: lookalikes.length,
+    unresolved: unresolved.length,
+    total: violations.length + lookalikes.length + unresolved.length,
+    notChecked: notRun.length,
+    behaviourNotChecked: notRun.filter((r) => r.state === "incomplete").length,
+  };
 }
 
 const addIssues = (a: IssueCounts, b: IssueCounts): IssueCounts => ({
@@ -50,6 +73,8 @@ const addIssues = (a: IssueCounts, b: IssueCounts): IssueCounts => ({
   lookalikes: a.lookalikes + b.lookalikes,
   unresolved: a.unresolved + b.unresolved,
   total: a.total + b.total,
+  notChecked: a.notChecked + b.notChecked,
+  behaviourNotChecked: a.behaviourNotChecked + b.behaviourNotChecked,
 });
 
 /** One element on one screen: where it renders, and the near-misses that might be it. */
@@ -70,6 +95,8 @@ export interface Screen {
   readonly violations: readonly ProjectViolation[];
   readonly lookalikes: readonly ProjectLookalike[];
   readonly unresolved: readonly ProjectUnknown[];
+  /** Rules this project's scan did not run: they apply to every screen, so none of them is known clean. */
+  readonly notRun: readonly ProjectRuleRun[];
   readonly issues: IssueCounts;
   readonly shot: ScreenShot | null;
 }
@@ -181,6 +208,7 @@ function projectScreens(report: ScanReport, sites: readonly Site[], shots: Proje
       }
   }
 
+  const notRun = rulesNotRun(report).map((run): ProjectRuleRun => ({ ...run, project }));
   const screens = [...drafts]
     .sort(([a], [b]) => routeRank(a) - routeRank(b) || a.localeCompare(b))
     .map(([route, d]): Screen => ({
@@ -192,7 +220,8 @@ function projectScreens(report: ScanReport, sites: readonly Site[], shots: Proje
       violations: d.violations,
       lookalikes: d.lookalikes,
       unresolved: d.unresolved,
-      issues: countIssues(d.violations, d.lookalikes, d.unresolved),
+      notRun,
+      issues: countIssues(d.violations, d.lookalikes, d.unresolved, notRun),
       shot: shots?.screens.find((s) => s.route === route) ?? null,
     }));
   return { screens, unattributed: countIssues(lost.violations, lost.lookalikes, lost.unresolved), unattributedFiles: [...unattributedFiles.values()].sort((a, b) => a.file.localeCompare(b.file)) };

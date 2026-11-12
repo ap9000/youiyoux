@@ -7,7 +7,13 @@
 import { BEHAVIOUR_CHECKS, BEHAVIOUR_NOT_RUN } from "@youiyoux/core/rules";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { CatalogRule } from "../src/data/types.ts";
+import type { Model } from "../src/data/model.ts";
+import { buildScreens } from "../src/data/screens.ts";
+import type { CatalogRule, Manifest, ScanReport } from "../src/data/types.ts";
+import { indexUsage } from "../src/data/usage.ts";
+import { ScanBadge } from "../src/screens/home/HomeScreen.tsx";
+import { IssueBadge } from "../src/screens/screens/IssueCounts.tsx";
+import { IssueGroups } from "../src/screens/screens/ScreenDetail.tsx";
 import type { CheckCapability, DraftContent, Preview, WorkflowInfo } from "../src/data/workflow.ts";
 import { ImpactPreview } from "../src/screens/changes/ImpactPreview.tsx";
 import { RuleForm } from "../src/screens/changes/RuleForm.tsx";
@@ -111,5 +117,56 @@ describe("a behaviour draft", () => {
     render(<RuleForm value={content({ engine: "youi", id: "raw-color", options: {} })} onChange={onChange} info={info} mode="create" readOnly={false} problems={[]} />);
     fireEvent.change(screen.getByLabelText("Check"), { target: { value: "behaviour:focus-trap" } });
     expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ rule: expect.objectContaining({ check: { engine: "behaviour", id: "focus-trap", options: {} } }) }));
+  });
+});
+
+describe("a screen whose project has an unprobed behaviour rule", () => {
+  const report: ScanReport = {
+    schema: "youi.usage/v1",
+    project: "app",
+    system: "demo",
+    commit: null,
+    scanner: "test",
+    configDigest: "x",
+    generatedAt: "2026-11-12T00:00:00.000Z",
+    durationMs: 1,
+    status: "complete",
+    coverage: { filesMatched: 1, filesScanned: 1, failed: [] },
+    usages: [{ element: "youi:demo/component/button", kind: "render", export: "Button", local: "Button", props: {}, spread: false, file: "src/flows.tsx", line: 3, column: 1, routes: ["/flows"], routeSource: "route-file", fingerprint: "f" }],
+    fileRoutes: { "src/flows.tsx": { routes: ["/flows"], routeSource: "route-file" } },
+    unknowns: [],
+    suppressed: 0,
+    lookalikes: [],
+    violations: [],
+    checks: [
+      { rule: "youi:demo/rule/color.no-raw-color", state: "ran", findings: 0 },
+      { rule: ESCAPE, state: "incomplete", reason: BEHAVIOUR_NOT_RUN },
+    ],
+  };
+  const manifest: Manifest = { schema: "youiyoux.manifest/v1", source: { commit: null }, systems: [{ id: "demo", catalog: "demo.catalog.json", usage: [{ project: "app", file: "app.usage.json" }] }] };
+  const model = { rules: new Map([[ESCAPE, rule]]) } as unknown as Model;
+  const flows = () => buildScreens(indexUsage([report]), manifest).screens.find((s) => s.route === "/flows")!;
+
+  test("its badge says behaviour is not checked, in a neutral tone, never a green No issues", () => {
+    const { container } = render(<IssueBadge issues={flows().issues} />);
+    expect(container.textContent?.trim()).toBe("Behaviour not checked");
+    expect(container.innerHTML).not.toContain("success");
+    expect(container.firstElementChild?.getAttribute("title")).toBe("1 behaviour rule not checked");
+  });
+
+  test("its Rule issues say which behaviour rule was not checked and what to do, never 'No rule is broken'", () => {
+    const { container } = render(<IssueGroups model={model} screen={flows()} />);
+    expect(container.textContent).not.toContain("No rule is broken");
+    expect(container.textContent).toContain("Behaviour not checked: Esc closes popups.");
+    expect(container.textContent).toContain("check this screen's menus, dialogs and popovers yourself with the keyboard");
+  });
+
+  test("the project's scan badge on Home is not green while a rule did not run", () => {
+    const { container } = render(<ScanBadge report={report} />);
+    expect(container.textContent).toBe("behaviour not checked");
+    expect(container.innerHTML).not.toContain("success");
+    cleanup();
+    const ran = render(<ScanBadge report={{ ...report, checks: [report.checks[0]!] }} />);
+    expect(ran.container.textContent).toBe("complete");
   });
 });

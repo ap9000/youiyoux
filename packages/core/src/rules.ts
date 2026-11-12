@@ -9,7 +9,7 @@
  * `probe`: checked in the running app, never by the code scan, and never clean without a probe run.
  */
 import type { BehaviourPattern } from "./behaviour.ts";
-import type { RuleSpec } from "./schemas.ts";
+import type { RuleRun, RuleSpec } from "./schemas.ts";
 
 export type BuiltInCheckId = Extract<RuleSpec["check"], { engine: "youi" }>["id"];
 export type BehaviourCheck = Extract<RuleSpec["check"], { engine: "behaviour" }>["id"];
@@ -69,6 +69,13 @@ export const BEHAVIOUR_CHECKS: Readonly<Record<BehaviourCheck, { readonly descri
     patterns: ["menu-button", "combobox-listbox"],
   },
 };
+
+/**
+ * A rule run that should have checked and did not: unsupported, errored, or a behaviour rule with
+ * no probe results (`incomplete`). Its zero findings are unknown, never clean. One answer for the
+ * CLI, the MCP server and the hub.
+ */
+export const ruleDidNotRun = (run: Pick<RuleRun, "state">): boolean => run.state === "unsupported" || run.state === "error" || run.state === "incomplete";
 
 /** Why a behaviour rule has no result in a code scan: the reason on its `incomplete` run. */
 export const BEHAVIOUR_NOT_RUN = "behaviour rules are checked by a probe run in the running app (youiyoux behave), which hasn't run";

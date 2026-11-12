@@ -52,8 +52,15 @@ const Digest = z.string().regex(/^[0-9a-f]{12,64}$/, "expected a hex digest");
 const RoutePath = z.string().regex(/^\//, "expected a route starting with /");
 const Viewport = z.object({ width: z.number().int().positive(), height: z.number().int().positive() }).strict();
 const Box = z.object({ x: z.number(), y: z.number(), width: z.number().nonnegative(), height: z.number().nonnegative() }).strict();
-/** Evidence lives under `.youi/`: a relative path, never absolute or leaving it. */
-const EvidencePath = z.string().min(1).refine((p) => !p.startsWith("/") && !p.split(/[\\/]/).includes(".."), "expected a path relative to .youi/, without ..");
+/**
+ * Evidence lives under `.youi/`: a project-relative path starting `.youi/`, forward slashes only,
+ * each segment of letters, digits, `.`, `_` and `-` that does not start with a dot. So no `..` or
+ * `.` segment, no drive letter (`C:`), no leading slash, backslash or UNC prefix. A pattern, not a
+ * refinement, so the published JSON Schema refuses exactly what this does. (Resolving it against
+ * the real `.youi/`, symlinks included, happens where evidence is read and written.)
+ */
+export const EVIDENCE_PATH = /^\.youi\/(?:[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}\/)*[A-Za-z0-9_-][A-Za-z0-9._-]{0,127}$/;
+const EvidencePath = z.string().regex(EVIDENCE_PATH, "expected a path under .youi/ with forward slashes, no .. and no drive or leading slash");
 
 /**
  * Which popup a result is about. Matching across runs uses route, pattern, component and accessible
@@ -102,7 +109,7 @@ export const BehaviourResult = z
     fix: z.string().min(1),
     /** Facts that are not pass or fail (Home moves to the first item: yes; arrow keys wrap). */
     info: z.array(z.string().min(1)).default([]),
-    /** Screenshots, relative to `.youi/`. */
+    /** Screenshots, as project-relative paths under `.youi/`. */
     evidence: z.array(EvidencePath).default([]),
     /**
      * What this result was made against. It is stale (shown as stale, never counted as a pass)

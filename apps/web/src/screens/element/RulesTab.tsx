@@ -4,6 +4,7 @@ import { Link } from "wouter";
 import { elementHref } from "../../data/ids.ts";
 import type { Model } from "../../data/model.ts";
 import { useUsageState } from "../../data/store.ts";
+import type { UsageIndex } from "../../data/usage.ts";
 import type { ComponentContract, RuleSpec } from "../../data/types.ts";
 import { Badge, SeverityBadge } from "../../ui/Badge.tsx";
 import { Section } from "../../ui/Section.tsx";
@@ -17,6 +18,9 @@ export function executionOf(rule: RuleSpec & { execution?: RuleExecution }): Rul
   if (rule.severity !== "off" && rule.check.engine === "ast-grep") return { state: "unsupported", reason: "not verified: this snapshot predates compiled rule checks (run pnpm data)" };
   return ruleExecution(rule);
 }
+
+/** A rule whose 0 violations is unknown: a behaviour rule (checked by a probe run, not the code scan), or one a scan did not run. */
+export const notCheckedRule = (rule: RuleSpec & { execution?: RuleExecution }, index: UsageIndex): boolean => executionOf(rule).state === "probe" || index.notRunRules.has(rule.id);
 
 export function checkLabel(rule: RuleSpec): string {
   return executionLabel(executionOf(rule));

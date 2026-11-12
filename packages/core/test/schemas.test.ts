@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
+import { Ajv2020 } from "ajv/dist/2020.js";
 import { describe, expect, test } from "vitest";
 import { BEHAVIOUR_CHECK_IDS, BEHAVIOUR_CHECKS, BEHAVIOUR_NOT_RUN, BEHAVIOUR_PATTERNS, BehaviourResult, ComponentContract, DefinitionError, executionLabel, formatId, InventoryLook, loadDesignRepo, matchesQuery, parseDefinition, parseId, ProjectConfig, renderJsonSchemas, RuleRun, ruleExecution, RuleSpec } from "../src/index.ts";
 
@@ -184,7 +185,7 @@ describe("behaviour rules (slice 0: contracts)", () => {
     state: "failed",
     why: "The menu was still open 1.5 s after Esc.",
     fix: "Close the menu when Esc is pressed while focus is inside it.",
-    evidence: ["behaviour/run-1/menu-before.png"],
+    evidence: [".youi/behaviour/run-1/menu-before.png"],
     freshness: { rule: "a".repeat(64), tool: "0.1.29", origin: "http://localhost:5173", config: "b".repeat(12), app: "c".repeat(64) },
   };
 
@@ -196,8 +197,6 @@ describe("behaviour rules (slice 0: contracts)", () => {
   test("a result refuses a made-up state, a missing fix, evidence outside .youi/, a target on another route and an unknown key", () => {
     expect(BehaviourResult.safeParse({ ...result, state: "clean" }).success).toBe(false);
     expect(BehaviourResult.safeParse({ ...result, fix: "" }).success).toBe(false);
-    expect(BehaviourResult.safeParse({ ...result, evidence: ["../../etc/passwd"] }).success).toBe(false);
-    expect(BehaviourResult.safeParse({ ...result, evidence: ["/tmp/shot.png"] }).success).toBe(false);
     expect(BehaviourResult.safeParse({ ...result, target: { ...result.target, route: "/other" } }).success).toBe(false);
     expect(BehaviourResult.safeParse({ ...result, target: { ...result.target, pattern: "popover" } }).success).toBe(false);
     expect(BehaviourResult.safeParse({ ...result, check: "typeahead" }).success).toBe(false);
@@ -206,8 +205,59 @@ describe("behaviour rules (slice 0: contracts)", () => {
     expect(BehaviourResult.safeParse(stale).success).toBe(false);
   });
 
-  test("the behaviour result is published as a JSON Schema", () => {
-    const published = renderJsonSchemas().find((s) => s.file === "youi.behaviour-result.schema.json");
-    expect(published?.content).toContain('"dismiss-escape"');
+  /** The published JSON Schema, compiled by a real draft 2020-12 validator (formats aside: they are checked by Zod). */
+  const published = (file: string) => {
+    const schema = renderJsonSchemas().find((s) => s.file === file);
+    if (!schema) throw new Error(`${file} is not published`);
+    return new Ajv2020({ strict: false, validateFormats: false }).compile(JSON.parse(schema.content) as object);
+  };
+
+  const EVIDENCE: Array<[string, boolean]> = [
+    [".youi/behaviour/run-1/menu-before.png", true],
+    [".youi/shot.png", true],
+    [".youi/behaviour/a_b-c.2.webp", true],
+    ["behaviour/run-1/menu-before.png", false],
+    ["/tmp/shot.png", false],
+    ["../shot.png", false],
+    [".youi/../secrets.png", false],
+    [".youi/behaviour/../../x.png", false],
+    [".youi/./x.png", false],
+    [".youi//x.png", false],
+    [".youi/", false],
+    [".youi/.hidden", false],
+    ["C:\\shots\\a.png", false],
+    ["C:/shots/a.png", false],
+    [".youi/C:/a.png", false],
+    ["\\\\server\\share\\a.png", false],
+    ["//server/share/a.png", false],
+    [".youi\\behaviour\\a.png", false],
+    ["\\.youi/a.png", false],
+    ["", false],
+  ];
+
+  test.each(EVIDENCE)("evidence %j: Zod and the published JSON Schema agree (%s)", (path, ok) => {
+    const candidate = { ...result, evidence: [path] };
+    expect(BehaviourResult.safeParse(candidate).success).toBe(ok);
+    expect(published("youi.behaviour-result.schema.json")(candidate)).toBe(ok);
+  });
+
+  test("the published behaviour-result schema accepts a result and refuses a made-up state or check, a missing fix and unknown keys", () => {
+    const validate = published("youi.behaviour-result.schema.json");
+    expect(validate(result)).toBe(true);
+    for (const bad of [{ ...result, state: "clean" }, { ...result, check: "typeahead" }, { ...result, pattern: "tabs" }, { ...result, fix: "" }, { ...result, violations: [] }, { ...result, target: { ...result.target, selector: "#x" } }]) expect(validate(bad)).toBe(false);
+  });
+
+  test("the published rule schema takes a behaviour check from the closed list only, with no options", () => {
+    const validate = published("youi.rule.schema.json");
+    expect(validate(behaviourRule({ engine: "behaviour", id: "dismiss-escape" }))).toBe(true);
+    expect(validate(behaviourRule({ engine: "behaviour", id: "typeahead" }))).toBe(false);
+    expect(validate(behaviourRule({ engine: "behaviour", id: "dismiss-escape", options: { timeout: 5 } }))).toBe(false);
+  });
+
+  test("the published component schema takes a behaviour binding by part name or role only", () => {
+    const validate = published("youi.component.schema.json");
+    expect(validate({ ...minimalContract, a11y: { behaviour: { pattern: "menu-button", trigger: { part: "trigger" }, popup: { role: "menu" } } } })).toBe(true);
+    expect(validate({ ...minimalContract, a11y: { behaviour: { pattern: "menu-button", trigger: { part: "button > .x" } } } })).toBe(false);
+    expect(validate({ ...minimalContract, a11y: { behaviour: { pattern: "tabs" } } })).toBe(false);
   });
 });

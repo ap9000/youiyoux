@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 const shot = (name: string) => ({ route: "", path: "/", light: { full: `${name}.full.webp`, thumb: `${name}.thumb.webp` } });
-const scr = (project: string, route: string, pictured = true): Screen => ({ project, route, slug: route, sites: 0, elements: [], violations: [], lookalikes: [], unresolved: [], issues: NO_ISSUES, shot: pictured ? shot(`${project}${route.replace(/\W/g, "-")}`) : null }) as unknown as Screen;
+const scr = (project: string, route: string, pictured = true): Screen => ({ project, route, slug: route, sites: 0, elements: [], violations: [], lookalikes: [], unresolved: [], notRun: [], issues: NO_ISSUES, shot: pictured ? shot(`${project}${route.replace(/\W/g, "-")}`) : null }) as unknown as Screen;
 const index = { screens: [scr("app", "/"), scr("app", "/settings"), scr("app", "/empty", false), scr("site", "/")] } as unknown as ScreenIndex;
 const AT = "2026-10-22T12:00:00.000Z";
 const request = (id: string, route: string, status: RequestDoc["status"], project = "app"): RequestDoc => ({ schema: "youi.request/v1", id, project, kind: "change", status, body: `ask ${id}`, author: { kind: "person", name: "you" }, createdAt: id, updatedAt: AT, target: { route, scope: "here", name: "Button", box: { x: 144, y: 90, width: 10, height: 10 }, page: { width: 1440, height: 900 } }, thread: [] });

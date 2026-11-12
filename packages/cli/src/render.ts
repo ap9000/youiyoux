@@ -1,5 +1,5 @@
 /** Human output for each command. Every command also has --json for scripts and agents. */
-import { executionLabel, ruleSlug, type RuleExecution, type RuleSpec, type ScanReport, type Violation } from "@youiyoux/core";
+import { executionLabel, ruleSlug, type RuleExecution, type RuleRun, type RuleSpec, type ScanReport, type Violation } from "@youiyoux/core";
 import { failedChecks, shotsText, type ChangePlan, type MigrationResult, type RuleEvaluation, type ScreenBom, type ShotsReport, type WhereResult } from "@youiyoux/scanner";
 import type { LockIssue, SyncAction, SyncResult } from "./sync.ts";
 import { bar, ms, padEnd, padStart, plural, rule, style, truncate } from "./ui.ts";
@@ -34,7 +34,7 @@ export function renderScan(report: ScanReport, outFile: string): string {
     ...[...byElement].sort((a, b) => b[1].length - a[1].length).map(([id, sites]) => `  ${padEnd(id.split("/").at(-1)!, width)}  ${padStart(String(sites.length), 4)}  ${bar(sites.length, max)}`),
     "",
     `  ${plural(report.usages.length, "site")} · ${style.dim(`${plural(report.unknowns.length, "unknown")} (never counted as zero)`)} · ${report.lookalikes.length > 0 ? style.warn(plural(report.lookalikes.length, "lookalike")) : "0 lookalikes"}`,
-    `  ${errors > 0 ? style.error(plural(errors, "error")) : style.ok("0 errors")} · ${plural(report.violations.length - errors, "warning")}${report.suppressed ? style.dim(` · ${report.suppressed} suppressed`) : ""}  ${style.dim("→ youiyoux check")}`,
+    `  ${errors > 0 ? style.error(plural(errors, "error")) : report.status !== "complete" || failedChecks(report.checks).length > 0 ? style.warn("0 errors, incomplete") : style.ok("0 errors")} · ${plural(report.violations.length - errors, "warning")}${report.suppressed ? style.dim(` · ${report.suppressed} suppressed`) : ""}  ${style.dim("→ youiyoux check")}`,
     "",
     coverageLine(report),
     ...report.coverage.failed.map((f) => style.warn(`  ! ${f.file}: ${f.reason}`)),
@@ -74,7 +74,11 @@ export function renderWhere(where: WhereResult, report: ScanReport): string {
   return lines.join("\n");
 }
 
-export function renderCheck(violations: readonly Violation[], lockIssues: readonly LockIssue[] | null, report: ScanReport): string {
+/**
+ * `incomplete`: something asked about was not checked (a file, or a rule that did not run). Then
+ * no success mark: the verdict leads with "Incomplete" and says what to do next.
+ */
+export function renderCheck(violations: readonly Violation[], lockIssues: readonly LockIssue[] | null, report: ScanReport, gaps: { readonly incomplete: boolean; readonly notRun: readonly RuleRun[] } = { incomplete: false, notRun: [] }): string {
   const { suppressed } = report;
   const lines: string[] = [];
   for (const [file, list] of Map.groupBy(violations, (v) => v.file)) {
@@ -92,9 +96,21 @@ export function renderCheck(violations: readonly Violation[], lockIssues: readon
   const warnings = violations.length + (lockIssues?.length ?? 0) - errors;
   const files = new Set(violations.map((v) => v.file)).size;
   const byRule = Map.groupBy(violations, (v) => ruleSlug(v.rule));
+  const behaviour = gaps.notRun.filter((c) => c.state === "incomplete").map((c) => ruleSlug(c.rule));
+  const otherGaps = gaps.notRun.length > behaviour.length || report.coverage.failed.length > 0 || (gaps.incomplete && behaviour.length === 0);
+  const verdict =
+    errors > 0
+      ? [style.error(`✖ ${plural(errors, "error")} · ${plural(warnings, "warning")} in ${plural(files, "file")}`)]
+      : gaps.incomplete
+        ? [
+            style.warn(`! Incomplete: 0 errors in what was checked · ${plural(warnings, "warning")}; not a pass`),
+            ...(behaviour.length > 0 ? [`  Next: check this app's menus, dialogs and popovers yourself with the keyboard (Esc, Tab, arrow keys) for ${behaviour.join(", ")}, until \`youiyoux behave\` can probe them`] : []),
+            ...(otherGaps ? ["  Next: fix what could not be checked (listed below), then run youiyoux check again"] : []),
+          ]
+        : [warnings > 0 ? style.warn(`✓ 0 errors · ${plural(warnings, "warning")} in ${plural(files, "file")}`) : style.ok("✓ 0 errors · 0 warnings")];
   lines.push(
     "",
-    errors > 0 ? style.error(`✖ ${plural(errors, "error")} · ${plural(warnings, "warning")} in ${plural(files, "file")}`) : warnings > 0 ? style.warn(`✓ 0 errors · ${plural(warnings, "warning")} in ${plural(files, "file")}`) : style.ok("✓ 0 errors · 0 warnings"),
+    ...verdict,
     ...[...byRule].sort((a, b) => b[1].length - a[1].length).map(([slug, list]) => style.dim(`  ${padStart(String(list.length), 4)}  ${slug}`)),
     ...(suppressed > 0 ? [style.dim(`  ${padStart(String(suppressed), 4)}  suppressed by youi-ignore`)] : []),
     ...(lockIssues === null ? [style.dim("  no youi.lock.json yet: generated-file and drift checks start after `youiyoux sync`")] : []),

@@ -117,10 +117,30 @@ describe("behaviour rules (no probe run yet)", () => {
     expect(previewed).toMatchObject({ status: "previewed", canApprove: true });
   });
 
-  test("an unknown behaviour check is a problem, and the draft cannot be previewed", async () => {
+  test("approved and handed off, its review branch says it is not counted on code, never 'flags 0 place(s)'", async () => {
     const draft = await workflow.create(PERSON, { mode: "create" });
-    const content = withRule(draft, { id: ESCAPE, title: "t", statement: "s", agent: "a", check: { engine: "behaviour", id: "typeahead", options: {} } as unknown as DraftContent["rule"]["check"] });
-    expect((await workflow.save(PERSON, draft.id, { revision: 1, content })).problems).toEqual([expect.stringMatching(/^check/)]);
+    const content = withRule(draft, { id: ESCAPE, title: "Esc closes popups", statement: "Esc closes every popup.", agent: "Close popups on Esc.", check: { engine: "behaviour", id: "dismiss-escape", options: {} } });
+    await workflow.save(PERSON, draft.id, { revision: 1, content });
+    expect(await approved(draft.id)).toMatchObject({ status: "approved" });
+    const done = await workflow.handoff(PERSON, draft.id);
+    expect(done).toMatchObject({ status: "handed-off", handoff: { files: ["rules/popup.escape.rule.yaml"] } });
+    const message = git(box.design, "log", "-1", "--format=%B", done.handoff!.branch);
+    expect(message).toContain(`Impact on ${(await loadProject(box.project, { designRoot: box.design })).config.id}: not counted on its code. ${BEHAVIOUR_PREVIEW}`);
+    expect(message).not.toMatch(/flags \d+ place/);
+    const published = RuleSpec.parse(parseYaml(git(box.design, "show", `${done.handoff!.branch}:rules/popup.escape.rule.yaml`)));
+    expect(published.check).toEqual({ engine: "behaviour", id: "dismiss-escape", options: {} });
+  });
+
+  test("an unknown behaviour check is refused by name, where a known one is accepted", async () => {
+    const draft = await workflow.create(PERSON, { mode: "create" });
+    const fields = { id: ESCAPE, title: "t", statement: "s", agent: "a" };
+    const valid = withRule(draft, { ...fields, check: { engine: "behaviour", id: "focus-trap", options: {} } });
+    expect((await workflow.save(PERSON, draft.id, { revision: 1, content: valid })).problems).toEqual([]);
+    const unknown = withRule(draft, { ...fields, check: { engine: "behaviour", id: "typeahead", options: {} } as unknown as DraftContent["rule"]["check"] });
+    const problems = (await workflow.save(PERSON, draft.id, { revision: 2, content: unknown })).problems;
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/^check\.id: /);
+    expect(problems[0]).toContain('"focus-trap"');
     await expect(workflow.preview(PERSON, draft.id)).rejects.toMatchObject({ code: "invalid" });
   });
 

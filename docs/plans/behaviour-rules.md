@@ -241,6 +241,8 @@ dismissal, roving focus) from a small static table. youiyoux never suggests addi
    "not run yet" states. No browser.
 1. **Guarded runner on fixtures** — opt-in, origin/route/WebSocket/service-worker/navigation/popup guards, fresh
    scenarios, target identity, locate + resolve; adversarial tests. No checks yet beyond "open and identify".
+   Evidence paths: the schema only admits `.youi/…` with plain segments (slice 0); writing and reading evidence
+   must also resolve each path against the real `.youi/` (symlinks included) and refuse anything that escapes.
 2. **One check end to end** — `dismiss-escape` through `behave`, storage, freshness/stale, `check` reading stored
    results, exit codes.
 3. **The other five checks** — with the pattern table, effective focus, budgets; fixtures per pattern.

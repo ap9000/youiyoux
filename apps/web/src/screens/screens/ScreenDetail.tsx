@@ -134,38 +134,67 @@ function ViolationRow({ violation }: { violation: ProjectViolation }) {
   );
 }
 
-function IssueGroups({ model, screen }: { model: Model; screen: Screen }) {
+export function IssueGroups({ model, screen }: { model: Model; screen: Screen }) {
   const byRule = new Map<string, ProjectViolation[]>();
   for (const v of screen.violations) byRule.set(v.rule, [...(byRule.get(v.rule) ?? []), v]);
   const rules = [...byRule].sort(([, a], [, b]) => b.length - a.length);
-  if (rules.length === 0) return <p className="rounded-md border border-line px-3 py-4 text-small text-muted">No rule is broken in this screen's files.</p>;
+  const notRun = <NotRunRules model={model} screen={screen} />;
+  if (rules.length === 0) {
+    // "No rule is broken" only when every rule ran: a rule that did not run leaves this screen unknown.
+    if (screen.notRun.length > 0) return notRun;
+    return <p className="rounded-md border border-line px-3 py-4 text-small text-muted">No rule is broken in this screen's files.</p>;
+  }
   return (
-    <div className="rounded-md border border-line">
-      {rules.map(([id, list]) => {
-        const rule = model.rules.get(id);
-        return (
-          <Group
-            key={id}
-            summary={
-              <>
-                <SeverityBadge severity={list[0]!.severity} />
-                <span className="min-w-0 truncate font-medium text-ink">{rule?.title ?? id}</span>
-                <span className="ml-auto tabular text-small text-muted">{list.length}</span>
-              </>
-            }
-          >
-            {rule && (
-              <li className="px-3 pb-1.5 text-small text-muted">
-                {rule.statement}{" "}
-                <Link href={elementHref(id)} className="text-accent hover:underline">
-                  Open the rule
-                </Link>
-              </li>
-            )}
-            <Capped items={list} render={(v) => <ViolationRow key={`${v.file}:${v.line}:${v.column}`} violation={v} />} />
-          </Group>
-        );
-      })}
+    <div className="space-y-2">
+      {screen.notRun.length > 0 && notRun}
+      <div className="rounded-md border border-line">
+        {rules.map(([id, list]) => {
+          const rule = model.rules.get(id);
+          return (
+            <Group
+              key={id}
+              summary={
+                <>
+                  <SeverityBadge severity={list[0]!.severity} />
+                  <span className="min-w-0 truncate font-medium text-ink">{rule?.title ?? id}</span>
+                  <span className="ml-auto tabular text-small text-muted">{list.length}</span>
+                </>
+              }
+            >
+              {rule && (
+                <li className="px-3 pb-1.5 text-small text-muted">
+                  {rule.statement}{" "}
+                  <Link href={elementHref(id)} className="text-accent hover:underline">
+                    Open the rule
+                  </Link>
+                </li>
+              )}
+              <Capped items={list} render={(v) => <ViolationRow key={`${v.file}:${v.line}:${v.column}`} violation={v} />} />
+            </Group>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** Rules the scan did not run: behaviour rules wait for a probe run, so this screen is not known to follow them. */
+function NotRunRules({ model, screen }: { model: Model; screen: Screen }) {
+  const behaviour = screen.notRun.filter((r) => r.state === "incomplete");
+  const other = screen.notRun.filter((r) => r.state !== "incomplete");
+  const title = (id: string): string => model.rules.get(id)?.title ?? id;
+  return (
+    <div className="space-y-1.5 rounded-md border border-line px-3 py-3 text-small text-ink-2">
+      {behaviour.length > 0 && (
+        <p>
+          <span className="font-medium text-ink">Behaviour not checked</span>: {behaviour.map((r) => title(r.rule)).join(", ")}. A probe run in the running app checks these, and none has run. Until then, check this screen's menus, dialogs and popovers yourself with the keyboard (Esc, Tab, arrow keys).
+        </p>
+      )}
+      {other.length > 0 && (
+        <p>
+          <span className="font-medium text-ink">Not run</span>: {other.map((r) => `${title(r.rule)} (${r.reason ?? r.state})`).join(", ")}. Whether this screen breaks {other.length === 1 ? "it" : "them"} is unknown.
+        </p>
+      )}
     </div>
   );
 }
@@ -318,7 +347,8 @@ export function ScreenDetail({ model, screens, screen }: { model: Model; screens
   const label = routeLabel(screen.route);
   const rendered = screen.elements.filter((e) => e.sites.length > 0);
   const suspected = screen.elements.filter((e) => e.sites.length === 0);
-  const breakdown = issueBreakdown(screen.issues);
+  // Counted from files; rules that did not run are not counts, the badge and Rule issues say those.
+  const breakdown = issueBreakdown({ ...screen.issues, notChecked: 0, behaviourNotChecked: 0 });
   const image = places ? (
     <PlacesOverlay shot={screen.shot} scheme={scheme} label={`${screen.project} ${label}`} places={places} placed={placed} outline={outline} select={select} pointed={pointed} nameOf={nameOf} onSelect={(p) => setSelect(p ? pickKey(p) : null)} pins={pins} activePin={active} onPin={(id) => { const r = onScreen.find((x) => x.id === id); if (r) openRequest(r); }} />
   ) : (

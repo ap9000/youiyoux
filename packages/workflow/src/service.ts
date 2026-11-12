@@ -836,7 +836,10 @@ export class RuleWorkflow {
       "",
       `Rule ${rule!.id}, draft ${draft.id} revision ${draft.revision}.`,
       `Approved by ${approval.by.name} at ${approval.at}.`,
-      `Impact on ${current.project.config.id}${current.snapshot.projectCommit ? ` @ ${current.snapshot.projectCommit.slice(0, 12)}` : ""}: flags ${preview.flagged} place(s), ${preview.counts.new} new, ${preview.counts.resolved} no longer flagged.`,
+      // A behaviour rule is not counted on code: the message says so, never "flags 0 place(s)".
+      preview.notOnSnapshot
+        ? `Impact on ${current.project.config.id}: not counted on its code. ${preview.notOnSnapshot}`
+        : `Impact on ${current.project.config.id}${current.snapshot.projectCommit ? ` @ ${current.snapshot.projectCommit.slice(0, 12)}` : ""}: flags ${preview.flagged} place(s), ${preview.counts.new} new, ${preview.counts.resolved} no longer flagged.`,
     ].join("\n");
     return { files, branch: `youi/rules/${parseId(rule!.id)?.name ?? "rule"}-${draft.id.slice(2, 8)}`, message };
   }

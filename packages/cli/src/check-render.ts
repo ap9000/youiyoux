@@ -18,7 +18,7 @@ export function actionable(result: CheckResult): readonly Violation[] {
 }
 
 export function renderCheckText(result: CheckResult): string {
-  const lines = [renderCheck(actionable(result), result.lock, result.scan.report)];
+  const lines = [renderCheck(actionable(result), result.lock, result.scan.report, result)];
   if (result.baseline) {
     const { comparison, file, recorded } = result.baseline;
     const gone = comparison.fixed.reduce((n, f) => n + f.gone, 0);
@@ -30,7 +30,6 @@ export function renderCheckText(result: CheckResult): string {
   }
   for (const file of result.unmatched) lines.push(style.error(`✖ ${file} was not checked: it is not in this project's include globs (or does not exist)`));
   if (result.failed.length > 0) lines.push(style.warn(`! incomplete: ${result.failed.map((f) => f.file).join(", ")} could not be fully analysed, so 0 errors there is not a pass`));
-  if (result.notRun.length > 0) lines.push(style.warn(`! incomplete: ${result.notRun.map((r) => ruleSlug(r.rule)).join(", ")} did not run, so this result is incomplete, not a pass`));
   lines.push(style.dim(`rules ${describeIdentity(result.identity)}`));
   return lines.join("\n");
 }
