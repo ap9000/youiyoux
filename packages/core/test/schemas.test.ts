@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { describe, expect, test } from "vitest";
-import { BEHAVIOUR_CHECK_IDS, BEHAVIOUR_CHECKS, BEHAVIOUR_NOT_RUN, BEHAVIOUR_PATTERNS, BehaviourResult, ComponentContract, DefinitionError, executionLabel, formatId, InventoryLook, loadDesignRepo, matchesQuery, parseDefinition, parseId, ProjectConfig, renderJsonSchemas, RuleRun, ruleExecution, RuleSpec } from "../src/index.ts";
+import { BEHAVIOUR_CHECK_IDS, BEHAVIOUR_CHECKS, BEHAVIOUR_NOT_RUN, BEHAVIOUR_PATTERNS, BehaviourConsent, BehaviourResult, BehaviourRouteRun, ComponentContract, DefinitionError, executionLabel, formatId, InventoryLook, loadDesignRepo, matchesQuery, parseDefinition, parseId, ProjectConfig, renderJsonSchemas, RuleRun, ruleExecution, RuleSpec } from "../src/index.ts";
 
 const REPO = join(import.meta.dirname, "../../..");
 const DEMO = join(REPO, "examples/demo-design");
@@ -80,7 +80,7 @@ describe("other formats", () => {
 
   test("every published schema is emitted as JSON Schema 2020-12 and matches the committed copy", async () => {
     const rendered = renderJsonSchemas();
-    expect(rendered.map((s) => s.file)).toHaveLength(21);
+    expect(rendered.map((s) => s.file)).toHaveLength(22);
     for (const { file, content } of rendered) {
       const parsed = JSON.parse(content) as Record<string, unknown>;
       expect(parsed.$schema).toBe("https://json-schema.org/draft/2020-12/schema");
@@ -203,6 +203,19 @@ describe("behaviour rules (slice 0: contracts)", () => {
     expect(BehaviourResult.safeParse({ ...result, violations: [] }).success).toBe(false);
     const { freshness: _freshness, ...stale } = result;
     expect(BehaviourResult.safeParse(stale).success).toBe(false);
+  });
+
+  test("a route's run holds only its own results, says why when incomplete, and consent names one origin and nothing else", () => {
+    const run = { schema: "youiyoux.behaviour/v1", route: "/flows", runId: "run-1", at: "2026-11-12T10:00:00Z", origin: "http://localhost:5173", viewport: { width: 1440, height: 900 }, state: "probed", why: null, fix: null, coverage: "1 popup trigger found.", results: [result] };
+    expect(BehaviourRouteRun.safeParse(run).success).toBe(true);
+    expect(BehaviourRouteRun.safeParse({ ...run, results: [{ ...result, runId: "run-2" }] }).success).toBe(false);
+    expect(BehaviourRouteRun.safeParse({ ...run, route: "/other" }).success).toBe(false);
+    expect(BehaviourRouteRun.safeParse({ ...run, state: "incomplete" }).success).toBe(false);
+    expect(BehaviourRouteRun.safeParse({ ...run, state: "incomplete", why: "it needs a sign-in", fix: "Next: probe another screen.", results: [] }).success).toBe(true);
+    expect(BehaviourRouteRun.safeParse({ ...run, why: "x", fix: "y" }).success).toBe(false);
+    expect(BehaviourConsent.safeParse({ allowedOrigin: "http://localhost:5173" }).success).toBe(true);
+    expect(BehaviourConsent.safeParse({ allowedOrigin: "http://localhost:5173", routes: [] }).success).toBe(false);
+    expect(BehaviourConsent.safeParse(true).success).toBe(false);
   });
 
   /** The published JSON Schema, compiled by a real draft 2020-12 validator (formats aside: they are checked by Zod). */

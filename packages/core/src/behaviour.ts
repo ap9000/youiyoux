@@ -49,6 +49,7 @@ export const BehaviourBinding = z
 export type BehaviourBinding = z.infer<typeof BehaviourBinding>;
 
 const Digest = z.string().regex(/^[0-9a-f]{12,64}$/, "expected a hex digest");
+const RunId = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, "expected a run id");
 const RoutePath = z.string().regex(/^\//, "expected a route starting with /");
 const Viewport = z.object({ width: z.number().int().positive(), height: z.number().int().positive() }).strict();
 const Box = z.object({ x: z.number(), y: z.number(), width: z.number().nonnegative(), height: z.number().nonnegative() }).strict();
@@ -94,7 +95,7 @@ export const BEHAVIOUR_RESULT_STATES = ["passed", "failed", "not-applicable", "i
 export const BehaviourResult = z
   .object({
     /** The probe run that made this result. */
-    runId: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, "expected a run id"),
+    runId: RunId,
     at: z.iso.datetime({ offset: true }),
     viewport: Viewport,
     route: RoutePath,
@@ -133,3 +134,43 @@ export const BehaviourResult = z
   .strict()
   .refine((r) => r.target.route === r.route && r.target.pattern === r.pattern, "target route and pattern must match the result's");
 export type BehaviourResult = z.infer<typeof BehaviourResult>;
+
+/** The hosts a probe may open: this machine only (as a URL's hostname spells them). */
+export const LOOPBACK_HOSTNAMES: readonly string[] = ["127.0.0.1", "localhost", "[::1]"];
+
+/**
+ * `screens.json`'s `behaviour` block: consent to probe, bound to one exact origin (scheme, host and
+ * port), never a boolean. It holds only while the origin of `screens.json`'s `base` is that origin
+ * and is on this machine; the field being there is never enough (a capture can move `base`).
+ */
+export const BehaviourConsent = z.object({ allowedOrigin: z.string().min(1).max(200) }).strict();
+export type BehaviourConsent = z.infer<typeof BehaviourConsent>;
+
+export const BEHAVIOUR_ROUTE_SCHEMA = "youiyoux.behaviour/v1";
+
+/**
+ * One route's last probe run, as `.youi/behaviour/<route-hash>.json` keeps it. `incomplete` with a
+ * `why` when the route could not be probed at all (it needs a sign-in, it moved away as it loaded);
+ * `coverage` says what was and wasn't looked at. Only `results` with state `passed` ever count as clean.
+ */
+export const BehaviourRouteRun = z
+  .object({
+    schema: z.literal(BEHAVIOUR_ROUTE_SCHEMA),
+    route: RoutePath,
+    runId: RunId,
+    at: z.iso.datetime({ offset: true }),
+    /** The exact origin probed. */
+    origin: z.url(),
+    viewport: Viewport,
+    state: z.enum(["probed", "incomplete"]),
+    /** Why the route as a whole could not be probed, and what to do; null when it was. */
+    why: z.string().min(1).nullable(),
+    fix: z.string().min(1).nullable(),
+    /** What was looked at, in a sentence (no popups found is said, never left as a zero). */
+    coverage: z.string().min(1),
+    results: z.array(BehaviourResult),
+  })
+  .strict()
+  .refine((r) => r.results.every((x) => x.route === r.route && x.runId === r.runId), "every result must be this run's, on this route")
+  .refine((r) => (r.state === "incomplete") === (r.why !== null) && (r.why === null) === (r.fix === null), "an incomplete run says why and what to do; a probed one doesn't");
+export type BehaviourRouteRun = z.infer<typeof BehaviourRouteRun>;

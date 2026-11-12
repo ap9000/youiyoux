@@ -12,7 +12,7 @@ import { RequestDoc, RequestRun } from "./requests.ts";
 import { ProposalDoc } from "./proposals.ts";
 import { CiRecord, OrgView } from "./record.ts";
 import { StatusReport, WorkspaceConfig } from "./status.ts";
-import { BehaviourBinding, BehaviourCheckId, BehaviourOptions, BehaviourResult } from "./behaviour.ts";
+import { BehaviourBinding, BehaviourCheckId, BehaviourOptions, BehaviourResult, BehaviourRouteRun } from "./behaviour.ts";
 import { TokenDocument } from "./tokens.ts";
 
 const SemVer = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, "expected semver x.y.z");
@@ -728,6 +728,7 @@ export const PUBLISHED_SCHEMAS = {
   "youi.record.schema.json": CiRecord,
   "youi.org.schema.json": OrgView,
   "youi.behaviour-result.schema.json": BehaviourResult,
+  "youi.behaviour-route.schema.json": BehaviourRouteRun,
 } as const;
 
 /** Project config with every path normalized, so comparisons with scanned paths are exact. Loaders call this. */
