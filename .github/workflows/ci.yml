@@ -40,6 +40,8 @@ jobs:
         run: pnpm test
         env:
           YOUI_DETECT_SITE: "1"
+          # The behaviour probe's browser security tests fail, never skip, without Chromium.
+          YOUI_SECURITY_GATE: "1"
 
       # The hub's specimen and Try it tests draw in the headless shell of the hub's own playwright-core,
       # which may be a different build from the one youiyoux detect downloads.

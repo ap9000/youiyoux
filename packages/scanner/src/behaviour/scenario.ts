@@ -49,6 +49,8 @@ export type ScenarioOutcome =
   | ({ readonly state: "error"; readonly info: readonly string[] } & Stop);
 
 const NOTHING_SENT = "Nothing was sent, and nothing was decided.";
+/** How long a refusal the page set off is waited for, when the page stopped answering. */
+const LATE_MS = 150;
 
 /** Why a probe stops when its consent goes away (or changes) during the run. */
 export const SWITCHED_OFF: Stop = { why: "probing was switched off, or the app moved, during the run, so probing stopped", fix: "Next: switch probing on again if you meant to, and run the probe again." };
@@ -151,6 +153,8 @@ export async function openAndIdentify(
   try {
     await page.click(match.index, Math.max(1, deadline() - Date.now()));
   } catch (error: unknown) {
+    // A refusal the click set off may still be on its way to the guards: give it a moment.
+    await page.wait(LATE_MS);
     const stopped = stopFromEvents(page.events());
     if (stopped) return incomplete(stopped);
     return incomplete({ why: `the button '${wanted.accessibleName || "(no name)"}' couldn't be clicked: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}`, fix: "Next: make sure nothing covers the button and it stays on the screen, then run the probe again." });
@@ -161,7 +165,15 @@ export async function openAndIdentify(
   for (;;) {
     const stopped = cancelled() ?? stopFromEvents(page.events()) ?? moved(start, await page.location(), origin);
     if (stopped) return incomplete(stopped);
-    const popup = await page.identify(match.index, wanted.pattern, args.popup);
+    let popup: PopupFound;
+    try {
+      popup = await page.identify(match.index, wanted.pattern, args.popup);
+    } catch (error: unknown) {
+      // The document the probe was watching went away (a blocked form submission or navigation can
+      // replace it with an error page): say what the guards saw, else that.
+      await page.wait(LATE_MS);
+      return incomplete(cancelled() ?? stopFromEvents(page.events()) ?? moved(start, await page.location().catch(() => start), origin) ?? { why: `the page changed under the probe: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}`, fix: "Next: run the probe again; a popup whose opening replaces the page can't be probed." });
+    }
     if (popup.state === "open") {
       // Watch a moment longer: a page that leaves, sends or opens a window just after opening is still stopped.
       await page.wait(Math.max(0, Math.min(budgets.graceMs, deadline() - Date.now())));

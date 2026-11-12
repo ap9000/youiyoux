@@ -5,6 +5,7 @@
  */
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, request as httpRequest, type IncomingMessage, type Server } from "node:http";
+import { createSocket, type Socket } from "node:dgram";
 import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,7 +18,12 @@ import { behaviourConsent, probeRoute, screenUrl, startFence, withBase, type Fen
 const PACKAGE = join(import.meta.dirname, "..");
 const CHROMIUM = process.env.YOUI_CHROMIUM ?? chromium.executablePath();
 const HAVE_CHROMIUM = existsSync(CHROMIUM);
-if (!HAVE_CHROMIUM) console.warn(`behaviour probe tests skipped: no Chromium at ${CHROMIUM} (set YOUI_CHROMIUM, or install the headless shell)`);
+/** YOUI_SECURITY_GATE=1 (CI): without Chromium the browser security tests fail rather than skip. */
+const GATE = process.env.YOUI_SECURITY_GATE === "1";
+if (!HAVE_CHROMIUM) console.warn(`behaviour probe tests ${GATE ? "FAIL" : "skipped"}: no Chromium at ${CHROMIUM} (set YOUI_CHROMIUM, or install the headless shell)`);
+test.runIf(GATE && !HAVE_CHROMIUM)("security gate: the guarded probe's browser tests need Chromium", () => {
+  throw new Error(`YOUI_SECURITY_GATE is set and there is no Chromium at ${CHROMIUM}: the probe's guards were not tested`);
+});
 
 describe("consent and the probe's own address", () => {
   const consent = (base: unknown, allowedOrigin?: unknown) => behaviourConsent({ base, ...(allowedOrigin === undefined ? {} : { behaviour: { allowedOrigin } }) });
@@ -73,6 +79,8 @@ interface Fixture {
   readonly origin: string;
   readonly requests: Array<{ method: string; path: string; query: string; headers: IncomingMessage["headers"] }>;
   readonly upgrades: string[];
+  /** TCP connections it accepted (a preconnect opens one without a request). */
+  readonly connections: { count: number };
 }
 
 async function serve(handler: (req: IncomingMessage, path: string) => { status?: number; type?: string; body: string; headers?: Record<string, string> } | null): Promise<Fixture> {
@@ -89,8 +97,10 @@ async function serve(handler: (req: IncomingMessage, path: string) => { status?:
     upgrades.push(req.url ?? "");
     socket.destroy();
   });
+  const connections = { count: 0 };
+  server.on("connection", () => void connections.count++);
   await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
-  return { server, origin: `http://127.0.0.1:${(server.address() as { port: number }).port}`, requests, upgrades };
+  return { server, origin: `http://127.0.0.1:${(server.address() as { port: number }).port}`, requests, upgrades, connections };
 }
 
 describe("the network fence", () => {
@@ -307,6 +317,10 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
   let app: Fixture;
   let other: Fixture;
   let shuffles = 0;
+  /** A UDP port on this machine, and every datagram it receives (WebTransport's QUIC, WebRTC's STUN). */
+  let udp: Socket;
+  let udpPort = 0;
+  const datagrams: string[] = [];
   let morph = false;
   const scratch = mkdtempSync(join(tmpdir(), "youi-behave-"));
 
@@ -347,6 +361,10 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
     const out = await build({ entryPoints: [join(scratch, "react/app.tsx")], bundle: true, write: false, format: "esm", jsx: "automatic", jsxDev: true, define: { "process.env.NODE_ENV": '"development"' }, nodePaths: [join(PACKAGE, "node_modules")], absWorkingDir: join(scratch, "react"), logLevel: "silent" });
     reactBundle = out.outputFiles[0]!.text;
     other = await serve((_req, path) => ({ body: `other ${path}` }));
+    udp = createSocket("udp4");
+    udp.on("message", (message, from) => datagrams.push(`${from.address}:${from.port} ${message.length} bytes`));
+    await new Promise<void>((done) => udp.bind(0, "127.0.0.1", () => done()));
+    udpPort = udp.address().port;
     const OTHER = other.origin;
     const OTHER_LOCALHOST = OTHER.replace("127.0.0.1", "localhost");
     const pages: Record<string, () => string> = {
@@ -382,6 +400,23 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
       "/push": () => page(menu("Push", "m8", "history.pushState({}, '', '/pushed')")),
       "/hash": () => page(menu("Hash", "m8h", "location.hash = 'open'")),
       "/open": () => page(menu("Window", "m9", "window.open('/popup')")),
+      // Ways out that aren't fetch: a keepalive POST, forms (POST here, GET to another port), resource hints to another port.
+      "/keepalive": () => page(menu("Keep", "k1", "fetch('/api/keepalive?token=1', { method: 'POST', body: 'x', keepalive: true }).catch(() => {})")),
+      "/form-post": () => page(`<form id="fp" action="/api/form" method="post"><input name="secret" value="hunter2"></form>${menu("Send", "f1", "document.getElementById('fp').submit()")}`),
+      "/form-get": () => page(`<form id="fg" action="${OTHER}/form-get" method="get"><input name="q" value="1"></form>${menu("Search", "f2", "document.getElementById('fg').submit()")}`),
+      "/hints": () => `<!doctype html><meta charset="utf-8"><link rel="preconnect" href="${OTHER}"><link rel="dns-prefetch" href="${OTHER}"><link rel="prefetch" href="${OTHER}/prefetched"><link rel="preload" as="fetch" href="${OTHER}/preloaded" crossorigin><body>${LOGGER}${menu("Hinted", "h1")}</body>`,
+      // UDP ways out: WebTransport (QUIC) from a worker and the page, peer connections from the page and a fresh iframe.
+      "/udp": () =>
+        page(
+          menu("Udp", "u1"),
+          `const rtc = async (W) => { try { const pc = new W.RTCPeerConnection(); pc.createDataChannel("x"); const offer = await pc.createOffer(); await pc.setLocalDescription(offer);
+             const sdp = offer.sdp.replace(/a=setup:actpass/g, "a=setup:active").replace(/a=ice-ufrag:.*/g, "a=ice-ufrag:abcd").replace(/a=ice-pwd:.*/g, "a=ice-pwd:abcdefghijklmnopqrstuvwx");
+             await pc.setRemoteDescription({ type: "answer", sdp }); await pc.addIceCandidate({ candidate: "candidate:1 1 udp 2122260223 127.0.0.1 ${udpPort} typ host", sdpMid: "0", sdpMLineIndex: 0 }); report("rtc=opened"); } catch (e) { report("rtc=refused"); } };
+           rtc(window);
+           const f = document.createElement("iframe"); document.body.append(f); rtc(f.contentWindow);
+           try { new WebTransport("https://127.0.0.1:${udpPort}/page"); report("wt-page=made"); } catch { report("wt-page=refused"); }
+           ${worker(`try { const wt = new WebTransport("https://127.0.0.1:${udpPort}/worker"); wt.ready.then(() => postMessage("wt-worker=ready"), () => postMessage("wt-worker=failed")); } catch { postMessage("wt-worker=refused"); } postMessage("rtc-worker=" + typeof RTCPeerConnection);`).replace(/;$/, "")}.onmessage = (e) => report(e.data);`,
+        ),
       "/blank": () => page(menu("Blank", "m10", "const a = document.createElement('a'); a.href = '/popup-blank'; a.target = '_blank'; document.body.append(a); a.click()")),
       "/confirm": () => page(menu("Ask", "m11", "confirm('Sure?')")),
       "/dupes": () => page(menu("More", "d1") + menu("More", "d2") + menu("Less", "d3")),
@@ -434,6 +469,7 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
     await browser?.close();
     app?.server.close();
     other?.server.close();
+    udp?.close();
     rmSync(scratch, { recursive: true, force: true });
   });
 
@@ -525,6 +561,36 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
     expect(seen(app, "/popup-blank")).toEqual([]);
     expect(only(await probe("/confirm"))).toMatchObject({ state: "incomplete", why: "the page showed a browser dialog (confirm); it was dismissed" });
   }, 90_000);
+
+  test("a keepalive POST and form submissions (POST here, GET to another port) never reach a server", async () => {
+    expect(only(await probe("/keepalive"))).toMatchObject({ state: "incomplete", why: "the page tried to send a POST to /api/keepalive; nothing was sent" });
+    expect(seen(app, "/api/keepalive")).toEqual([]);
+    const posted = only(await probe("/form-post"));
+    expect(posted).toMatchObject({ state: "incomplete" });
+    expect(JSON.stringify(posted)).not.toContain("hunter2");
+    expect(seen(app, "/api/form")).toEqual([]);
+    expect(only(await probe("/form-get"))).toMatchObject({ state: "incomplete", why: expect.stringMatching(/another address|tried to reach http:\/\/127\.0\.0\.1:\d+\/form-get/) });
+    expect(other.requests).toEqual([]);
+  }, 60_000);
+
+  test("resource hints to another port (preconnect, dns-prefetch, prefetch, preload) open no connection there", async () => {
+    const connections = other.connections.count;
+    expect(only(await probe("/hints"))).toMatchObject({ state: "opened" });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(other.connections.count).toBe(connections);
+    expect(other.requests).toEqual([]);
+  }, 60_000);
+
+  test("nothing leaves over UDP: WebTransport from a worker or the page, and peer connections from the page or a fresh iframe, send not one datagram", async () => {
+    const result = only(await probe("/udp"));
+    expect(result).toMatchObject({ state: "opened" });
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    expect(datagrams).toEqual([]);
+    // What the page itself saw: no peer connection anywhere, WebTransport absent in the page and failing in the worker.
+    expect(logged("rtc")).not.toContain("opened");
+    expect(logged("wt-page")).not.toContain("made");
+    expect(logged("wt-worker")).not.toContain("ready");
+  }, 60_000);
 
   test("only triggers are clicked: never an item inside an opened menu; no key is ever sent", async () => {
     const before = logged("click").length;

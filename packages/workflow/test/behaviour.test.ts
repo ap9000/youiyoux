@@ -18,7 +18,12 @@ import { sandbox, type Sandbox } from "./helpers.ts";
 
 const CHROMIUM = process.env.YOUI_CHROMIUM ?? chromium.executablePath();
 const HAVE_CHROMIUM = existsSync(CHROMIUM);
-if (!HAVE_CHROMIUM) console.warn(`behaviour probe tests skipped: no Chromium at ${CHROMIUM} (set YOUI_CHROMIUM, or install the headless shell)`);
+/** YOUI_SECURITY_GATE=1 (CI): without Chromium the browser security tests fail rather than skip. */
+const GATE = process.env.YOUI_SECURITY_GATE === "1";
+if (!HAVE_CHROMIUM) console.warn(`behaviour probe tests ${GATE ? "FAIL" : "skipped"}: no Chromium at ${CHROMIUM} (set YOUI_CHROMIUM, or install the headless shell)`);
+test.runIf(GATE && !HAVE_CHROMIUM)("security gate: probing's browser tests need Chromium", () => {
+  throw new Error(`YOUI_SECURITY_GATE is set and there is no Chromium at ${CHROMIUM}: probing was not tested`);
+});
 
 const CHECKS = [{ rule: "youi:demo/rule/menus-close", check: "dismiss-escape" as const, digest: "0123456789ab" }];
 const FINGERPRINT = { app: "abcdef012345", tool: "youiyoux@test" };
