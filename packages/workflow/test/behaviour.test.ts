@@ -4,9 +4,10 @@
  * run kept under the real .youi/, and evidence paths that never leave it. Real headless Chromium
  * against fixture apps on loopback ports.
  */
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer, request, type Server } from "node:http";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium, type Browser } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
@@ -62,11 +63,11 @@ describe("consent", () => {
     expect(await refusal(setBehaviourConsent(product("nobase"), true))).toMatch(/does not say where the app runs/);
   });
 
-  test("screens.json writers take turns under one lock; a dead or abandoned holder's lock is broken", async () => {
+  test("screens.json writers take turns under one lock; a dead holder's lock is broken", async () => {
     const root = product("locked", { base: "http://localhost:5173" });
     const lock = join(root, ".youi/screens/screens.json.lock");
     // A live holder (this process): the write waits until it lets go.
-    writeFileSync(lock, `${process.pid} ${Date.now()} held`);
+    writeFileSync(lock, JSON.stringify({ pid: process.pid, host: hostname(), id: "ab".repeat(8) }));
     let done = false;
     const waiting = setBehaviourConsent(root, true).then(() => (done = true));
     await new Promise((r) => setTimeout(r, 300));
@@ -75,13 +76,11 @@ describe("consent", () => {
     rmSync(lock);
     await waiting;
     expect(screensOf(root).behaviour).toEqual({ allowedOrigin: "http://localhost:5173", generation: 1 });
-    // A holder that is gone, or one that has held it far too long, is broken and the write goes on.
-    writeFileSync(lock, `999999999 ${Date.now()} dead`);
+    // A holder that is gone: broken, and the write goes on. (A live one is never broken: scanner's screens-lock test.)
+    const dead = Number(spawnSync(process.execPath, ["-e", "process.stdout.write(String(process.pid))"], { encoding: "utf8" }).stdout);
+    writeFileSync(lock, JSON.stringify({ pid: dead, host: hostname(), id: "cd".repeat(8) }));
     await setBehaviourConsent(root, false);
     expect(screensOf(root).behaviour).toEqual({ generation: 2 });
-    writeFileSync(lock, `${process.pid} ${Date.now() - 60_000} abandoned`);
-    await setBehaviourConsent(root, true);
-    expect(screensOf(root).behaviour).toEqual({ allowedOrigin: "http://localhost:5173", generation: 3 });
     expect(existsSync(lock)).toBe(false);
   });
 
