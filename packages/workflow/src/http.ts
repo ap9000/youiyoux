@@ -16,6 +16,7 @@ import { z } from "zod";
 import { COMPONENT_STATES, DefinitionError, ElementId, LibraryEntry, REQUEST_STATUSES, RequestTarget, RuleCheck, RuleRollout } from "@youiyoux/core";
 import { BRIDGE_PATH, liveBridge } from "@youiyoux/scanner";
 import type { Actor, AgentsSetup, ApiError } from "./api.ts";
+import { setBehaviourConsent } from "./behaviour.ts";
 import { proposalDigest } from "./proposals.ts";
 import { WorkflowError } from "./policy.ts";
 import type { RuleWorkflow } from "./service.ts";
@@ -76,6 +77,11 @@ const LiveEditInput = z.object({
 /** A person's decision on an agent's options: one of them (and the request it became), or none. */
 const SEEN = z.string().regex(/^[0-9a-f]{64}$/);
 const DecisionInput = z.union([z.object({ choice: z.enum(["a", "b", "c", "d"]), request: z.string().regex(/^r-[0-9a-f]{10}$/).optional(), seen: SEEN }).strict(), z.object({ dismiss: z.literal(true), seen: SEEN }).strict()]);
+/**
+ * Switching behaviour probes on or off for the app. It carries no origin, and may not: the service
+ * binds consent to the origin of screens.json's current base itself (behaviour.ts).
+ */
+const BehaviourConsentInput = z.object({ allow: z.boolean() }).strict();
 /** The agents to connect to this project (Connect your agent). */
 const AgentsInput = z.object({ agents: z.array(z.enum(["claude", "codex", "cursor"])).min(1).max(3) });
 
@@ -193,6 +199,10 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string, opti
   if (path === "/api/live/edit" && method === "POST") {
     const { file, write, ...edit } = parse(LiveEditInput, await readJson(req));
     return send(res, 200, await (await workflow.live()).edit(file, { ...edit, column: edit.column ?? null, text: edit.text ?? null }, write ?? null));
+  }
+  if (path === "/api/screens/behaviour" && method === "POST") {
+    const { allow } = parse(BehaviourConsentInput, await readJson(req));
+    return send(res, 200, await setBehaviourConsent((await workflow.live()).root, allow));
   }
   if (path === "/api/live/resolve" && method === "POST") return send(res, 200, { places: await (await workflow.live()).resolve(parse(LiveResolveInput, await readJson(req)).places) });
   if (path === "/api/requests" && method === "GET") return send(res, 200, await (await workflow.requests()).list());

@@ -1,0 +1,206 @@
+/**
+ * Behaviour probes, the service's side: consent read from screens.json at the moment of probing,
+ * written only by the authenticated service write (its origin from base, never the request), the
+ * run kept under the real .youi/, and evidence paths that never leave it. Real headless Chromium
+ * against fixture apps on loopback ports.
+ */
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { createServer, request, type Server } from "node:http";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { chromium, type Browser } from "playwright-core";
+import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { BehaviourRouteRun } from "@youiyoux/core";
+import { launchBrowser } from "@youiyoux/detect";
+import { captureScreens } from "@youiyoux/scanner";
+import { behaviourFile, MemoryStore, probeBehaviour, readBehaviourRun, readEvidence, RuleWorkflow, serveWorkflow, setBehaviourConsent, WorkflowError, writeEvidence, type RunningService } from "../src/index.ts";
+import { sandbox, type Sandbox } from "./helpers.ts";
+
+const CHROMIUM = process.env.YOUI_CHROMIUM ?? chromium.executablePath();
+const HAVE_CHROMIUM = existsSync(CHROMIUM);
+if (!HAVE_CHROMIUM) console.warn(`behaviour probe tests skipped: no Chromium at ${CHROMIUM} (set YOUI_CHROMIUM, or install the headless shell)`);
+
+const CHECKS = [{ rule: "youi:demo/rule/menus-close", check: "dismiss-escape" as const, digest: "0123456789ab" }];
+const FINGERPRINT = { app: "abcdef012345", tool: "youiyoux@test" };
+const scratch = mkdtempSync(join(tmpdir(), "youi-behaviour-"));
+afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+
+/** A product root with screens.json; `doc` overrides its fields. */
+function product(name: string, doc: Record<string, unknown> = {}, screens = [{ route: "/menu", path: "/menu" }]): string {
+  const root = join(scratch, name);
+  mkdirSync(join(root, ".youi/screens"), { recursive: true });
+  writeFileSync(join(root, ".youi/screens/screens.json"), JSON.stringify({ schema: "youiyoux.screens/v1", project: "app", source: "a test app", capturedAt: "", viewport: { width: 800, height: 600 }, screens, ...doc }, null, 2));
+  return root;
+}
+const screensOf = (root: string) => JSON.parse(readFileSync(join(root, ".youi/screens/screens.json"), "utf8")) as Record<string, unknown>;
+/** A browser that must never be used: every refusal happens before anything opens. */
+const NO_BROWSER = new Proxy({}, { get: () => { throw new Error("the browser was used"); } }) as unknown as Browser;
+const refusal = async (promise: Promise<unknown>): Promise<string> => {
+  const error = await promise.then(() => null, (e: unknown) => e);
+  expect(error).toBeInstanceOf(WorkflowError);
+  return (error as WorkflowError).message;
+};
+
+describe("consent", () => {
+  test("switching probing on binds it to the origin of base, keeps the rest of screens.json, and off removes it", async () => {
+    const root = product("on-off", { base: "http://localhost:5173/app", note: "kept" });
+    expect(await setBehaviourConsent(root, true)).toEqual({ allowedOrigin: "http://localhost:5173" });
+    expect(screensOf(root)).toMatchObject({ base: "http://localhost:5173/app", note: "kept", behaviour: { allowedOrigin: "http://localhost:5173" } });
+    expect(await setBehaviourConsent(root, false)).toEqual({ allowedOrigin: null });
+    expect(screensOf(root)).not.toHaveProperty("behaviour");
+    expect(screensOf(root).note).toBe("kept");
+    // Never for an app that isn't on this machine, or with nowhere to point it.
+    expect(await refusal(setBehaviourConsent(product("remote", { base: "http://example.com" }), true))).toMatch(/on this machine only/);
+    expect(await refusal(setBehaviourConsent(product("nobase"), true))).toMatch(/does not say where the app runs/);
+  });
+
+  test("probing is refused, before any browser opens: no consent, consent for another origin, a base off this machine, a path off the app", async () => {
+    const probe = (root: string) => probeBehaviour({ root, route: "/menu", browser: NO_BROWSER, checks: CHECKS, fingerprint: FINGERPRINT });
+    expect(await refusal(probe(product("none", { base: "http://127.0.0.1:5173" })))).toMatch(/^Probes click buttons that open menus and dialogs in your running app\. Use a dev app with test data\. Probing isn't switched on/);
+    expect(await refusal(probe(product("other", { base: "http://127.0.0.1:5173", behaviour: { allowedOrigin: "http://127.0.0.1:5174" } })))).toMatch(/switched on for http:\/\/127\.0\.0\.1:5174, but the app now runs at http:\/\/127\.0\.0\.1:5173/);
+    expect(await refusal(probe(product("remote-base", { base: "http://10.1.2.3:5173", behaviour: { allowedOrigin: "http://10.1.2.3:5173" } })))).toMatch(/on this machine only/);
+    expect(await refusal(probe(product("off-path", { base: "http://127.0.0.1:5173", behaviour: { allowedOrigin: "http://127.0.0.1:5173" } }, [{ route: "/menu", path: "//evil.example/menu" }])))).toMatch(/must start with a single \//);
+    expect(existsSync(join(scratch, "none/.youi/behaviour"))).toBe(false);
+  });
+});
+
+describe("the service write", () => {
+  let box: Sandbox;
+  let service: RunningService;
+  const KEY = "test-session-key";
+  beforeAll(async () => {
+    box = await sandbox();
+    const workflow = new RuleWorkflow({ projectRoot: box.project, designRoot: box.design, store: new MemoryStore(), decisionsKey: join(box.project, "..", "decisions.key") });
+    service = await serveWorkflow({ workflow, actor: { kind: "person", name: "captain" }, sessionKey: KEY, port: 0 });
+  });
+  afterAll(async () => {
+    await service.close();
+    await box.dispose();
+  });
+  const call = (headers: Record<string, string>, body: unknown): Promise<{ status: number; json: Record<string, unknown> }> =>
+    new Promise((resolve, reject) => {
+      const req = request(new URL("/api/screens/behaviour", service.url), { method: "POST", headers: { "content-type": "application/json", ...headers } }, (res) => {
+        let text = "";
+        res.on("data", (c: Buffer) => (text += c.toString("utf8")));
+        res.on("end", () => resolve({ status: res.statusCode ?? 0, json: JSON.parse(text || "{}") as Record<string, unknown> }));
+      });
+      req.on("error", reject);
+      req.end(JSON.stringify(body));
+    });
+
+  test("POST /api/screens/behaviour needs the session key and a loopback origin, takes no origin, and binds consent to base", async () => {
+    const file = join(box.project, ".youi/screens/screens.json");
+    mkdirSync(join(box.project, ".youi/screens"), { recursive: true });
+    writeFileSync(file, JSON.stringify({ schema: "youiyoux.screens/v1", project: "expo-fixture", source: "a test app", capturedAt: "", base: "http://localhost:5173", viewport: { width: 800, height: 600 }, screens: [{ route: "/", path: "/" }] }));
+    expect((await call({}, { allow: true })).status).toBe(401);
+    expect((await call({ "x-youi-session": "guess" }, { allow: true })).status).toBe(401);
+    expect((await call({ "x-youi-session": KEY, origin: "https://evil.example" }, { allow: true })).status).toBe(403);
+    expect(JSON.parse(readFileSync(file, "utf8"))).not.toHaveProperty("behaviour");
+    // An origin in the body is refused, not used.
+    const named = await call({ "x-youi-session": KEY }, { allow: true, allowedOrigin: "http://localhost:9999" });
+    expect(named.status).toBe(400);
+    expect(JSON.parse(readFileSync(file, "utf8"))).not.toHaveProperty("behaviour");
+    const on = await call({ "x-youi-session": KEY, origin: "http://localhost:4000" }, { allow: true });
+    expect(on).toEqual({ status: 200, json: { allowedOrigin: "http://localhost:5173" } });
+    expect(JSON.parse(readFileSync(file, "utf8")).behaviour).toEqual({ allowedOrigin: "http://localhost:5173" });
+    expect((await call({ "x-youi-session": KEY }, { allow: false })).json).toEqual({ allowedOrigin: null });
+  });
+});
+
+describe("evidence and run files stay inside the real .youi/", () => {
+  test("a path through a link, a linked file, a linked .youi or anything not under .youi/ is refused, for reading and writing", async () => {
+    const root = product("evidence");
+    const outside = mkdtempSync(join(tmpdir(), "youi-outside-"));
+    try {
+      await writeEvidence(root, ".youi/behaviour/shots/a.png", Buffer.from([1, 2, 3]));
+      expect([...(await readEvidence(root, ".youi/behaviour/shots/a.png"))]).toEqual([1, 2, 3]);
+      symlinkSync(outside, join(root, ".youi/behaviour/escape"));
+      await expect(writeEvidence(root, ".youi/behaviour/escape/b.png", Buffer.from([1]))).rejects.toThrow(/goes through a link/);
+      writeFileSync(join(outside, "secret.png"), "secret");
+      await expect(readEvidence(root, ".youi/behaviour/escape/secret.png")).rejects.toThrow(/goes through a link/);
+      symlinkSync(join(outside, "secret.png"), join(root, ".youi/behaviour/shots/linked.png"));
+      await expect(readEvidence(root, ".youi/behaviour/shots/linked.png")).rejects.toThrow(/is a link/);
+      await expect(writeEvidence(root, ".youi/behaviour/shots/linked.png", Buffer.from([9]))).rejects.toThrow(/is a link/);
+      expect(readFileSync(join(outside, "secret.png"), "utf8")).toBe("secret");
+      for (const path of ["../x.png", ".youi/../x.png", "/etc/passwd", ".youi/behaviour/../../x.png", "C:/x.png"]) await expect(writeEvidence(root, path, Buffer.from([1])), path).rejects.toThrow(/isn't a path under \.youi/);
+      // A .youi that is itself a link holds nothing youiyoux writes.
+      const linked = join(scratch, "linked-youi");
+      mkdirSync(linked);
+      symlinkSync(join(root, ".youi"), join(linked, ".youi"));
+      await expect(writeEvidence(linked, ".youi/behaviour/c.png", Buffer.from([1]))).rejects.toThrow(/\.youi is a link/);
+      // A stored run naming evidence through a link is refused when read.
+      const run = { schema: "youiyoux.behaviour/v1", route: "/menu", runId: "r1", at: "2026-11-12T00:00:00.000Z", origin: "http://127.0.0.1:5173", viewport: { width: 800, height: 600 }, state: "probed", why: null, fix: null, coverage: "x", results: [{ runId: "r1", at: "2026-11-12T00:00:00.000Z", viewport: { width: 800, height: 600 }, route: "/menu", rule: "youi:demo/rule/menus-close", target: { route: "/menu", pattern: "menu-button", component: null, accessibleName: "Actions" }, pattern: "menu-button", check: "dismiss-escape", state: "incomplete", why: "w", fix: "f", info: [], evidence: [".youi/behaviour/escape/secret.png"], freshness: { rule: "0123456789ab", tool: "t", origin: "http://127.0.0.1:5173", config: "0123456789ab", app: "0123456789ab" } }] };
+      expect(BehaviourRouteRun.safeParse(run).success).toBe(true);
+      writeFileSync(join(root, behaviourFile("/menu")), JSON.stringify(run));
+      await expect(readBehaviourRun(root, "/menu")).rejects.toThrow(/goes through a link/);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+});
+
+describe.skipIf(!HAVE_CHROMIUM)("probing a running app", () => {
+  let browser: Browser;
+  let app: Server;
+  let base: string;
+  const requests: string[] = [];
+  /** Set by a test: what the app does to screens.json when its menu is opened (as a person switching probing off mid-run). */
+  let onOpen: (() => void) | null = null;
+  const MENU = (name: string, id: string) =>
+    `<button aria-haspopup="menu" aria-expanded="false" aria-controls="${id}" onclick="new Image().src='/opened';document.getElementById('${id}').hidden=false">${name}</button><ul role="menu" id="${id}" hidden><li role="menuitem">Item</li></ul>`;
+
+  beforeAll(async () => {
+    app = createServer((req, res) => {
+      requests.push(`${req.method} ${req.url}`);
+      if (req.url === "/opened") {
+        onOpen?.();
+        return void res.writeHead(200, { "content-type": "image/gif" }).end();
+      }
+      const body = req.url === "/menu" ? MENU("Actions", "m1") : req.url === "/two" ? MENU("First", "a") + MENU("Second", "b") : req.url === "/" ? "<p>home</p>" : null;
+      if (body === null) return void res.writeHead(404).end();
+      res.writeHead(200, { "content-type": "text/html" }).end(`<!doctype html><meta charset="utf-8"><body>${body}</body>`);
+    });
+    await new Promise<void>((done) => app.listen(0, "127.0.0.1", done));
+    base = `http://127.0.0.1:${(app.address() as { port: number }).port}`;
+    browser = await launchBrowser(process.env.YOUI_CHROMIUM, { download: false });
+  }, 60_000);
+  afterAll(async () => {
+    await browser?.close();
+    app?.close();
+  });
+
+  test("with consent, a route is probed and kept as .youi/behaviour/<route-hash>.json: incomplete or not-applicable, never passed, no invented line", async () => {
+    const root = product("probed", { base, behaviour: { allowedOrigin: base } });
+    const { run, file, probe } = await probeBehaviour({ root, route: "/menu", browser, checks: [...CHECKS, { rule: "youi:demo/rule/dialogs-trap", check: "focus-trap", digest: "0123456789ab" }], fingerprint: FINGERPRINT });
+    expect(file).toBe(join(realpathSync(root), behaviourFile("/menu")));
+    expect(behaviourFile("/menu")).toMatch(/^\.youi\/behaviour\/[0-9a-f]{16}\.json$/);
+    expect(BehaviourRouteRun.parse(JSON.parse(readFileSync(file, "utf8")))).toEqual(run);
+    expect(run).toMatchObject({ route: "/menu", origin: base, state: "probed" });
+    expect(run.results.map((r) => [r.check, r.state])).toEqual([["dismiss-escape", "incomplete"], ["focus-trap", "not-applicable"]]);
+    expect(run.results[0]).toMatchObject({ target: { route: "/menu", pattern: "menu-button", component: null, accessibleName: "Actions" }, why: expect.stringMatching(/opened and was identified \(by aria-controls\), but this youiyoux doesn't decide dismiss-escape yet/), freshness: { origin: base, app: FINGERPRINT.app, tool: FINGERPRINT.tool } });
+    expect(run.results[0]!.target).not.toHaveProperty("file");
+    expect(run.results.some((r) => r.state === "passed" || r.state === "failed")).toBe(false);
+    // The opening itself is known to the caller, internally, not as a pass.
+    expect(probe.targets[0]!.scenarios[0]).toMatchObject({ state: "opened" });
+    expect(await readBehaviourRun(root, "/menu")).toEqual(run);
+  }, 60_000);
+
+  test("consent is asked again before every scenario: switched off mid-run, the rest stops", async () => {
+    const root = product("mid-run", { base, behaviour: { allowedOrigin: base } }, [{ route: "/two", path: "/two" }]);
+    onOpen = () => void setBehaviourConsent(root, false);
+    try {
+      const { run } = await probeBehaviour({ root, route: "/two", browser, checks: CHECKS, fingerprint: FINGERPRINT });
+      expect(run.results.map((r) => r.why)).toEqual([expect.stringMatching(/opened and was identified/), "probing was switched off, or the app moved, during the run, so probing stopped"]);
+    } finally {
+      onOpen = null;
+    }
+  }, 60_000);
+
+  test("a capture that moves base to another origin leaves no consent to probe with", async () => {
+    const root = product("moved", { base: "http://127.0.0.1:1", behaviour: { allowedOrigin: "http://127.0.0.1:1" } }, [{ route: "/", path: "/" }]);
+    await captureScreens(join(root, ".youi/screens"), { base, browser });
+    expect(screensOf(root).base).toBe(base);
+    expect(screensOf(root)).not.toHaveProperty("behaviour");
+    expect(await refusal(probeBehaviour({ root, route: "/", browser: NO_BROWSER, checks: CHECKS, fingerprint: FINGERPRINT }))).toMatch(/Probing isn't switched on/);
+  }, 60_000);
+});

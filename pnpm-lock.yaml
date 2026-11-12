@@ -387,9 +387,15 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: 1.30.1
         version: 1.30.1(zod@4.6.5)
+      '@youiyoux/detect':
+        specifier: workspace:*
+        version: link:../detect
       '@youiyoux/mcp':
         specifier: workspace:*
         version: link:../mcp
+      playwright-core:
+        specifier: 1.63.0
+        version: 1.63.0
 
   packages/youiyoux:
     dependencies:

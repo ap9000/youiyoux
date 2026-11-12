@@ -9,6 +9,7 @@ export * from "./library-drafts.ts";
 export * from "./policy.ts";
 export * from "./preview.ts";
 export * from "./live.ts";
+export * from "./behaviour.ts";
 export * from "./requests.ts";
 export * from "./proposals.ts";
 export * from "./service.ts";
