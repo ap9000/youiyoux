@@ -82,7 +82,7 @@ export function screenUrl(origin: string, path: string): string {
 /** A URL as a refusal names it: its path, without query string or fragment; another origin's, with that origin. */
 export function describeUrl(url: string, origin: string): string {
   try {
-    const parsed = new URL(url);
+    const parsed = new URL(String(url));
     return parsed.origin === origin ? parsed.pathname : `${parsed.origin}${parsed.pathname}`;
   } catch {
     return "an address that couldn't be read";
@@ -91,16 +91,16 @@ export function describeUrl(url: string, origin: string): string {
 
 export type RequestVerdict = { readonly allow: true } | { readonly allow: false; readonly kind: "write" | "origin"; readonly words: string };
 
-/** Whether a request may leave: on the exact origin, with a method that only reads. */
+/** Whether a request may leave: on the exact origin, with a method that only reads. Never throws: what it can't read is refused. */
 export function requestVerdict(url: string, method: string, origin: string): RequestVerdict {
   let parsed: URL | null = null;
   try {
-    parsed = new URL(url);
+    parsed = new URL(String(url));
   } catch {
     // Refused below.
   }
   if (!parsed || parsed.origin !== origin) return { allow: false, kind: "origin", words: `the page tried to reach ${describeUrl(url, origin)}, which isn't ${origin}; nothing was sent` };
-  const upper = method.toUpperCase();
+  const upper = String(method).toUpperCase();
   if (!SAFE_METHODS.has(upper)) return { allow: false, kind: "write", words: `the page tried to send a ${upper} to ${describeUrl(url, origin)}; nothing was sent` };
   return { allow: true };
 }

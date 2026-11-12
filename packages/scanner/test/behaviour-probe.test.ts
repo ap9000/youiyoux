@@ -5,6 +5,7 @@
  */
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, request as httpRequest, type IncomingMessage, type Server } from "node:http";
+import { connect } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { build } from "esbuild";
@@ -134,6 +135,57 @@ describe("the network fence", () => {
       await fence.close();
       target.server.close();
       elsewhere.server.close();
+    }
+  });
+});
+
+describe("the network fence survives malformed requests", () => {
+  /** Raw bytes to the fence over a plain TCP socket, and everything it answers until it closes. */
+  const raw = (proxy: string, bytes: string): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const socket = connect(Number(new URL(proxy).port), "127.0.0.1");
+      let answer = "";
+      socket.on("data", (c: Buffer) => (answer += c.toString("latin1")));
+      socket.on("close", () => resolve(answer));
+      socket.on("error", reject);
+      // Answered requests close (400, 403), or go quiet (a 200 kept alive): either ends the read.
+      socket.setTimeout(1_000, () => socket.destroy());
+      socket.write(bytes);
+    });
+
+  test("a request line naming an address that doesn't parse is answered 400, and the fence keeps serving", async () => {
+    const target = await serve(() => ({ body: "still here" }));
+    const refused: string[] = [];
+    const fence = await startFence(target.origin, (r) => refused.push(r.words));
+    try {
+      for (const line of ["GET http:// HTTP/1.1", "GET http://[ HTTP/1.1", "POST http://%zz HTTP/1.1"]) {
+        const answer = await raw(fence.server, `${line}\r\nhost: x\r\ncontent-length: 0\r\n\r\n`);
+        expect(answer, line).toMatch(/^HTTP\/1\.1 400 /);
+      }
+      // An upgrade header without "connection: upgrade" reaches the request listener, not the upgrade one:
+      // the fence once parsed its address there unguarded, and a throw ended the process.
+      expect(await raw(fence.server, "GET http://[ HTTP/1.1\r\nhost: x\r\nupgrade: websocket\r\n\r\n")).toMatch(/^HTTP\/1\.1 400 /);
+      // As a real upgrade it reaches the upgrade listener: refused, never thrown on.
+      expect(await raw(fence.server, "GET http://[ HTTP/1.1\r\nhost: x\r\nupgrade: websocket\r\nconnection: Upgrade\r\n\r\n")).toMatch(/^HTTP\/1\.1 (?:400|403) /);
+      // Tunnels naming garbage are refused, not thrown on.
+      for (const authority of ["[", "http://[", "%%%", ""]) expect(await raw(fence.server, `CONNECT ${authority} HTTP/1.1\r\nhost: x\r\n\r\n`), authority).toMatch(/^HTTP\/1\.1 (?:403|400) /);
+      // A listener that throws can't take it down either.
+      const touchy = await startFence(target.origin, () => {
+        throw new Error("listener failed");
+      });
+      try {
+        expect(await raw(touchy.server, "GET http:// HTTP/1.1\r\nhost: x\r\n\r\n")).toMatch(/^HTTP\/1\.1 400 /);
+        expect(await raw(touchy.server, `POST ${target.origin}/x HTTP/1.1\r\nhost: x\r\ncontent-length: 0\r\n\r\n`)).toMatch(/^HTTP\/1\.1 403 /);
+      } finally {
+        await touchy.close();
+      }
+      const ok = await raw(fence.server, `GET ${target.origin}/after HTTP/1.1\r\nhost: ${new URL(target.origin).host}\r\nconnection: close\r\n\r\n`);
+      expect(ok).toMatch(/^HTTP\/1\.1 200 [\s\S]*still here/);
+      expect(target.requests.map((r) => r.path)).toEqual(["/after"]);
+      expect(refused).toContain("a request that named no http address was refused");
+    } finally {
+      await fence.close();
+      target.server.close();
     }
   });
 });
