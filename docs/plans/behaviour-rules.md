@@ -339,3 +339,22 @@ build`, `node packages/cli/bin/youi.js schema --check`.
 - **Partials 4 and 5:** identity matches on component + accessible name (+ ordinal), never file:line; ambiguous →
   incomplete. Popups without a relationship are identified as the single newly visible element of the pattern's role,
   else incomplete.
+
+## Slice 1 review record (accepted by Alex, 2026-11-12)
+
+Codex code review: round 1 NO-GO (8 findings), round 2 NO-GO (4 closed, 4 partial, 4 new). Alex decided finding 1
+(block data requests after the click, keep testing, label `dataBlocked`) and finding 5 (cheap guard). The round-2 items
+(lock exclusion, data blocking until page and workers are gone, hover swap, revoke during discovery, CI browser gate)
+were fixed and verified by Claude: each regression test passes with its fix and fails with the pre-fix file restored.
+
+Accepted residuals:
+
+1. One CDP round trip between the last isolated-world check at the pointer and the press; a page timer could swap the
+   target in it. The landing check reports it as incomplete, but the press has happened.
+2. A writer that dies after winning the stale-lock marker but before removing the dead lock leaves both files;
+   writers time out naming them for deletion by hand.
+3. An app that changes data on a GET for a static file (image, script, style, font, media) is out of reach.
+4. A process on the same account swapping a parent folder between the check and the open is out of scope.
+5. Component names and source frames are read from the page's main world and can be forged: identity and display
+   only, never what may be clicked.
+6. https dev servers are refused (the fence can't see inside a tunnel).
