@@ -109,6 +109,11 @@ class GuardedContext {
   private creating = 0;
   /** The page being probed now: where refusals with no page of their own (workers, the fence) are told. */
   private current: PageLog | null = null;
+  /**
+   * A trigger has been clicked and no new page has opened since: requests with no page of the
+   * probe's own (a worker's, one still in flight from a page closing) get after-click rules.
+   */
+  private afterClick = false;
 
   private readonly context: BrowserContext;
   private readonly origin: string;
@@ -184,7 +189,7 @@ class GuardedContext {
     }
     // From the click on, the page (and its workers) may load only its own static files; every data
     // request is refused, and the scenario goes on, tested with its data blocked.
-    if ((log ?? this.current)?.phase === "act") {
+    if ((log ?? this.current)?.phase === "act" || (!log && this.afterClick)) {
       const method = request.method().toUpperCase();
       if (!STATIC_RESOURCE_TYPES.has(request.resourceType()) || !(method === "GET" || method === "HEAD")) return refuse({ kind: "data", words: dataWords(method, request.url(), this.origin) });
     }
@@ -203,17 +208,21 @@ class GuardedContext {
     const log: PageLog = { start, events: [], phase: "load", committed: false };
     this.logs.set(page, log);
     this.current = log;
+    // The page before this one has closed (its workers with it): only now does after-click end.
+    this.afterClick = false;
     this.fence.setAfterClick(false);
     page.on("dialog", (dialog) => {
       this.record(log, { kind: "dialog", words: `the page showed a browser dialog (${dialog.type()}); it was dismissed` });
       void dialog.dismiss().catch(() => undefined);
     });
-    return new PlaywrightProbePage(page, log, { ...options, acting: () => this.fence.setAfterClick(true) }, () => {
+    const acting = (): void => {
+      this.afterClick = true;
+      this.fence.setAfterClick(true);
+    };
+    // Forgotten only once the page (and its workers) have closed; after-click stays on until the next page.
+    return new PlaywrightProbePage(page, log, { ...options, acting }, () => {
       this.logs.delete(page);
-      if (this.current === log) {
-        this.current = null;
-        this.fence.setAfterClick(false);
-      }
+      if (this.current === log) this.current = null;
     });
   }
 }
@@ -444,10 +453,11 @@ class PlaywrightProbePage implements ProbePage {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  /** The page closes first (its workers end with it), and only then is it forgotten: until then its requests are still its own. */
   async close(): Promise<void> {
-    this.forget();
-    await this.worldsOpened?.detach();
     await this.page.close({ runBeforeUnload: false }).catch(() => undefined);
+    await this.worldsOpened?.detach();
+    this.forget();
   }
 }
 

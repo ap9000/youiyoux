@@ -445,6 +445,10 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
       "/xhr": () => page(menu("Xhr", "d2", "const x = new XMLHttpRequest(); x.open('GET', '/api/xhr?q=1'); x.send()")),
       "/eventsource": () => page(menu("Live feed", "d3", "new EventSource('/api/stream')")),
       "/worker-get": () => page(menu("Worker get", "d4", worker(`fetch(${JSON.stringify(app.origin)} + "/api/worker-get").catch(() => {});`))),
+      // A worker started by the click that asks for data as fast as it can, until it is stopped.
+      "/worker-loop": () => page(menu("Polling", "wl", worker(`(async () => { for (;;) await fetch(${JSON.stringify(app.origin)} + "/api/poll").catch(() => {}); })();`))),
+      // The same from a shared worker, which belongs to no page.
+      "/shared-loop": () => page(menu("Shared polling", "sl", "new SharedWorker(window.URL.createObjectURL(new Blob([" + JSON.stringify(`(async () => { for (;;) await fetch(${JSON.stringify(app.origin)} + "/api/shared-poll").catch(() => {}); })();`).replace(/"/g, "&quot;") + "], { type: 'text/javascript' })))")),
       "/static-after": () => page(menu("Static", "d5", "const s = document.createElement('script'); s.src = '/late.js'; document.head.append(s); new Image().src = '/api/track?id=1'")),
       "/late.js": () => "new Image().src = '/log?late=ran';",
       // A popup that only shows once its data arrives: with its data blocked, it never opens.
@@ -642,6 +646,18 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
     // sendBeacon is a POST: refused before and after the click, and still incomplete.
     expect(only(await probe("/beacon"))).toMatchObject({ state: "incomplete" });
   }, 90_000);
+
+  test("data blocking lasts until the page and its workers are gone: a worker polling for data past the scenario's end reaches nothing", async () => {
+    const result = only(await probe("/worker-loop", { checks: ["dismiss-escape", "focus-into"] }));
+    expect(result).toMatchObject({ state: "opened", dataBlocked: true });
+    // During the scenario, while its page closes, after it closed, and into the next scenario's load.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(seen(app, "/api/poll")).toEqual([]);
+    const shared = only(await probe("/shared-loop", { checks: ["dismiss-escape", "focus-into"] }));
+    expect(shared).toMatchObject({ state: "opened" });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(seen(app, "/api/shared-poll")).toEqual([]);
+  }, 60_000);
 
   test("after the click, the page's own static files still load: a script it adds runs, and an image loads (one that changes data on a GET is out of reach)", async () => {
     const result = only(await probe("/static-after"));
