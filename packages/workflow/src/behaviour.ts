@@ -15,7 +15,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath, rename, unlink, type FileHandle } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
-import { BEHAVIOUR_ROUTE_SCHEMA, BehaviourRouteRun, cleanText, decidesBehaviour, EVIDENCE_PATH, type BehaviourCheckId, type BehaviourResult, type BehaviourTarget, type Freshness } from "@youiyoux/core";
+import { acquireFileLock, BEHAVIOUR_ROUTE_SCHEMA, BehaviourRouteRun, cleanText, FileLockBusy, type HeldLock, decidesBehaviour, EVIDENCE_PATH, type BehaviourCheckId, type BehaviourResult, type BehaviourTarget, type Freshness } from "@youiyoux/core";
 import { behaviourConfigDigest, behaviourConsent, bindingsDigest, CHECK_KEYS, probeOrigin, probeRoute, readScreensSpec, screenUrl, switchedConsent, SWITCHED_OFF, updateScreensSpec, type ContractBinding, type ProbeBudgets, type ProbeRouteOptions, type RouteProbe, type ScreensSpec } from "@youiyoux/scanner";
 import { LiveApp } from "./live.ts";
 import { WorkflowError } from "./policy.ts";
@@ -42,6 +42,8 @@ export interface ProbeBehaviourOptions {
   /** Told how many popups this run tests, once they are found. */
   readonly onFound?: (count: number) => void;
   readonly now?: () => Date;
+  /** The route's claim the caller holds (runBehaviour); without it, probeBehaviour takes one itself. */
+  readonly claim?: RouteClaim;
   /** Tests only: the probe to run instead of probeRoute (to show the storage guards are active). */
   readonly probe?: typeof probeRoute;
 }
@@ -145,6 +147,15 @@ export async function readYouiFile(root: string, path: string, hooks: YouiFileHo
  * was written is removed where possible and the write refused. Same residual as readYouiFile.
  */
 export async function writeYouiFile(root: string, path: string, bytes: Buffer | string, hooks: YouiFileHooks = {}): Promise<string> {
+  // A route's run file is published only by a run holding the route's claim (probeBehaviour).
+  if (RUN_FILE.test(path)) throw new WorkflowError("forbidden", `${path} is a behaviour run: it is written only by a run holding its route's claim (youiyoux behave, the hub or ui_behave)`);
+  return writeChecked(root, path, bytes, hooks);
+}
+
+/** A route's run file (behaviourFile). */
+const RUN_FILE = /^\.youi\/behaviour\/[0-9a-f]{16}\.json$/;
+
+async function writeChecked(root: string, path: string, bytes: Buffer | string, hooks: YouiFileHooks = {}): Promise<string> {
   const file = await youiPath(root, path, "write");
   const realYoui = await realpath(join(await realpath(root), ".youi"));
   const temp = join(dirname(file), `.${process.pid}.${randomBytes(6).toString("hex")}.tmp`);
@@ -272,23 +283,76 @@ const notRunYet = (check: BehaviourCheckId, how: string): { why: string; fix: st
 });
 
 /**
- * Probe one route of the product's app, with consent checked now against the live `base` (and again
- * before every scenario), and keep the run. Refused, with the plan's words, when there is no consent.
+ * A route's run claim, across processes: `.youi/behaviour/<route-hash>.json.lock` (core's
+ * acquireFileLock: link-created owner token, a live holder never broken, a dead one only by one
+ * contender, an unreadable one refused). Taken without waiting. A run is published only while its
+ * claim is held, and `startedAt` is when it was taken: before the app is hashed or a browser opens,
+ * so a request filed or reopened after it is newer than the run.
  */
-export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<ProbeBehaviourResult> {
-  const now = options.now ?? (() => new Date());
-  // Before anything is read: a request filed or reopened after this moment is newer than this run.
-  const startedAt = now().toISOString();
-  const spec = readSpec(options.root);
+export interface RouteClaim {
+  /** The product's real root. */
+  readonly root: string;
+  readonly route: string;
+  readonly startedAt: string;
+  holds(): Promise<boolean>;
+  release(): Promise<void>;
+}
+
+/** The claims claimRoute gave out: only these may publish (an object shaped like one is not one). */
+const issued = new WeakSet<RouteClaim>();
+
+export async function claimRoute(root: string, route: string, now: () => Date = () => new Date()): Promise<RouteClaim> {
+  const file = await youiPath(root, behaviourFile(route), "write");
+  let lock: HeldLock;
+  try {
+    lock = await acquireFileLock(`${file}.lock`, { waitMs: 0 });
+  } catch (error: unknown) {
+    if (error instanceof FileLockBusy) throw new WorkflowError("conflict", `a behaviour run is already going for this app (${route}, in another youiyoux: ${error.who}): wait for it to finish, then run again; if no youiyoux is running, delete ${behaviourFile(route)}.lock`);
+    throw error;
+  }
+  const claim: RouteClaim = { root: await realpath(root), route, startedAt: now().toISOString(), holds: lock.holds, release: lock.release };
+  issued.add(claim);
+  return claim;
+}
+
+/** What a run may start from: consent for base's origin now, and the route's screen on it; refused with the plan's words. */
+function preflight(root: string, route: string): { spec: ScreensSpec; consent: Extract<ReturnType<typeof behaviourConsent>, { ok: true }>; screen: ScreensSpec["screens"][number] } {
+  const spec = readSpec(root);
   const consent = behaviourConsent(spec);
   if (!consent.ok) throw new WorkflowError("forbidden", `${consent.why} ${consent.fix}`);
-  const screen = spec.screens.find((s) => s.route === options.route);
-  if (!screen) throw new WorkflowError("not-found", `screens.json has no route ${options.route}: it lists ${spec.screens.map((s) => s.route).join(", ")}`);
+  const screen = spec.screens.find((s) => s.route === route);
+  if (!screen) throw new WorkflowError("not-found", `screens.json has no route ${route}: it lists ${spec.screens.map((s) => s.route).join(", ")}`);
   try {
     screenUrl(consent.origin, screen.path);
   } catch (error: unknown) {
     throw new WorkflowError("forbidden", error instanceof Error ? error.message : String(error));
   }
+  return { spec, consent, screen };
+}
+
+/**
+ * Probe one route of the product's app, with consent checked now against the live `base` (and again
+ * before every scenario), and keep the run. Refused, with the plan's words, when there is no consent.
+ * The run is published only under the route's claim: `options.claim` (runBehaviour's, taken before
+ * it hashed the app or opened a browser), or one taken here, after consent and before probing.
+ */
+export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<ProbeBehaviourResult> {
+  if (options.claim) return probeUnderClaim(options, options.claim);
+  preflight(options.root, options.route);
+  const claim = await claimRoute(options.root, options.route, options.now);
+  try {
+    return await probeUnderClaim(options, claim);
+  } finally {
+    await claim.release();
+  }
+}
+
+async function probeUnderClaim(options: ProbeBehaviourOptions, claim: RouteClaim): Promise<ProbeBehaviourResult> {
+  if (!issued.has(claim) || claim.route !== options.route || claim.root !== (await realpath(options.root))) throw new WorkflowError("internal", "a behaviour run is published only under its own route's claim; nothing was probed");
+  const now = options.now ?? (() => new Date());
+  // When the claim was taken, never later: a request filed or reopened after it is newer than this run.
+  const startedAt = claim.startedAt;
+  const { spec, consent, screen } = preflight(options.root, options.route);
   const config = behaviourConfigDigest(spec, options.route);
   // Asked before every scenario and immediately before every click: the same origin and the same
   // generation as when the run began, or the rest stops (switched off, moved, or switched again).
@@ -374,8 +438,10 @@ export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<Pr
   const run = cleanBehaviourRun(BehaviourRouteRun.parse({ schema: BEHAVIOUR_ROUTE_SCHEMA, route: options.route, runId, at, startedAt, origin: consent.origin, viewport: spec.viewport, state: probe.state, why: probe.why === null ? null : cleanText(probe.why, 1000) || "it couldn't be probed", fix: probe.fix === null ? null : cleanText(probe.fix, 1000) || "Next: run youiyoux behave again.", coverage: probe.coverage, rules, targets: probe.targets.map((t) => ({ route: options.route, pattern: t.key.pattern, component: t.key.component, accessibleName: t.key.accessibleName, ...(t.key.ordinal !== undefined ? { ordinal: t.key.ordinal } : {}) })), results }));
   // A run started later than this one is already kept (another process published first): this
   // one is obsolete, and never replaces newer evidence with older.
+  // Published only while the claim is still ours (checked, then written, under it).
+  if (!(await claim.holds())) throw new WorkflowError("conflict", `the claim on ${options.route} was lost during the run, so nothing was written; run it again`);
   const stored = await readBehaviourRun(options.root, options.route).catch(() => null);
   if (stored?.startedAt && Date.parse(stored.startedAt) > Date.parse(startedAt)) throw new WorkflowError("conflict", `a newer run of ${options.route} (started ${stored.startedAt}) is already kept, so this one (started ${startedAt}) was discarded; nothing was written`);
-  const file = await writeYouiFile(options.root, behaviourFile(options.route), `${JSON.stringify(run, null, 2)}\n`);
+  const file = await writeChecked(options.root, behaviourFile(options.route), `${JSON.stringify(run, null, 2)}\n`);
   return { run, file, probe };
 }

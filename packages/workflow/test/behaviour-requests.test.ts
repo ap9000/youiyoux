@@ -13,7 +13,7 @@ import type { BehaviourRouteRun } from "@youiyoux/core";
 import { createServer as createMcp } from "@youiyoux/mcp";
 import { loadProject } from "@youiyoux/scanner";
 import { behaviourEvidence, behaviourFile, RequestStore, runBehaviour, WorkflowError } from "../src/index.ts";
-import { behaviourSandbox, control, escape, NAME, RULE_ID, setup, tick, TOOL, UNSAFE } from "./behaviour-sandbox.ts";
+import { behaviourSandbox, control, escape, NAME, NO_BROWSER, RULE_ID, setup, tick, TOOL, UNSAFE } from "./behaviour-sandbox.ts";
 
 const s = behaviourSandbox();
 /** The definitions as they are on disk now, as every caller gives them. */
@@ -150,6 +150,33 @@ describe("addressed", () => {
       release();
       control.gate = null;
     }
+    await expect(store.setStatus({ kind: "agent", name: "a" }, request.id, "addressed", "done")).rejects.toThrow(/this request has no newer run$/);
+  });
+
+  test("a run whose browser was still starting when the request was reopened doesn't address it", async () => {
+    const project = await fresh();
+    const { runId, index } = await failing();
+    const store = new RequestStore(s.box.project, "expo-fixture", { behaviour: behaviourEvidence(fresh, TOOL) });
+    const person = { kind: "person", name: "p" } as const;
+    const request = await store.createFromBehaviour(person, { route: "/x", runId, index });
+    await store.setStatus(person, request.id, "closed", "fine for now");
+    let open!: () => void;
+    const opening = new Promise<void>((done) => (open = done));
+    let asked!: () => void;
+    const asking = new Promise<void>((done) => (asked = done));
+    // The browser takes its time to start: the run has its claim, the app is hashed, then it waits here.
+    const slow = { ...setup, browser: async () => (asked(), await opening, NO_BROWSER()) };
+    control.verdict = "passed";
+    await tick();
+    const done = (await runBehaviour(project, slow, { route: "/x", by: "agent" })).done;
+    await asking;
+    await tick();
+    const reopened = await store.setStatus(person, request.id, "open", "still broken");
+    await tick();
+    open();
+    const { run } = await done;
+    expect(run.results.some((r) => r.state === "passed")).toBe(true);
+    expect(Date.parse(run.startedAt!)).toBeLessThan(Date.parse(reopened.updatedAt));
     await expect(store.setStatus({ kind: "agent", name: "a" }, request.id, "addressed", "done")).rejects.toThrow(/this request has no newer run$/);
   });
 
