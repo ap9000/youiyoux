@@ -35,6 +35,7 @@ New to it? [Getting started](docs/getting-started.md): the report, the top fix, 
 - **Stop your agent duplicating components.** After `npx youiyoux agents install` (or **Connect your agent** in the hub), it asks `ui_find_component` first.
 - **Change the running app, then the code.** In the hub, pick a component on a live screen, try its design-system variants and text in place, and write the change into its file ([live editing](docs/commands.md#editing-a-component-in-place); on Vite, `youiyoux/vite`).
 - **Let your agent show you options.** It offers two or three design-system variations for a component, pinned on the hub's Screens canvas; preview each in the running app and pick one ([options on the canvas](docs/agents.md#options-on-the-canvas)).
+- **Check your popups work with a keyboard.** `youiyoux behave` opens each menu and dialog in your dev app and checks that Esc closes it, focus comes back and arrow keys move ([below](#check-your-popups-work-with-a-keyboard)).
 - **Keep hardcoded colours out of PRs.** `npx youiyoux check --diff` names the token to use instead.
 - **Share a UI health report.** Send the page or the card to your team or a maintainer.
 - **Let your agent see what it built.** `npx youiyoux render <file>`: light and dark, desktop and phone, accessibility issues, a diff against main.
@@ -80,6 +81,26 @@ Your agent then has:
 
 Undo with `npx youiyoux agents remove`. Agent reference: [docs/agents.md](docs/agents.md) and [llms.txt](llms.txt).
 
+## Check your popups work with a keyboard
+
+Menus and dialogs an agent builds by hand often look right and fail the first keyboard user: Esc
+does nothing, focus drops to the top of the page, arrow keys don't move. With a design system
+connected:
+
+```sh
+npx youiyoux rules add behaviour                       # six popup rules, as warnings (offered, never added for you)
+npx youiyoux screens capture --base http://localhost:5173   # your dev app's screens
+npx youiyoux ui                                        # Behaviour on a screen: switch probing on, Run on this screen
+npx youiyoux behave                                    # or from the terminal; your agent uses ui_behave
+```
+
+It clicks only the buttons that open popups and presses only Esc, Tab and the arrow keys, in headless
+Chromium, on your dev app (http on this machine, with test data). A failure says why and how to fix
+it, and can be filed as a change request that is addressed only by a newer passing run. What it can't see:
+[behaviour checks](docs/commands.md#behaviour-checks).
+
+<img src="docs/images/hub-behaviour.png" width="820" alt="The hub's Behaviour section on a small React app's /invoices screen: the Invite people dialog passes all four of its checks; the Account menu passes four and fails focus-return, because focus went to the page's body when Esc closed it, with the fix and a File as change request button">
+
 ## How it works
 
 - **Local.** Nothing is uploaded. No telemetry, no account.
@@ -110,6 +131,7 @@ Node 20 or later.
 | `adopt` | Make this repo's own components and stylesheet variables its design system, kept in the repo. `--dry-run` |
 | `system extract <dir>` | Move an adopted System into a design repo of its own. `--package` |
 | `init --design <dir>`, `sync`, `check`, `show`, `where`, `plan`, `migrate` | With a design system repo |
+| `rules add behaviour`, `behave` | Popup keyboard rules, and the probe that checks them in your running dev app ([behaviour checks](docs/commands.md#behaviour-checks)) |
 | `record`, `hub serve` | A team's hosted hub, read-only and fed by CI: every repository's products and each System's adoption by version. `hooks install --record` wires CI; [self-host it](docs/self-hosting.md) with Docker |
 | `library ingest <link>` | Read a GitHub repo, a Storybook, a Figma file or a DESIGN.md into Library items, sorted by role; `--draft` files them for a person to keep, drop and approve. `figma login` signs in to Figma once |
 | `upgrade` | Move to the design system's new release: the sync and its migrations, previewed and gated; `--write` applies all of it or nothing. `--to <tag>` for a git source |

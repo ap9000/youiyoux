@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "vitest";
 import { ruleBlock } from "../src/agents-install.ts";
@@ -36,4 +36,20 @@ test("the getting-started guide's links reach a file and a heading that exist", 
     const text = readFileSync(join(root, "docs", file!), "utf8");
     if (anchor) expect([...text.matchAll(/^#+ (.+)$/gm)].map(([, h]) => slug(h!)), `${file}#${anchor}`).toContain(anchor);
   }
+});
+
+test("the README's images are real files in docs/images, and its links into docs reach headings that exist", () => {
+  const readme = readFileSync(join(root, "README.md"), "utf8");
+  const slug = (heading: string) => heading.toLowerCase().replace(/[`()]/g, "").replace(/[^a-z0-9 _-]/g, "").trim().replace(/ /g, "-");
+  const headings = (file: string) => [...readFileSync(join(root, file), "utf8").matchAll(/^#+ (.+)$/gm)].map(([, h]) => slug(h!));
+  const images = [...readme.matchAll(/<img src="([^"]+)"/g)].map(([, src]) => src!);
+  expect(images).toContain("docs/images/hub-behaviour.png");
+  for (const src of images) expect(statSync(join(root, src)).size, src).toBeGreaterThan(10_000);
+  const links = [...readme.matchAll(/\]\(((?:docs\/)?[^)#\s]*\.md)?#([^)]+)\)/g)];
+  expect(links.map(([, file, anchor]) => `${file ?? ""}#${anchor}`)).toEqual(expect.arrayContaining(["docs/commands.md#behaviour-checks", "#check-your-popups-work-with-a-keyboard"]));
+  for (const [, file, anchor] of links) expect(headings(file ?? "README.md"), `${file ?? "README.md"}#${anchor}`).toContain(anchor);
+  // The behaviour docs' cross-links between commands.md and agents.md.
+  expect(headings("docs/agents.md")).toContain("checking-popups-ui_behave");
+  expect(readFileSync(join(root, "docs/commands.md"), "utf8")).toContain("(agents.md#checking-popups-ui_behave)");
+  expect(readFileSync(join(root, "docs/agents.md"), "utf8")).toContain("(#checking-popups-ui_behave)");
 });

@@ -181,7 +181,7 @@ ${style.bold("System")}  ${style.dim("approved elements: build only with these")
                            --format github annotates PR lines and writes the job summary
   behave [--route r] [--format text|json|github]
                            probe the running app's menus, comboboxes, dialogs and popovers for the
-                           System's behaviour rules (Esc closes the popup, for now), on every route in
+                           System's behaviour rules (youiyoux rules add behaviour), on every route in
                            screens.json (or its behaviour.routes) or one; needs probing switched on for
                            the app's address (a dev app with test data); runs are kept in
                            .youi/behaviour/, which check reads. Exits 1 on an error or anything undecided
