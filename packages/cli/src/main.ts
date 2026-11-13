@@ -567,7 +567,7 @@ async function cmdCheck(values: Values, positionals: string[]): Promise<number> 
   const result = await runCheck(p, { ...checkScope(values, positionals), baseline: baselineFile(values, p) });
   if (format === "json") {
     const { report } = result.scan;
-    json({ errors: result.errors, incomplete: result.incomplete, identity: result.identity, unmatched: result.unmatched, notRun: result.notRun, violations: result.violations, baseline: result.baseline, lock: result.lock, suppressed: report.suppressed, coverage: report.coverage, status: report.status, checks: report.checks });
+    json({ errors: result.errors, incomplete: result.incomplete, identity: result.identity, unmatched: result.unmatched, notRun: result.notRun, violations: result.violations, behaviour: result.behaviour, baseline: result.baseline, lock: result.lock, suppressed: report.suppressed, coverage: report.coverage, status: report.status, checks: report.checks });
   } else if (format === "github") {
     for (const line of githubAnnotations(result, await repoPrefix(p.root))) print(line);
     print(renderCheckText(result));

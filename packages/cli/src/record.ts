@@ -10,15 +10,13 @@
  * environment only, so it never sits in a command line or a log.
  */
 import { execFile } from "node:child_process";
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { promisify } from "node:util";
 import { CiRecord, RepoName } from "@youiyoux/core";
 import { githubSlug } from "./hooks-install.ts";
 import { GITHUB_TOKEN_HEADER } from "./org-hub.ts";
 import { Redactor } from "./report/safe.ts";
 import { workspaceStatus } from "./status.ts";
-import { TOOL_ROOT } from "./tool.ts";
+import { toolVersion } from "./version.ts";
 import { plural, style } from "./ui.ts";
 
 const run = promisify(execFile);
@@ -27,18 +25,7 @@ const git = async (cwd: string, args: string[]): Promise<string | null> => run("
 export const HUB_URL_ENV = "YOUIYOUX_HUB_URL";
 export const HUB_TOKEN_ENV = "YOUIYOUX_HUB_TOKEN";
 
-/** This tool's version: the youiyoux package's, from a checkout or from the package itself. */
-export function toolVersion(root = TOOL_ROOT): string | null {
-  for (const file of [join(root, "packages/youiyoux/package.json"), join(root, "../package.json")]) {
-    try {
-      const pkg = JSON.parse(readFileSync(file, "utf8")) as { name?: string; version?: string };
-      if (pkg.name === "youiyoux" && pkg.version) return pkg.version;
-    } catch {
-      /* not this layout */
-    }
-  }
-  return null;
-}
+export { toolVersion } from "./version.ts";
 
 export interface RecordOptions {
   /** owner/name; else GITHUB_REPOSITORY, else the origin remote's. */

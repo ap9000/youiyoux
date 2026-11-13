@@ -189,7 +189,7 @@ describe("youi", () => {
       expect(await main(["schema", "--check"])).toBe(0);
       out = "";
       expect(await main(["schema", "--check", "--design", dir, "--json"])).toBe(1);
-      expect((JSON.parse(out) as { stale: string[] }).stale).toHaveLength(21);
+      expect((JSON.parse(out) as { stale: string[] }).stale).toHaveLength(22);
       expect(await main(["schema", "--write", "--design", dir])).toBe(0);
       out = "";
       expect(await main(["schema", "--check", "--design", dir])).toBe(0);
@@ -380,14 +380,15 @@ describe("behaviour rules before any probe run", () => {
       expect(await main(["check", "--project", FIXTURE, "--design", design, "--json"])).toBe(1);
       const check = JSON.parse(out) as { incomplete: boolean; notRun: Array<{ rule: string; state: string; reason: string }>; checks: Array<{ rule: string; state: string; findings?: number }> };
       expect(check.incomplete).toBe(true);
-      expect(check.notRun).toEqual([{ rule: "youi:demo/rule/popup.escape", state: "incomplete", reason: expect.stringContaining("checked by a probe run in the running app") }]);
+      // No screens captured here, so nothing could have been probed: incomplete, saying how to start.
+      expect(check.notRun).toEqual([{ rule: "youi:demo/rule/popup.escape", state: "incomplete", reason: expect.stringMatching(/^no screens are captured yet .*youiyoux behave$/) }]);
       expect(check.checks.find((c) => c.rule === "youi:demo/rule/popup.escape")).not.toMatchObject({ state: "ran" });
       out = "";
       expect(await main(["check", "--project", FIXTURE, "--design", design, "--rule", "popup.escape"])).toBe(1);
       expect(out).toContain("! Incomplete: 0 errors in what was checked · 0 warnings; not a pass");
-      expect(out).toContain("Next: check this app's menus, dialogs and popovers yourself with the keyboard (Esc, Tab, arrow keys) for popup.escape, until `youiyoux behave` can probe them");
+      expect(out).toContain("Next: run `youiyoux behave` to probe this app's menus, dialogs and popovers for popup.escape");
       expect(out).not.toContain("✓");
-      expect(out).toContain("! rule popup.escape did not run: behaviour rules are checked by a probe run");
+      expect(out).toContain("! rule popup.escape did not run: no screens are captured yet");
       out = "";
       expect(await main(["rules", "--project", FIXTURE, "--design", design, "--json"])).toBe(0);
       const { rules } = JSON.parse(out) as { rules: Array<{ id: string; state: string }> };
@@ -411,7 +412,7 @@ describe("check text with only an unprobed behaviour rule", () => {
     const text = plain(renderCheck([], [], report, { incomplete: true, notRun: [run] }));
     expect(text).not.toContain("✓");
     expect(text).toContain("! Incomplete: 0 errors in what was checked · 0 warnings; not a pass");
-    expect(text).toContain("Next: check this app's menus, dialogs and popovers yourself with the keyboard (Esc, Tab, arrow keys) for popup.escape");
+    expect(text).toContain("Next: run `youiyoux behave` to probe this app's menus, dialogs and popovers for popup.escape");
     expect(text).not.toContain("fix what could not be checked");
     expect(text).toContain("code scan complete; 1 rule not run");
   });

@@ -7,8 +7,10 @@
 import { dirname, join, resolve } from "node:path";
 import { Baseline, readDefinition, readTextOrNull, relPath, ruleSlug, writeFileAtomic, type CheckIdentity, type RuleRun, type Violation } from "@youiyoux/core";
 import { BASELINE_FILE, compareToBaseline, createBaseline, failedChecks, PROJECT_FILE, ratchetBaseline, scanFailures, scanProject, type BaselineComparison, type Project, type ScanCache, type ScanResult } from "@youiyoux/scanner";
+import type { BehaviourFailure, BehaviourStanding } from "@youiyoux/workflow";
 import { analyseChange, type ChangeSet, type DiffReport } from "./check-diff.ts";
 import { verifyLock, verifyWiring, type LockIssue } from "./sync.ts";
+import { behaviourTool } from "./version.ts";
 
 interface CheckOptions {
   /** Check only these files (absolute, or relative to the current directory); default: the whole project. */
@@ -40,9 +42,15 @@ export interface CheckResult {
   /** Rules that should have run and could not (unsupported, errored, or behaviour rules with no probe results): their findings are unknown, never zero. */
   readonly notRun: readonly RuleRun[];
   readonly violations: readonly Violation[];
+  /**
+   * Fresh failed results of behaviour rules, read from stored probe runs (`youiyoux behave`), for
+   * the wanted rules (--rule) and severities (--quiet). A baseline never accepts them: it holds code
+   * violations by file and line, and these are a screen's popups; each counts until a fresh run passes.
+   */
+  readonly behaviour: readonly BehaviourFailure[];
   readonly lock: readonly LockIssue[] | null;
   readonly baseline: { readonly file: string; readonly recorded: CheckIdentity; readonly comparison: BaselineComparison } | null;
-  /** What fails the check: errors (beyond the baseline, when there is one) plus lockfile errors. */
+  /** What fails the check: errors (beyond the baseline, when there is one), behaviour failures of error severity, plus lockfile errors. */
   readonly errors: number;
   readonly incomplete: boolean;
   /** What the change adds that drifts from the System, when `diff` was given. */
@@ -68,7 +76,13 @@ export async function runCheck(project: Project, options: CheckOptions = {}): Pr
   const { diff } = options;
   const scope = options.files ? new Set(options.files.map((f) => toProjectPath(project, f))) : diff ? new Set(diff.added.keys()) : null;
   const overrides = { ...diff?.sources, ...options.overrides };
-  const scan = await scanProject(project, { ...(scope ? { focus: [...scope] } : {}), ...(Object.keys(overrides).length > 0 ? { overrides } : {}), ...(options.cache ? { cache: options.cache } : {}) });
+  const scanned = await scanProject(project, { ...(scope ? { focus: [...scope] } : {}), ...(Object.keys(overrides).length > 0 ? { overrides } : {}), ...(options.cache ? { cache: options.cache } : {}) });
+  // Behaviour rules aren't run by the scan: their runs come from stored probe results, read and
+  // checked for freshness now. check never probes.
+  const probed = project.system.rules.filter((r) => r.check.engine === "behaviour" && scanned.report.checks.some((c) => c.rule === r.id && c.state === "incomplete"));
+  const standing: BehaviourStanding = probed.length === 0 ? { runs: [], failures: [] } : await (await import("@youiyoux/workflow")).behaviourStanding(project, probed, behaviourTool());
+  const byRule = new Map(standing.runs.map((r) => [r.rule, r]));
+  const scan: ScanResult = byRule.size === 0 ? scanned : { ...scanned, report: { ...scanned.report, checks: scanned.report.checks.map((c) => byRule.get(c.rule) ?? c) } };
   const { report } = scan;
   const checked = new Set(scan.files);
   const unmatched = scope ? [...scope].filter((f) => !checked.has(f)) : [];
@@ -76,15 +90,17 @@ export async function runCheck(project: Project, options: CheckOptions = {}): Pr
   const wantedRule = (id: string): boolean => !options.rule || id.endsWith(`/rule/${options.rule}`);
   const violations = report.violations.filter((v) => wantedRule(v.rule) && (!options.quiet || v.severity === "error"));
   const notRun = failedChecks(report.checks).filter((c) => wantedRule(c.rule));
+  const behaviour = standing.failures.filter((f) => wantedRule(f.rule) && (!options.quiet || f.severity === "error"));
   const lock = options.lock === false || diff ? null : await lockIssues(project);
   const recorded = options.baseline ? await readBaseline(options.baseline) : null;
   if (options.baseline && !recorded) throw new Error(`no baseline at ${options.baseline}; record one with \`youiyoux baseline\``);
   const baseline = recorded && options.baseline ? { file: options.baseline, recorded: recorded.identity, comparison: compareToBaseline(recorded, violations, scope ?? undefined) } : null;
   const failing = baseline ? [...baseline.comparison.new, ...baseline.comparison.regressed] : violations;
-  const errors = failing.filter((v) => v.severity === "error").length + (lock ?? []).filter((i) => i.severity === "error").length;
-  const drift = diff ? await analyseChange(project, scan, diff, { violations }) : null;
+  // A baseline never accepts a behaviour failure (see CheckResult.behaviour).
+  const errors = failing.filter((v) => v.severity === "error").length + behaviour.filter((f) => f.severity === "error").length + (lock ?? []).filter((i) => i.severity === "error").length;
+  const drift = diff ? await analyseChange(project, scan, diff, { violations, behaviour }) : null;
   // A clean result only counts when everything asked about was actually checked.
-  return { identity: scan.identity, scan, scope, unmatched, failed, notRun, violations, lock, baseline, errors, incomplete: unmatched.length > 0 || failed.length > 0 || notRun.length > 0 || (drift?.incomplete.length ?? 0) > 0, diff: drift };
+  return { identity: scan.identity, scan, scope, unmatched, failed, notRun, violations, behaviour, lock, baseline, errors, incomplete: unmatched.length > 0 || failed.length > 0 || notRun.length > 0 || (drift?.incomplete.length ?? 0) > 0, diff: drift };
 }
 
 async function lockIssues(project: Project): Promise<LockIssue[] | null> {

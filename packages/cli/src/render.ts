@@ -1,6 +1,7 @@
 /** Human output for each command. Every command also has --json for scripts and agents. */
 import { executionLabel, ruleSlug, type RuleExecution, type RuleRun, type RuleSpec, type ScanReport, type Violation } from "@youiyoux/core";
-import { failedChecks, shotsText, type ChangePlan, type MigrationResult, type RuleEvaluation, type ScreenBom, type ShotsReport, type WhereResult } from "@youiyoux/scanner";
+import { failedChecks, POPUP_NOUN, shotsText, type ChangePlan, type MigrationResult, type RuleEvaluation, type ScreenBom, type ShotsReport, type WhereResult } from "@youiyoux/scanner";
+import type { BehaviourFailure } from "@youiyoux/workflow";
 import type { LockIssue, SyncAction, SyncResult } from "./sync.ts";
 import { bar, ms, padEnd, padStart, plural, rule, style, truncate } from "./ui.ts";
 
@@ -74,12 +75,20 @@ export function renderWhere(where: WhereResult, report: ScanReport): string {
   return lines.join("\n");
 }
 
+/** A behaviour failure in one line: the popup (route, name, file:line when known), the check and why. */
+export function behaviourFailureLine(f: BehaviourFailure): string {
+  const { target } = f.result;
+  return `${target.route} ${POPUP_NOUN[target.pattern]} '${target.accessibleName || "(no name)"}'${target.file && target.line ? ` (${target.file}:${target.line})` : ""} ${f.result.check}: ${f.result.why}${f.result.dataBlocked ? " (tested with its data blocked)" : ""}`;
+}
+
 /**
  * `incomplete`: something asked about was not checked (a file, or a rule that did not run). Then
- * no success mark: the verdict leads with "Incomplete" and says what to do next.
+ * no success mark: the verdict leads with "Incomplete" and says what to do next. `behaviour`: fresh
+ * failures of behaviour rules from stored probe runs, listed by popup and counted with the rest.
  */
-export function renderCheck(violations: readonly Violation[], lockIssues: readonly LockIssue[] | null, report: ScanReport, gaps: { readonly incomplete: boolean; readonly notRun: readonly RuleRun[] } = { incomplete: false, notRun: [] }): string {
+export function renderCheck(violations: readonly Violation[], lockIssues: readonly LockIssue[] | null, report: ScanReport, gaps: { readonly incomplete: boolean; readonly notRun: readonly RuleRun[]; readonly behaviour?: readonly BehaviourFailure[] } = { incomplete: false, notRun: [] }): string {
   const { suppressed } = report;
+  const behaviourFailures = gaps.behaviour ?? [];
   const lines: string[] = [];
   for (const [file, list] of Map.groupBy(violations, (v) => v.file)) {
     lines.push(style.bold(file));
@@ -88,26 +97,32 @@ export function renderCheck(violations: readonly Violation[], lockIssues: readon
       lines.push(`  ${padEnd(style.dim(`${v.line}:${v.column}`), 9)} ${severity}  ${truncate(v.message, 70)}${v.suggestion ? style.dim(`  → ${truncate(v.suggestion, 70)}`) : ""}  ${style.dim(ruleSlug(v.rule))}`);
     }
   }
+  if (behaviourFailures.length > 0) {
+    lines.push(style.bold("behaviour (probed in the running app by youiyoux behave)"));
+    for (const f of behaviourFailures) lines.push(`  ${f.severity === "error" ? style.error("error") : style.warn("warn ")}  ${behaviourFailureLine(f)}${style.dim(`  → ${f.result.fix}`)}  ${style.dim(ruleSlug(f.rule))}`);
+  }
   if (lockIssues && lockIssues.length > 0) {
     lines.push(style.bold("setup (lockfile, generated files, theme wiring)"));
     for (const issue of lockIssues) lines.push(`  ${issue.severity === "error" ? style.error("error") : style.warn("warn ")}  ${issue.file}: ${issue.message}`);
   }
-  const errors = violations.filter((v) => v.severity === "error").length + (lockIssues ?? []).filter((i) => i.severity === "error").length;
-  const warnings = violations.length + (lockIssues?.length ?? 0) - errors;
+  const errors = violations.filter((v) => v.severity === "error").length + behaviourFailures.filter((f) => f.severity === "error").length + (lockIssues ?? []).filter((i) => i.severity === "error").length;
+  const warnings = violations.length + behaviourFailures.length + (lockIssues?.length ?? 0) - errors;
   const files = new Set(violations.map((v) => v.file)).size;
+  const screens = new Set(behaviourFailures.map((f) => f.result.route)).size;
+  const where = `${plural(files, "file")}${screens > 0 ? ` and ${plural(screens, "screen")}` : ""}`;
   const byRule = Map.groupBy(violations, (v) => ruleSlug(v.rule));
   const behaviour = gaps.notRun.filter((c) => c.state === "incomplete").map((c) => ruleSlug(c.rule));
   const otherGaps = gaps.notRun.length > behaviour.length || report.coverage.failed.length > 0 || (gaps.incomplete && behaviour.length === 0);
   const verdict =
     errors > 0
-      ? [style.error(`✖ ${plural(errors, "error")} · ${plural(warnings, "warning")} in ${plural(files, "file")}`)]
+      ? [style.error(`✖ ${plural(errors, "error")} · ${plural(warnings, "warning")} in ${where}`)]
       : gaps.incomplete
         ? [
             style.warn(`! Incomplete: 0 errors in what was checked · ${plural(warnings, "warning")}; not a pass`),
-            ...(behaviour.length > 0 ? [`  Next: check this app's menus, dialogs and popovers yourself with the keyboard (Esc, Tab, arrow keys) for ${behaviour.join(", ")}, until \`youiyoux behave\` can probe them`] : []),
+            ...(behaviour.length > 0 ? [`  Next: run \`youiyoux behave\` to probe this app's menus, dialogs and popovers for ${behaviour.join(", ")} (each rule's line below says which routes need it), then youiyoux check again`] : []),
             ...(otherGaps ? ["  Next: fix what could not be checked (listed below), then run youiyoux check again"] : []),
           ]
-        : [warnings > 0 ? style.warn(`✓ 0 errors · ${plural(warnings, "warning")} in ${plural(files, "file")}`) : style.ok("✓ 0 errors · 0 warnings")];
+        : [warnings > 0 ? style.warn(`✓ 0 errors · ${plural(warnings, "warning")} in ${where}`) : style.ok("✓ 0 errors · 0 warnings")];
   lines.push(
     "",
     ...verdict,
