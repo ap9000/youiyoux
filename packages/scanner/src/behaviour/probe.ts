@@ -566,6 +566,28 @@ class PlaywrightProbePage implements ProbePage {
   }
 }
 
+/**
+ * One guarded page on the screen at `path`, opened for a check that sends `keys` (its CHECK_KEYS),
+ * handed to `use` and closed afterwards: the same guarded context and page adapter probeRoute uses
+ * (fence, routing, init script, the page's key list), for code that drives a page itself. Not
+ * exported from the package: tests use it to prove the adapter's own guards.
+ */
+export async function withGuardedPage<T>(options: { readonly browser: Browser; readonly origin: string; readonly path: string; readonly viewport: ProbeRouteOptions["viewport"]; readonly keys: readonly SafeKey[] }, use: (page: ProbePage) => Promise<T>): Promise<T> {
+  const start = screenUrl(options.origin, options.path);
+  const { guarded, close } = await GuardedContext.open(options.browser, options.origin, options.viewport);
+  try {
+    const deadline = Date.now() + PROBE_BUDGETS.loadMs + PROBE_BUDGETS.settleMs + PROBE_BUDGETS.scenarioMs;
+    const page = await guarded.page(start, { bindings: [], budgets: PROBE_BUDGETS, deadline: () => deadline, keys: options.keys });
+    try {
+      return await use(page);
+    } finally {
+      await page.close();
+    }
+  } finally {
+    await close();
+  }
+}
+
 const untestedWords = (reason: "targets" | "time", budgets: ProbeBudgets): Stop =>
   reason === "targets"
     ? { why: `not tested: this screen has more than ${budgets.targets} popup triggers, and a probe tests the first ${budgets.targets}`, fix: "Next: probe fewer popups per screen (split the screen's routes in screens.json), or list fewer routes under behaviour.routes; probing one component alone comes with the hub's behaviour switch." }
