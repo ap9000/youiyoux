@@ -174,15 +174,23 @@ async function idsOnDisk(dir: string): Promise<Set<string>> {
  */
 async function publishNew(path: string, content: string): Promise<boolean> {
   const temp = join(dirname(path), `.${process.pid}.${randomBytes(6).toString("hex")}.tmp`);
-  await writeFile(temp, content, { encoding: "utf8", flag: "wx" });
+  // Ours to remove unless creating it found someone else's file there (EEXIST from the exclusive open).
+  let ours = true;
+  let written = false;
   try {
+    // Inside the try: a write that fails part-way still has its temp removed below.
+    await writeFile(temp, content, { encoding: "utf8", flag: "wx" }).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "EEXIST") ours = false;
+      throw error;
+    });
+    written = true;
     await link(temp, path);
     return true;
   } catch (error: unknown) {
-    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    if (written && (error as NodeJS.ErrnoException).code === "EEXIST") return false;
     throw error;
   } finally {
-    await unlink(temp).catch(() => undefined);
+    if (ours) await unlink(temp).catch(() => undefined);
   }
 }
 
