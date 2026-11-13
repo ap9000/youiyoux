@@ -5,7 +5,7 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { link, open, unlink, writeFile } from "node:fs/promises";
+import { link, open, rename, unlink, writeFile } from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, test } from "vitest";
@@ -46,15 +46,22 @@ describe("the screens.json lock", () => {
     screens(dir);
     const log = join(scratch, "race.log");
     writeFileSync(log, "");
+    // Every writer says it is ready, waits for the barrier (a file the test creates), then says it goes.
+    const ready = join(scratch, "race.ready");
+    writeFileSync(ready, "");
+    const barrier = join(scratch, "race.go");
     const child = join(scratch, "writer.mts");
     // Each writer: under the lock, log start, read, wait a little, write (atomically), log end.
     writeFileSync(
       child,
-      `import { appendFileSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+      `import { appendFileSync, existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { withScreensLock } from ${JSON.stringify(SPEC_FILE)};
-const [dir, log, count] = process.argv.slice(2);
+const [dir, log, count, ready, barrier] = process.argv.slice(2);
 const sleep = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+appendFileSync(ready, "ready " + process.pid + "\\n");
+while (!existsSync(barrier)) sleep(5);
+appendFileSync(ready, "go " + process.pid + "\\n");
 for (let i = 0; i < Number(count); i++) {
   await withScreensLock(dir, async () => {
     appendFileSync(log, "start " + process.pid + "\\n");
@@ -75,18 +82,42 @@ for (let i = 0; i < Number(count); i++) {
     const EACH = 15;
     const exits = Array.from({ length: WRITERS }, () =>
       new Promise<number>((resolve) => {
-        const p = spawn(process.execPath, [child, dir, log, String(EACH)], { stdio: ["ignore", "ignore", "inherit"] });
+        const p = spawn(process.execPath, [child, dir, log, String(EACH), ready, barrier], { stdio: ["ignore", "ignore", "inherit"] });
         p.on("close", (code) => resolve(code ?? 1));
       }),
     );
-    // Meanwhile: holders that died with the lock, and a lock that exists, empty, for a moment as it is made.
+    // Holders that died with the lock, and a lock that exists, empty, for a moment as it is made.
     const lock = join(dir, "screens.json.lock");
     let dead = 0;
     let empty = 0;
     let finished = false;
+    const lines = (word: string): number => readFileSync(ready, "utf8").split("\n").filter((l) => l.startsWith(`${word} `)).length;
+    const until = async (done: () => boolean): Promise<void> => {
+      const deadline = Date.now() + 60_000;
+      while (!done()) {
+        if (Date.now() > deadline) throw new Error("the writer processes never got there");
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+    };
+    // Before the race, whatever the runner's speed: the lock is held empty (as a taker caught the
+    // instant it is created would leave it) while every writer is released and contending for it;
+    // none may take it. Then, in one rename, it becomes a dead holder's: one writer must break it.
+    await until(() => lines("ready") === WRITERS);
+    const held = await open(lock, "wx");
+    appendFileSync(log, "start meddler\n");
+    writeFileSync(barrier, "");
+    await until(() => lines("go") === WRITERS);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    expect(readFileSync(log, "utf8")).toBe("start meddler\n");
+    appendFileSync(log, "end meddler\n");
+    await held.close();
+    empty++;
+    const deadToken = join(dir, "dead-holder.tmp");
+    await writeFile(deadToken, JSON.stringify({ pid: deadPid(), host: hostname(), id: "ef".repeat(8) }));
+    await rename(deadToken, lock);
+    dead++;
+    // Then, during the race: more of both, when the lock is caught free.
     const meddle = (async () => {
-      // Once the writers are writing, until each kind of meddling has happened a few times.
-      while (!readFileSync(log, "utf8").includes("start") && !finished) await new Promise((resolve) => setTimeout(resolve, 5));
       for (let round = 0; !finished && (dead < 4 || empty < 4); round++) {
         await new Promise((resolve) => setTimeout(resolve, 3));
         if (round % 2 === 0) {
