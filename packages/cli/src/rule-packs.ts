@@ -77,7 +77,7 @@ const BEHAVIOUR: readonly Starter[] = [
     statement:
       "While a modal dialog is open, Tab and Shift+Tab move through its focusable elements in order and wrap from the last to the first (and back); focus never leaves the dialog, and Tab is never swallowed. A dialog with nothing focusable in it keeps focus on itself.",
     rationale: "A modal dialog says the rest of the page is unavailable. If Tab walks out of it, keyboard users act on a page they can't see; if Tab does nothing, they can't reach the dialog's buttons.",
-    agent: `Open a modal dialog as a native <dialog> with showModal(), or with role="dialog" and aria-modal="true" and a focus trap that moves Tab through its elements and wraps; never block every Tab. ${VERIFY}`,
+    agent: `Open a modal dialog as a native <dialog> with showModal(), or with role="dialog", aria-modal="true" and a focus trap that moves Tab through its elements and wraps; never block every Tab. Give the button that opens it aria-haspopup="dialog", so the probe can find it. ${VERIFY}`,
     bad: ['<div role="dialog" aria-modal="true">…</div> // Tab walks out to the page behind'],
     good: ["<dialog ref={dialogRef}>…</dialog> // opened with dialogRef.current.showModal()"],
   },

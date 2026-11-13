@@ -1,0 +1,18 @@
+schema: youi.rule/v1
+id: youi:youiyoux/rule/behaviour.focus-return
+title: Closing with Esc puts focus back on its button
+severity: warn
+statement: When Esc closes a menu, modal dialog or popover, focus goes back to the button that opened it, or to the part the component's contract names as returnFocusTo. Focus dropped on the page, or anywhere else, fails.
+rationale: Without it a keyboard user is sent back to the top of the page and has to find their place again.
+agent: When the popup closes on Esc, call .focus() on the button that opened it (keep a ref to it); if that button is removed on close, declare a11y.behaviour.returnFocusTo in the component's contract. Verify with ui_behave (or `youiyoux behave --route <route>`).
+check:
+  engine: behaviour
+  id: focus-return
+  options: {}
+files:
+  - "**/*.{tsx,jsx}"
+examples:
+  bad:
+    - onKeyDown={(e) => { if (e.key === "Escape") setOpen(false); }} // focus falls to <body>
+  good:
+    - onKeyDown={(e) => { if (e.key === "Escape") { setOpen(false); buttonRef.current?.focus(); } }}

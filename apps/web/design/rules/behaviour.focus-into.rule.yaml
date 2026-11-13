@@ -1,0 +1,18 @@
+schema: youi.rule/v1
+id: youi:youiyoux/rule/behaviour.focus-into
+title: Opening a menu or dialog moves focus into it
+severity: warn
+statement: When a menu opens, focus moves to one of its items (an aria-activedescendant naming an item counts); when a modal dialog opens, focus moves inside it (onto something focusable, or the dialog itself with tabindex=-1). Focus left on the button, or on the menu container alone, fails. A combobox keeps focus by design and isn't checked.
+rationale: Keyboard users act where focus is. Focus left behind on the button means their next key acts on the page under the popup.
+agent: When a menu opens, focus its first item (items take tabIndex={-1}; call .focus() on it); when a modal dialog opens, focus its first field or the dialog itself (tabIndex={-1}); showModal() does this for a native <dialog>. Verify with ui_behave (or `youiyoux behave --route <route>`).
+check:
+  engine: behaviour
+  id: focus-into
+  options: {}
+files:
+  - "**/*.{tsx,jsx}"
+examples:
+  bad:
+    - '{open && <div role="menu"><button role="menuitem">Rename</button></div>} // focus stays on the button'
+  good:
+    - useEffect(() => { if (open) menuRef.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus(); }, [open]);

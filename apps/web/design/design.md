@@ -85,6 +85,8 @@ source; the report and the share card copy them, and a test fails if they drift.
 - Do lead with the numbers, then the top fixes, then the detail.
 - Do say the next step on every finding, in a sentence.
 - Do fold lists after five items, and say how many are folded.
+- Do make every menu and dialog work from the keyboard: Esc closes it, focus goes in and comes back to its
+  button, arrow keys move through a menu (the behaviour.* rules; `youiyoux behave` checks them in the dev app).
 - Don't colour a heading, an eyebrow or a border to make it pretty.
 - Don't set a path, value or command in the sans face.
 - Don't nest panels in panels.

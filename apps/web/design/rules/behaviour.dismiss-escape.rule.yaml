@@ -1,0 +1,18 @@
+schema: youi.rule/v1
+id: youi:youiyoux/rule/behaviour.dismiss-escape
+title: Esc closes the popup
+severity: warn
+statement: "Pressing Esc closes an open menu, listbox, modal dialog or popover: with focus inside the popup (or on the combobox), one Esc closes it within a second and a half."
+rationale: Esc is how keyboard and screen reader users get out. A popup that ignores it traps them, or leaves something covering the page.
+agent: 'Close the popup on Escape: handle keydown "Escape" on the popup (or on the combobox) and close it; a native <dialog> opened with showModal() and a [popover] close on Esc by themselves. Verify with ui_behave (or `youiyoux behave --route <route>`).'
+check:
+  engine: behaviour
+  id: dismiss-escape
+  options: {}
+files:
+  - "**/*.{tsx,jsx}"
+examples:
+  bad:
+    - '<div role="menu">…</div> // no Escape handling: it stays open'
+  good:
+    - <div role="menu" onKeyDown={(e) => { if (e.key === "Escape") close(); }}>…</div>

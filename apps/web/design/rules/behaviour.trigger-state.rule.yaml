@@ -1,0 +1,19 @@
+schema: youi.rule/v1
+id: youi:youiyoux/rule/behaviour.trigger-state
+title: A popup's button says when it is open
+severity: warn
+statement: 'The button that opens a menu, listbox or popover says what it opens and whether it is open: aria-expanded is "false" while closed and "true" while open, aria-haspopup fits the popup ("menu" for a menu; a combobox implies its listbox), and aria-controls, when present, names the popup itself (a combobox needs it). A popovertarget button gets this from the browser.'
+rationale: A screen reader announces the button, not the popup. Without aria-expanded a person can't tell that pressing it opened anything, or that something is still open.
+agent: On a button that opens a menu, listbox or popover, set aria-haspopup ("menu" for a menu), aria-expanded={open} and aria-controls={the popup's id}, or use popovertarget for a native popover. Verify with ui_behave (or `youiyoux behave --route <route>`).
+check:
+  engine: behaviour
+  id: trigger-state
+  options: {}
+files:
+  - "**/*.{tsx,jsx}"
+examples:
+  bad:
+    - <button aria-haspopup="menu" onClick={() => setOpen(!open)}>More</button> // never says it is open
+  good:
+    - <button aria-haspopup="menu" aria-expanded={open} aria-controls="more-menu" onClick={() => setOpen(!open)}>More</button>
+    - <button popovertarget="filters">Filters</button>
