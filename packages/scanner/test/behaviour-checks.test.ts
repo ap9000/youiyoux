@@ -181,6 +181,8 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
     "/ft-native-zero": () => page(`<button data-log="trigger-n4" aria-haspopup="dialog" onclick="document.getElementById('n4').showModal()">About</button><dialog id="n4"><p>Version 1</p></dialog>`),
     "/ft-trap": () => page(modal({ id: "t1", open: FOCUS1("t1"), body: "<button>One</button><button>Two</button><button>Three</button>", onKey: TRAP })),
     "/ft-no-trap": () => page(modal({ id: "t2", open: FOCUS1("t2") })),
+    // Last on the page, no trap: Tab from its last button leaves the page for the browser's toolbar (accepted only for a native modal).
+    "/ft-leaves-page": () => `<!doctype html><meta charset="utf-8"><title>fixture</title><body>${LOGGER}${modal({ id: "t9", open: FOCUS1("t9") })}</body>`,
     "/ft-swallows": () => page(modal({ id: "t3", open: FOCUS1("t3"), onKey: "if (event.key === 'Tab') event.preventDefault()" })),
     "/ft-wrong-wrap": () => page(modal({ id: "t4", open: FOCUS1("t4"), body: "<button>One</button><button>Two</button><button>Three</button>", onKey: TRAP.replace("t[0].focus()", "t[1].focus()") })),
     "/ft-zero": () => page(modal({ id: "t5", attrs: 'tabindex="-1"', body: "<p>Saved.</p>", open: "document.getElementById('t5').focus()", onKey: "if (event.key === 'Tab') event.preventDefault()" })),
@@ -309,6 +311,7 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
 
     test("a modal without a trap, one that swallows every Tab, and one that wraps to the wrong element fail; the fix says how to keep focus in", async () => {
       expect(await one("/ft-no-trap", "focus-trap")).toMatchObject({ state: "failed", why: "Tab from the button 'Delete' moved focus out of the dialog (to a button 'After' outside the dialog)", fix: expect.stringMatching(/^Keep focus inside the dialog while it is open: open a native <dialog> with showModal\(\)/) });
+      expect(await one("/ft-leaves-page", "focus-trap")).toMatchObject({ state: "failed", why: "Tab from the button 'Delete' left the page instead of wrapping round to the button 'Cancel'" });
       expect(await one("/ft-swallows", "focus-trap")).toMatchObject({ state: "failed", why: "Tab didn't move focus: it stayed on the button 'Cancel'", keys: ["Tab"] });
       expect(await one("/ft-wrong-wrap", "focus-trap")).toMatchObject({ state: "failed", why: "Tab from the button 'Three' went to the button 'Two', not to the button 'One' (the next focusable element, round the end)" });
     }, 60_000);
