@@ -9,7 +9,7 @@ import { buildTokenIndex, runChecks, scanFailures, type TokenIndex } from "./che
 import { buildElementIndex, type ElementIndex } from "./elements.ts";
 import { ModuleGraph, type ModuleParser } from "./graph.ts";
 import { changedFiles, checkIdentity, definitionsDigest, gitState, SCANNER_VERSION } from "./identity.ts";
-import { byPosition, langOf, parseModule, type ModuleInfo } from "./parse.ts";
+import { byPosition, langOf, parseModule, parseProblem, type ModuleInfo } from "./parse.ts";
 import { emptyRootProblem, ProjectRootError, type Project } from "./project.ts";
 import { ModuleResolver } from "./resolve.ts";
 import { RouteIndex } from "./routes.ts";
@@ -72,7 +72,8 @@ async function parseAll(project: Project, files: readonly string[], overrides: R
         sources.set(file, source);
         const module = await parse(file, source);
         modules.set(file, module);
-        if (module && module.parseErrors > 0) failed.push({ file, reason: `${module.parseErrors} parse error node(s); sites inside them may be missing` });
+        const problem = module && parseProblem(module, "UI sites there were not read");
+        if (problem) failed.push({ file, reason: problem });
       } catch (error: unknown) {
         modules.set(file, null);
         failed.push({ file, reason: error instanceof Error ? error.message : String(error) });

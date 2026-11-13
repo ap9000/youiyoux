@@ -6,3 +6,4 @@ export { assertSafeKey, CHECK_KEYS, dismissEscape, openAndIdentify, POPUP_NOUN, 
 export { arrowKeys, focusInto, focusReturn, focusTrap, MAX_ARROW_ITEMS, focusWords, MAX_TRAP_TABBABLES, judgeTriggerState, triggerState, type TriggerVerdict } from "./checks.ts";
 export { PROBE_BUDGETS, probeRoute, type ProbeBudgets, type ProbedTarget, type ProbeRouteOptions, type RouteProbe, type TargetScenario } from "./probe.ts";
 export { appFingerprint, type AppFingerprint, behaviourConfigDigest, behaviourRoutes, bindingsDigest, contractBindings, freshnessNow, ruleDigest, safeInput, staleParts, type FreshnessNow } from "./freshness.ts";
+export { WrapperIndex, type WrapperSources } from "./wrappers.ts";

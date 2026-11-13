@@ -236,6 +236,74 @@ export async function parseModule(file: string, source: string): Promise<ModuleI
   };
 }
 
+/** Inside JSX children: an ERROR (or a run of them) whose first non-ERROR ancestor is a JSX element. */
+function inJsxError(node: SgNode): boolean {
+  let parent = node.parent();
+  if (parent?.kind() !== "ERROR") return false;
+  while (parent?.kind() === "ERROR") parent = parent.parent();
+  return parent?.kind() === "jsx_element";
+}
+
+/** `using x` or `await using x`: a declaration, its binding on the same line. */
+const USING_DECLARATION = /^[ \t]+(?!(?:in|of|instanceof|as|satisfies)\b)[\p{ID_Start}$_\\]/u;
+
+/**
+ * `text` with comments blanked as the scanner sees them: a block comment becomes a space, or a line
+ * break when it spans lines; a line comment is dropped up to its line break. Strings are not
+ * tracked, so a `/*` inside one can blank too much; that can only change the Next's wording, never
+ * what was read.
+ */
+function withoutComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?(?:\*\/|$)|\/\/[^\n]*/g, (comment) => (comment.startsWith("//") ? "" : comment.includes("\n") ? "\n" : " "));
+}
+
+/**
+ * Valid TypeScript the bundled tree-sitter grammar cannot read, found in the file's first unread
+ * region, as a Next step with its line: a bare `&` in JSX text, or `using` as an ordinary name
+ * (the grammar takes it for a `using` declaration). Read-only: the file stays partly read.
+ */
+function knownGap(module: ModuleInfo): string | null {
+  const first = module.root.root().find({ rule: { kind: "ERROR" } });
+  if (!first) return null;
+  for (const token of first.findAll({ rule: { regex: "^(?:&|using)$" } }).sort((a, b) => a.range().start.index - b.range().start.index)) {
+    const { start, end } = token.range();
+    const line = start.line + 1;
+    if (token.kind() === "&" && inJsxError(token)) return `line ${line}: the parser youiyoux uses can't read a bare & in JSX text; write &amp; or {"&"} there`;
+    if (token.kind() !== "using") continue;
+    // Comments don't count: a block comment is a space, or a line break when it spans lines.
+    const before = withoutComments(module.source.slice(0, start.index));
+    const after = withoutComments(module.source.slice(end.index));
+    // `await using …` is a declaration, broken or not; never call it a name.
+    if (/\bawait\s*$/.test(before) || USING_DECLARATION.test(after)) continue;
+    return `line ${line}: the parser youiyoux uses can't read \`using\` as a variable name; rename it`;
+  }
+  return null;
+}
+
+/**
+ * Why a file with parse errors was only partly read: where the parser could not read it, that
+ * `lost` (e.g. "UI sites there were not read") is unknown rather than zero, and what to do: the
+ * exact rewrite when the syntax is valid TypeScript the parser is known not to read.
+ * Null when the file parsed.
+ */
+export function parseProblem(module: ModuleInfo, lost: string): string | null {
+  if (module.parseErrors === 0) return null;
+  const spans: Array<[number, number]> = [];
+  for (const node of module.root.root().findAll({ rule: { kind: "ERROR" } }).map((n) => n.range()).sort((a, b) => a.start.index - b.start.index)) {
+    const [start, end] = [node.start.line + 1, node.end.line + 1];
+    const last = spans.at(-1);
+    if (last && start <= last[1]) last[1] = Math.max(last[1], end);
+    else spans.push([start, end]);
+  }
+  const lines = module.source.replace(/\n$/, "").split("\n").length;
+  const covered = spans.reduce((n, [start, end]) => n + end - start + 1, 0);
+  const span = ([start, end]: [number, number]) => (start === end ? `${start}` : `${start}-${end}`);
+  const where =
+    covered >= lines * 0.9 ? "most of the file" : `line${spans.length > 1 || spans[0]![0] !== spans[0]![1] ? "s" : ""} ${spans.slice(0, 3).map(span).join(", ")}${spans.length > 3 ? ` and ${spans.length - 3} more places` : ""}`;
+  const next = knownGap(module) ?? "fix the syntax there; if TypeScript accepts it, youiyoux's parser does not support that syntax yet: report it, and write it another way meanwhile";
+  return `the parser could not read ${where}, so ${lost}. Next: ${next}`;
+}
+
 /** Count of tree-sitter ERROR nodes: the "no parse errors" invariant. */
 export async function countParseErrors(file: string, source: string): Promise<number> {
   const lang = langOf(file);

@@ -88,6 +88,25 @@
           "type": "string",
           "const": "component"
         },
+        "renderedBy": {
+          "type": "object",
+          "properties": {
+            "file": {
+              "type": "string",
+              "minLength": 1
+            },
+            "line": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 9007199254740991
+            }
+          },
+          "required": [
+            "file",
+            "line"
+          ],
+          "additionalProperties": false
+        },
         "domPath": {
           "type": "string",
           "minLength": 1

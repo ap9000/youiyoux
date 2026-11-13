@@ -423,8 +423,14 @@ has run only when every route has a fresh, complete result, and a fresh failure 
 (or warning) like any violation, filtered by `--rule` and `--quiet`. A baseline never accepts a
 behaviour failure. `check --diff` lists fresh failures as `behaviour` findings, by popup (route,
 pattern, component, name), not by line. A popup's file:line is where your app renders its button,
-the first line outside the product's components folder; only when none maps is it the component's
-own line, and it says so. A screen that opened a socket as it loaded (a dev server's reload socket)
+the first line outside the product's components folder. If the button's line is inside a component
+your code uses in more than one place, the line is where this one is used, and the component's line
+is shown as "rendered by". Uses are read from your source (the include globs, through imports and
+aliases, matched by position), never from what else is on the screen; when anything is uncertain
+(a file that doesn't parse cleanly, on the way too; a name bound again inside the code around a
+use; a link or a file outside the project; a library's frame between the button and the use) the
+line stays where the button is written. Only when none maps is it the component's own line, and it
+says so. A screen that opened a socket as it loaded (a dev server's reload socket)
 has that said once, as a note on the route, not on every result. In the hub, results show when they were made; an open
 Behaviour tab reads them again on focus and every 30 s.
 

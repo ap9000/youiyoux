@@ -7,7 +7,7 @@ import { build, transform } from "esbuild";
 import { chromium, type Browser } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { launchBrowser } from "@youiyoux/detect";
-import { BRIDGE_VERSION, type BridgeEdited, type BridgeProps, captureScreens, captureText, decodeMap, liveBridge, mapNotes, sourceMapOf, originalPosition, projectPath, readScreensSpec, resolvePlaces, screenSlug, whyNoLines, type BridgeAt, type PlacesFile, type SourceMapCache } from "../src/index.ts";
+import { BRIDGE_VERSION, type BridgeEdited, type BridgeProps, captureScreens, captureText, decodeMap, liveBridge, mapNotes, sourceMapOf, originalPosition, projectPath, readScreensSpec, resolvePlaces, screenSlug, whyNoLines, type BridgeAt, type PlaceLine, type PlacesFile, type SourceMapCache } from "../src/index.ts";
 
 const PACKAGE = join(import.meta.dirname, "..");
 const scratch = mkdtempSync(join(tmpdir(), "youi-screens-"));
@@ -95,6 +95,86 @@ describe("source maps", () => {
     expect(await notes("http://localhost/lost.js")).toMatch(/^the scripts name source maps that could not be read \(such as the one for lost\.js\)/);
     expect(await notes("http://localhost/out.js")).toMatch(/^the source maps name files outside the product's root \(such as \/Users\/someone\/elsewhere\/app\.tsx\): pass --root/);
     expect(whyNoLines(mapNotes())).toBeNull();
+  });
+});
+
+describe("which line a place gets, with promote (behaviour triggers)", () => {
+  const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const vlq = (n: number): string => {
+    let v = n < 0 ? (-n << 1) | 1 : n << 1;
+    let out = "";
+    do {
+      let digit = v & 31;
+      v >>>= 5;
+      if (v) digit |= 32;
+      out += B64[digit];
+    } while (v);
+    return out;
+  };
+  // One served module whose generated line N maps to the Nth [file, line] here (column 1): the frames' JSX calls.
+  const AT: ReadonlyArray<readonly [string, number]> = [
+    ["src/shell/NavRail.tsx", 65], // 1: RailButton's <button>, which every rail button goes through
+    ["src/shell/NavRail.tsx", 109], // 2: <RailButton label="Connect your agent">
+    ["src/shell/NavRail.tsx", 112], // 3: <RailButton label="Search">
+    ["src/shell/Shell.tsx", 10], // 4: <NavRail />
+    ["src/ui/Button.tsx", 5], // 5: the System's Button's <button>
+    ["src/pages/Page.tsx", 20], // 6: an inline <button aria-haspopup> in a page
+    ["src/pages/Page.tsx", 24], // 7: another
+    ["src/app/App.tsx", 3], // 8: <Page />
+    ["src/pages/Row.tsx", 5], // 9: a row's menu button
+    ["src/pages/List.tsx", 20], // 10: rows.map((r) => <Row …/>)
+  ];
+  const sources = [...new Set(AT.map(([file]) => file))];
+  let previous = { source: 0, line: 0 };
+  const mappings = AT.map(([file, line]) => {
+    const source = sources.indexOf(file);
+    const segment = vlq(0) + vlq(source - previous.source) + vlq(line - 1 - previous.line) + vlq(0);
+    previous = { source, line: line - 1 };
+    return segment;
+  }).join(";");
+  const module = `${AT.map(() => "x").join("\n")}\n//# sourceMappingURL=data:application/json;base64,${Buffer.from(JSON.stringify({ version: 3, sources: sources.map((s) => `/${s}`), mappings })).toString("base64")}`;
+  const fetchText = async (url: string) => (url.startsWith("http://localhost/app.js") ? module : null);
+  const place = (name: string, ...lines: number[]) => ({ name, owner: null, frames: lines.map((line) => ({ url: "http://localhost/app.js", line, column: 1 })), box: { x: 0, y: 0, width: 1, height: 1 }, depth: 0 });
+  const skip = (file: string) => file.startsWith("src/ui/");
+  const lines = (placed: Array<{ file: string | null; line: number | null; own?: true; renderedBy?: { file: string; line: number } }>) => placed.map((p) => [`${p.file}:${p.line}`, p.renderedBy ? `${p.renderedBy.file}:${p.renderedBy.line}` : null, p.own ?? null]);
+
+  test("promote may move a place to one of its own later lines, keeping the first as rendered by; never to a line off its frames or in a skipped file", async () => {
+    const rail = [place("Connect your agent", 1, 2, 4), place("Search", 1, 3, 4)];
+    // A promote that takes the next line.
+    const next = async (_first: PlaceLine, rest: readonly PlaceLine[]) => rest[0] ?? null;
+    expect(lines(await resolvePlaces(rail, fetchText, null, undefined, undefined, { skip, promote: next }))).toEqual([
+      ["src/shell/NavRail.tsx:109", "src/shell/NavRail.tsx:65", null],
+      ["src/shell/NavRail.tsx:112", "src/shell/NavRail.tsx:65", null],
+    ]);
+    // It is handed the first app line and the rest in order, a skipped (System) line marked, never the System line before the first.
+    const seen: Array<[string, string[]]> = [];
+    await resolvePlaces([place("Via Button", 5, 1, 5, 2, 4)], fetchText, null, undefined, undefined, { skip, promote: async (first, rest) => (seen.push([`${first.file}:${first.line}`, rest.map((l) => `${l.file}:${l.line}${l.skipped ? " skipped" : ""}`)]), null) });
+    expect(seen).toEqual([["src/shell/NavRail.tsx:65", ["src/ui/Button.tsx:5 skipped", "src/shell/NavRail.tsx:109", "src/shell/Shell.tsx:10"]]]);
+    // A frame after the first line that couldn't be placed (no map for it, or a gap the page marked) is handed over as a boundary, in order; a gap is never fetched.
+    const handed: string[][] = [];
+    const record = async (_first: PlaceLine, rest: readonly PlaceLine[]) => (handed.push(rest.map((l) => (l.uncertain ? "boundary" : `${l.file}:${l.line}`))), null);
+    const gapPlace = { ...place("Gapped", 1), frames: [...place("x", 1).frames, { url: "", line: 0, column: 0 }, { url: "http://localhost/app.js", line: 99, column: 1 }, ...place("x", 2).frames] };
+    const fetched: string[] = [];
+    await resolvePlaces([gapPlace], async (url) => (fetched.push(url), fetchText(url)), null, undefined, undefined, { skip, promote: record });
+    expect(handed).toEqual([["boundary", "boundary", "src/shell/NavRail.tsx:109"]]);
+    expect(fetched).not.toContain("");
+    // Screens capture (no promote) picks as before, gaps or not.
+    expect(lines(await resolvePlaces([gapPlace], fetchText, null, undefined, undefined, { skip }))).toEqual([["src/shell/NavRail.tsx:65", null, null]]);
+    // A line that isn't one of the place's own, a skipped one, or a promote that throws: the first line, no rendered by.
+    const elsewhere = async () => ({ file: "src/pages/Page.tsx", line: 20, column: 1 });
+    const system = async (_first: PlaceLine, rest: readonly PlaceLine[]) => rest.find((l) => l.skipped) ?? null;
+    const gap = async (_first: PlaceLine, rest: readonly PlaceLine[]) => rest.find((l) => l.uncertain) ?? null;
+    const throws = async (): Promise<PlaceLine | null> => {
+      throw new Error("no");
+    };
+    for (const promote of [elsewhere, system, gap, throws]) expect(lines(await resolvePlaces([place("Via Button", 1, 5, 99, 2)], fetchText, null, undefined, undefined, { skip, promote }))).toEqual([["src/shell/NavRail.tsx:65", null, null]]);
+    // Without promote (screens capture), the first of the app's own lines, as it always was.
+    expect(lines(await resolvePlaces(rail, fetchText, null, undefined, undefined, { skip }))).toEqual([
+      ["src/shell/NavRail.tsx:65", null, null],
+      ["src/shell/NavRail.tsx:65", null, null],
+    ]);
+    // The System component's own line when nothing else maps, as before.
+    expect(lines(await resolvePlaces([place("Alone", 5)], fetchText, null, undefined, undefined, { skip, promote: next }))).toEqual([["src/ui/Button.tsx:5", null, true]]);
   });
 });
 

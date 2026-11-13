@@ -11,7 +11,7 @@ import { matchesAny, type InventoryCopy, type InventoryDefinition, type Inventor
 import { readRules, splitTopLevel } from "@youiyoux/tokens";
 import { ModuleGraph, type ResolvedSymbol } from "../graph.ts";
 import { gitState } from "../identity.ts";
-import { byPosition, parseModule, unquote, type ModuleInfo } from "../parse.ts";
+import { byPosition, parseModule, parseProblem, unquote, type ModuleInfo } from "../parse.ts";
 import { ModuleResolver } from "../resolve.ts";
 import { RouteIndex } from "../routes.ts";
 import { propsOf, resolveTag } from "../usage.ts";
@@ -22,6 +22,7 @@ import { findStoryFiles, readCsf, storyConfig, type CsfFile, type CsfStory } fro
 import { ClassRules, resolveClasses, SHAPE_PROPERTIES } from "./style.ts";
 import type { InventoryTarget } from "./target.ts";
 import { buildTheme, readStylesheet, type Stylesheet, type Theme } from "./theme.ts";
+import { JSX_ENTITIES } from "./entities.ts";
 
 /** Packages that are the framework itself, not a UI library. */
 const FRAMEWORK = new Set(["react", "react-dom", "astro", "preact", "solid-js", "vue"]);
@@ -165,6 +166,18 @@ function recipeDynamic(props: Readonly<Record<string, PropValue>>): { dynamic?: 
   return dynamic.length ? { dynamic } : {};
 }
 
+
+/** `&amp;` → `&`, `&#8217;` / `&#x2019;` → `’`, as JSX renders them. */
+function decodeReference(text: string): string {
+  const numeric = /^&#(x[0-9a-f]+|\d+);$/i.exec(text);
+  if (numeric) {
+    const code = numeric[1]![0]!.toLowerCase() === "x" ? parseInt(numeric[1]!.slice(1), 16) : parseInt(numeric[1]!, 10);
+    return code <= 0x10ffff ? String.fromCodePoint(code) : text;
+  }
+  // Own entries only: `&constructor;` is not a reference, so it stays as written.
+  return JSX_ENTITIES.get(text.slice(1, -1)) ?? text;
+}
+
 /**
  * The text a JSX element wraps (`<Button><Plus /> New run</Button>` → `New run`), and its only
  * child element's (`<Button asChild><a>Settings</a></Button>`); a container's children are not a label.
@@ -175,9 +188,18 @@ function jsxLabel(opening: SgNode): string | null {
   const children = element.children();
   const nestedOk = children.filter((c) => c.kind() === "jsx_element" || c.kind() === "jsx_self_closing_element").length === 1;
   const parts: string[] = [];
+  let prose = false;
   for (const child of children) {
-    if (child.kind() === "jsx_text") parts.push(child.text());
-    else if (child.kind() === "jsx_expression") {
+    // Text and the character references inside it are one run: `app&rsquo;s` → `app’s`.
+    const text = child.kind() === "jsx_text" ? child.text() : child.kind() === "html_character_reference" ? decodeReference(child.text()) : null;
+    if (text !== null) {
+      if (prose) parts[parts.length - 1] += text;
+      else parts.push(text);
+      prose = true;
+      continue;
+    }
+    prose = false;
+    if (child.kind() === "jsx_expression") {
       const inner = child.children().find((c) => c.isNamed() && c.kind() !== "comment");
       if (inner?.kind() === "string") parts.push(unquote(inner.text()));
     } else if (child.kind() === "jsx_element" && nestedOk) {
@@ -283,7 +305,8 @@ export class ProjectPass {
           if (file.endsWith(".css")) this.sheets.push(await readStylesheet(file, source));
           const module = await this.parse(file, source);
           this.modules.set(file, module);
-          if (module && module.parseErrors > 0) this.failed.push({ file, reason: `${module.parseErrors} parse error node(s); looks inside them may be missing` });
+          const problem = module && parseProblem(module, "UI elements there were not read");
+          if (problem) this.failed.push({ file, reason: problem });
         } catch (error: unknown) {
           this.modules.set(file, null);
           this.failed.push({ file, reason: error instanceof Error ? error.message : String(error) });
@@ -911,7 +934,7 @@ export class ProjectPass {
         if (!module) continue;
         if (module.parseErrors > 0) {
           const error = module.root.root().find({ rule: { kind: "ERROR" } });
-          this.failed.push({ file, reason: `${module.parseErrors} parse error node(s); its stories were not read` });
+          this.failed.push({ file, reason: parseProblem(module, "its stories were not read")! });
           stories.skipped.push({ file, line: error ? position(error).line : 1, name: "every story in it", reason: "the file did not parse; fix its syntax and run again" });
           continue;
         }

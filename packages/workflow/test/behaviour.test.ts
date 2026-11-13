@@ -312,6 +312,13 @@ describe.skipIf(!HAVE_CHROMIUM)("probing a running app", () => {
       const fiber = (owner: boolean) =>
         `<script>const b = document.querySelector("button"); const at = (name, file) => ({ stack: "Error\\n    at " + name + " (" + location.origin + file + ":1:1)" }); b["__reactFiber$x"] = { tag: 5, type: "button", _debugStack: at("Button", "/src/components/ui/button.js"), _debugOwner: ${owner ? `{ tag: 0, type: function Button() {}, _debugStack: at("AccountMenu", "/src/AccountMenu.js"), _debugOwner: null, return: null }` : "null"}, return: { tag: 0, type: function Button() {}, return: null } };</script>`;
       if (req.url === "/owned" || req.url === "/owned-alone") return void res.writeHead(200, { "content-type": "text/html" }).end(`<!doctype html><meta charset="utf-8"><body>${MENU("Account", "o1")}${fiber(req.url === "/owned")}</body>`);
+      // /wrapped: two rail buttons, each the <button> of one wrapper (RailButton, NavRail.tsx line 16, outside componentsDir), used on lines 11 and 12 (each at column 1).
+      if (req.url === "/src/shell/NavRail.js") return void res.writeHead(200, { "content-type": "text/javascript" }).end(mapped("/src/shell/NavRail.tsx", "AAeA;AALA;AACA"));
+      if (req.url === "/wrapped") {
+        const rail = (i: number, line: number) =>
+          `b[${i}]["__reactFiber$x"] = { tag: 5, type: "button", _debugStack: at("RailButton", 1), _debugOwner: { tag: 0, type: function RailButton() {}, _debugStack: at("NavRail", ${line}), _debugOwner: null, return: null }, return: { tag: 0, type: function RailButton() {}, return: null } };`;
+        return void res.writeHead(200, { "content-type": "text/html" }).end(`<!doctype html><meta charset="utf-8"><body>${MENU("Search", "w1")}${MENU("Shortcuts", "w2")}<script>const b = document.querySelectorAll("button"); const at = (name, line) => ({ stack: "Error\\n    at " + name + " (" + location.origin + "/src/shell/NavRail.js:" + line + ":1)" }); ${rail(0, 2)} ${rail(1, 3)}</script></body>`);
+      }
       if (req.url === "/revoke-on-second-load" && ++loads === 2) onSecondLoad?.();
       const body = req.url === "/revoke-on-second-load" ? MENU("Again", "r1") : req.url === "/never" ? `<button aria-haspopup="menu" aria-controls="nope" onclick="new Image().src='/opened'">Never</button>` : req.url === "/slow-discovery" ? `${MENU("Slow", "s1")}<img src="/slow-asset">` : req.url === "/menu" ? MENU("Actions", "m1") : req.url === "/fetches" ? MENU("Unread", "f1").replace("new Image().src='/opened';", "fetch('/api/read?id=7').catch(() => {});") : req.url === "/two" ? MENU("First", "a") + MENU("Second", "b") : req.url === "/hostile" ? hostile : req.url === "/esc" ? ESC_MENU("Actions", "e1", true) : req.url === "/esc-ignored" ? ESC_MENU("More", "e2", false) : req.url === "/" ? "<p>home</p>" : null;
       if (body === null) return void res.writeHead(404).end();
@@ -462,6 +469,41 @@ describe.skipIf(!HAVE_CHROMIUM)("probing a running app", () => {
     const alone = await at("/owned-alone");
     expect([alone.file, alone.line, alone.lineIs]).toEqual(["src/components/ui/button.tsx", 1, "component"]);
   }, 60_000);
+
+  test("a button rendered by a component the code uses in two places points at each one's own usage, read from the source, the component's line kept as rendered by", async () => {
+    const root = product("wrapped", { base, behaviour: { allowedOrigin: base } }, [{ route: "/wrapped", path: "/wrapped" }]);
+    // The source the page's frames map to: RailButton's <button> on line 16, its two uses on lines 11 and 12.
+    mkdirSync(join(root, "src/shell"), { recursive: true });
+    const comments = Array.from({ length: 9 }, (_, i) => `// line ${i + 1}`).join("\n");
+    const source = (uses: string) => `${comments}\nexport function NavRail() { return (<nav>\n${uses}\n</nav>); }\nfunction RailButton({ label }: { label: string }) {\n  return (\n<button aria-label={label} />\n  );\n}\n`;
+    writeFileSync(join(root, "src/shell/NavRail.tsx"), source('<RailButton label="Search" />\n<RailButton label="Shortcuts" />'));
+    const sources = { include: ["src/**/*.tsx"], exclude: [], tsconfig: "tsconfig.json" };
+    const at = async (withSources: boolean) => {
+      const { run } = await probeBehaviour({ root, route: "/wrapped", browser, checks: CHECKS, fingerprint: FINGERPRINT, componentsDir: "src/components/ui", ...(withSources ? { sources } : {}) });
+      return run.results.map((r) => [r.target.accessibleName, r.target.file, r.target.line, r.target.lineIs, r.target.renderedBy]);
+    };
+    expect(await at(true)).toEqual([
+      ["Search", "src/shell/NavRail.tsx", 11, undefined, { file: "src/shell/NavRail.tsx", line: 16 }],
+      ["Shortcuts", "src/shell/NavRail.tsx", 12, undefined, { file: "src/shell/NavRail.tsx", line: 16 }],
+    ]);
+    // As kept and read back.
+    const kept = (await readBehaviourRun(root, "/wrapped"))!;
+    expect(kept.results.map((r) => [r.target.accessibleName, r.target.line, r.target.renderedBy?.line])).toEqual([
+      ["Search", 11, 16],
+      ["Shortcuts", 12, 16],
+    ]);
+    // Without the sources, nothing is known about RailButton's uses: the line that renders the button, as before.
+    expect((await at(false)).map((r) => [r[0], r[2], r[4]])).toEqual([
+      ["Search", 16, undefined],
+      ["Shortcuts", 16, undefined],
+    ]);
+    // RailButton used in one place only: its own line, whatever the page shows.
+    writeFileSync(join(root, "src/shell/NavRail.tsx"), source('<RailButton label="Search" />\n<span />'));
+    expect((await at(true)).map((r) => [r[0], r[2], r[4]])).toEqual([
+      ["Search", 16, undefined],
+      ["Shortcuts", 16, undefined],
+    ]);
+  }, 90_000);
 
   test("a capture that moves base to another origin leaves no consent to probe with", async () => {
     const root = product("moved", { base: "http://127.0.0.1:1", behaviour: { allowedOrigin: "http://127.0.0.1:1" } }, [{ route: "/", path: "/" }]);
