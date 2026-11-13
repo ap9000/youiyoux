@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { findUp } from "@youiyoux/core";
 import { parseCssColor, type ResolvedToken } from "@youiyoux/tokens";
-import { buildInventory, buildTheme, hardcodedValues, loadInventoryTarget, loadProject, nearDuplicates, offLibraryImports, parseModule, PROJECT_FILE, readStylesheet, substituteVars, type LoadProjectOptions, type InventoryTarget, type ModuleInfo, type Project, type TokenIndex } from "@youiyoux/scanner";
+import { buildInventory, buildTheme, hardcodedValues, loadInventoryTarget, loadProject, nearDuplicates, offLibraryImports, parseModule, parseProblem, PROJECT_FILE, readStylesheet, substituteVars, type LoadProjectOptions, type InventoryTarget, type ModuleInfo, type Project, type TokenIndex } from "@youiyoux/scanner";
 import { chosenLibraries, classify, DRIFT_SEVERITY, importOf, isAdded, type ChangeProject, type ChangeSet, type CodeFinding } from "./check-diff.ts";
 import type { DiffCheckResult } from "./check.ts";
 import { repoRootOf } from "./hooks-install.ts";
@@ -72,7 +72,8 @@ export async function runRepoCheck(project: ChangeProject, change: ChangeSet): P
       const module = await parseModule(file, change.sources?.[file] ?? await readFile(join(project.root, file), "utf8"));
       if (module) {
         modules.push(module);
-        if (changedUi(file) && module.parseErrors > 0) incomplete.push(`${file}: fix the syntax errors, then run youiyoux check --diff again`);
+        const problem = changedUi(file) && parseProblem(module, "what it adds there was not checked");
+        if (problem) incomplete.push(`${file}: ${problem}; then run youiyoux check --diff again`);
       }
     } catch (error) { if (changedUi(file)) incomplete.push(`${file}: could not read source (${String(error)}); restore the file and run youiyoux check --diff`); }
   }

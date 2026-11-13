@@ -11,7 +11,7 @@ import { matchesAny, type InventoryCopy, type InventoryDefinition, type Inventor
 import { readRules, splitTopLevel } from "@youiyoux/tokens";
 import { ModuleGraph, type ResolvedSymbol } from "../graph.ts";
 import { gitState } from "../identity.ts";
-import { byPosition, parseModule, unquote, type ModuleInfo } from "../parse.ts";
+import { byPosition, parseModule, parseProblem, unquote, type ModuleInfo } from "../parse.ts";
 import { ModuleResolver } from "../resolve.ts";
 import { RouteIndex } from "../routes.ts";
 import { propsOf, resolveTag } from "../usage.ts";
@@ -169,20 +169,20 @@ function recipeDynamic(props: Readonly<Record<string, PropValue>>): { dynamic?: 
  * The text a JSX element wraps (`<Button><Plus /> New run</Button>` → `New run`), and its only
  * child element's (`<Button asChild><a>Settings</a></Button>`); a container's children are not a label.
  */
-function jsxLabel(opening: SgNode): string | null {
+function jsxLabel(opening: SgNode, restore: (text: string) => string): string | null {
   const element = opening.parent();
   if (opening.kind() !== "jsx_opening_element" || element?.kind() !== "jsx_element") return null;
   const children = element.children();
   const nestedOk = children.filter((c) => c.kind() === "jsx_element" || c.kind() === "jsx_self_closing_element").length === 1;
   const parts: string[] = [];
   for (const child of children) {
-    if (child.kind() === "jsx_text") parts.push(child.text());
+    if (child.kind() === "jsx_text") parts.push(restore(child.text()));
     else if (child.kind() === "jsx_expression") {
       const inner = child.children().find((c) => c.isNamed() && c.kind() !== "comment");
       if (inner?.kind() === "string") parts.push(unquote(inner.text()));
     } else if (child.kind() === "jsx_element" && nestedOk) {
       const nested = child.children().find((c) => c.kind() === "jsx_opening_element");
-      parts.push((nested && jsxLabel(nested)) ?? "");
+      parts.push((nested && jsxLabel(nested, restore)) ?? "");
     }
   }
   const text = parts.join(" ").replace(/\s+/g, " ").trim();
@@ -283,7 +283,8 @@ export class ProjectPass {
           if (file.endsWith(".css")) this.sheets.push(await readStylesheet(file, source));
           const module = await this.parse(file, source);
           this.modules.set(file, module);
-          if (module && module.parseErrors > 0) this.failed.push({ file, reason: `${module.parseErrors} parse error node(s); looks inside them may be missing` });
+          const problem = module && parseProblem(module, "UI elements there were not read");
+          if (problem) this.failed.push({ file, reason: problem });
         } catch (error: unknown) {
           this.modules.set(file, null);
           this.failed.push({ file, reason: error instanceof Error ? error.message : String(error) });
@@ -813,7 +814,7 @@ export class ProjectPass {
         if (this.definitionRoots) this.rootLook(module.file, at, owner);
         continue;
       }
-      const label = jsxLabel(element.node);
+      const label = jsxLabel(element.node, module.restore);
       if (label === null && element.node.kind() === "jsx_opening_element" && element.node.parent()?.children().some((c) => c.kind() === "jsx_expression" && c.children().some((n) => n.isNamed() && n.kind() !== "comment"))) {
         props.children = { dynamic: "expression children" };
       }
@@ -911,7 +912,7 @@ export class ProjectPass {
         if (!module) continue;
         if (module.parseErrors > 0) {
           const error = module.root.root().find({ rule: { kind: "ERROR" } });
-          this.failed.push({ file, reason: `${module.parseErrors} parse error node(s); its stories were not read` });
+          this.failed.push({ file, reason: parseProblem(module, "its stories were not read")! });
           stories.skipped.push({ file, line: error ? position(error).line : 1, name: "every story in it", reason: "the file did not parse; fix its syntax and run again" });
           continue;
         }

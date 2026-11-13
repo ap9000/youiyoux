@@ -386,7 +386,7 @@ export async function planImports(project: Project, migration: MigrationSpec, sc
     const why = blocked ? `${blocked.blocked!.name} is imported at line ${blocked.site.line} and removed with no replacement` : ambiguities[0]?.reason;
     if (why !== undefined) plan.held.set(module.file, why);
     plan.sites.push(...primary.map((p) => p.site), ...ambiguities);
-    files.set(module.file, { pending, ambiguities, source: top.commitEdits(pending.flatMap((p) => p.edits)) });
+    files.set(module.file, { pending, ambiguities, source: module.restore(top.commitEdits(pending.flatMap((p) => p.edits))) });
   }
 
   // Holding a barrel holds all its consumers, including unchanged/type-only bindings.

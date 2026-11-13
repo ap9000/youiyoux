@@ -161,7 +161,7 @@ function planEdits(migration: MigrationSpec, scan: ScanResult, rewriteValue: Non
         edits.length = before;
       } else if (edits.length > before) edited++;
     }
-    if (edits.length > 0) outputs.set(file, module.root.root().commitEdits(edits));
+    if (edits.length > 0) outputs.set(file, module.restore(module.root.root().commitEdits(edits)));
   }
   return { outputs, edited, residuals: mergeResiduals(residuals) };
 }
