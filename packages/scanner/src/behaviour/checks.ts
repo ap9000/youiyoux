@@ -283,7 +283,8 @@ const tabbableWords = (t: { readonly role: string; readonly name: string } | und
  * itself (at the ends Chrome passes through its own toolbar, which is accepted there and only
  * there); the order is still checked. Focus leaving the dialog, Tab that doesn't move it, or a
  * wrong next element fails. Each key goes only after consent is read again and the very dialog
- * (still showing, focus inside) is checked again. Not modal, a popup open inside it, a frame, a
+ * (still showing, focus inside) is checked again. Not modal, a popup open inside it at any look
+ * (a listbox that is part of the dialog's content isn't one: TrapFacts), a frame, a
  * Tab order it doesn't model (positive tabindex, a shadow root, radio buttons), more than MAX_TRAP_TABBABLES elements, or focus landing on
  * something not counted as tabbable: incomplete, never guessed.
  */
@@ -312,12 +313,22 @@ export async function focusTrap(page: ProbePage, opened: Opened, args: CheckArgs
     return null;
   };
   /** Where focus is after a key, once it has settled (null: it kept moving). */
-  const look = (want: (facts: TrapFacts) => boolean): Promise<TrapFacts | null> => settled(ctx, args.deadline, () => page.trap(false), (f) => JSON.stringify([f.open, f.stale, f.at]), want);
+  const look = (want: (facts: TrapFacts) => boolean): Promise<TrapFacts | null> => settled(ctx, args.deadline, () => page.trap(false), (f) => JSON.stringify([f.open, f.stale, f.nested, f.contentGone, f.at]), want);
   const closedStop = { why: "the dialog closed while Tab was pressed, so the focus trap can't be judged", fix: "Next: keep the dialog open while Tab moves through it, then run youiyoux behave again." };
   const staleStop = { why: "the dialog's focusable elements changed while Tab was pressed, so the order can't be judged", fix: "Next: keep the dialog's contents steady while Tab moves through it, then run youiyoux behave again." };
+  /** A popup showing inside the dialog that wasn't part of it at the first look, or a listbox that was and stopped showing: either way, not the dialog's own Tab order. */
+  const popupStop = (f: TrapFacts, after: string): Stop | null =>
+    f.nested
+      ? { why: `${after}, a ${roleWord(f.nested)} was open inside the dialog, so the focus trap can't be judged`, fix: "Next: check Tab and Shift+Tab in this dialog by hand." }
+      : f.contentGone
+        ? { why: `a listbox that showed inside the dialog when it opened stopped showing ${after}, so it may be a popup of its own and the focus trap can't be judged`, fix: "Next: check Tab and Shift+Tab in this dialog by hand." }
+        : null;
   const uncounted = (key: string): Stop => ({ why: `${key} moved focus to something inside the dialog that isn't counted as focusable (a scrolling area, say), so the order can't be judged`, fix: "Next: check Tab and Shift+Tab in this dialog by hand." });
   const start = await page.trap(false);
   if (start.stale) return ctx.incomplete(staleStop);
+  const before = popupStop(start, "once focus was placed");
+  if (before) return ctx.incomplete(before);
+  if (first.content > 0) ctx.extra.push(first.content === 1 ? "a listbox showing inside the dialog from the moment it opened was taken as part of the dialog, not a popup opened inside it" : `${first.content} listboxes showing inside the dialog from the moment it opened were taken as part of the dialog, not popups opened inside it`);
   if (n === 0) {
     if (start.at.kind !== "popup" && start.at.kind !== "inside") return ctx.incomplete(changed);
     let away = false;
@@ -330,6 +341,8 @@ export async function focusTrap(page: ProbePage, opened: Opened, args: CheckArgs
       const stop = await ctx.stopped();
       if (stop) return ctx.incomplete(stop);
       if (!now.open) return ctx.incomplete(closedStop);
+      const popped = popupStop(now, `after ${key}`);
+      if (popped) return ctx.incomplete(popped);
       if (now.at.kind === "popup" || now.at.kind === "inside") continue;
       if (native && now.at.kind === "away") {
         away = true;
@@ -341,7 +354,7 @@ export async function focusTrap(page: ProbePage, opened: Opened, args: CheckArgs
     if (native) ctx.extra.push("a native <dialog> shown with showModal(): the browser keeps focus inside it (Tab passes through its own toolbar)");
     const kept = await ctx.pass({ why: "with nothing focusable inside, the dialog kept focus on Tab and Shift+Tab", fix: "Nothing to do: focus stays inside the dialog." }, async () => {
       const f = await page.trap(false);
-      return f.open && (f.at.kind === "popup" || f.at.kind === "inside" || (native && f.at.kind === "away"));
+      return f.open && !popupStop(f, "") && (f.at.kind === "popup" || f.at.kind === "inside" || (native && f.at.kind === "away"));
     });
     return kept === "moved" ? ctx.incomplete(MOVED_AFTER) : kept;
   }
@@ -369,6 +382,8 @@ export async function focusTrap(page: ProbePage, opened: Opened, args: CheckArgs
       if (stop) return ctx.incomplete(stop);
       if (!now.open) return ctx.incomplete(closedStop);
       if (now.stale) return ctx.incomplete(staleStop);
+      const popped = popupStop(now, `after ${key}`);
+      if (popped) return ctx.incomplete(popped);
       if (arrived(now)) {
         k = next;
         continue;
@@ -385,7 +400,7 @@ export async function focusTrap(page: ProbePage, opened: Opened, args: CheckArgs
   const trapped = await ctx.pass({ why: n === 1 ? "Tab and Shift+Tab kept focus on the dialog's only focusable element" : `Tab and Shift+Tab stayed inside the dialog, visiting its ${n} focusable elements in order and wrapping round`, fix: "Nothing to do: focus stays inside the dialog." }, async () => {
     // Still where the last key put it, the dialog still open.
     const f = await page.trap(false);
-    return f.open && !f.stale && f.at.kind === "tabbable" && f.at.i === k;
+    return f.open && !f.stale && !popupStop(f, "") && f.at.kind === "tabbable" && f.at.i === k;
   });
   return trapped === "moved" ? ctx.incomplete(MOVED_AFTER) : trapped;
 }

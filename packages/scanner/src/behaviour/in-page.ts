@@ -113,11 +113,25 @@ export type TrapAt = { readonly kind: "tabbable"; readonly i: number } | { reado
  * popup open inside it, a frame, a Tab order it doesn't model), its tabbable elements in Tab
  * order (role and name, for the words), where focus is, and whether that list changed since the
  * first look.
+ *
+ * A listbox can be part of the dialog's own content rather than a popup opened inside it (a
+ * command palette's always-visible list). It counts as content only from the structure: at the
+ * first look (before any key, with nothing in the dialog clicked) it is a role="listbox" element
+ * inside the dialog's DOM, showing, not a native popover or <dialog>, whose nearest popup-role
+ * ancestor is the dialog itself. Those listboxes are held for the whole check: one that stops
+ * showing or leaves the dialog later (`contentGone`) means it may have been a popup after all, and
+ * any other popup showing inside the dialog, at any look, is `nested`. Menus, dialogs, popovers
+ * and a listbox that appears after the first look are never content.
  */
 export interface TrapFacts {
   readonly open: boolean;
   readonly modal: "native" | "aria" | null;
+  /** A popup showing inside the dialog that isn't part of its content (its role, else its tag). */
   readonly nested: string | null;
+  /** How many listboxes the first look took as part of the dialog's content. */
+  readonly content: number;
+  /** A listbox taken as content stopped showing, or left the dialog, since the first look. */
+  readonly contentGone: boolean;
   readonly frame: boolean;
   /** What makes the dialog's Tab order something youiyoux doesn't model yet, if anything. */
   readonly unmodelled: "positive tabindex" | "a shadow root" | "radio buttons" | null;
@@ -167,7 +181,7 @@ export function isolatedLibrary(): void {
   type Pattern = "menu-button" | "combobox-listbox" | "modal-dialog" | "popover";
   const ROLE: Record<Pattern, string> = { "menu-button": '[role="menu"]', "combobox-listbox": '[role="listbox"]', "modal-dialog": 'dialog,[role="dialog"],[role="alertdialog"]', popover: "[popover]" };
   const POPUP = '[role="menu"],[role="listbox"],[role="dialog"],[role="alertdialog"],[role="tooltip"],dialog,[popover]';
-  const state = { returnTarget: null as Element | null, returnPart: null as "one" | "none" | "several" | null, items: [] as Element[], tabbables: [] as Element[], elements: [] as Element[], before: [] as Element[], clicked: null as EventTarget | null, watching: false, popup: null as Element | null, popupId: null as string | null, popupRole: null as string | null, atKey: [] as Element[] };
+  const state = { returnTarget: null as Element | null, returnPart: null as "one" | "none" | "several" | null, items: [] as Element[], tabbables: [] as Element[], content: [] as Element[], elements: [] as Element[], before: [] as Element[], clicked: null as EventTarget | null, watching: false, popup: null as Element | null, popupId: null as string | null, popupRole: null as string | null, atKey: [] as Element[] };
   const all = (): Element[] => {
     const out: Element[] = [];
     const collect = (root: Document | ShadowRoot): void => {
@@ -629,11 +643,15 @@ export function isolatedLibrary(): void {
      */
     trap(wanted: { readonly first: boolean }): TrapFacts {
       const popup = state.popup;
-      const none: TrapFacts = { open: false, modal: null, nested: null, frame: false, unmodelled: null, tabbables: [], at: { kind: "outside", role: "none", name: "" }, stale: false };
+      const none: TrapFacts = { open: false, modal: null, nested: null, content: 0, contentGone: false, frame: false, unmodelled: null, tabbables: [], at: { kind: "outside", role: "none", name: "" }, stale: false };
       if (!popup) return none;
       const open = popup.isConnected && shown(popup);
       const modal = popup.localName === "dialog" ? (popup.matches(":modal") ? "native" : null) : (popup.getAttribute("role") === "dialog" || popup.getAttribute("role") === "alertdialog") && popup.getAttribute("aria-modal") === "true" ? "aria" : null;
-      const nestedEl = [...popup.querySelectorAll(POPUP)].find((element) => element.getAttribute("role") !== "tooltip" && shown(element));
+      const showing = [...popup.querySelectorAll(POPUP)].filter((element) => element.getAttribute("role") !== "tooltip" && shown(element));
+      // Part of the dialog's content (TrapFacts): decided at the first look only, from structure alone, and held after.
+      if (wanted.first) state.content = showing.filter((element) => element.getAttribute("role") === "listbox" && element.localName !== "dialog" && !element.hasAttribute("popover") && ancestors(element).find((e) => e.matches(POPUP)) === popup);
+      const contentGone = state.content.some((element) => !element.isConnected || !shown(element) || !ancestors(element).includes(popup));
+      const nestedEl = showing.find((element) => !state.content.includes(element));
       const { list, frame, unmodelled } = tabbablesIn(popup);
       if (wanted.first) state.tabbables = list;
       const stale = list.length !== state.tabbables.length || list.some((element, i) => element !== state.tabbables[i]);
@@ -643,11 +661,13 @@ export function isolatedLibrary(): void {
       const focused = effectiveFocus() ?? active;
       if (!document.hasFocus()) at = { kind: "away", ...of(null) };
       else if (!active || active === document.body || active === document.documentElement) at = { kind: "body", ...of(active) };
+      // Tab moves DOM focus: a tabbable element holding it (a combobox naming an option with aria-activedescendant) is where Tab goes from.
+      else if (state.tabbables.includes(active)) at = { kind: "tabbable", i: state.tabbables.indexOf(active) };
       else if (focused && state.tabbables.includes(focused)) at = { kind: "tabbable", i: state.tabbables.indexOf(focused) };
       else if (focused === popup) at = { kind: "popup", ...of(focused) };
       else if (focused && ancestors(focused).includes(popup)) at = { kind: "inside", ...of(focused) };
       else at = { kind: "outside", ...of(focused) };
-      return { open, modal, nested: nestedEl ? (nestedEl.getAttribute("role") ?? nestedEl.localName) : null, frame, unmodelled, tabbables: state.tabbables.map((element) => of(element)), at, stale };
+      return { open, modal, nested: nestedEl ? (nestedEl.getAttribute("role") ?? nestedEl.localName) : null, content: state.content.length, contentGone, frame, unmodelled, tabbables: state.tabbables.map((element) => of(element)), at, stale };
     },
     /**
      * Focus on one of the dialog's tabbable elements before Tab is pressed: where the app put it is
@@ -658,7 +678,9 @@ export function isolatedLibrary(): void {
       if (!popup || !popup.isConnected) return { ok: false };
       const placed = (): boolean => {
         const at = effectiveFocus();
-        return state.tabbables.length > 0 ? !!at && state.tabbables.includes(at) : !!at && (at === popup || ancestors(at).includes(popup));
+        const active = deepActive();
+        // As trap() reads it: DOM focus on a tabbable element counts (Tab goes from there), whatever aria-activedescendant names.
+        return state.tabbables.length > 0 ? (!!active && state.tabbables.includes(active)) || (!!at && state.tabbables.includes(at)) : !!at && (at === popup || ancestors(at).includes(popup));
       };
       if (placed()) return { ok: true, moved: false };
       ((state.tabbables[0] ?? popup) as HTMLElement).focus?.({ preventScroll: true });

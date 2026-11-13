@@ -121,6 +121,18 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
   const FOCUS1 = (id: string) => `document.getElementById('${id}').querySelector('button').focus()`;
   /** A hand-made trap: Tab from the last button to the first, Shift+Tab from the first to the last. */
   const TRAP = "if (event.key === 'Tab') { const t = [...this.querySelectorAll('button')]; const i = t.indexOf(document.activeElement); if (!event.shiftKey && i === t.length - 1) { event.preventDefault(); t[0].focus(); } else if (event.shiftKey && i === 0) { event.preventDefault(); t[t.length - 1].focus(); } }";
+  /** The same trap over text fields and buttons. */
+  const TRAP_FIELDS = TRAP.replace("querySelectorAll('button')", "querySelectorAll('input,button')");
+  /**
+   * A command palette (as cmdk renders one): a combobox that is always expanded, naming the active
+   * option with aria-activedescendant, over a listbox that is always showing inside the dialog, and
+   * a Close button. `combobox` replaces the combobox's own attributes.
+   */
+  const PALETTE = (id: string, combobox = `aria-expanded="true" aria-activedescendant="${id}-o1"`) =>
+    `<input id="${id}-cb" role="combobox" aria-label="Command palette" aria-controls="${id}-list" ${combobox}><ul role="listbox" id="${id}-list" tabindex="-1"><li role="option" id="${id}-o1">Button</li><li role="option" id="${id}-o2">Card</li></ul><button>Close</button>`;
+  /** A combobox inside a dialog whose listbox opens when it gets focus and closes when it loses it. */
+  const ON_FOCUS = (id: string) =>
+    `<button>One</button><input id="${id}-cb" role="combobox" aria-label="Fruit" aria-expanded="false" aria-controls="${id}-list" onfocus="${attr(`document.getElementById('${id}-list').hidden=false;this.setAttribute('aria-expanded','true')`)}" onblur="${attr(`document.getElementById('${id}-list').hidden=true;this.setAttribute('aria-expanded','false')`)}"><ul role="listbox" id="${id}-list" hidden><li role="option">Apple</li></ul>`;
   /** Roving focus in a menu: arrows move focus among its items; `o` makes it stay at the ends, land on disabled items, or jump by two. */
   const ROVE = `window.rove = (id, o = {}) => document.getElementById(id).addEventListener("keydown", (e) => {
       const items = [...document.getElementById(id).querySelectorAll("[role^=menuitem]")].filter((el) => o.disabledToo || el.getAttribute("aria-disabled") !== "true");
@@ -223,6 +235,17 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
     "/ft-one": () => page(modal({ id: "t7", open: FOCUS1("t7"), body: "<button>OK</button>", onKey: TRAP })),
     "/ft-not-modal": () => page(`<button data-log="trigger-n5" aria-haspopup="dialog" aria-controls="n5" onclick="document.getElementById('n5').show()">Notes</button><dialog id="n5"><button>One</button><button>Two</button></dialog>`),
     "/ft-nested": () => page(modal({ id: "t8", open: FOCUS1("t8"), body: '<button>One</button><ul role="menu"><li role="menuitem" tabindex="-1">Open inside</li></ul>', onKey: TRAP })),
+    // A command palette: its listbox is part of the dialog, showing from the moment it opens; with a trap, and without.
+    "/ft-palette": () => page(modal({ id: "t12", open: "document.getElementById('t12-cb').focus()", body: PALETTE("t12"), onKey: TRAP_FIELDS })),
+    "/ft-palette-leaks": () => page(modal({ id: "t13", open: "document.getElementById('t13-cb').focus()", body: PALETTE("t13") })),
+    // Popups opened inside a dialog, never its content: a listbox (or a menu) that opens when Tab reaches its combobox (or button) ...
+    "/ft-tab-opens-listbox": () => page(modal({ id: "t14", open: FOCUS1("t14"), body: ON_FOCUS("t14"), onKey: TRAP_FIELDS })),
+    "/ft-tab-opens-menu": () =>
+      page(modal({ id: "t15", open: FOCUS1("t15"), body: `<button>One</button><button aria-haspopup="menu" aria-controls="t15-m" onfocus="${attr("document.getElementById('t15-m').hidden=false")}">More</button><ul role="menu" id="t15-m" hidden><li role="menuitem" tabindex="-1">Rename</li></ul>`, onKey: TRAP })),
+    // ... one open when the dialog opens because its combobox has focus, closing as Tab moves on ...
+    "/ft-focus-opens-listbox": () => page(modal({ id: "t16", open: "document.getElementById('t16-cb').focus()", body: ON_FOCUS("t16"), onKey: TRAP_FIELDS })),
+    // ... and a listbox that is a native popover of its own, shown with the dialog.
+    "/ft-popover-listbox": () => page(modal({ id: "t17", open: `${FOCUS1("t17")};document.getElementById('t17-pl').showPopover()`, body: '<button>One</button><button>Two</button><ul role="listbox" popover="manual" id="t17-pl"><li role="option">Apple</li></ul>', onKey: TRAP })),
     // arrow-keys
     "/ak-menu": () => arrowMenu("a1", 'rove("a1")'),
     // A good roving menu whose Home (information only, pressed last) also sends a POST.
@@ -443,6 +466,20 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
       expect(await one("/ft-nested", "focus-trap")).toMatchObject({ state: "incomplete", why: "a menu is open inside the dialog, so the focus trap can't be judged", keys: [] });
       for (const path of ["/ts-menu", "/ts-combobox", "/ts-popover"]) expect(await one(path, "focus-trap"), path).toMatchObject({ state: "not-applicable" });
     }, 60_000);
+
+    test("a listbox that is part of the dialog (a command palette's, showing from the moment it opened) doesn't stop the check: the trap is judged, pass and fail", async () => {
+      const palette = await one("/ft-palette", "focus-trap");
+      expect(palette).toMatchObject({ state: "passed", why: "Tab and Shift+Tab stayed inside the dialog, visiting its 2 focusable elements in order and wrapping round", keys: ["Tab", "Tab", "Shift+Tab", "Shift+Tab"] });
+      expect(palette.info).toContain("a listbox showing inside the dialog from the moment it opened was taken as part of the dialog, not a popup opened inside it");
+      expect(await one("/ft-palette-leaks", "focus-trap")).toMatchObject({ state: "failed", why: "Tab from the button 'Close' moved focus out of the dialog (to a button 'After' outside the dialog)", keys: ["Tab", "Tab"] });
+    }, 60_000);
+
+    test("a popup opened inside the dialog is never taken as its content: one Tab opens, one that closes as Tab moves on, or a native popover, is incomplete", async () => {
+      expect(await one("/ft-tab-opens-listbox", "focus-trap")).toMatchObject({ state: "incomplete", why: "after Tab, a listbox was open inside the dialog, so the focus trap can't be judged", keys: ["Tab"] });
+      expect(await one("/ft-tab-opens-menu", "focus-trap")).toMatchObject({ state: "incomplete", why: "after Tab, a menu was open inside the dialog, so the focus trap can't be judged", keys: ["Tab"] });
+      expect(await one("/ft-focus-opens-listbox", "focus-trap")).toMatchObject({ state: "incomplete", why: "a listbox that showed inside the dialog when it opened stopped showing after Tab, so it may be a popup of its own and the focus trap can't be judged", keys: ["Tab"] });
+      expect(await one("/ft-popover-listbox", "focus-trap")).toMatchObject({ state: "incomplete", why: "a listbox is open inside the dialog, so the focus trap can't be judged", keys: [] });
+    }, 90_000);
 
     test("consent is read again before every key: switched off after the first Tab, no further key is sent", async () => {
       const keys = logged("key").length;
