@@ -172,6 +172,8 @@ describe("youiyoux adopt", () => {
     expect(out).toContain("2 components in components/ui (Button, Card)");
     expect(out).toContain("6 variables, light and dark, from app/globals.css → design/tokens");
     expect(out).toContain("--sidebar-width (calc(16rem + 2px))");
+    // Three starter rules; the behaviour rules are offered (youiyoux rules add behaviour), never added by adopt.
+    expect((await readdir(join(root, "design/rules"))).sort()).toEqual(["color.no-raw-color.rule.yaml", "components.canonical-import.rule.yaml", "tokens.no-arbitrary-values.rule.yaml"]);
 
     const system = (JSON.parse(await readFile(join(root, "youi.config.json"), "utf8")) as { systems: Record<string, unknown>[] }).systems[0]!;
     expect(system).toMatchObject({ id: "web", implementations: "components/ui", components: "design/components", support: [], themeModifier: { dark: "dark" } });

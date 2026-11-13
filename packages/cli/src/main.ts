@@ -42,6 +42,7 @@ import { renderAdoptionRequest, renderLibrarySearch } from "./library.ts";
 import { renderBom, renderMigration, renderPlan, renderRulePreview, renderRules, renderScan, renderShots as renderShotsText, renderShow, renderSync, renderWhere } from "./render.ts";
 import { syncProject } from "./sync.ts";
 import { COMMAND } from "./command.ts";
+import { addRulePack, RULE_PACKS, rulePack, type RulePackTarget } from "./rule-packs.ts";
 import { TOOL_ROOT } from "./tool.ts";
 import { behaviourTool } from "./version.ts";
 import { runReport, type ReportIo } from "./report/run.ts";
@@ -206,6 +207,9 @@ ${style.bold("System")}  ${style.dim("approved elements: build only with these")
                            (imports, re-exports, uses); a dry run that prints the diff and the sites
                            left for a person (file:line, why) unless --write; --diff shows it after --write too
   rules [--preview <rule.yaml>]   whether each rule is checked; preview a draft rule on the current scan
+  rules add [<pack>] [--dry-run]  the starter rules on offer, or add one pack's rule files to the System's
+                           rules folder, as warnings (behaviour: six popup checks for youiyoux behave);
+                           never over a rule already there, and never added by anything else
 
 ${style.bold("Library")}  ${style.dim("ingested references: browse and request adoption, never build with")}
   library search <query>   Library items (lib: ids) and the System elements each could swap in for
@@ -665,7 +669,9 @@ async function cmdPlan(values: Values, positionals: string[]): Promise<number> {
   return 0;
 }
 
-async function cmdRules(values: Values): Promise<number> {
+async function cmdRules(values: Values, positionals: string[]): Promise<number> {
+  if (positionals[0] === "add") return cmdRulesAdd(values, positionals[1]);
+  if (positionals.length > 0) throw new UsageError("youiyoux rules [--preview <rule.yaml>]   or   youiyoux rules add [<pack>] [--dry-run]");
   const p = await project(values);
   if (values.preview) {
     const draft: unknown = parseYaml(await readFile(values.preview, "utf8"));
@@ -678,6 +684,67 @@ async function cmdRules(values: Values): Promise<number> {
   if (values.json) json({ capabilities: checkCapabilities(), rules: rules.map(({ rule, execution }) => ({ id: rule.id, severity: rule.severity, ...execution })) });
   else print(renderRules(rules));
   return rules.some(({ execution }) => execution.state === "unsupported") ? 1 : 0;
+}
+
+/**
+ * `youiyoux rules add [<pack>]`: the starter rules on offer, or one pack's rule files written into the
+ * System's rules folder (in a product, the System it follows from a folder or your linked checkout;
+ * in a design repo, its own). Never over a rule that is already there; nothing else adds them.
+ */
+async function cmdRulesAdd(values: Values, name: string | undefined): Promise<number> {
+  if (name === undefined) {
+    if (values.json) json({ packs: RULE_PACKS.map((p) => ({ name: p.name, summary: p.summary, rules: p.rules("system").map((r) => ({ file: r.file, title: r.spec.title, severity: r.spec.severity, check: r.spec.check })) })) });
+    else print(renderRulePacks());
+    return 0;
+  }
+  const pack = rulePack(name);
+  if (!pack) throw new UsageError(`youiyoux rules add <pack>: there is no pack called ${JSON.stringify(name)}; on offer: ${RULE_PACKS.map((p) => p.name).join(", ")}`);
+  const target = await rulesTarget(values);
+  const result = await addRulePack(target, pack, { dryRun: values["dry-run"] });
+  const where = relative(process.cwd(), result.dir) || ".";
+  const shown = where.startsWith("..") ? result.dir : where;
+  if (values.json) {
+    json({ ...result, dir: shown, dryRun: values["dry-run"] });
+    return 0;
+  }
+  const lines = [
+    result.added.length > 0
+      ? `${style.ok(values["dry-run"] ? "would add" : "added")} ${plural(result.added.length, `${pack.name} rule`)}, as warnings, to ${target.system.config.id} ${style.dim(`→ ${shown}`)}`
+      : `${style.dim("nothing to add:")} every ${pack.name} rule is already in ${target.system.config.id}`,
+    ...result.added.map((file) => `  ${file}`),
+    ...result.kept.map((k) => style.dim(`  kept ${k.file}: ${k.why}, left as it is`)),
+  ];
+  if (result.added.length > 0 && !values["dry-run"]) {
+    if (pack.name === "behaviour") lines.push("Until a probe has run, youiyoux check says these rules are incomplete.");
+    lines.push(`Next: ${pack.name === "behaviour" ? "switch probing on for your dev app (youiyoux ui, then Behaviour on any screen) and run youiyoux behave; " : ""}${target.product ? "youiyoux sync carries them to AGENTS.md, DESIGN.md and the skill" : "products following this System get them at their next youiyoux sync"}.`);
+  }
+  print(lines.join("\n"));
+  return 0;
+}
+
+/** The System `rules add` writes to, refused when it isn't edited here (an npm package, a git source). */
+async function rulesTarget(values: Values): Promise<RulePackTarget & { readonly product: boolean }> {
+  const product = values.project !== undefined || values.config !== undefined || values.root !== undefined || existsSync(join(process.cwd(), PROJECT_FILE));
+  if (product) {
+    const p = await project(values);
+    if (!p.designOverride && !p.linked && !("path" in p.config.source)) {
+      const from = "package" in p.config.source ? `the npm package ${p.config.source.package}` : `the git repository ${p.config.source.git}`;
+      throw new Error(`${p.system.config.name} comes from ${from}, which isn't edited here: add the rules in its own repository (youiyoux rules add there), or link your checkout of it first (youiyoux link <dir>)`);
+    }
+    return { root: p.repo.root, system: p.system, product: true };
+  }
+  const design = values.design ?? findUp(process.cwd(), DESIGN_CONFIG_FILE);
+  if (design === null) throw new Error(`no ${PROJECT_FILE} or ${DESIGN_CONFIG_FILE} here: run this in a product or a design repo, or pass --project <dir> or --design <dir>`);
+  const root = resolve(design);
+  return { root, system: getSystem(await loadDesignRepo(root), values.system), product: false };
+}
+
+function renderRulePacks(): string {
+  return [
+    "Starter rules on offer (never added unless you ask):",
+    ...RULE_PACKS.flatMap((p) => [`  ${style.bold(p.name)}  ${p.summary}`, ...p.rules("system").map((r) => `    ${r.file.replace(/\.rule\.yaml$/, "").padEnd(26)} ${r.spec.title}`)]),
+    `Next: youiyoux rules add <pack> (e.g. youiyoux rules add ${RULE_PACKS[0]!.name}) writes its rule files into your System's rules folder, as warnings; --dry-run shows them first.`,
+  ].join("\n");
 }
 
 async function cmdMigrate(values: Values, positionals: string[]): Promise<number> {
