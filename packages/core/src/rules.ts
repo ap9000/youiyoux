@@ -71,9 +71,10 @@ export const BEHAVIOUR_CHECKS: Readonly<Record<BehaviourCheck, { readonly descri
 };
 
 /**
- * The behaviour checks this youiyoux decides: only these may ever be `passed` or `failed`. Every
- * other check's popup is opened and identified, and the result is `incomplete` ("this youiyoux
- * doesn't decide <check> yet"). A stored pass or fail for any other check is not counted.
+ * The behaviour checks this youiyoux decides: only these may ever be `passed` or `failed` (all six
+ * since slice 3). A check missing here would have its popup opened and identified, and the result
+ * `incomplete` ("this youiyoux doesn't decide <check> yet"); a stored pass or fail for it would not
+ * be counted.
  */
 export const DECIDED_BEHAVIOUR_CHECKS: readonly BehaviourCheck[] = ["trigger-state", "dismiss-escape", "focus-into", "focus-return", "focus-trap", "arrow-keys"];
 export const decidesBehaviour = (check: string): boolean => (DECIDED_BEHAVIOUR_CHECKS as readonly string[]).includes(check);

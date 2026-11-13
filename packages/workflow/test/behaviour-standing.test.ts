@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Browser } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { RuleSpec } from "@youiyoux/core";
+import { BEHAVIOUR_CHECK_IDS, BEHAVIOUR_CHECKS, RuleSpec } from "@youiyoux/core";
 import { launchBrowser } from "@youiyoux/detect";
 import { appFingerprint, ruleDigest, type Project } from "@youiyoux/scanner";
 import { behaviourFile, behaviourStanding, probeBehaviour, setBehaviourConsent } from "../src/index.ts";
@@ -56,7 +56,7 @@ describe.skipIf(!HAVE_CHROMIUM)("standing from stored runs", () => {
   const scratch = mkdtempSync(join(tmpdir(), "youi-standing-"));
   const MENU = (id: string, closes: boolean) =>
     `<button aria-haspopup="menu" aria-expanded="false" aria-controls="${id}" onclick="const m=document.getElementById('${id}');m.hidden=false;m.querySelector('li').focus()">Actions</button><ul role="menu" id="${id}" hidden onkeydown="${closes ? "if (event.key === 'Escape') this.hidden = true" : ""}"><li role="menuitem" tabindex="-1">Rename</li></ul>`;
-  const PAGES: Record<string, string> = { "/esc": MENU("m1", true), "/esc-ignored": MENU("m2", false), "/plain": "<p>No popups here.</p>", "/mixed": MENU("m3", true).replace(">Actions<", ">Open<") + MENU("m4", false).replace(">Actions<", ">Stuck<") };
+  const PAGES: Record<string, string> = { "/dialog": `<button aria-haspopup="dialog" onclick="document.getElementById('d1').showModal()">Settings</button><dialog id="d1"><button>One</button><button>Two</button></dialog>`, "/esc": MENU("m1", true), "/esc-ignored": MENU("m2", false), "/plain": "<p>No popups here.</p>", "/mixed": MENU("m3", true).replace(">Actions<", ">Open<") + MENU("m4", false).replace(">Actions<", ">Stuck<") };
 
   beforeAll(async () => {
     server = createServer((req, res) => {
@@ -225,6 +225,28 @@ describe.skipIf(!HAVE_CHROMIUM)("standing from stored runs", () => {
     expect(standing.runs[0]).toMatchObject({ state: "incomplete", reason: expect.stringMatching(/\/mixed has a stored run whose results don't match the popups it found \(1 missing, 0 extra or repeated\)/) });
     expect(standing.failures).toEqual([expect.objectContaining({ rule: ESCAPE.id, result: expect.objectContaining({ state: "failed", target: expect.objectContaining({ accessibleName: "Stuck" }) }) })]);
   }, 60_000);
+
+  test("not-applicable is held to the full pattern table for every check: stored for a check that applies, or a verdict stored for one that doesn't, leaves the rule incomplete", async () => {
+    const ALL = BEHAVIOUR_CHECK_IDS.map((check) => rule(`popup.${check}`, check));
+    const p = product("table", ["/esc", "/dialog"]);
+    await behave(p, "/esc", ALL);
+    await behave(p, "/dialog", ALL);
+    // As stored by the probe, every rule has run: a menu and a modal dialog, each check decided or not-applicable by the table.
+    expect((await behaviourStanding(p.project, ALL, TOOL)).runs.map((r) => [r.rule, r.state])).toEqual(ALL.map((r) => [r.id, "ran"]));
+    for (const [route, pattern] of [["/esc", "menu-button"], ["/dialog", "modal-dialog"]] as const) {
+      const file = join(p.root, behaviourFile(route));
+      const was = readFileSync(file, "utf8");
+      for (const check of BEHAVIOUR_CHECK_IDS) {
+        const applies = BEHAVIOUR_CHECKS[check].patterns.includes(pattern);
+        const run = JSON.parse(was) as { results: Array<{ check: string; state: string }> };
+        for (const r of run.results) if (r.check === check) r.state = applies ? "not-applicable" : "passed";
+        writeFileSync(file, JSON.stringify(run));
+        const standing = await behaviourStanding(p.project, [rule(`popup.${check}`, check)], TOOL);
+        expect(standing.runs[0], `${check} on a ${pattern}`).toMatchObject({ state: "incomplete", reason: expect.stringContaining(`${route} has a stored run that says ${check} ${applies ? "doesn't apply to" : "applies to"} a ${pattern}, which it ${applies ? "does" : "doesn't"}`) });
+      }
+      writeFileSync(file, was);
+    }
+  }, 120_000);
 
   test("a fingerprint that can't cover the whole app shows nothing fresh: a folder it can't read leaves the rule incomplete and counts nothing", async () => {
     const p = product("unreadable", ["/esc-ignored"]);

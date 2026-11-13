@@ -332,9 +332,27 @@ see them; `youiyoux behave [--route /x]` checks them in the running dev app, in 
   fresh page: it clicks the trigger only, identifies the popup, and runs the check. It sends no
   writes, reaches no other address, opens no windows and, once the trigger is clicked, lets only the
   page's own static files load (a popup tested with its data blocked says so).
-- **What it decides.** `dismiss-escape` for now: with focus inside the popup (or on the combobox),
-  one Esc must close it within 1.5 s. Every other check opens the popup and reports *incomplete*
-  ("this youiyoux doesn't decide … yet"), never a pass.
+- **What it decides.** All six checks, each in its own fresh page, per pattern (a check that
+  doesn't apply to a pattern is *not-applicable*, never passed):
+  - `trigger-state` (menu, combobox, popover): aria-expanded goes to "true" (a combobox's starts
+    "false"), aria-haspopup fits, aria-controls names the popup itself; popovertarget counts.
+  - `dismiss-escape` (all four): with focus inside (or on the combobox), one Esc closes it within
+    1.5 s, and a run without Esc shows it stays open by itself.
+  - `focus-into` (menu, modal dialog): opening puts focus on a menu item, or inside the dialog,
+    within 1 s; the probe moves no focus here.
+  - `focus-return` (menu, modal dialog, popover): after Esc closes it, focus is back on its button
+    (or the contract's `returnFocusTo` part); a button gone with nothing declared is incomplete.
+  - `focus-trap` (modal dialog): Tab and Shift+Tab visit each focusable element in order and wrap
+    (up to 20); a native `showModal()` dialog keeps focus in by itself, its order still checked.
+  - `arrow-keys` (vertical menu, combobox): ArrowDown and ArrowUp move to the next and previous
+    enabled item (aria-activedescendant must name one); wrapping or stopping at the ends are both
+    fine; Home and End are reported, not required. Horizontal menus aren't checked yet.
+
+  Keys sent are only the check's own (Esc; Tab and Shift+Tab; arrows, Home and End), each after
+  consent is read again; never Enter, Space or typing. Opening is by mouse click only, so keyboard
+  opening isn't verified. Anything the probe can't tell is *incomplete*, never a pass. Text the page
+  supplies (names, attribute values) is quoted and cleaned in every result, never echoed raw. A
+  route has 300 s.
 - **Runs are kept** in `.youi/behaviour/<route-hash>.json`. `youiyoux check` reads them: a behaviour
   rule has run only when every route has a fresh, complete result, and a fresh failure counts as an
   error (or warning) like any violation, filtered by `--rule` and `--quiet`. A baseline never accepts

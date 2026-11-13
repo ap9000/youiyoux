@@ -154,8 +154,8 @@ handlers can mutate, service workers and WebSockets bypass page routes (finding 
   strings, no screenshot unless asked.
 - **The Run endpoint** is a service write: `x-youi-session` + loopback Origin like every other write
   (`http.ts:155-163`). It takes a route and an optional target identity, never a URL, path or file.
-- **Bounded.** 20 targets per route, 5 s per scenario, 150 s per route (90 s until slice 2, whose dismiss-escape runs a
-  control scenario besides the test); over budget = `incomplete` naming untested
+- **Bounded.** 20 targets per route, 5 s per scenario, 300 s per route (90 s until slice 2, whose dismiss-escape runs a
+  control scenario besides the test; 150 s until slice 3, where all six checks make up to seven scenarios per target); over budget = `incomplete` naming untested
   targets. Runs only on request (tab Run, `youiyoux behave`, MCP `ui_behave`), never on scan or in the background.
 
 ## Results and rule execution

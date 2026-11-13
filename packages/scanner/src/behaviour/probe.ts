@@ -42,7 +42,12 @@ export interface ProbeBudgets {
   readonly settleMs: number;
 }
 
-export const PROBE_BUDGETS: ProbeBudgets = { targets: 20, scenarioMs: 5_000, routeMs: 150_000, openMs: 2_000, closeMs: 1_500, loadMs: 15_000, settleMs: 2_000 };
+/**
+ * routeMs: with all six checks on, a target costs up to seven fresh scenarios (one per check, plus
+ * the control run dismiss-escape and focus-return share), each with its own load: 300 s covers 20
+ * targets at about 2 s a scenario. Anything past it is incomplete and named, never skipped quietly.
+ */
+export const PROBE_BUDGETS: ProbeBudgets = { targets: 20, scenarioMs: 5_000, routeMs: 300_000, openMs: 2_000, closeMs: 1_500, loadMs: 15_000, settleMs: 2_000 };
 /** Triggers looked for per route: past the budget, only to name them as untested. */
 const MAX_FOUND = 200;
 const POLL_MS = 50;

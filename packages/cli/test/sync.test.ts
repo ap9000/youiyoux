@@ -293,7 +293,7 @@ describe("behaviour rules in generated guidance", () => {
     await writeFile(join(design, "rules/popup.escape.rule.yaml"), escape);
     const { actions } = await syncProject(await project());
     const agents = await read("AGENTS.md");
-    expect(agents).toContain("- Close every popup on Esc and put focus back on its button. (a behaviour rule, which `npx -y youiyoux check` cannot see in code: verify it with `npx -y youiyoux behave --route <route>` against the running dev app (once probing is switched on for it), then `npx -y youiyoux check` counts the fresh result; `behave` decides dismiss-escape so far, so check the others yourself with the keyboard (Esc, Tab, arrow keys))");
+    expect(agents).toContain("- Close every popup on Esc and put focus back on its button. (a behaviour rule, which `npx -y youiyoux check` cannot see in code: verify it with `npx -y youiyoux behave --route <route>` against the running dev app (once probing is switched on for it), then `npx -y youiyoux check` counts the fresh result; `behave` opens popups by mouse click only, so check opening from the keyboard (Enter, Space, ArrowDown on the button) yourself)");
     expect(agents).not.toContain("ui_behave");
     expect(agents).not.toContain("coming in a later youiyoux");
     expect(agents).not.toContain("- Close every popup on Esc and put focus back on its button.\n");

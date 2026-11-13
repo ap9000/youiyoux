@@ -67,11 +67,11 @@ const unchecked = (rules: readonly RuleSpec[]): RuleSpec[] => rules.filter((r) =
 const behavioural = (rules: readonly RuleSpec[]): RuleSpec[] => rules.filter((r) => ruleCapability(r).state === "probe");
 
 /**
- * How an agent verifies a behaviour rule: `youiyoux behave` exists; it decides dismiss-escape only so
- * far, so the rest are still checked by hand (said, never implied as checked). MCP `ui_behave` isn't
- * there yet, so it isn't named.
+ * How an agent verifies a behaviour rule: `youiyoux behave` decides all six checks, but opens popups
+ * by mouse click only, so opening by keyboard is still checked by hand (said, never implied as
+ * checked). MCP `ui_behave` isn't there yet, so it isn't named.
  */
-const BEHAVIOUR_VERIFY = "a behaviour rule, which `youiyoux check` cannot see in code: verify it with `youiyoux behave --route <route>` against the running dev app (once probing is switched on for it), then `youiyoux check` counts the fresh result; `behave` decides dismiss-escape so far, so check the others yourself with the keyboard (Esc, Tab, arrow keys)";
+const BEHAVIOUR_VERIFY = "a behaviour rule, which `youiyoux check` cannot see in code: verify it with `youiyoux behave --route <route>` against the running dev app (once probing is switched on for it), then `youiyoux check` counts the fresh result; `behave` opens popups by mouse click only, so check opening from the keyboard (Enter, Space, ArrowDown on the button) yourself";
 
 export interface UnknownToolMention {
   readonly rule: string;
