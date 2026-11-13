@@ -147,7 +147,8 @@ export function isolatedLibrary(): void {
     return role === "button" || role === "combobox";
   };
   const usable = (element: Element): boolean => launcher(element) && shown(element) && enabled(element) && !insideOpenPopup(element);
-  const text = (value: string | null | undefined): string => (value ?? "").replace(/\s+/g, " ").trim();
+  // A name as the probe keeps it: control, format and direction characters dropped, whitespace collapsed (the same rule as core's cleanText).
+  const text = (value: string | null | undefined): string => (value ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/g, " ").replace(/\s+/g, " ").trim();
   const byId = (element: Element, id: string): Element | null => ((element.getRootNode() as Document | ShadowRoot).getElementById?.(id) as Element | null) ?? document.getElementById(id);
   const accessibleName = (element: Element): string => {
     const labelledby = element.getAttribute("aria-labelledby");
@@ -256,7 +257,7 @@ export function isolatedLibrary(): void {
     const open = !!popup && popup.isConnected && shown(popup);
     const active = deepActive();
     const at = effectiveFocus();
-    const of = (element: Element | null): { role: string; name: string } => ({ role: element ? (element.getAttribute("role") ?? element.localName) : "none", name: element ? accessibleName(element).slice(0, 60) : "" });
+    const of = (element: Element | null): { role: string; name: string } => ({ role: element ? (element.getAttribute("role") ?? element.localName) : "none", name: element ? accessibleName(element) : "" });
     if (!document.hasFocus()) return { open, at: "away", ...of(null) };
     if (!active || active === document.body || active === document.documentElement) return { open, at: "body", ...of(active) };
     if (at && trigger && at === trigger) return { open, at: "trigger", ...of(at) };

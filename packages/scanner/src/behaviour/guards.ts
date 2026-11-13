@@ -3,7 +3,7 @@
  * "Probe safety"). Pure: consent from `screens.json`, the one origin every request must be on, the
  * methods that may leave, and how a refused request is described (its path, never its query string).
  */
-import { BehaviourConsent, LOOPBACK_HOSTNAMES } from "@youiyoux/core";
+import { BehaviourConsent, cleanText, LOOPBACK_HOSTNAMES } from "@youiyoux/core";
 
 /** What the hub says before probing is switched on, and `behave` says when it isn't. */
 export const CONSENT_WORDS = "Probes click buttons that open menus and dialogs in your running app. Use a dev app with test data.";
@@ -12,6 +12,10 @@ export const SIGN_IN_FIX = "Next: probe screens that work signed out; signed-in 
 
 /** The only methods a probed page may send; anything else is stopped before it leaves. */
 export const SAFE_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD", "OPTIONS"]);
+
+const KNOWN_METHODS: ReadonlySet<string> = new Set(["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE", "CONNECT", "TRACE"]);
+/** A request's method for the words: a known one by name, any other (the page chose it) never echoed. */
+export const methodWord = (method: string): string => (KNOWN_METHODS.has(String(method).toUpperCase()) ? String(method).toUpperCase() : "request with an unusual method");
 
 export type Consent = { readonly ok: true; readonly origin: string; readonly generation: number } | { readonly ok: false; readonly why: string; readonly fix: string };
 
@@ -96,7 +100,8 @@ export function screenUrl(origin: string, path: string): string {
 export function describeUrl(url: string, origin: string): string {
   try {
     const parsed = new URL(String(url));
-    return parsed.origin === origin ? parsed.pathname : `${parsed.origin}${parsed.pathname}`;
+    // The page chooses the path (and another origin's name): cleaned and capped, never echoed raw.
+    return cleanText(parsed.origin === origin ? parsed.pathname : `${parsed.origin}${parsed.pathname}`, 100);
   } catch {
     return "an address that couldn't be read";
   }
@@ -114,7 +119,7 @@ export function requestVerdict(url: string, method: string, origin: string): Req
   }
   if (!parsed || parsed.origin !== origin) return { allow: false, kind: "origin", words: `the page tried to reach ${describeUrl(url, origin)}, which isn't ${origin}; nothing was sent` };
   const upper = String(method).toUpperCase();
-  if (!SAFE_METHODS.has(upper)) return { allow: false, kind: "write", words: `the page tried to send a ${upper} to ${describeUrl(url, origin)}; nothing was sent` };
+  if (!SAFE_METHODS.has(upper)) return { allow: false, kind: "write", words: `the page tried to send a ${methodWord(upper)} to ${describeUrl(url, origin)}; nothing was sent` };
   return { allow: true };
 }
 
@@ -128,7 +133,7 @@ export const STATIC_FETCH_DESTS: ReadonlySet<string> = new Set(["script", "style
 
 /** The words for a data request blocked after the click: its method and path, never its query. */
 export function dataWords(method: string, url: string, origin: string): string {
-  return `the popup asked for data when it opened (${String(method).toUpperCase()} ${describeUrl(url, origin)}); it was blocked, so this was tested with its data blocked`;
+  return `the popup asked for data when it opened (${methodWord(method)} ${describeUrl(url, origin)}); it was blocked, so this was tested with its data blocked`;
 }
 
 /** A path that looks like a sign-in page: where an app sends a visitor who isn't signed in. */

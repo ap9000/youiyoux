@@ -9,7 +9,7 @@ import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join, posix } from "node:path";
 import { promisify } from "node:util";
-import { matchesAny, ruleSlug, type RuleSpec, type Violation } from "@youiyoux/core";
+import { matchesAny, pageText, ruleSlug, type RuleSpec, type Violation } from "@youiyoux/core";
 import { detectRepo, elementTypes, EXPORT_TYPES, LIBRARY_BY_ID, libraryOfPackage, packageOf } from "@youiyoux/detect";
 import { buildInventory, loadInventoryTarget, parseModule, hardcodedValues, importSpecifier, langOf, nearDuplicates, offLibraryImports, POPUP_NOUN, type ChosenLibrary, type DriftFinding, type DriftKind, type ImportClass, type Project, type ScanResult, type ModuleInfo } from "@youiyoux/scanner";
 import type { BehaviourFailure } from "@youiyoux/workflow";
@@ -225,7 +225,7 @@ export function behaviourDiffFinding(f: BehaviourFailure): BehaviourDiffFinding 
     file: target.file ?? null,
     line: target.line ?? null,
     check: f.result.check,
-    message: `${f.result.check} on the ${POPUP_NOUN[target.pattern]} '${target.accessibleName || "(no name)"}' on ${target.route}: ${f.result.why}`,
+    message: `${f.result.check} on the ${POPUP_NOUN[target.pattern]} ${pageText(target.accessibleName)} on ${target.route}: ${f.result.why}`,
     fix: f.result.fix,
     severity: f.severity,
     rule: ruleSlug(f.rule),

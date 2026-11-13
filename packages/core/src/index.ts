@@ -17,3 +17,4 @@ export * from "./rules.ts";
 export * from "./schemas.ts";
 export * from "./status.ts";
 export * from "./tokens.ts";
+export * from "./page-text.ts";

@@ -10,7 +10,7 @@
  * that couldn't be probed), else 0. `youiyoux check` then reads the stored runs.
  */
 import { join } from "node:path";
-import { ruleSlug, type BehaviourCheckId, type BehaviourResult, type BehaviourRouteRun, type RuleSpec } from "@youiyoux/core";
+import { pageText, ruleSlug, type BehaviourCheckId, type BehaviourResult, type BehaviourRouteRun, type RuleSpec } from "@youiyoux/core";
 import { appFingerprint, behaviourConsent, behaviourRoutes, contractBindings, POPUP_NOUN, readScreensSpec, ruleDigest, type Project, type ScreensSpec } from "@youiyoux/scanner";
 import { BehaviourConsent } from "@youiyoux/core";
 import { behaviourTool } from "./version.ts";
@@ -101,7 +101,7 @@ export const behaveExitCode = (result: BehaveResult): number => (result.errors >
 const MARK: Record<BehaviourResult["state"], string> = { passed: "✓ passed", failed: "✖ failed", "not-applicable": "- n/a", incomplete: "! incomplete", error: "! error" };
 
 /** Which popup: its pattern's noun, its name, and file:line when locating found it. */
-const popupOf = (r: BehaviourResult): string => `${POPUP_NOUN[r.pattern]} '${r.target.accessibleName || "(no name)"}'${r.target.ordinal !== undefined ? ` #${r.target.ordinal + 1}` : ""}${r.target.file && r.target.line ? ` (${r.target.file}:${r.target.line})` : ""}`;
+const popupOf = (r: BehaviourResult): string => `${POPUP_NOUN[r.pattern]} ${pageText(r.target.accessibleName)}${r.target.ordinal !== undefined ? ` #${r.target.ordinal + 1}` : ""}${r.target.file && r.target.line ? ` (${r.target.file}:${r.target.line})` : ""}`;
 
 function mark(r: BehaviourResult, severity: string | undefined): string {
   const text = MARK[r.state];

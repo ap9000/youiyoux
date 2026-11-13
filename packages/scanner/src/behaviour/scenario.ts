@@ -4,7 +4,7 @@
  * Written against `ProbePage`, so the decisions here don't depend on how the page is driven
  * (probe.ts drives a real headless Chromium behind its guards).
  */
-import type { BehaviourCheckId, BehaviourPattern, PartRef } from "@youiyoux/core";
+import { cleanText, pageText, type BehaviourCheckId, type BehaviourPattern, type PartRef } from "@youiyoux/core";
 import { describeUrl, SIGN_IN_FIX, SIGN_IN_PATH, SIGN_IN_WORDS } from "./guards.ts";
 import { ambiguousWords, matchTarget, type TargetKey } from "./identity.ts";
 import type { FocusFacts, FocusPlaced, FoundTarget, PopupFound, TriggerFacts } from "./in-page.ts";
@@ -106,6 +106,9 @@ export type ScenarioOutcome =
   | ({ readonly state: "error"; readonly info: readonly string[]; readonly dataBlocked?: boolean } & Stop);
 
 const NOTHING_SENT = "Nothing was sent, and nothing was decided.";
+
+/** An error's first line for a result's words: cleaned and capped (a browser's message can carry page text). */
+export const errorWords = (error: unknown): string => cleanText((error instanceof Error ? error.message : String(error)).split("\n")[0], 160);
 /** How long a refusal the page set off is waited for, when the page stopped answering. */
 const LATE_MS = 150;
 /** After focus is placed, how long the page's focus handlers get before the popup is checked again. */
@@ -153,7 +156,7 @@ export function moved(start: string, now: string, origin: string): Stop | null {
   if (a.href === b.href) return null;
   if (b.origin !== origin) return { why: `the screen went to another address (${b.protocol === "http:" || b.protocol === "https:" ? describeUrl(b.href, origin) : "an error page"}); nothing was loaded from it`, fix: "Next: probe a screen that stays on the app's own address." };
   if (SIGN_IN_PATH.test(b.pathname)) return { why: SIGN_IN_WORDS, fix: SIGN_IN_FIX };
-  return { why: `the page's address changed to ${describeUrl(b.href, origin)}${b.hash && b.hash !== a.hash ? ` (${b.hash.length > 40 ? "a new hash" : b.hash})` : ""}; probes stay on the screen they opened`, fix: "Next: probes stay on one screen; a popup whose opening changes the address (history or hash) isn't probed yet." };
+  return { why: `the page's address changed to ${describeUrl(b.href, origin)}${b.hash && b.hash !== a.hash ? ` (${pageText(b.hash, 40)})` : ""}; probes stay on the screen they opened`, fix: "Next: probes stay on one screen; a popup whose opening changes the address (history or hash) isn't probed yet." };
 }
 
 /** Open the screen and check it can be probed: it stayed put, answered, and isn't asking for a sign-in. */
@@ -206,7 +209,7 @@ export async function openAndIdentify(
   const found = await page.findTargets();
   const match = matchTarget(wanted, found.map((f) => ({ ...f, route: wanted.route })));
   if (match.state === "ambiguous") return incomplete(ambiguousWords(wanted, match.count));
-  if (match.state === "missing") return incomplete({ why: `the button '${wanted.accessibleName || "(no name)"}' wasn't on the screen when it was opened again`, fix: "Next: run the probe again; a button that shows only after something else happens isn't probed yet." });
+  if (match.state === "missing") return incomplete({ why: `the button ${pageText(wanted.accessibleName)} wasn't on the screen when it was opened again`, fix: "Next: run the probe again; a button that shows only after something else happens isn't probed yet." });
   await page.markShowing(wanted.pattern);
   const closed = await page.triggerFacts(match.index);
   // Consent is read again at the last moment: switched off, moved or switched again since the run
@@ -221,7 +224,7 @@ export async function openAndIdentify(
     await page.wait(LATE_MS);
     const stopped = stopFromEvents(page.events());
     if (stopped) return incomplete(stopped);
-    return incomplete({ why: `the button '${wanted.accessibleName || "(no name)"}' couldn't be clicked: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}`, fix: "Next: make sure nothing covers the button and it stays on the screen, then run the probe again." });
+    return incomplete({ why: `the button ${pageText(wanted.accessibleName)} couldn't be clicked: ${errorWords(error)}`, fix: "Next: make sure nothing covers the button and it stays on the screen, then run the probe again." });
   }
   const clicked = Date.now();
   const end = deadline();
@@ -236,7 +239,7 @@ export async function openAndIdentify(
       // The document the probe was watching went away (a blocked form submission or navigation can
       // replace it with an error page): say what the guards saw, else that.
       await page.wait(LATE_MS);
-      return incomplete(cancelled() ?? stopFromEvents(page.events()) ?? moved(start, await page.location().catch(() => start), origin) ?? { why: `the page changed under the probe: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}`, fix: "Next: run the probe again; a popup whose opening replaces the page can't be probed." });
+      return incomplete(cancelled() ?? stopFromEvents(page.events()) ?? moved(start, await page.location().catch(() => start), origin) ?? { why: `the page changed under the probe: ${errorWords(error)}`, fix: "Next: run the probe again; a popup whose opening replaces the page can't be probed." });
     }
     if (popup.state === "open") {
       // Watch a moment longer: a page that leaves, sends or opens a window just after opening is still stopped.
@@ -374,7 +377,7 @@ export async function dismissEscape(page: ProbePage, opened: Extract<ScenarioOut
       now = await page.popupState(opened.index, pattern, args.popup);
     } catch (error: unknown) {
       await page.wait(LATE_MS);
-      return incomplete((await stopped().catch(() => null)) ?? { why: `the page changed under the probe after Esc: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}`, fix: "Next: run youiyoux behave again; a popup whose closing replaces the page can't be probed." });
+      return incomplete((await stopped().catch(() => null)) ?? { why: `the page changed under the probe after Esc: ${errorWords(error)}`, fix: "Next: run youiyoux behave again; a popup whose closing replaces the page can't be probed." });
     }
     if (now === "closed") {
       // Watch a moment longer: Esc that leaves the page or sends something is stopped, not passed.

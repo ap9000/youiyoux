@@ -1,5 +1,5 @@
 /** Human output for each command. Every command also has --json for scripts and agents. */
-import { executionLabel, ruleSlug, type RuleExecution, type RuleRun, type RuleSpec, type ScanReport, type Violation } from "@youiyoux/core";
+import { executionLabel, pageText, ruleSlug, type RuleExecution, type RuleRun, type RuleSpec, type ScanReport, type Violation } from "@youiyoux/core";
 import { failedChecks, POPUP_NOUN, shotsText, type ChangePlan, type MigrationResult, type RuleEvaluation, type ScreenBom, type ShotsReport, type WhereResult } from "@youiyoux/scanner";
 import type { BehaviourFailure } from "@youiyoux/workflow";
 import type { LockIssue, SyncAction, SyncResult } from "./sync.ts";
@@ -78,7 +78,7 @@ export function renderWhere(where: WhereResult, report: ScanReport): string {
 /** A behaviour failure in one line: the popup (route, name, file:line when known), the check and why. */
 export function behaviourFailureLine(f: BehaviourFailure): string {
   const { target } = f.result;
-  return `${target.route} ${POPUP_NOUN[target.pattern]} '${target.accessibleName || "(no name)"}'${target.file && target.line ? ` (${target.file}:${target.line})` : ""} ${f.result.check}: ${f.result.why}${f.result.dataBlocked ? " (tested with its data blocked)" : ""}`;
+  return `${target.route} ${POPUP_NOUN[target.pattern]} ${pageText(target.accessibleName)}${target.file && target.line ? ` (${target.file}:${target.line})` : ""} ${f.result.check}: ${f.result.why}${f.result.dataBlocked ? " (tested with its data blocked)" : ""}`;
 }
 
 /**

@@ -616,7 +616,7 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
     expect(only(await probe("/navigate"))).toMatchObject({ state: "incomplete", why: "the page tried to leave for /elsewhere; it was stopped before it left" });
     expect(seen(app, "/elsewhere")).toEqual([]);
     expect(only(await probe("/push"))).toMatchObject({ state: "incomplete", why: expect.stringMatching(/^the page's address changed to \/pushed; probes stay on the screen they opened$/) });
-    expect(only(await probe("/hash"))).toMatchObject({ state: "incomplete", why: expect.stringMatching(/^the page's address changed to \/hash \(#open\)/) });
+    expect(only(await probe("/hash"))).toMatchObject({ state: "incomplete", why: expect.stringMatching(/^the page's address changed to \/hash \('#open'\)/) });
     // window.open is a no-op: no page (so no window was even tried), no request.
     expect(only(await probe("/open"))).toMatchObject({ state: DECIDED });
     expect(seen(app, "/popup")).toEqual([]);

@@ -2,7 +2,7 @@
  * How a check result reads: in a terminal, as GitHub Actions annotations on the
  * PR's lines, and as the job summary that states which rules version decided it.
  */
-import { ruleSlug, type Violation } from "@youiyoux/core";
+import { pageText, ruleSlug, type Violation } from "@youiyoux/core";
 import { describeIdentity } from "@youiyoux/scanner";
 import type { CheckResult, DiffCheckResult } from "./check.ts";
 import type { BehaviourDiffFinding, DiffFinding } from "./check-diff.ts";
@@ -96,7 +96,7 @@ const KIND_LABEL: Record<DiffFinding["kind"], string> = { "near-duplicate": "nea
 
 /** Where a finding is: file:line:column for code; for behaviour, the route and popup (and file:line when locating found it). */
 const placeOf = (f: DiffFinding): string => (f.kind === "behaviour" ? popupPlace(f) : `${f.file}:${f.line}:${f.column}`);
-const popupPlace = (f: BehaviourDiffFinding): string => `${f.target.route} '${f.target.accessibleName || "(no name)"}'${f.target.ordinal !== undefined ? ` #${f.target.ordinal + 1}` : ""}${f.file && f.line ? ` (${f.file}:${f.line})` : ""}`;
+const popupPlace = (f: BehaviourDiffFinding): string => `${f.target.route} ${pageText(f.target.accessibleName)}${f.target.ordinal !== undefined ? ` #${f.target.ordinal + 1}` : ""}${f.file && f.line ? ` (${f.file}:${f.line})` : ""}`;
 
 /** Why a diff result is not a pass even with no findings: files or analyses that could not be checked. */
 export function diffGaps(result: DiffCheckResult): string[] {

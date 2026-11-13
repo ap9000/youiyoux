@@ -6,7 +6,7 @@
  * consent is read again and the very popup is checked again (checkContext.beforeKey). Nothing here
  * passes without positive evidence: anything that can't be told is incomplete, with why.
  */
-import type { BehaviourPattern } from "@youiyoux/core";
+import { ariaToken, pageText, roleWord, type BehaviourPattern } from "@youiyoux/core";
 import type { FocusFacts, TriggerFacts } from "./in-page.ts";
 import { checkContext, POPUP_NOUN, type CheckArgs, type ProbePage, type ScenarioOutcome } from "./scenario.ts";
 
@@ -42,17 +42,17 @@ export function judgeTriggerState(pattern: BehaviourPattern, closed: TriggerFact
   const bad = (why: string): TriggerVerdict => ({ ok: false, why });
   if (pattern === "popover" && open.popovertarget) {
     if (open.popovertargetPopup !== true) return bad("popovertarget doesn't name the popover that opened");
-    if (open.expanded !== null && open.expanded !== "true") return bad(`aria-expanded is set by hand and says "${open.expanded}" while the popover is open; popovertarget already says whether it is open`);
+    if (open.expanded !== null && open.expanded !== "true") return bad(`aria-expanded is set by hand and says ${ariaToken(open.expanded)} while the popover is open; popovertarget already says whether it is open`);
     return { ok: true, why: "the button names its popover with popovertarget, so the browser says whether it is open", info: [] };
   }
   const info: string[] = [];
   const closedOk = pattern === "combobox-listbox" ? closed.expanded === "false" : closed.expanded === null || closed.expanded === "false";
-  if (!closedOk) return bad(closed.expanded === null ? `aria-expanded isn't set while the ${noun} is closed (a combobox says "false")` : closed.expanded === "true" ? `aria-expanded already said "true" before the ${noun} opened` : `aria-expanded is "${closed.expanded}" while the ${noun} is closed, not "false"`);
-  if (open.expanded !== "true") return bad(open.expanded === null ? `aria-expanded isn't set while the ${noun} is open` : open.expanded === "false" ? `aria-expanded stayed "false" while the ${noun} was open` : `aria-expanded is "${open.expanded}" while the ${noun} is open, not "true"`);
+  if (!closedOk) return bad(closed.expanded === null ? `aria-expanded isn't set while the ${noun} is closed (a combobox says "false")` : closed.expanded === "true" ? `aria-expanded already said "true" before the ${noun} opened` : `aria-expanded is ${ariaToken(closed.expanded)} while the ${noun} is closed, not "false"`);
+  if (open.expanded !== "true") return bad(open.expanded === null ? `aria-expanded isn't set while the ${noun} is open` : open.expanded === "false" ? `aria-expanded stayed "false" while the ${noun} was open` : `aria-expanded is ${ariaToken(open.expanded)} while the ${noun} is open, not "true"`);
   if (closed.expanded === null) info.push(`aria-expanded is left off while the ${noun} is closed (allowed: APG recommends that for a menu button)`);
   for (const [when, facts] of [["closed", closed], ["open", open]] as const) {
-    if (pattern === "menu-button" && facts.haspopup !== "menu" && facts.haspopup !== "true") return bad(facts.haspopup === null ? `aria-haspopup is missing while the menu is ${when}` : `aria-haspopup is "${facts.haspopup}" while the menu is ${when}, not "menu"`);
-    if (pattern === "combobox-listbox" && facts.haspopup !== null && facts.haspopup !== "listbox") return bad(`aria-haspopup is "${facts.haspopup}" on a combobox whose popup is a listbox; leave it off or set it to "listbox"`);
+    if (pattern === "menu-button" && facts.haspopup !== "menu" && facts.haspopup !== "true") return bad(facts.haspopup === null ? `aria-haspopup is missing while the menu is ${when}` : `aria-haspopup is ${ariaToken(facts.haspopup)} while the menu is ${when}, not "menu"`);
+    if (pattern === "combobox-listbox" && facts.haspopup !== null && facts.haspopup !== "listbox") return bad(`aria-haspopup is ${ariaToken(facts.haspopup)} on a combobox whose popup is a listbox; leave it off or set it to "listbox"`);
   }
   if (!open.controls) {
     if (pattern === "combobox-listbox") return bad("aria-controls is missing: the combobox doesn't name its listbox");
@@ -61,7 +61,7 @@ export function judgeTriggerState(pattern: BehaviourPattern, closed: TriggerFact
   }
   if (open.controlsPopup !== true) return bad(`aria-controls doesn't name the ${noun} that opened`);
   const role = POPUP_ROLE[pattern];
-  if (role && open.popupRole !== role) return bad(`aria-controls names ${open.popupRole === null ? "an element" : `a ${open.popupRole} element`}, not the ${noun} itself (role="${role}")`);
+  if (role && open.popupRole !== role) return bad(`aria-controls names ${open.popupRole === null ? "an element" : `a ${roleWord(open.popupRole)} element`}, not the ${noun} itself (role="${role}")`);
   const said = pattern === "menu-button" ? ", aria-haspopup says it opens a menu," : "";
   return { ok: true, why: `aria-expanded went to "true" when the ${noun} opened${said} and aria-controls names the ${noun}`, info };
 }
@@ -102,10 +102,10 @@ const FOCUS_INTO_FIX: Partial<Record<BehaviourPattern, string>> = {
   "modal-dialog": 'When the dialog opens, move focus inside it: to its first focusable element, or to the dialog itself with tabindex="-1" (a native <dialog> opened with showModal() does this by itself).',
 };
 
-/** Words for where focus is, in a sentence: "the menu item 'Rename'", "the page's body". */
+/** Words for where focus is, in a sentence: "the menu item 'Rename'", "the page's body". The page's role and name are never echoed raw (roleWord, pageText). */
 export function focusWords(facts: Pick<FocusFacts, "at" | "role" | "name">, noun: string): string {
-  const named = facts.name ? ` '${facts.name}'` : "";
-  const role = facts.role;
+  const named = facts.name ? ` ${pageText(facts.name)}` : "";
+  const role = roleWord(facts.role);
   switch (facts.at) {
     case "trigger":
       return `the button that opened the ${noun}`;

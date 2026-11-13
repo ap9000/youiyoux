@@ -18,7 +18,8 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { createServer, request as httpRequest, type ClientRequest, type IncomingHttpHeaders, type IncomingMessage, type OutgoingHttpHeaders, type ServerResponse } from "node:http";
 import type { Socket } from "node:net";
 import type { Duplex } from "node:stream";
-import { dataWords, describeUrl, requestVerdict, STATIC_FETCH_DESTS } from "./guards.ts";
+import { cleanText } from "@youiyoux/core";
+import { dataWords, describeUrl, methodWord, requestVerdict, STATIC_FETCH_DESTS } from "./guards.ts";
 
 export interface FenceRefusal {
   /** busy: more requests at once than the fence carries. data: a data request after the click. */
@@ -90,7 +91,7 @@ export async function startFence(origin: string, refused: (refusal: FenceRefusal
   };
   const CHALLENGE = 'HTTP/1.1 407 Proxy Authentication Required\r\nproxy-authenticate: Basic realm="youiyoux probe"\r\ncontent-length: 0\r\nconnection: close\r\n\r\n';
   const refuseSocket = (socket: Duplex, authority: string): void => {
-    tell({ kind: "socket", words: `the page tried to open a WebSocket or tunnel to ${authority}; it was blocked` });
+    tell({ kind: "socket", words: `the page tried to open a WebSocket or tunnel to ${cleanText(authority, 100)}; it was blocked` });
     socket.end("HTTP/1.1 403 Forbidden\r\ncontent-length: 0\r\nconnection: close\r\n\r\n");
     socket.destroy();
   };
@@ -134,7 +135,7 @@ export async function startFence(origin: string, refused: (refusal: FenceRefusal
     // Reads only: a body (any length, or chunked) never leaves, whatever the method says.
     const length = req.headers["content-length"];
     if (req.headers["transfer-encoding"] !== undefined || (length !== undefined && length !== "0")) {
-      tell({ kind: "write", words: `the page tried to send data with a ${String(req.method).toUpperCase()} to ${describeUrl(parsed.href, origin)}; nothing was sent` });
+      tell({ kind: "write", words: `the page tried to send data with a ${methodWord(String(req.method))} to ${describeUrl(parsed.href, origin)}; nothing was sent` });
       return answer(req, res, 400, "blocked by the youiyoux probe");
     }
     if (afterClick) {

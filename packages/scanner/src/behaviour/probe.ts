@@ -16,13 +16,13 @@
  */
 import { randomBytes } from "node:crypto";
 import type { Browser, BrowserContext, CDPSession, Page, Request, Route } from "playwright-core";
-import { BEHAVIOUR_CHECKS, decidesBehaviour, type BehaviourCheckId, type BehaviourPattern, type PartRef } from "@youiyoux/core";
+import { BEHAVIOUR_CHECKS, cleanText, decidesBehaviour, type BehaviourCheckId, type BehaviourPattern, type PartRef } from "@youiyoux/core";
 import { startFence, type Fence, type FenceRefusal } from "./fence.ts";
 import { dataWords, describeUrl, requestVerdict, screenUrl, STATIC_RESOURCE_TYPES } from "./guards.ts";
 import { ambiguousWords, withOrdinals, type TargetKey } from "./identity.ts";
 import type { Frame } from "../screens/locate.ts";
 import { contractPopupsInPage, isolatedLibrary, labelsInPage, nominateContractTriggersInPage, PROBE_INIT_SCRIPT, type ClickPoint, type ContractBinding, type FocusPlaced, type FocusFacts, type FoundTarget, type IsolatedTarget, type PopupFound, type TriggerFacts } from "./in-page.ts";
-import { assertSafeKey, CHECK_KEYS, dataBlockedIn, dismissEscape, infoFromEvents, openAndIdentify, openScreen, POPUP_NOUN, staysOpenWithoutKey, SWITCHED_OFF, type CheckArgs, type GuardEvent, type ProbePage, type SafeKey, type ScenarioOutcome, type Stop } from "./scenario.ts";
+import { assertSafeKey, CHECK_KEYS, dataBlockedIn, dismissEscape, errorWords, infoFromEvents, openAndIdentify, openScreen, POPUP_NOUN, staysOpenWithoutKey, SWITCHED_OFF, type CheckArgs, type GuardEvent, type ProbePage, type SafeKey, type ScenarioOutcome, type Stop } from "./scenario.ts";
 import { focusInto, triggerState } from "./checks.ts";
 
 export interface ProbeBudgets {
@@ -269,7 +269,7 @@ class Worlds {
   }
 
   private check(answer: CallResult): CallResult {
-    if (answer.exceptionDetails) throw new Error(`the probe's own script failed: ${(answer.exceptionDetails.exception?.description ?? answer.exceptionDetails.text ?? "").split("\n")[0]}`);
+    if (answer.exceptionDetails) throw new Error(`the probe's own script failed: ${cleanText((answer.exceptionDetails.exception?.description ?? answer.exceptionDetails.text ?? "").split("\n")[0], 160)}`);
     return answer;
   }
 
@@ -408,7 +408,9 @@ class PlaywrightProbePage implements ProbePage {
       } catch (error: unknown) {
         if (error instanceof TimeUp) throw error;
       }
-      labelled.push({ ...target, component: typeof labels.component === "string" ? labels.component : contract, frames: Array.isArray(labels.frames) ? labels.frames : [] });
+      // The component's name comes from the page's main world: a label, cleaned before it is part of an identity or a sentence.
+      const component = cleanText(typeof labels.component === "string" ? labels.component : (contract ?? ""), 200) || null;
+      labelled.push({ ...target, component, frames: Array.isArray(labels.frames) ? labels.frames : [] });
     }
     this.found = labelled;
     return labelled;
@@ -552,7 +554,7 @@ export async function probeRoute(options: ProbeRouteOptions): Promise<RouteProbe
       if (options.signal?.aborted) return switchedOff();
     } catch (error: unknown) {
       if (options.signal?.aborted) return switchedOff();
-      const stop = error instanceof TimeUp ? { why: "the screen took longer to load than the probe's time budget", fix: "Next: make sure the dev server is idle, then run the probe again." } : { why: `the probe couldn't open the screen: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}`, fix: "Next: check the dev server is running, and run the probe again." };
+      const stop = error instanceof TimeUp ? { why: "the screen took longer to load than the probe's time budget", fix: "Next: make sure the dev server is idle, then run the probe again." } : { why: `the probe couldn't open the screen: ${errorWords(error)}`, fix: "Next: check the dev server is running, and run the probe again." };
       return { url: start, state: "incomplete", ...stop, coverage: "Nothing on this screen was probed.", targets: [] };
     } finally {
       options.signal?.removeEventListener("abort", cancel);
@@ -672,7 +674,7 @@ async function onFreshPage(
     const dataBlocked = dataBlockedIn(page.events());
     if (options.signal?.aborted) return { state: "incomplete", ...SWITCHED_OFF, info, dataBlocked, keys: sent() };
     if (error instanceof TimeUp) return { state: "incomplete", why: Date.now() >= routeDeadline ? untestedWords("time", budgets).why.replace("not tested: ", "stopped: ") : `ran out of time: a scenario has ${Math.round(budgets.scenarioMs / 1000)} s once the screen is open`, fix: "Next: make sure the dev server is idle, then run the probe again.", info, dataBlocked, keys: sent() };
-    return { state: "error", why: `the probe failed: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}`, fix: "Next: run the probe again; if it fails again, report it with the screen's route.", info, dataBlocked, keys: sent() };
+    return { state: "error", why: `the probe failed: ${errorWords(error)}`, fix: "Next: run the probe again; if it fails again, report it with the screen's route.", info, dataBlocked, keys: sent() };
   } finally {
     options.signal?.removeEventListener("abort", cancel);
     await page.close();

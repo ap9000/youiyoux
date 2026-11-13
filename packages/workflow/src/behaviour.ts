@@ -15,7 +15,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath, rename, unlink, type FileHandle } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
-import { BEHAVIOUR_ROUTE_SCHEMA, BehaviourRouteRun, decidesBehaviour, EVIDENCE_PATH, type BehaviourCheckId, type BehaviourResult, type BehaviourTarget, type Freshness } from "@youiyoux/core";
+import { BEHAVIOUR_ROUTE_SCHEMA, BehaviourRouteRun, cleanText, decidesBehaviour, EVIDENCE_PATH, type BehaviourCheckId, type BehaviourResult, type BehaviourTarget, type Freshness } from "@youiyoux/core";
 import { behaviourConfigDigest, behaviourConsent, bindingsDigest, CHECK_KEYS, probeOrigin, probeRoute, readScreensSpec, screenUrl, switchedConsent, SWITCHED_OFF, updateScreensSpec, type ContractBinding, type ProbeBudgets, type ProbeRouteOptions, type RouteProbe, type ScreensSpec } from "@youiyoux/scanner";
 import { LiveApp } from "./live.ts";
 import { WorkflowError } from "./policy.ts";
@@ -323,9 +323,10 @@ export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<Pr
         check: request.check,
         // Opened and identified, but not decided: never a pass.
         state: scenario.state === "opened" ? "incomplete" : scenario.state,
-        why: words.why,
-        fix: words.fix,
-        info: [...scenario.info],
+        // Belt and braces: the words are built from cleaned page text already; none may still carry a control character or a line break.
+        why: cleanText(words.why, 1000) || "no reason was given",
+        fix: cleanText(words.fix, 1000) || "Next: run youiyoux behave again.",
+        info: scenario.info.map((line) => cleanText(line, 1000)).filter(Boolean),
         // Tested with the popup's data requests blocked (after the click): said on every result of the scenario.
         dataBlocked: "dataBlocked" in scenario ? scenario.dataBlocked === true : false,
         evidence: [],
@@ -336,7 +337,7 @@ export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<Pr
   // Belt and braces: only a decided check is ever stored passed or failed.
   if (results.some((r) => (r.state === "passed" || r.state === "failed") && !decidesBehaviour(r.check))) throw new WorkflowError("internal", "the probe made a result it can't make yet; nothing was stored");
   const rules = [...new Map(options.checks.map((c) => [c.rule, { rule: c.rule, check: c.check, freshness: freshness(c) }])).values()];
-  const run = BehaviourRouteRun.parse({ schema: BEHAVIOUR_ROUTE_SCHEMA, route: options.route, runId, at, origin: consent.origin, viewport: spec.viewport, state: probe.state, why: probe.why, fix: probe.fix, coverage: probe.coverage, rules, targets: probe.targets.map((t) => ({ route: options.route, pattern: t.key.pattern, component: t.key.component, accessibleName: t.key.accessibleName, ...(t.key.ordinal !== undefined ? { ordinal: t.key.ordinal } : {}) })), results });
+  const run = BehaviourRouteRun.parse({ schema: BEHAVIOUR_ROUTE_SCHEMA, route: options.route, runId, at, origin: consent.origin, viewport: spec.viewport, state: probe.state, why: probe.why === null ? null : cleanText(probe.why, 1000) || "it couldn't be probed", fix: probe.fix === null ? null : cleanText(probe.fix, 1000) || "Next: run youiyoux behave again.", coverage: probe.coverage, rules, targets: probe.targets.map((t) => ({ route: options.route, pattern: t.key.pattern, component: t.key.component, accessibleName: t.key.accessibleName, ...(t.key.ordinal !== undefined ? { ordinal: t.key.ordinal } : {}) })), results });
   const file = await writeYouiFile(options.root, behaviourFile(options.route), `${JSON.stringify(run, null, 2)}\n`);
   return { run, file, probe };
 }
