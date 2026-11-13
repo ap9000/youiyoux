@@ -12,6 +12,7 @@ import { indexHome, storeLocation } from "@youiyoux/store";
 import { buildTokens, compareParity } from "@youiyoux/tokens";
 import { adoptionRequest, buildInventory, captureScreens, captureText, chosenSession, openLoginBrowser, recordSession, sessionFile, type LoginBrowser, type LoginPage, within, RenderUnavailableError, renderShots, shotsNext, type ShotsOptions, checkCapabilities, componentCard, describeIdentity, designRootOf, evaluateRule, linkedDesign, linksFile, setLink, findContract, loadProject, planChange, PROJECT_FILE, type LoadProjectOptions, ProjectWatcher, ruleCapability, runMigration, scanProject, screenBom, searchLibrary, whereUsed, type CacheStats, type PlanInput, type Project, type WatchUpdate } from "@youiyoux/scanner";
 import { baselinePath, diffExitCodeOf, exitCodeOf, runCheck, writeBaseline, type CheckResult } from "./check.ts";
+import { behaveAnnotations, behaveExitCode, behaveSummary, behaveText, runBehave } from "./behave.ts";
 import { configured, loadCheckProject, runRepoCheck } from "./check-repo.ts";
 import { workingTreeChange, type ChangeProject } from "./check-diff.ts";
 import { actionable, diffJson, githubAnnotations, githubDiffAnnotations, githubDiffSummary, githubSummary, renderCheckText, renderDiffText } from "./check-render.ts";
@@ -176,6 +177,12 @@ ${style.bold("System")}  ${style.dim("approved elements: build only with these")
                            rule violations and lockfile drift; exits 1 on errors or an incomplete check.
                            --baseline fails only on violations the baseline does not accept;
                            --format github annotates PR lines and writes the job summary
+  behave [--route r] [--format text|json|github]
+                           probe the running app's menus, comboboxes, dialogs and popovers for the
+                           System's behaviour rules (Esc closes the popup, for now), on every route in
+                           screens.json (or its behaviour.routes) or one; needs probing switched on for
+                           the app's address (a dev app with test data); runs are kept in
+                           .youi/behaviour/, which check reads. Exits 1 on an error or anything undecided
   check --diff [base] [--strict] [--json|--format github]
                            only what a change adds (the working tree against HEAD, or against the
                            merge-base with base): near-duplicate components, hardcoded colours, spacing
@@ -574,6 +581,33 @@ async function cmdCheck(values: Values, positionals: string[]): Promise<number> 
     if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, githubSummary(result));
   } else print(renderCheckText(result));
   return exitCodeOf(result);
+}
+
+/** `youiyoux behave [--route r]`: probe the consented app for the behaviour rules, keep the runs, print them. */
+async function cmdBehave(values: Values, positionals: string[]): Promise<number> {
+  const format = values.json ? "json" : (values.format ?? "text");
+  if (!["text", "json", "github"].includes(format) || positionals.length > 0) throw new UsageError("youiyoux behave [--route <route>] [--format text|json|github]");
+  const p = await project(values);
+  let opened: Awaited<ReturnType<typeof import("@youiyoux/detect").launchBrowser>> | null = null;
+  try {
+    const result = await runBehave(p, {
+      ...(values.route !== undefined ? { route: values.route } : {}),
+      browser: async () => {
+        const { launchBrowser } = await import("@youiyoux/detect");
+        opened = await launchBrowser(process.env.YOUI_CHROMIUM, { purpose: { what: "youiyoux behave", command: "youiyoux behave" } });
+        return opened;
+      },
+    });
+    if (format === "json") json({ errors: result.errors, warnings: result.warnings, incomplete: result.incomplete, rules: result.rules.map((r) => r.id), routes: result.routes });
+    else if (format === "github") {
+      for (const line of behaveAnnotations(result, await repoPrefix(p.root))) print(line);
+      print(behaveText(result));
+      if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, behaveSummary(result));
+    } else print(behaveText(result));
+    return behaveExitCode(result);
+  } finally {
+    await (opened as { close(): Promise<void> } | null)?.close();
+  }
 }
 
 /** `youiyoux check --diff [base]`: what the change adds, with fixes. Never a pass it could not compute: without git it stops. */
@@ -1569,7 +1603,7 @@ async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Pr
 type Command = (values: Values, positionals: string[], io: CliIo) => Promise<number>;
 
 const COMMANDS: Record<string, Command> = {
-  adopt: cmdAdopt, status: cmdStatus, system: cmdSystem, link: cmdLink, unlink: cmdUnlink, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, upgrade: cmdUpgrade, record: cmdRecord, hub: cmdHub, figma: cmdFigma, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, screens: cmdScreens, requests: cmdRequests, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+  adopt: cmdAdopt, status: cmdStatus, system: cmdSystem, link: cmdLink, unlink: cmdUnlink, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, behave: cmdBehave, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, upgrade: cmdUpgrade, record: cmdRecord, hub: cmdHub, figma: cmdFigma, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, screens: cmdScreens, requests: cmdRequests, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
 
 /** Every command name, for a front end that runs one by default (the youiyoux bin runs report). */
@@ -1601,7 +1635,7 @@ export async function main(argv: string[], io: CliIo = {}): Promise<number> {
 }
 
 /** Commands that work on a product, and on a design repo: each runs from anywhere inside one, as git does. */
-const IN_A_PRODUCT = new Set(["system", "link", "unlink", "show", "where", "bom", "check", "baseline", "rules", "plan", "migrate", "upgrade", "sync", "scan", "watch", "hooks", "agents", "mcp", "ui", "library", "render", "screens", "requests"]);
+const IN_A_PRODUCT = new Set(["system", "link", "unlink", "show", "where", "bom", "check", "behave", "baseline", "rules", "plan", "migrate", "upgrade", "sync", "scan", "watch", "hooks", "agents", "mcp", "ui", "library", "render", "screens", "requests"]);
 const IN_A_DESIGN_REPO = new Set(["build", "parity"]);
 
 /**

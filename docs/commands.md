@@ -316,6 +316,36 @@ Anywhere else, the same line in the head of the page the app serves in developme
 unless the hub frames the page on this machine. Loaded later (the one-line way above), commenting
 works and Edit says why it can't.
 
+## Behaviour probes (`youiyoux behave`)
+
+Behaviour rules (`check: { engine: behaviour, id: <check> }`) say how popups behave: menus,
+comboboxes, modal dialogs and popovers, after the WAI-ARIA Authoring Practices. The code scan can't
+see them; `youiyoux behave [--route /x]` checks them in the running dev app, in headless Chromium:
+
+- **It needs consent for one address.** `.youi/screens/screens.json` (from `youiyoux screens
+  capture`) says where the app runs; probing is switched on for exactly that origin, on this machine
+  and over http: add `"behaviour": { "allowedOrigin": "http://localhost:5173" }` (base's origin)
+  to screens.json. Without it, `behave` refuses: "Probes click buttons that open menus and dialogs in your
+  running app. Use a dev app with test data." Moving `base` elsewhere switches it off.
+- **What it does.** On every route screens.json lists (or those in `behaviour.routes`), or the one
+  given, it finds popup triggers by their ARIA markers (and contract bindings), and for each check a
+  fresh page: it clicks the trigger only, identifies the popup, and runs the check. It sends no
+  writes, reaches no other address, opens no windows and, once the trigger is clicked, lets only the
+  page's own static files load (a popup tested with its data blocked says so).
+- **What it decides.** `dismiss-escape` for now: with focus inside the popup (or on the combobox),
+  one Esc must close it within 1.5 s. Every other check opens the popup and reports *incomplete*
+  ("this youiyoux doesn't decide … yet"), never a pass.
+- **Runs are kept** in `.youi/behaviour/<route-hash>.json`. `youiyoux check` reads them: a behaviour
+  rule has run only when every route has a fresh, complete result, and a fresh failure counts as an
+  error (or warning) like any violation, filtered by `--rule` and `--quiet`. A baseline never accepts
+  a behaviour failure. A result is stale, and not counted, once any scanned source file, CSS,
+  package.json or the lockfile, the rule, youiyoux, screens.json's behaviour settings or the screen's
+  path, or the viewport changes: run `behave` again. `check --diff` lists fresh failures as
+  `behaviour` findings, by popup (route, pattern, component, name), not by line.
+- **Exit codes.** 1 when a rule of error severity fails or anything couldn't be decided, else 0.
+  `--format github` annotates failures on their trigger's line when it is known and writes the job
+  summary; `--json` prints every route's run.
+
 ## The local index
 
 Large, derived data lives in one store (`packages/store`): Discover listings, their signals and licences, every inventory run, and a graph of what uses what. Decisions (tokens, contracts, rules, adopted Library items, approvals) stay in git and are never kept there; everything in the store is rebuilt from files youi already writes.

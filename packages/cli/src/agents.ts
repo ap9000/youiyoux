@@ -66,8 +66,12 @@ const unchecked = (rules: readonly RuleSpec[]): RuleSpec[] => rules.filter((r) =
 /** Behaviour rules: a probe run in the running app checks them, never `youiyoux check` on code. */
 const behavioural = (rules: readonly RuleSpec[]): RuleSpec[] => rules.filter((r) => ruleCapability(r).state === "probe");
 
-/** How an agent verifies a behaviour rule. `behave` is not shipped yet, so it says so rather than implying the rule was checked. */
-const BEHAVIOUR_VERIFY = "a behaviour rule, which `youiyoux check` cannot see in code: verify it with `youiyoux behave --route <route>` (or `ui_behave`), coming in a later youiyoux; until then check it yourself with the keyboard (Esc, Tab, arrow keys)";
+/**
+ * How an agent verifies a behaviour rule: `youiyoux behave` exists; it decides dismiss-escape only so
+ * far, so the rest are still checked by hand (said, never implied as checked). MCP `ui_behave` isn't
+ * there yet, so it isn't named.
+ */
+const BEHAVIOUR_VERIFY = "a behaviour rule, which `youiyoux check` cannot see in code: verify it with `youiyoux behave --route <route>` against the running dev app (once probing is switched on for it), then `youiyoux check` counts the fresh result; `behave` decides dismiss-escape so far, so check the others yourself with the keyboard (Esc, Tab, arrow keys)";
 
 export interface UnknownToolMention {
   readonly rule: string;
