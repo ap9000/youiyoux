@@ -93,6 +93,27 @@ export interface ReturnFacts {
   readonly name: string;
 }
 
+/** Where effective focus is against a dialog's tabbable elements (focus-trap). */
+export type TrapAt = { readonly kind: "tabbable"; readonly i: number } | { readonly kind: "popup" | "inside" | "body" | "away" | "outside"; readonly role: string; readonly name: string };
+
+/**
+ * A modal dialog's focus facts (focus-trap): whether it is modal (a native <dialog> shown with
+ * showModal(), or role dialog/alertdialog with aria-modal="true"), what would stop the check (a
+ * popup open inside it, a frame, a radio group with nothing chosen), its tabbable elements in Tab
+ * order (role and name, for the words), where focus is, and whether that list changed since the
+ * first look.
+ */
+export interface TrapFacts {
+  readonly open: boolean;
+  readonly modal: "native" | "aria" | null;
+  readonly nested: string | null;
+  readonly frame: boolean;
+  readonly radio: boolean;
+  readonly tabbables: ReadonlyArray<{ readonly role: string; readonly name: string }>;
+  readonly at: TrapAt;
+  readonly stale: boolean;
+}
+
 /** Whether effective focus is where a key is sent from: already there, moved there by the probe (focus(), never a click or a key), or not placeable. */
 export type FocusPlaced = { readonly ok: true; readonly moved: boolean } | { readonly ok: false };
 
@@ -111,7 +132,7 @@ export function isolatedLibrary(): void {
   type Pattern = "menu-button" | "combobox-listbox" | "modal-dialog" | "popover";
   const ROLE: Record<Pattern, string> = { "menu-button": '[role="menu"]', "combobox-listbox": '[role="listbox"]', "modal-dialog": 'dialog,[role="dialog"],[role="alertdialog"]', popover: "[popover]" };
   const POPUP = '[role="menu"],[role="listbox"],[role="dialog"],[role="alertdialog"],[role="tooltip"],dialog,[popover]';
-  const state = { elements: [] as Element[], before: [] as Element[], clicked: null as EventTarget | null, watching: false, popup: null as Element | null, popupId: null as string | null, popupRole: null as string | null, atKey: [] as Element[] };
+  const state = { tabbables: [] as Element[], elements: [] as Element[], before: [] as Element[], clicked: null as EventTarget | null, watching: false, popup: null as Element | null, popupId: null as string | null, popupRole: null as string | null, atKey: [] as Element[] };
   const all = (): Element[] => {
     const out: Element[] = [];
     const collect = (root: Document | ShadowRoot): void => {
@@ -275,6 +296,38 @@ export function isolatedLibrary(): void {
     if (at && popup && at === popup) return { open, at: "popup", ...of(at) };
     if (at && popup && ancestors(at).includes(popup)) return { open, at: ITEM_ROLES.includes(at.getAttribute("role") ?? "") ? "item" : "inside", ...of(at) };
     return { open, at: "outside", ...of(at ?? active) };
+  };
+  const TABBABLE = 'a[href],area[href],button,input,select,textarea,summary,iframe,audio[controls],video[controls],[tabindex],[contenteditable]:not([contenteditable="false"])';
+  /** Tab can reach it: connected, rendered and visible, not inert. (aria-hidden doesn't take an element out of Tab order.) */
+  const reachable = (element: Element): boolean => element.isConnected && (element as HTMLElement).checkVisibility?.({ visibilityProperty: true }) !== false && ![element, ...ancestors(element)].some((e) => e.hasAttribute("inert"));
+  /**
+   * The elements inside `root` (shadow roots included) Tab moves through, in Tab order (positive
+   * tabindex first, then document order); a frame inside, or a named radio group with nothing
+   * chosen (whose Tab stop depends on the direction), is reported instead of guessed.
+   */
+  const tabbablesIn = (root: Element): { list: Element[]; frame: boolean; radio: boolean } => {
+    const found: Element[] = [];
+    const collect = (node: Element | ShadowRoot): void => {
+      for (const element of node.querySelectorAll("*")) {
+        if (element.matches(TABBABLE) && !element.matches(":disabled") && !(element.localName === "input" && (element as HTMLInputElement).type === "hidden") && (element as HTMLElement).tabIndex >= 0 && reachable(element)) found.push(element);
+        if (element.shadowRoot) collect(element.shadowRoot);
+      }
+    };
+    collect(root);
+    if (root.shadowRoot) collect(root.shadowRoot);
+    let radio = false;
+    const groups = new Map<string, HTMLInputElement[]>();
+    for (const element of found) if (element.localName === "input" && (element as HTMLInputElement).type === "radio" && (element as HTMLInputElement).name) groups.set((element as HTMLInputElement).name, [...(groups.get((element as HTMLInputElement).name) ?? []), element as HTMLInputElement]);
+    const dropped = new Set<Element>();
+    for (const group of groups.values()) {
+      if (group.length < 2) continue;
+      const checked = group.find((r) => r.checked);
+      if (!checked) radio = true;
+      for (const r of group) if (r !== checked) dropped.add(r);
+    }
+    const list = found.filter((element) => !dropped.has(element));
+    const positive = list.filter((element) => (element as HTMLElement).tabIndex > 0).sort((a, b) => (a as HTMLElement).tabIndex - (b as HTMLElement).tabIndex);
+    return { list: [...positive, ...list.filter((element) => (element as HTMLElement).tabIndex === 0)], frame: list.some((element) => element.localName === "iframe"), radio };
   };
   /** The popup identified: the element itself, its id and its role, to judge it (and anything replacing it) later. */
   const remember = (popup: Element): void => {
@@ -447,6 +500,47 @@ export function isolatedLibrary(): void {
       if (at && named.some((element) => element === at || ancestors(at).includes(element))) return { trigger: connected, at: "part", role: at.getAttribute("role") ?? at.localName, name: accessibleName(at) };
       return { trigger: connected, at: facts.at, role: facts.role, name: facts.name };
     },
+    /**
+     * The identified dialog's focus-trap facts (TrapFacts). `first`: this look's tabbable list is
+     * the one later looks are held to (any change since is `stale`).
+     */
+    trap(wanted: { readonly first: boolean }): TrapFacts {
+      const popup = state.popup;
+      const none: TrapFacts = { open: false, modal: null, nested: null, frame: false, radio: false, tabbables: [], at: { kind: "outside", role: "none", name: "" }, stale: false };
+      if (!popup) return none;
+      const open = popup.isConnected && shown(popup);
+      const modal = popup.localName === "dialog" ? (popup.matches(":modal") ? "native" : null) : (popup.getAttribute("role") === "dialog" || popup.getAttribute("role") === "alertdialog") && popup.getAttribute("aria-modal") === "true" ? "aria" : null;
+      const nestedEl = [...popup.querySelectorAll(POPUP)].find((element) => element.getAttribute("role") !== "tooltip" && shown(element));
+      const { list, frame, radio } = tabbablesIn(popup);
+      if (wanted.first) state.tabbables = list;
+      const stale = list.length !== state.tabbables.length || list.some((element, i) => element !== state.tabbables[i]);
+      const of = (element: Element | null): { role: string; name: string } => ({ role: element ? (element.getAttribute("role") ?? element.localName) : "none", name: element ? accessibleName(element) : "" });
+      let at: TrapAt;
+      const active = deepActive();
+      const focused = effectiveFocus() ?? active;
+      if (!document.hasFocus()) at = { kind: "away", ...of(null) };
+      else if (!active || active === document.body || active === document.documentElement) at = { kind: "body", ...of(active) };
+      else if (focused && state.tabbables.includes(focused)) at = { kind: "tabbable", i: state.tabbables.indexOf(focused) };
+      else if (focused === popup) at = { kind: "popup", ...of(focused) };
+      else if (focused && ancestors(focused).includes(popup)) at = { kind: "inside", ...of(focused) };
+      else at = { kind: "outside", ...of(focused) };
+      return { open, modal, nested: nestedEl ? (nestedEl.getAttribute("role") ?? nestedEl.localName) : null, frame, radio, tabbables: state.tabbables.map((element) => of(element)), at, stale };
+    },
+    /**
+     * Focus on one of the dialog's tabbable elements before Tab is pressed: where the app put it is
+     * kept; else focus() on the first; with none, on the dialog itself (it must keep focus).
+     */
+    trapPlace(): FocusPlaced {
+      const popup = state.popup;
+      if (!popup || !popup.isConnected) return { ok: false };
+      const placed = (): boolean => {
+        const at = effectiveFocus();
+        return state.tabbables.length > 0 ? !!at && state.tabbables.includes(at) : !!at && (at === popup || ancestors(at).includes(popup));
+      };
+      if (placed()) return { ok: true, moved: false };
+      ((state.tabbables[0] ?? popup) as HTMLElement).focus?.({ preventScroll: true });
+      return placed() ? { ok: true, moved: true } : { ok: false };
+    },
     /** Where effective focus is now, against the trigger and the popup identified last; nothing is moved. */
     focus(wanted: { readonly index: number }): FocusFacts {
       return focusFacts(state.elements[wanted.index], state.popup);
@@ -455,10 +549,11 @@ export function isolatedLibrary(): void {
      * Immediately before a key: the very popup identified (the same element, never one found again)
      * is still connected and showing, and effective focus is still inside it (or on the combobox).
      */
-    ready(wanted: { readonly index: number; readonly pattern: Pattern }): boolean {
+    ready(wanted: { readonly index: number; readonly pattern: Pattern; readonly away?: boolean }): boolean {
       const trigger = state.elements[wanted.index];
       const popup = state.popup;
-      const ok = !!trigger && !!popup && popup.isConnected && shown(popup) && focusPlaced(trigger, popup, wanted.pattern);
+      // away: the key goes while focus is in the browser's own toolbar (a native modal's Tab wraps through it).
+      const ok = !!trigger && !!popup && popup.isConnected && shown(popup) && (focusPlaced(trigger, popup, wanted.pattern) || (wanted.away === true && !document.hasFocus()));
       // What of its kind shows at the moment the key goes (or would go): anything showing later is new.
       if (ok) state.atKey = all().filter((element) => ofKind(element, wanted.pattern) && shown(element));
       return ok;

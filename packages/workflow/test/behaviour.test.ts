@@ -109,7 +109,7 @@ describe("consent", () => {
 
 describe("only a decided check is stored passed or failed", () => {
   /** A probe that says it decided `check` (no browser): what the storage guards must refuse unless the check is decided. */
-  const saying = (check: "dismiss-escape" | "focus-trap" | "trigger-state", state: "passed" | "failed", keys?: readonly string[]) =>
+  const saying = (check: "dismiss-escape" | "arrow-keys" | "trigger-state", state: "passed" | "failed", keys?: readonly string[]) =>
     (async ({ route }: { route: string }) => ({
       url: "http://127.0.0.1:9/x",
       state: "probed" as const,
@@ -122,7 +122,7 @@ describe("only a decided check is stored passed or failed", () => {
   test("a pass or fail for a check this youiyoux doesn't decide is refused, and nothing is stored; dismiss-escape's is kept", async () => {
     const root = product("decided-guard", { base: "http://127.0.0.1:9", behaviour: { allowedOrigin: "http://127.0.0.1:9" } }, [{ route: "/x", path: "/x" }]);
     for (const state of ["passed", "failed"] as const) {
-      expect(await refusal(probeBehaviour({ root, route: "/x", browser: NO_BROWSER, checks: [{ rule: "youi:demo/rule/dialogs-trap", check: "focus-trap", digest: "0123456789ab" }], fingerprint: FINGERPRINT, probe: saying("focus-trap", state) }))).toMatch(/doesn't decide/);
+      expect(await refusal(probeBehaviour({ root, route: "/x", browser: NO_BROWSER, checks: [{ rule: "youi:demo/rule/menus-arrows", check: "arrow-keys", digest: "0123456789ab" }], fingerprint: FINGERPRINT, probe: saying("arrow-keys", state) }))).toMatch(/doesn't decide/);
       expect(existsSync(join(root, behaviourFile("/x")))).toBe(false);
     }
     const kept = await probeBehaviour({ root, route: "/x", browser: NO_BROWSER, checks: [{ rule: "youi:demo/rule/menus-close", check: "dismiss-escape", digest: "0123456789ab" }], fingerprint: FINGERPRINT, probe: saying("dismiss-escape", "failed") });

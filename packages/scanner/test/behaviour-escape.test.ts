@@ -26,9 +26,9 @@ test.runIf(GATE && !HAVE_CHROMIUM)("security gate: dismiss-escape's browser test
 });
 
 describe("safe keys", () => {
-  test("only Escape may be sent: every other key is refused before anything is sent", () => {
-    expect(() => assertSafeKey("Escape")).not.toThrow();
-    for (const key of ["Enter", " ", "Space", "Tab", "ArrowDown", "a", "Shift+Tab", "escape"]) expect(() => assertSafeKey(key), key).toThrow(/sends only Escape/);
+  test("only the safe keys a check needs may be sent: Enter, Space, typing and anything else are refused before anything is sent", () => {
+    for (const key of ["Escape", "Tab", "Shift+Tab"]) expect(() => assertSafeKey(key), key).not.toThrow();
+    for (const key of ["Enter", " ", "Space", "ArrowDown", "a", "escape", "Shift+Enter"]) expect(() => assertSafeKey(key), key).toThrow(/sends only Escape, Tab, Shift\+Tab/);
   });
 });
 

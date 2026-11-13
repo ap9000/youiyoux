@@ -7,7 +7,7 @@
 import { cleanText, pageText, type BehaviourCheckId, type BehaviourPattern, type PartRef } from "@youiyoux/core";
 import { describeUrl, SIGN_IN_FIX, SIGN_IN_PATH, SIGN_IN_WORDS } from "./guards.ts";
 import { ambiguousWords, matchTarget, type TargetKey } from "./identity.ts";
-import type { FocusFacts, FocusPlaced, FoundTarget, PopupFound, ReturnFacts, TriggerFacts } from "./in-page.ts";
+import type { FocusFacts, FocusPlaced, FoundTarget, PopupFound, ReturnFacts, TrapFacts, TriggerFacts } from "./in-page.ts";
 
 /** What the guards refused (or, for sockets, blocked) while a page was open, and when. */
 export interface GuardEvent {
@@ -43,8 +43,15 @@ export interface ProbePage {
   returnFocus(index: number, part: PartRef | null): Promise<ReturnFacts>;
   /** Effective focus inside the popup `identify` found last (or on the combobox), moved there with focus() if it isn't. */
   placeFocus(index: number, pattern: BehaviourPattern): Promise<FocusPlaced>;
-  /** The very popup identified is still connected and showing, with effective focus inside it (or on the combobox). */
-  ready(index: number, pattern: BehaviourPattern): Promise<boolean>;
+  /**
+   * The very popup identified is still connected and showing, with effective focus inside it (or on
+   * the combobox); with `away`, focus may instead be in the browser's own toolbar (a native modal's Tab wraps through it).
+   */
+  ready(index: number, pattern: BehaviourPattern, away?: boolean): Promise<boolean>;
+  /** The identified dialog's focus-trap facts; `first` fixes the tabbable list later looks are held to. */
+  trap(first: boolean): Promise<TrapFacts>;
+  /** Focus on one of the dialog's tabbable elements (kept where the app put it, else focus() on the first; with none, the dialog itself). */
+  trapPlace(): Promise<FocusPlaced>;
   /** The identified popup's state, judged on that element (a removed one reconciled by identity); unknown is never closed. */
   popupState(index: number, pattern: BehaviourPattern, popup: PartRef | null): Promise<"open" | "closed" | "unknown">;
   /**
@@ -59,11 +66,11 @@ export interface ProbePage {
 }
 
 /**
- * The only keys a probe may send, in this youiyoux: Escape (dismiss-escape). The plan's other safe
- * keys (Tab, Shift+Tab, arrows, Home, End) are added with the checks that need them; Enter, Space
- * and typing never are.
+ * The only keys a probe may send, in this youiyoux: Escape (dismiss-escape, focus-return), Tab and
+ * Shift+Tab (focus-trap). The plan's other safe keys (arrows, Home, End) are added with the check
+ * that needs them; Enter, Space and typing never are.
  */
-export const SAFE_KEYS = ["Escape"] as const;
+export const SAFE_KEYS = ["Escape", "Tab", "Shift+Tab"] as const;
 export type SafeKey = (typeof SAFE_KEYS)[number];
 
 /**
@@ -76,7 +83,7 @@ export const CHECK_KEYS: Readonly<Record<BehaviourCheckId, readonly SafeKey[]>> 
   "dismiss-escape": ["Escape"],
   "focus-into": [],
   "focus-return": ["Escape"],
-  "focus-trap": [],
+  "focus-trap": ["Tab", "Shift+Tab"],
   "arrow-keys": [],
 };
 

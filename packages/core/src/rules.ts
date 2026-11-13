@@ -75,7 +75,7 @@ export const BEHAVIOUR_CHECKS: Readonly<Record<BehaviourCheck, { readonly descri
  * other check's popup is opened and identified, and the result is `incomplete` ("this youiyoux
  * doesn't decide <check> yet"). A stored pass or fail for any other check is not counted.
  */
-export const DECIDED_BEHAVIOUR_CHECKS: readonly BehaviourCheck[] = ["trigger-state", "dismiss-escape", "focus-into", "focus-return"];
+export const DECIDED_BEHAVIOUR_CHECKS: readonly BehaviourCheck[] = ["trigger-state", "dismiss-escape", "focus-into", "focus-return", "focus-trap"];
 export const decidesBehaviour = (check: string): boolean => (DECIDED_BEHAVIOUR_CHECKS as readonly string[]).includes(check);
 
 /**
