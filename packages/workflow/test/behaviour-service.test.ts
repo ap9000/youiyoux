@@ -119,7 +119,9 @@ describe("reading results", () => {
   });
 });
 
-// The scanner's own filter, with real Chromium: only the picked popup is clicked.
+// The scanner's own filter (production probeRoute `only`), with real Chromium: only the picked
+// component's popup is opened. The scope stand-in elsewhere copies the filter; this proves the real
+// one, and CI (YOUI_SECURITY_GATE=1) can't skip it.
 const MISSING = await launchBrowser(process.env.YOUI_CHROMIUM, { download: false }).then(
   async (browser) => {
     await browser.close();
@@ -127,13 +129,19 @@ const MISSING = await launchBrowser(process.env.YOUI_CHROMIUM, { download: false
   },
   (error: unknown) => (error instanceof Error ? error.message : String(error)).split("\n")[0]!,
 );
-if (MISSING) console.warn(`behaviour service browser test skipped: ${MISSING}`);
+const GATE = process.env.YOUI_SECURITY_GATE === "1";
+if (MISSING) console.warn(`behaviour service browser test ${GATE ? "FAILS" : "skipped"}: ${MISSING}`);
+test.runIf(GATE && MISSING !== null)("security gate: a component's run needs Chromium to be shown", () => {
+  throw new Error(`YOUI_SECURITY_GATE is set and Chromium couldn't be launched (${MISSING}): nothing was tested`);
+});
 describe.skipIf(MISSING !== null)("a component's run in a real browser", () => {
   let app: Server;
   let base = "";
   const opened: string[] = [];
-  const MENU = (name: string, id: string) =>
-    `<button aria-haspopup="menu" aria-expanded="false" aria-controls="${id}" onclick="new Image().src='/opened-${id}';const m=document.getElementById('${id}');m.hidden=false;m.querySelector('li').focus()">${name}</button><ul role="menu" id="${id}" hidden onkeydown="if (event.key === 'Escape') this.hidden = true"><li role="menuitem" tabindex="-1">Item</li></ul>`;
+  /** A menu whose button React-looking fiber names its component, as the hub's pick names it. */
+  const MENU = (name: string, id: string, component: string) =>
+    `<button id="b-${id}" aria-haspopup="menu" aria-expanded="false" aria-controls="${id}" onclick="new Image().src='/opened-${id}';const m=document.getElementById('${id}');m.hidden=false;m.querySelector('li').focus()">${name}</button><ul role="menu" id="${id}" hidden onkeydown="if (event.key === 'Escape') this.hidden = true"><li role="menuitem" tabindex="-1">Item</li></ul>` +
+    `<script>document.getElementById("b-${id}")["__reactFiber$x"] = { tag: 5, type: "button", return: { tag: 0, type: function ${component}() {}, return: null } };</script>`;
   beforeAll(async () => {
     app = createServer((req, res) => {
       if (req.url?.startsWith("/opened-")) {
@@ -141,23 +149,24 @@ describe.skipIf(MISSING !== null)("a component's run in a real browser", () => {
         return void res.writeHead(200, { "content-type": "image/gif" }).end();
       }
       if (req.url !== "/x") return void res.writeHead(404).end();
-      res.writeHead(200, { "content-type": "text/html" }).end(`<!doctype html><meta charset="utf-8"><body>${MENU("Open", "a")}${MENU("Stuck", "b")}</body>`);
+      res.writeHead(200, { "content-type": "text/html" }).end(`<!doctype html><meta charset="utf-8"><body>${MENU("Open", "a", "UserMenu")}${MENU("Stuck", "b", "Toolbar")}</body>`);
     });
     await new Promise<void>((done) => app.listen(0, "127.0.0.1", done));
     base = `http://127.0.0.1:${(app.address() as { port: number }).port}`;
   });
   afterAll(() => app?.close());
 
-  test("only the chosen popup is opened; the other is listed as not tested in this run", async () => {
+  test("Run on this component opens only that component's popup; the other is listed as not tested in this run", async () => {
     s.screens({ allowedOrigin: base, generation: 1 }, base);
     try {
       const project = await loadProject(s.box.project, { designRoot: s.box.design });
       const real: BehaviourSetup = { tool: TOOL, browser: () => launchBrowser(process.env.YOUI_CHROMIUM, { download: false }) };
-      const { run } = await (await runBehaviour(project, real, { route: "/x", target: { component: null, accessibleName: "Open" }, by: "person" })).done;
+      const { run } = await (await runBehaviour(project, real, { route: "/x", target: { component: "UserMenu" }, by: "person" })).done;
+      expect(run.targets.map((t) => t.component).sort()).toEqual(["Toolbar", "UserMenu"]);
       expect(new Set(opened)).toEqual(new Set(["a"]));
-      expect(run.results.find((r) => r.target.accessibleName === "Open")).toMatchObject({ state: "passed" });
-      expect(run.results.find((r) => r.target.accessibleName === "Stuck")).toMatchObject({ state: "incomplete", why: "not tested in this run: it probed only the popup 'Open' in plain markup (no component)" });
-      expect(run.coverage).toMatch(/this run tested only the popup 'Open' in plain markup \(no component\) \(1\)/);
+      expect(run.results.find((r) => r.target.component === "UserMenu")).toMatchObject({ state: "passed" });
+      expect(run.results.find((r) => r.target.component === "Toolbar")).toMatchObject({ state: "incomplete", why: "not tested in this run: it probed only the popups of 'UserMenu'" });
+      expect(run.coverage).toMatch(/this run tested only the popups of 'UserMenu' \(1\)/);
     } finally {
       s.consentOn();
     }
