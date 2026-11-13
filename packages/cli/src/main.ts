@@ -6,7 +6,7 @@ import { appendFile, readFile, rm, rmdir } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { parseArgs, promisify, type ParseArgsConfig } from "node:util";
 import { parse as parseYaml } from "yaml";
-import { DefinitionError, DESIGN_CONFIG_FILE, findUp, getSystem, loadDesignRepo, loadLibrary, MigrationSpec, OutputConfig, PACKAGE_NAME, renderJsonSchemas, safeId, writeFileAtomic, InventoryReport, type ScanReport } from "@youiyoux/core";
+import { DefinitionError, DESIGN_CONFIG_FILE, findUp, getSystem, loadDesignRepo, loadLibrary, MigrationSpec, normalizeProjectConfig, OutputConfig, PACKAGE_NAME, ProjectConfig, readDefinition, renderJsonSchemas, safeId, writeFileAtomic, InventoryReport, type ScanReport } from "@youiyoux/core";
 import { buildGaps, candidateSource, declaredPackages, expandAll, listRegistries, MissingIndexError, REGISTRY_SORTS, selectSources, discoverCacheDir, discoverIndexPath, ingestCatalog, readCatalog, searchCatalog, sharedStore, showFromCatalog, syncIndex, type Fetcher } from "@youiyoux/discover";
 import { indexHome, storeLocation } from "@youiyoux/store";
 import { buildTokens, compareParity } from "@youiyoux/tokens";
@@ -726,11 +726,16 @@ async function cmdRulesAdd(values: Values, name: string | undefined): Promise<nu
 async function rulesTarget(values: Values): Promise<RulePackTarget & { readonly product: boolean }> {
   const product = values.project !== undefined || values.config !== undefined || values.root !== undefined || existsSync(join(process.cwd(), PROJECT_FILE));
   if (product) {
-    const p = await project(values);
-    if (!p.designOverride && !p.linked && !("path" in p.config.source)) {
-      const from = "package" in p.config.source ? `the npm package ${p.config.source.package}` : `the git repository ${p.config.source.git}`;
-      throw new Error(`${p.system.config.name} comes from ${from}, which isn't edited here: add the rules in its own repository (youiyoux rules add there), or link your checkout of it first (youiyoux link <dir>)`);
+    // Where the System comes from is told from the config, the override and the link alone, before
+    // anything is resolved: a package or git source is refused without fetching or caching it.
+    const configFile = resolve(values.config ?? join(resolve(values.project ?? process.cwd()), PROJECT_FILE));
+    const config = normalizeProjectConfig(await readDefinition(configFile, ProjectConfig));
+    const productRoot = values.root !== undefined ? resolve(values.root || ".") : config.root ? resolve(dirname(configFile), config.root) : resolve(values.project ?? process.cwd());
+    if (!values.design && !("path" in config.source) && !(await linkedDesign(productRoot))) {
+      const from = "package" in config.source ? `the npm package ${config.source.package}` : `the git repository ${config.source.git}`;
+      throw new Error(`the System ${config.system} comes from ${from}, which isn't edited here: add the rules in its own repository (youiyoux rules add there), or link your checkout of it first (youiyoux link <dir>); nothing was fetched or written`);
     }
+    const p = await project(values);
     return { root: p.repo.root, system: p.system, product: true };
   }
   const design = values.design ?? findUp(process.cwd(), DESIGN_CONFIG_FILE);

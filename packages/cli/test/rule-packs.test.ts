@@ -146,6 +146,20 @@ describe("youiyoux rules add", () => {
     expect(await rulesIn(join(design, "rules"))).toEqual(expect.arrayContaining(SIX));
   });
 
+  test("a git source is refused before anything is resolved: nothing fetched, the systems cache untouched, with or without --dry-run", async () => {
+    const cache = join(dir, "systems-cache");
+    vi.stubEnv("YOUI_SYSTEMS_CACHE", cache);
+    const config = JSON.parse(await readFile(join(app, "youi.project.json"), "utf8")) as Record<string, unknown>;
+    await writeFile(join(app, "youi.project.json"), JSON.stringify({ ...config, source: { git: `file://${join(dir, "no-such-design.git")}`, ref: "v1" } }));
+    for (const dry of [[], ["--dry-run"]]) {
+      expect(await run("rules", "add", "behaviour", "--project", app, ...dry)).toBe(1);
+      expect(err).toContain(`the System demo comes from the git repository file://${join(dir, "no-such-design.git")}, which isn't edited here`);
+      expect(err).toContain("nothing was fetched or written");
+      await expect(readdir(cache)).rejects.toThrow();
+    }
+    vi.unstubAllEnvs();
+  });
+
   test("in a design repo it adds to that repo's System; a rules folder that leads outside it is refused", async () => {
     const outside = join(dir, "elsewhere");
     await mkdir(outside);
