@@ -410,7 +410,7 @@ Accepted residuals:
 4. A deliberate forgery of `.youi/` by a process on the same account is out of scope: freshness proves inputs,
    integrity proves completeness, neither proves authenticity.
 
-## Slice 3 review record (2026-11-12)
+## Slice 3 review record (2026-11-12, residuals accepted by Alex)
 
 The five remaining checks were built (trigger-state, focus-into, focus-return, focus-trap,
 arrow-keys), each in its own fresh scenario, sending only its own keys (CHECK_KEYS; the page
