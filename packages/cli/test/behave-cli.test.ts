@@ -40,7 +40,12 @@ let base = "";
 const requests: string[] = [];
 const MENU = (id: string, closes: boolean) =>
   `<button aria-haspopup="menu" aria-expanded="false" aria-controls="${id}" onclick="const m=document.getElementById('${id}');m.hidden=false;m.querySelector('li').focus()">Actions</button><ul role="menu" id="${id}" hidden onkeydown="${closes ? "if (event.key === 'Escape') this.hidden = true" : ""}"><li role="menuitem" tabindex="-1">Rename</li></ul>`;
-const PAGES: Record<string, string> = { "/": MENU("m1", true), "/settings": MENU("m2", false) };
+const PAGES: Record<string, string> = {
+  "/": MENU("m1", true),
+  "/settings": MENU("m2", false),
+  // A button whose aria-controls names a dialog that mounts only on the click: can't be told from a disclosure, so never clicked.
+  "/lazy": `<button aria-expanded="false" aria-controls="later" onclick="new Image().src='/clicked'">Filters</button>`,
+};
 
 beforeAll(async () => {
   server = createServer((req, res) => {
@@ -169,5 +174,22 @@ describe.skipIf(!HAVE_CHROMIUM)("youiyoux behave in a real browser", () => {
     await writeFile(join(app, "app/settings/index.tsx"), `${await readFile(join(app, "app/settings/index.tsx"), "utf8")}\n// edited\n`);
     expect(await run("check", "--rule", "popup.escape", "--json")).toBe(1);
     expect(JSON.parse(out)).toMatchObject({ errors: 0, incomplete: true, behaviour: [] });
+  }, 120_000);
+
+  test("a candidate whose aria-controls names nothing yet is kept and incomplete: behave and check stay incomplete, never clean, and nothing is clicked", async () => {
+    await screens(true, [{ route: "/lazy", path: "/lazy" }]);
+    const before = requests.length;
+    expect(await run("behave")).toBe(1);
+    const text = plain(out);
+    expect(text).toContain("1 of them names with aria-controls an element that isn't on the page until it opens, so it couldn't be tested.");
+    expect(text).toContain("the element its aria-controls names isn't on the page until it opens, so youiyoux can't tell whether it's a popup; it wasn't clicked");
+    expect(text).not.toContain("No declared popups found");
+    expect(requests.slice(before)).not.toContain("GET /clicked");
+    const stored = JSON.parse(await readFile(join(app, behaviourFile("/lazy")), "utf8")) as { targets: unknown[]; results: Array<{ state: string }> };
+    expect(stored.targets).toHaveLength(1);
+    expect(stored.results.map((r) => r.state)).toEqual(["incomplete"]);
+    // check reads the stored run: the route is incomplete for the rule, never a pass.
+    expect(await run("check", "--rule", "popup.escape", "--json")).toBe(1);
+    expect(JSON.parse(out)).toMatchObject({ errors: 0, incomplete: true, notRun: [{ rule: "youi:demo/rule/popup.escape", state: "incomplete" }] });
   }, 120_000);
 });

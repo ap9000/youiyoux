@@ -467,8 +467,14 @@ filed or last reopened, under the rules as they are then. A person still closes 
   that moves only later than the probe waits (about 400 ms after a key, plus a 250 ms grace moment)
   may be missed.
 - **Horizontal menus, submenus and lists over 50 items** aren't checked yet; nor are disclosures (a
-  button with `aria-expanded` and `aria-controls` that folds a section of the page open): only a
-  button whose `aria-controls` names a native popover, a menu, a listbox or a dialog is a popover.
+  button with `aria-expanded` and `aria-controls` naming a panel of the page with no popup role): they
+  aren't clicked, and the screen's coverage counts them ("N buttons show and hide panels with no
+  popup role; they weren't assessed"), so a screen of them never reads as having no popups.
+- **A popup that mounts only when opened, with no `aria-haspopup`.** When a button's
+  `aria-controls` names an element that isn't on the page yet, youiyoux can't tell a popup from a
+  disclosure: the button is kept but never clicked, and each check it could have is *incomplete*,
+  so the screen is never clean. Give it `aria-haspopup` (`menu`, `listbox` or `dialog`) or a
+  contract binding, and it is tested.
 - **One run per screen at a time:** a second run of the same route is refused while one holds it;
   different routes may run at once.
 - A forged `.youi/` written by another process on your account is out of scope: freshness proves

@@ -357,6 +357,8 @@ class Worlds {
 class PlaywrightProbePage implements ProbePage {
   private worldsOpened: Worlds | null = null;
   private found: readonly FoundTarget[] = [];
+  /** Buttons that show and hide a panel with no popup role (disclosures) found by the last findTargets: not targets, but said in the coverage. */
+  disclosures = 0;
   private readonly sent: string[] = [];
 
   private readonly page: Page;
@@ -420,7 +422,7 @@ class PlaywrightProbePage implements ProbePage {
       }
     }
     const isolated = await this.bound(worlds.into("isolated", nominated.map((n) => n.objectId)));
-    const { found } = await this.bound(worlds.call<{ found: IsolatedTarget[] }>("discover", { limit: MAX_FOUND, nominated: nominated.map((n) => ({ binding: n.binding, pattern: bindings[n.binding]!.binding.pattern })) }, isolated));
+    const { found, disclosures } = await this.bound(worlds.call<{ found: IsolatedTarget[]; disclosures: number }>("discover", { limit: MAX_FOUND, nominated: nominated.map((n) => ({ binding: n.binding, pattern: bindings[n.binding]!.binding.pattern })) }, isolated));
     const labelled: FoundTarget[] = [];
     for (const [index, target] of found.entries()) {
       const contract = typeof target.via === "object" ? (bindings[target.via.contract]?.component ?? null) : null;
@@ -437,6 +439,7 @@ class PlaywrightProbePage implements ProbePage {
       labelled.push({ ...target, component, frames: Array.isArray(labels.frames) ? labels.frames : [] });
     }
     this.found = labelled;
+    this.disclosures = typeof disclosures === "number" && Number.isInteger(disclosures) && disclosures >= 0 ? disclosures : 0;
     return labelled;
   }
 
@@ -595,6 +598,12 @@ export async function withGuardedPage<T>(options: { readonly browser: Browser; r
   }
 }
 
+/** A candidate whose aria-controls names nothing on the page yet: never clicked, so every applicable check says why. */
+const UNDECIDED: Stop = {
+  why: "the element its aria-controls names isn't on the page until it opens, so youiyoux can't tell whether it's a popup; it wasn't clicked",
+  fix: "Next: give the button aria-haspopup (menu, listbox or dialog), or declare a contract binding for its component, so it can be tested.",
+};
+
 const untestedWords = (reason: "targets" | "time", budgets: ProbeBudgets): Stop =>
   reason === "targets"
     ? { why: `not tested: this screen has more than ${budgets.targets} popup triggers, and a probe tests the first ${budgets.targets}`, fix: "Next: probe fewer popups per screen (split the screen's routes in screens.json), or list fewer routes under behaviour.routes; or run one component alone from the hub's Behaviour tab." }
@@ -615,6 +624,7 @@ export async function probeRoute(options: ProbeRouteOptions): Promise<RouteProbe
   try {
     // Discovery: what the screen claims, from its own fresh load.
     let found: readonly FoundTarget[];
+    let disclosures = 0;
     const switchedOff = (): RouteProbe => ({ url: start, state: "incomplete", ...SWITCHED_OFF, coverage: "Nothing on this screen was probed.", notes: notes(), targets: [] });
     if (options.signal?.aborted) return switchedOff();
     const discovery = await guarded.page(start, { bindings, budgets, deadline: () => routeDeadline, keys: [] });
@@ -626,6 +636,7 @@ export async function probeRoute(options: ProbeRouteOptions): Promise<RouteProbe
       if (options.signal?.aborted) return switchedOff();
       if (stop) return { url: start, state: "incomplete", why: stop.why, fix: stop.fix, coverage: "Nothing on this screen was probed.", notes: notes(), targets: [] };
       found = await discovery.findTargets();
+      disclosures = discovery.disclosures;
       if (options.signal?.aborted) return switchedOff();
     } catch (error: unknown) {
       if (options.signal?.aborted) return switchedOff();
@@ -655,6 +666,7 @@ export async function probeRoute(options: ProbeRouteOptions): Promise<RouteProbe
         }
         const skip = (stop: Stop): void => void scenarios.push({ check, state: "incomplete", ...stop, info: [] });
         if (!chosen[n]) skip(notChosen!);
+        else if (f.undecided) skip(UNDECIDED);
         else if (order[n]! >= budgets.targets) skip(untestedWords("targets", budgets));
         else if (ambiguous) skip(ambiguousWords(key, keyed.filter((k) => k.ambiguous && k.pattern === key.pattern && k.component === key.component && k.accessibleName === key.accessibleName).length));
         else if (options.signal?.aborted) skip((refusedFrom = SWITCHED_OFF));
@@ -666,9 +678,12 @@ export async function probeRoute(options: ProbeRouteOptions): Promise<RouteProbe
       targets.push({ key, found: f, scenarios });
     }
     const named = found.length >= MAX_FOUND ? `at least ${MAX_FOUND}` : String(found.length);
+    const undecidedCount = found.filter((f) => f.undecided).length;
+    const panels = disclosures === 0 ? "" : ` ${disclosures === 1 ? "1 button shows and hides a panel with no popup role; it wasn't" : `${disclosures} buttons show and hide panels with no popup role; they weren't`} assessed.`;
+    const lazy = undecidedCount === 0 ? "" : ` ${undecidedCount === 1 ? "1 of them names" : `${undecidedCount} of them name`} with aria-controls an element that isn't on the page until it opens, so ${undecidedCount === 1 ? "it couldn't be" : "they couldn't be"} tested.`;
     const coverage = found.length === 0
-      ? "No declared popups found; popups without these markers were not assessed."
-      : `${named} popup trigger${found.length === 1 ? "" : "s"} found by ARIA markers${bindings.length ? " and contract bindings" : ""}${options.only ? `; this run tested only ${options.only.words} (${chosen.filter(Boolean).length})` : found.length > budgets.targets ? `; the first ${budgets.targets} were tested` : ""}. Popups without these markers were not assessed; opening is by mouse click only (keyboard opening isn't verified yet).`;
+      ? `${disclosures === 0 ? "No declared popups found" : "No popups found"}; popups without these markers were not assessed.${panels}`
+      : `${named} popup trigger${found.length === 1 ? "" : "s"} found by ARIA markers${bindings.length ? " and contract bindings" : ""}${options.only ? `; this run tested only ${options.only.words} (${chosen.filter(Boolean).length})` : found.length > budgets.targets ? `; the first ${budgets.targets} were tested` : ""}. Popups without these markers were not assessed; opening is by mouse click only (keyboard opening isn't verified yet).${lazy}${panels}`;
     return { url: start, state: "probed", why: null, fix: null, coverage, notes: notes(), targets };
   } finally {
     await close();

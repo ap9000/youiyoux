@@ -136,6 +136,8 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
       const i = items.indexOf(document.getElementById(cb.getAttribute("aria-activedescendant") || "")); let j = null;
       if (e.key === "ArrowDown") j = i + 1 >= items.length ? 0 : i + 1; else if (e.key === "ArrowUp") j = i - 1 < 0 ? items.length - 1 : i - 1;
       if (j === null) return; e.preventDefault(); cb.setAttribute("aria-activedescendant", o.dangling ? "nope" : o.outside ? "elsewhere" : items[j].id); });`;
+  /** Mounts a nonmodal dialog on the click, focuses inside it; Esc removes it and puts focus back on the button. */
+  const LAZY = `window.lazyOpen = (button, id) => { if (document.getElementById(id)) return; const d = document.createElement("div"); d.id = id; d.setAttribute("role", "dialog"); d.setAttribute("aria-label", "Filters"); d.innerHTML = "<button>Apply</button>"; d.addEventListener("keydown", (e) => { if (e.key !== "Escape") return; d.remove(); button.setAttribute("aria-expanded", "false"); button.focus(); }); document.body.append(d); button.setAttribute("aria-expanded", "true"); d.querySelector("button").focus(); };`;
   const ITEMS = '<li role="menuitem" tabindex="-1">Rename</li><li role="menuitem" tabindex="-1" aria-disabled="true">Archive</li><li role="menuitem" tabindex="-1">Delete</li><li role="menuitem" tabindex="-1">Copy</li>';
   const arrowMenu = (id: string, rove: string, extra = "") => page(menu({ id, open: FIRST(id), items: ITEMS }).replace(`<ul role="menu" id="${id}"`, `<ul role="menu" ${extra} id="${id}"`), `${ROVE} ${rove}`);
   /** A combobox whose listbox is portalled to the end of the body; options 1 and 3 enabled, 2 disabled. */
@@ -172,6 +174,9 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
     "/ts-disclosure": () => page(`<button data-log="trigger-p4" aria-expanded="false" aria-controls="p4" onclick="document.getElementById('p4').hidden=false;this.setAttribute('aria-expanded','true')">Details</button><div id="p4" hidden><p>More about this.</p></div>`),
     // aria-expanded with aria-controls naming nothing yet (rendered only when open): can't be told from a disclosure, so not a target either.
     "/ts-controls-absent": () => page(`<button data-log="trigger-p6" aria-expanded="false" aria-controls="p6">Later</button>`),
+    // A nonmodal dialog that mounts only on the click, named by aria-controls: without aria-haspopup it can't be told from a disclosure; with it, it is tested.
+    "/ts-lazy-dialog": () => page(`<button data-log="trigger-lz" aria-expanded="false" aria-controls="lz" onclick="lazyOpen(this, 'lz')">Filters</button>`, LAZY),
+    "/ts-lazy-dialog-haspopup": () => page(`<button data-log="trigger-lh" aria-haspopup="dialog" aria-expanded="false" aria-controls="lh" onclick="lazyOpen(this, 'lh')">Filters</button>`, LAZY),
     "/ts-dialog": () => page(`<button data-log="trigger-d1" aria-haspopup="dialog" onclick="document.getElementById('d1').showModal()">Settings</button><dialog id="d1"><button>Close</button></dialog>`),
     "/ts-repeated": () => page(menu({ name: "More", id: "r1" }) + menu({ name: "More", id: "r2" })),
     // Page-supplied words that must never reach a result raw.
@@ -566,14 +571,35 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
       expect(result.targets[0]!.scenarios[0]).toMatchObject({ state: "passed", why: "focus moved to the menu item 'Copy sync command youiyoux sync' inside the menu when it opened" });
     }, 60_000);
 
-    test("a disclosure (aria-expanded and aria-controls on a section of the page) is not a popover: not a target, never clicked", async () => {
+    test("a disclosure (aria-expanded and aria-controls on a panel of the page with no popup role) is not a target and never clicked, but the coverage counts it", async () => {
       const clicks = logged("click").length;
-      for (const path of ["/ts-disclosure", "/ts-controls-absent"]) {
-        const result = await probe(path, ["trigger-state", "dismiss-escape"]);
-        expect(result.targets, path).toEqual([]);
-        expect(result.coverage, path).toBe("No declared popups found; popups without these markers were not assessed.");
+      const result = await probe("/ts-disclosure", ["trigger-state", "dismiss-escape"]);
+      expect(result.targets).toEqual([]);
+      expect(result.coverage).toBe("No popups found; popups without these markers were not assessed. 1 button shows and hides a panel with no popup role; it wasn't assessed.");
+      expect(result.coverage).not.toContain("No declared popups found");
+      expect(logged("click").slice(clicks)).toEqual([]);
+    }, 60_000);
+
+    test("aria-controls naming an element that isn't on the page yet (a dialog that mounts on the click) is kept, never clicked, every check it could have incomplete with why", async () => {
+      const clicks = logged("click").length;
+      for (const path of ["/ts-controls-absent", "/ts-lazy-dialog"]) {
+        const result = await probe(path, ["trigger-state", "dismiss-escape", "focus-return", "focus-trap"]);
+        expect(result.targets, path).toHaveLength(1);
+        expect(result.coverage, path).toContain("1 of them names with aria-controls an element that isn't on the page until it opens, so it couldn't be tested.");
+        expect(result.targets[0]!.scenarios.map((x) => [x.check, x.state]), path).toEqual([["trigger-state", "incomplete"], ["dismiss-escape", "incomplete"], ["focus-return", "incomplete"], ["focus-trap", "not-applicable"]]);
+        for (const x of result.targets[0]!.scenarios.filter((y) => y.state === "incomplete")) {
+          expect(x).toMatchObject({ why: "the element its aria-controls names isn't on the page until it opens, so youiyoux can't tell whether it's a popup; it wasn't clicked", fix: "Next: give the button aria-haspopup (menu, listbox or dialog), or declare a contract binding for its component, so it can be tested." });
+        }
       }
       expect(logged("click").slice(clicks)).toEqual([]);
+    }, 60_000);
+
+    test("the same lazily mounted dialog with aria-haspopup=\"dialog\" is tested: opened, identified and decided", async () => {
+      const result = await probe("/ts-lazy-dialog-haspopup", ["dismiss-escape", "focus-return"]);
+      expect(result.targets).toHaveLength(1);
+      expect(result.coverage).not.toContain("couldn't be tested");
+      expect(result.targets[0]!.scenarios.map((x) => [x.check, x.state])).toEqual([["dismiss-escape", "passed"], ["focus-return", "passed"]]);
+      expect(logged("click").filter((c) => c === "trigger-lh").length).toBeGreaterThan(0);
     }, 60_000);
 
     test("repeated identical menus are never told apart by position (incomplete, none clicked); named apart, each is checked", async () => {

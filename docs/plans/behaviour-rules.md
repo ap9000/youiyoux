@@ -555,3 +555,20 @@ Follow-ups (not in this slice):
    `apps/web/src/screens/screens/Offers.tsx`, so `youiyoux check` on the hub's own source is partial.
 4. A trigger rendered by an app-level wrapper outside componentsDir (the hub's RailButton) points at
    that wrapper's line, not where the wrapper is used.
+
+### Slice 5, round 2 (final; Claude verifies, no third Codex round)
+
+Codex round 2: all six round-1 findings closed; one new HIGH from D7, and a minor cleanup. Both
+fixed with regression tests, each shown to fail with its fix mutated:
+
+- (HIGH) Requiring the controlled element at discovery dropped popups that mount on the click: a
+  button with `aria-expanded` and `aria-controls` naming a dialog not yet on the page vanished, and
+  the screen read "No declared popups found". Now such a button is a declared candidate (`undecided`)
+  that is never clicked: it is in the run's targets, and every check it could have is incomplete
+  ("the element its aria-controls names isn't on the page until it opens, so youiyoux can't tell
+  whether it's a popup; it wasn't clicked"; next: aria-haspopup or a contract binding), so `check`
+  and standing hold the route incomplete. A controlled element that is there with no popup role is a
+  disclosure: not a target, but the coverage counts it and never says "No declared popups found".
+  The same lazily mounted dialog with `aria-haspopup="dialog"` is opened, identified and decided.
+- (MINOR) `rules add`'s temp file is written inside the try that removes it, so a write that fails
+  part-way leaves nothing behind (someone else's file at the temp name is never removed).

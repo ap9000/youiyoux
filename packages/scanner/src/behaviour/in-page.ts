@@ -35,6 +35,12 @@ export interface FoundTarget {
   readonly frames: readonly Frame[];
   readonly domPath: string;
   readonly box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number };
+  /**
+   * Claimed only by aria-expanded + aria-controls naming an element that isn't on the page yet: it
+   * may be a popup that mounts on the click or a disclosure, which can't be told, so it is never
+   * clicked and each applicable check is incomplete.
+   */
+  readonly undecided?: true;
 }
 
 /** What isolated-world discovery returns: everything but the main world's labels. */
@@ -268,12 +274,28 @@ export function isolatedLibrary(): void {
     if (popup === "menu" || popup === "true") return "menu-button";
     if (popup === "dialog" || (element.getAttribute("command") === "show-modal" && element.hasAttribute("commandfor")) || isModal(controlled)) return "modal-dialog";
     if (element.hasAttribute("popovertarget")) return "popover";
-    // aria-expanded with aria-controls is a popover only when what it controls is one (a native
-    // popover, or a menu, listbox or dialog); otherwise it is a disclosure (a section that folds
-    // open in the page), which v1 doesn't check, so it is not a target. A controlled element that
-    // isn't there yet can't be told apart from a disclosure's, so it isn't one either.
-    if (element.hasAttribute("aria-expanded") && controlled && (controlled.hasAttribute("popover") || ["menu", "listbox", "dialog", "alertdialog"].includes(controlled.getAttribute("role") ?? ""))) return "popover";
+    // aria-expanded with aria-controls: a popover when what it controls is one (a native popover, or
+    // a menu, listbox or dialog), and an undecided candidate when it isn't on the page yet (it may
+    // mount on the click): kept, never clicked, every check incomplete (expandsControl says which).
+    // What it controls being there with no popup role makes it a disclosure (a panel that shows and
+    // hides in the page), which v1 doesn't check: not a target, but counted.
+    if (element.hasAttribute("aria-expanded") && controls && expandsControl(element) !== "disclosure") return "popover";
     return null;
+  };
+  /**
+   * For a button with aria-expanded and aria-controls: what it controls is a popup, absent (can't
+   * be told yet), or present with no popup role (a disclosure).
+   */
+  const expandsControl = (element: Element): "popup" | "absent" | "disclosure" => {
+    const controls = element.getAttribute("aria-controls") ?? "";
+    const controlled = controls.trim() ? byId(element, controls.trim().split(/\s+/)[0]!) : null;
+    if (!controlled) return "absent";
+    return controlled.hasAttribute("popover") || ["menu", "listbox", "dialog", "alertdialog"].includes(controlled.getAttribute("role") ?? "") ? "popup" : "disclosure";
+  };
+  /** Claimed only through aria-expanded + aria-controls naming nothing on the page yet: kept, but not clicked. */
+  const undecided = (element: Element): boolean => {
+    const popup = element.getAttribute("aria-haspopup");
+    return element.getAttribute("role") !== "combobox" && !(popup && popup !== "false") && !element.hasAttribute("popovertarget") && !(element.getAttribute("command") === "show-modal" && element.hasAttribute("commandfor")) && element.hasAttribute("aria-expanded") && expandsControl(element) === "absent";
   };
   const domPath = (element: Element): string => {
     const steps: string[] = [];
@@ -410,10 +432,11 @@ export function isolatedLibrary(): void {
      * Every usable trigger: those contract bindings nominated (each checked here; `nominated[i]`
      * is bound by `bindings[i]`), then those the markup claims. At most `limit`.
      */
-    discover(spec: { readonly limit: number; readonly nominated: ReadonlyArray<{ readonly binding: number; readonly pattern: Pattern }> }, nominated: Element[]): { found: IsolatedTarget[]; refused: number } {
+    discover(spec: { readonly limit: number; readonly nominated: ReadonlyArray<{ readonly binding: number; readonly pattern: Pattern }> }, nominated: Element[]): { found: IsolatedTarget[]; refused: number; disclosures: number } {
       const found: IsolatedTarget[] = [];
       const elements: Element[] = [];
       let refused = 0;
+      let disclosures = 0;
       spec.nominated.forEach(({ binding, pattern }, i) => {
         const element = nominated[i];
         if (!element || elements.includes(element) || found.length >= spec.limit) return;
@@ -425,12 +448,15 @@ export function isolatedLibrary(): void {
         if (found.length >= spec.limit) break;
         if (elements.includes(element) || !usable(element)) continue;
         const pattern = claimed(element);
-        if (!pattern) continue;
+        if (!pattern) {
+          if (element.hasAttribute("aria-expanded") && (element.getAttribute("aria-controls") ?? "").trim() && expandsControl(element) === "disclosure") disclosures++;
+          continue;
+        }
         elements.push(element);
-        found.push(describe(element, pattern, "dom"));
+        found.push({ ...describe(element, pattern, "dom"), ...(undecided(element) ? { undecided: true as const } : {}) });
       }
       state.elements = elements;
-      return { found, refused };
+      return { found, refused, disclosures };
     },
     element(index: number): Element | null {
       return state.elements[index] ?? null;
