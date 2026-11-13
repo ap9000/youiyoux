@@ -518,10 +518,12 @@ export function isolatedLibrary(): void {
      * Before the click, while the trigger is there: the contract's returnFocusTo part, found from
      * the page's structure alone (never from what the page's scripts say): the trigger's nearest
      * ancestor that holds an element with that part's name (data-part / data-slot) or role, besides
-     * the trigger itself; exactly one such element is the part, held for after the popup closes.
-     * None, or several in that nearest ancestor, and focus there can't be judged.
+     * the trigger itself. That ancestor is this instance's only if it holds exactly one such element
+     * and no other trigger of the same pattern (`rivals`, by their index in the last discovery):
+     * another trigger there means the part may be another instance's. Then the part is held for after
+     * the popup closes; otherwise ("several": ambiguous, or "none") focus there can't be judged.
      */
-    holdReturnTarget(wanted: { readonly index: number; readonly part: PartRef }): "one" | "none" | "several" {
+    holdReturnTarget(wanted: { readonly index: number; readonly part: PartRef; readonly rivals: readonly number[] }): "one" | "none" | "several" {
       const trigger = state.elements[wanted.index];
       const part = wanted.part;
       const is = (element: Element): boolean => ("part" in part ? element.getAttribute("data-part") === part.part || element.getAttribute("data-slot") === part.part : element.getAttribute("role") === part.role || (part.role === "button" && element.localName === "button"));
@@ -538,8 +540,13 @@ export function isolatedLibrary(): void {
         };
         collect(scope);
         if (found.length === 0) continue;
-        state.returnPart = found.length === 1 ? "one" : "several";
-        state.returnTarget = found.length === 1 ? found[0]! : null;
+        // The first level holding a part also holds another trigger like this one: whose part it is can't be told.
+        const contested = wanted.rivals.some((i) => {
+          const rival = state.elements[i];
+          return !!rival && rival !== trigger && ancestors(rival).includes(scope);
+        });
+        state.returnPart = found.length === 1 && !contested ? "one" : "several";
+        state.returnTarget = state.returnPart === "one" ? found[0]! : null;
         break;
       }
       return state.returnPart;

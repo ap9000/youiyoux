@@ -106,14 +106,14 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
   const REACT_APP = [
     'import { createRoot } from "react-dom/client";',
     'import { useRef, useState } from "react";',
-    "function Picker({ label, good, twin }: { label: string; good: boolean; twin?: boolean }) {",
+    "function Picker({ label, good, twin, partless, neighbour }: { label: string; good: boolean; twin?: boolean; partless?: boolean; neighbour?: boolean }) {",
     "  const [open, setOpen] = useState(false);",
     "  const [gone, setGone] = useState(false);",
     "  const toolbar = useRef<HTMLButtonElement>(null);",
-    '  const onKeyDown = (e: { key: string }) => { if (e.key !== "Escape") return; setOpen(false); setGone(true); if (good) setTimeout(() => toolbar.current!.focus(), 0); };',
-    '  return <div><button data-part="fallback" ref={toolbar}>Toolbar</button>{twin ? <button data-part="fallback">Toolbar too</button> : null}{gone ? null : <button data-part="trigger" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(true)}>{label}</button>}{open ? <ul role="menu" data-part="content" onKeyDown={onKeyDown}><li role="menuitem" tabIndex={-1} ref={(el) => el?.focus()}>Item</li></ul> : null}</div>;',
+    '  const onKeyDown = (e: { key: string }) => { if (e.key !== "Escape") return; setOpen(false); setGone(true); if (good) setTimeout(() => toolbar.current!.focus(), 0); if (neighbour) setTimeout(() => (document.querySelector("#pair [data-part=fallback]") as HTMLElement).focus(), 0); };',
+    '  return <div>{partless ? null : <button data-part="fallback" ref={toolbar}>Toolbar</button>}{twin ? <button data-part="fallback">Toolbar too</button> : null}{gone ? null : <button data-part="trigger" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(true)}>{label}</button>}{open ? <ul role="menu" data-part="content" onKeyDown={onKeyDown}><li role="menuitem" tabIndex={-1} ref={(el) => el?.focus()}>Item</li></ul> : null}</div>;',
     "}",
-    'createRoot(document.getElementById("root")!).render(<main><Picker label="Good" good={true} /><Picker label="Bad" good={false} /><Picker label="Twofold" good={true} twin={true} /></main>);',
+    'createRoot(document.getElementById("root")!).render(<main><Picker label="Good" good={true} /><Picker label="Bad" good={false} /><Picker label="Twofold" good={true} twin={true} /><section id="pair"><Picker label="Partless" good={false} partless={true} neighbour={true} /><Picker label="Neighbour" good={true} /></section></main>);',
     "",
   ].join("\n");
   let reactBundle = "";
@@ -450,6 +450,9 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
       expect(byName.Good).toMatchObject({ state: "passed", why: 'when Esc closed the menu, focus went to the part "fallback" the component contract names (returnFocusTo)' });
       // Two elements carry the part in its own instance: which one focus should go to can't be told, so it isn't judged.
       expect(byName.Twofold).toMatchObject({ state: "incomplete", why: "couldn't tell which element focus should return to" });
+      // Its own instance has no part, and the next one's is the nearest: never taken for its own, even with focus on it.
+      expect(byName.Partless).toMatchObject({ state: "incomplete", why: "couldn't tell which element focus should return to" });
+      expect(byName.Neighbour).toMatchObject({ state: "passed" });
       expect(byName.Bad).toMatchObject({ state: "failed", why: 'when Esc closed the menu, focus went to the page\'s body (nothing), not to the part "fallback" the component contract names (the button that opened it is gone)', fix: expect.stringMatching(/returnFocusTo/) });
     }, 60_000);
 

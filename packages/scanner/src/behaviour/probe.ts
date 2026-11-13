@@ -480,7 +480,11 @@ class PlaywrightProbePage implements ProbePage {
   }
 
   async holdReturnTarget(index: number, part: PartRef): Promise<"one" | "none" | "several"> {
-    return this.bound((await this.worlds()).call<"one" | "none" | "several">("holdReturnTarget", { index, part }));
+    // Every other trigger of the same pattern found on this page: its presence marks another instance.
+    // (By pattern alone: component names come from the page's own scripts, so they can't narrow it.)
+    const pattern = this.found[index]?.pattern;
+    const rivals = this.found.flatMap((t, i) => (i !== index && t.pattern === pattern ? [i] : []));
+    return this.bound((await this.worlds()).call<"one" | "none" | "several">("holdReturnTarget", { index, part, rivals }));
   }
 
   async returnFocus(index: number): Promise<ReturnFacts> {
