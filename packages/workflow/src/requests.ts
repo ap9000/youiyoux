@@ -14,13 +14,15 @@ import { randomBytes } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
 import { copyFile, mkdir, readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
-import { cleanText, REQUEST_ID, RequestDoc, RequestRun, writeFileAtomic, type BehaviourResult, type ComponentContract, type OptionChoice, type RequestAuthor, type RequestBehaviour, type RequestStatus, type RequestTarget, type RequestTask } from "@youiyoux/core";
+import { cleanText, FileLockBusy, REQUEST_ID, withFileLock, RequestDoc, RequestRun, writeFileAtomic, type BehaviourResult, type ComponentContract, type OptionChoice, type RequestAuthor, type RequestBehaviour, type RequestStatus, type RequestTarget, type RequestTask } from "@youiyoux/core";
 import { PICTURE_SCALE, screenSlug } from "@youiyoux/scanner";
 import { authorize, WorkflowError } from "./policy.ts";
 import type { Actor } from "./api.ts";
 import { popupWords, type BehaviourEvidence, type BehaviourRef } from "./behaviour-service.ts";
 
 export const REQUESTS_DIR = ".youi/requests";
+/** How long a change of a request waits for another one to finish (a behaviour check can take a while). */
+const LOCK_WAIT_MS = 60_000;
 const FILE = /^(r-[0-9a-f]{10})\.json$/;
 const RUN_FILE = /^(r-[0-9a-f]{10})\.task\.json$/;
 
@@ -356,13 +358,32 @@ export class RequestStore {
     return this.write({ schema: "youi.request/v1", id, project: this.project, kind: "change", status: "open", body: text, author, createdAt: at, updatedAt: at, target, ...(before ? { before } : {}), task: proposeBehaviourTask(id, text, result, target, author), behaviour: link satisfies RequestBehaviour, thread: [] });
   }
 
+  /**
+   * Change one request: `change` gets it as it is now and returns what to write. Every change of a
+   * request (a reply, a status, a reopening) runs under that request's lock (`<id>.json.lock`, held
+   * across processes: core's acquireFileLock), reading the file again inside it, so a change that
+   * awaits something (a behaviour check's evidence) can never write back an old snapshot over
+   * another one made meanwhile, a person's reopening included.
+   */
+  private async change(id: string, change: (now: RequestDoc) => Promise<RequestDoc>): Promise<RequestDoc> {
+    const file = this.file(id);
+    await mkdir(this.dir, { recursive: true });
+    try {
+      return await withFileLock(`${file}.lock`, async () => this.write(await change(await this.get(id))), { waitMs: LOCK_WAIT_MS });
+    } catch (error: unknown) {
+      if (error instanceof FileLockBusy) throw new WorkflowError("conflict", `${id} is being changed by ${error.who}; nothing was written. Try again; if no youiyoux is running, delete ${REQUESTS_DIR}/${id}.json.lock`);
+      throw error;
+    }
+  }
+
   async reply(actor: Actor, id: string, body: string): Promise<RequestDoc> {
     authorize(actor, "draft");
     const text = body.trim();
     if (!text) throw new WorkflowError("invalid", "a reply needs words");
-    const request = await this.get(id);
-    const at = this.now();
-    return this.write({ ...request, updatedAt: at, thread: [...request.thread, { author: authorOf(actor), at, body: text }] });
+    return this.change(id, async (request) => {
+      const at = this.now();
+      return { ...request, updatedAt: at, thread: [...request.thread, { author: authorOf(actor), at, body: text }] };
+    });
   }
 
   /**
@@ -402,21 +423,22 @@ export class RequestStore {
   async setStatus(actor: Actor, id: string, status: RequestStatus, body = ""): Promise<RequestDoc> {
     if (status !== "addressed") authorize(actor, "close");
     else authorize(actor, "draft");
-    const request = await this.get(id);
-    if (request.status === status) throw new WorkflowError("conflict", `${id} is already ${status}`);
-    if (status === "addressed" && request.status === "closed") throw new WorkflowError("conflict", `${id} is closed: a person reopens it first`);
-    // Filed from a failed behaviour result: addressed only once the same check passes for the same
-    // popup, fresh, in a run newer than the request (or its last reopening). For every caller, a
-    // person included; closing it stays a person's call.
-    if (status === "addressed" && request.behaviour) {
-      const link = request.behaviour;
-      const held = `${id} is held to ${link.check} on ${popupWords(link.target)} (${link.target.route})`;
-      if (!this.options.behaviour) throw new WorkflowError("conflict", `${held}, and behaviour results can't be read here: mark it addressed from youiyoux requests, the MCP tools or the hub, once it passes`);
-      const why = await this.options.behaviour.passedSince(link, filedAt(request));
-      if (why !== null) throw new WorkflowError("conflict", `${held}: ${why}`);
-    }
-    const at = this.now();
-    return this.write({ ...request, status, updatedAt: at, thread: [...request.thread, { author: authorOf(actor), at, body: body.trim(), status }] });
+    return this.change(id, async (request) => {
+      if (request.status === status) throw new WorkflowError("conflict", `${id} is already ${status}`);
+      if (status === "addressed" && request.status === "closed") throw new WorkflowError("conflict", `${id} is closed: a person reopens it first`);
+      // Filed from a failed behaviour result: addressed only once the same check passes for the same
+      // popup, fresh, in a run newer than the request (or its last reopening). For every caller, a
+      // person included; closing it stays a person's call.
+      if (status === "addressed" && request.behaviour) {
+        const link = request.behaviour;
+        const held = `${id} is held to ${link.check} on ${popupWords(link.target)} (${link.target.route})`;
+        if (!this.options.behaviour) throw new WorkflowError("conflict", `${held}, and behaviour results can't be read here: mark it addressed from youiyoux requests, the MCP tools or the hub, once it passes`);
+        const why = await this.options.behaviour.passedSince(link, filedAt(request));
+        if (why !== null) throw new WorkflowError("conflict", `${held}: ${why}`);
+      }
+      const at = this.now();
+      return { ...request, status, updatedAt: at, thread: [...request.thread, { author: authorOf(actor), at, body: body.trim(), status }] };
+    });
   }
 }
 
