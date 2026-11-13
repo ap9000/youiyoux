@@ -14,8 +14,10 @@
  *   holder's lock: a stale reader that wins a later marker reads the new token and leaves it. Nothing
  *   is ever renamed over or restored onto the lock.
  * - A live holder's lock is never broken, however long it is held (no age expiry); a pid on another
- *   host, or a lock that can't be read as a token, counts as live. A waiting taker gives up after
- *   `waitMs` with FileLockBusy, which names the holder (`waitMs: 0`: one try, no waiting).
+ *   host, a lock that can't be read as a token, or one that can't be read at all (no permission, a
+ *   folder in its place), counts as live; only a lock that has gone (ENOENT) is retried at once. A
+ *   waiting taker gives up after `waitMs` with FileLockBusy, which names the holder (`waitMs: 0`:
+ *   one try, no waiting).
  * - Accepted: if a contender dies between winning a marker and removing the dead lock, that lock
  *   stays and takers time out naming both files to remove by hand. Exclusion is kept over progress.
  */
@@ -58,8 +60,9 @@ export class FileLockBusy extends Error {
   readonly holder: LockHolder | null;
   /** "pid 123, still running", "pid 123, which has exited", or "a lock youiyoux can't read". */
   readonly who: string;
-  constructor(lock: string, holder: LockHolder | null) {
-    const who = holder ? `pid ${holder.pid}${holder.host === hostname() ? "" : ` on ${holder.host}`}, ${holder.host === hostname() && !alive(holder.pid) ? "which has exited" : "still running"}` : "a lock youiyoux can't read";
+  /** `unreadable`: why the lock couldn't be read at all (EACCES, a folder in its place). */
+  constructor(lock: string, holder: LockHolder | null, unreadable: string | null = null) {
+    const who = holder ? `pid ${holder.pid}${holder.host === hostname() ? "" : ` on ${holder.host}`}, ${holder.host === hostname() && !alive(holder.pid) ? "which has exited" : "still running"}` : unreadable ? `a lock youiyoux can't read (${unreadable})` : "a lock youiyoux can't read";
     super(`${lock} is held by ${who}`);
     this.lock = lock;
     this.holder = holder;
@@ -68,8 +71,20 @@ export class FileLockBusy extends Error {
 }
 
 export interface HeldLock {
+  /** Whether the lock is still ours (its file holds our token). */
+  holds(): Promise<boolean>;
   /** Let go of it: removes the lock only while it is still ours. */
   release(): Promise<void>;
+}
+
+/** The lock's text; null only when it has gone (ENOENT); any other failure is thrown. */
+async function readLock(lock: string): Promise<string | null> {
+  try {
+    return await readFile(lock, "utf8");
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
 }
 
 /** Take `lock` (a file path): waits up to `waitMs` for a live holder, breaks only a dead one. */
@@ -87,7 +102,16 @@ export async function acquireFileLock(lock: string, options: { readonly waitMs: 
       } catch (error: unknown) {
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       }
-      const held = await readFile(lock, "utf8").catch(() => null);
+      let held: string | null;
+      try {
+        held = await readLock(lock);
+      } catch (error: unknown) {
+        // There, but unreadable (no permission, a folder in its place): a live holder youiyoux can't
+        // read, never retried at once and never broken. Waits like any live holder, then refuses.
+        if (Date.now() >= until) throw new FileLockBusy(lock, null, (error as NodeJS.ErrnoException).code ?? String(error));
+        await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+        continue;
+      }
       // Gone since: try again at once.
       if (held === null) continue;
       const holder = holderOf(held);
@@ -117,6 +141,7 @@ export async function acquireFileLock(lock: string, options: { readonly waitMs: 
     await unlink(temp).catch(() => undefined);
   }
   return {
+    holds: async () => (await readFile(lock, "utf8").catch(() => null)) === token,
     // Only our own lock is removed (nobody else removes a live holder's).
     release: async () => {
       if ((await readFile(lock, "utf8").catch(() => null)) === token) await unlink(lock).catch(() => undefined);

@@ -3,12 +3,12 @@
  * that awaits a behaviour check's evidence can't write back an old snapshot over a person's close
  * and reopen made meanwhile (review round 1, finding 1). A deterministic barrier holds the evidence.
  */
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, expect, test } from "vitest";
 import type { BehaviourResult } from "@youiyoux/core";
-import { RequestStore, type BehaviourEvidence } from "../src/index.ts";
+import { RequestStore, WorkflowError, type BehaviourEvidence } from "../src/index.ts";
 
 const root = mkdtempSync(join(tmpdir(), "youi-request-lock-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -44,3 +44,18 @@ test("a person's close and reopen during an addressed check's evidence wait are 
   expect(now.status).toBe("open");
   expect(now.thread.map((e) => e.status)).toEqual(["addressed", "closed", "open"]);
 });
+
+test("an unreadable lock (a folder in its place) is waited for until the deadline, then refused, naming it; never spun on", async () => {
+  const store = new RequestStore(root, "app", { lockWaitMs: 300 });
+  const person = { kind: "person", name: "p" } as const;
+  const { id } = await store.create(person, { kind: "comment", body: "a note", target: { route: "/x", scope: "here", name: "Card" } });
+  mkdirSync(join(root, ".youi/requests", `${id}.json.lock`));
+  const started = Date.now();
+  const refused = await store.reply(person, id, "hello").then(() => null, (e: unknown) => e);
+  const ms = Date.now() - started;
+  expect(refused).toBeInstanceOf(WorkflowError);
+  expect((refused as WorkflowError).message).toBe(`${id} is being changed by a lock youiyoux can't read (EISDIR); nothing was written. Try again; if no youiyoux is running, delete .youi/requests/${id}.json.lock`);
+  expect(ms).toBeGreaterThanOrEqual(300);
+  expect(ms).toBeLessThan(3_000);
+  expect((await store.get(id)).thread).toEqual([]);
+}, 15_000);

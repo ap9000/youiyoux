@@ -4,7 +4,7 @@
  * run that started earlier but finishes later is discarded rather than published over a later one.
  */
 import { spawn, type ChildProcess } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, describe, expect, test } from "vitest";
 import { behaviourFile, probeBehaviour, WorkflowError } from "../src/index.ts";
@@ -42,6 +42,25 @@ describe("another process", () => {
     // Its claim is let go: this process may run the route now.
     await s.runFromHub("/x");
   }, 60_000);
+});
+
+describe("an unreadable claim", () => {
+  test("a folder where the route's claim goes refuses a run at once, naming it; it doesn't spin", async () => {
+    const lock = `${join(s.box.project, behaviourFile("/x"))}.lock`;
+    mkdirSync(join(s.box.project, ".youi/behaviour"), { recursive: true });
+    mkdirSync(lock);
+    try {
+      control.probes = 0;
+      const started = Date.now();
+      const refused = await s.write("/api/behaviour/run", { route: "/x" });
+      expect(Date.now() - started).toBeLessThan(2_000);
+      expect(refused.status).toBe(409);
+      expect(refused.json.error).toMatch(/^a behaviour run is already going for this app \(\/x, in another youiyoux: a lock youiyoux can't read \(EISDIR\)\)/);
+      expect(control.probes).toBe(0);
+    } finally {
+      rmSync(lock, { recursive: true });
+    }
+  }, 15_000);
 });
 
 describe("an earlier-started run that finishes later", () => {

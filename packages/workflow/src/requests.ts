@@ -180,6 +180,8 @@ interface RequestStoreOptions {
    * can't be filed from a behaviour result, and one filed from one can't be marked addressed.
    */
   readonly behaviour?: BehaviourEvidence;
+  /** How long a change waits for another change of the same request (default LOCK_WAIT_MS). */
+  readonly lockWaitMs?: number;
 }
 
 const authorOf = (actor: Actor): RequestAuthor => ({ kind: actor.kind, name: actor.name });
@@ -369,7 +371,7 @@ export class RequestStore {
     const file = this.file(id);
     await mkdir(this.dir, { recursive: true });
     try {
-      return await withFileLock(`${file}.lock`, async () => this.write(await change(await this.get(id))), { waitMs: LOCK_WAIT_MS });
+      return await withFileLock(`${file}.lock`, async () => this.write(await change(await this.get(id))), { waitMs: this.options.lockWaitMs ?? LOCK_WAIT_MS });
     } catch (error: unknown) {
       if (error instanceof FileLockBusy) throw new WorkflowError("conflict", `${id} is being changed by ${error.who}; nothing was written. Try again; if no youiyoux is running, delete ${REQUESTS_DIR}/${id}.json.lock`);
       throw error;
