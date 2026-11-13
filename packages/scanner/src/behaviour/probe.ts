@@ -21,9 +21,9 @@ import { startFence, type Fence, type FenceRefusal } from "./fence.ts";
 import { dataWords, describeUrl, requestVerdict, screenUrl, STATIC_RESOURCE_TYPES } from "./guards.ts";
 import { ambiguousWords, withOrdinals, type TargetKey } from "./identity.ts";
 import type { Frame } from "../screens/locate.ts";
-import { contractPopupsInPage, isolatedLibrary, labelsInPage, nominateContractTriggersInPage, PROBE_INIT_SCRIPT, type ClickPoint, type ContractBinding, type FocusPlaced, type FocusFacts, type FoundTarget, type IsolatedTarget, type PopupFound, type TriggerFacts } from "./in-page.ts";
+import { contractPopupsInPage, contractScopeInPage, isolatedLibrary, partsInScopeInPage, labelsInPage, nominateContractTriggersInPage, PROBE_INIT_SCRIPT, type ClickPoint, type ContractBinding, type FocusPlaced, type FocusFacts, type FoundTarget, type IsolatedTarget, type PopupFound, type ReturnFacts, type TriggerFacts } from "./in-page.ts";
 import { assertSafeKey, CHECK_KEYS, dataBlockedIn, dismissEscape, errorWords, infoFromEvents, openAndIdentify, openScreen, POPUP_NOUN, staysOpenWithoutKey, SWITCHED_OFF, type CheckArgs, type GuardEvent, type ProbePage, type SafeKey, type ScenarioOutcome, type Stop } from "./scenario.ts";
-import { focusInto, triggerState } from "./checks.ts";
+import { focusInto, focusReturn, triggerState } from "./checks.ts";
 
 export interface ProbeBudgets {
   /** Targets tested per route; the rest are named as untested. */
@@ -274,7 +274,7 @@ class Worlds {
   }
 
   /** `__youiyoux[method](arg, elements)` in the isolated world; `elements` are isolated-world object ids. */
-  async call<T>(method: "discover" | "markShowing" | "triggerFacts" | "focus" | "prepareClick" | "confirmAt" | "clicked" | "identify" | "placeFocus" | "ready" | "popupState" | "reconcile" | "signInForm", arg: unknown, elements: readonly string[] = []): Promise<T> {
+  async call<T>(method: "discover" | "markShowing" | "triggerFacts" | "focus" | "returnFocus" | "prepareClick" | "confirmAt" | "clicked" | "identify" | "placeFocus" | "ready" | "popupState" | "reconcile" | "signInForm", arg: unknown, elements: readonly string[] = []): Promise<T> {
     const answer = this.check((await this.cdp.send("Runtime.callFunctionOn", { functionDeclaration: `function (arg, ...elements) { return globalThis.__youiyoux.${method}(arg, elements); }`, executionContextId: this.isolated, arguments: [{ value: arg }, ...elements.map((objectId) => ({ objectId }))], returnByValue: true })) as CallResult);
     return answer.result.value as T;
   }
@@ -308,6 +308,11 @@ class Worlds {
     return this.check((await this.cdp.send("Runtime.callFunctionOn", { functionDeclaration: fn.toString(), objectId, arguments: [{ value: arg }], returnByValue: true })) as CallResult).result.value as T;
   }
 
+  /** `fn.call(this = objectId, arg)` in the main world, its result held there by reference (an object id), or null. */
+  async mainObject(objectId: string, fn: (...args: never[]) => unknown, arg: unknown): Promise<string | null> {
+    return this.check((await this.cdp.send("Runtime.callFunctionOn", { functionDeclaration: fn.toString(), objectId, arguments: [{ value: arg }], returnByValue: false })) as CallResult).result.objectId ?? null;
+  }
+
   async mainList(objectId: string, fn: (...args: never[]) => unknown, arg: unknown): Promise<string[]> {
     const answer = this.check((await this.cdp.send("Runtime.callFunctionOn", { functionDeclaration: fn.toString(), objectId, arguments: [{ value: arg }], returnByValue: false })) as CallResult);
     return answer.result.objectId ? this.items(answer.result.objectId) : [];
@@ -334,6 +339,8 @@ class PlaywrightProbePage implements ProbePage {
   private worldsOpened: Worlds | null = null;
   private found: readonly FoundTarget[] = [];
   private readonly sent: string[] = [];
+  /** The trigger's bound component instance, held in the main world (holdReturnScope), for its returnFocusTo part. */
+  private returnScope: string | null = null;
 
   private readonly page: Page;
   private readonly log: PageLog;
@@ -469,6 +476,23 @@ class PlaywrightProbePage implements ProbePage {
     return this.bound((await this.worlds()).call<FocusFacts>("focus", { index }));
   }
 
+  async holdReturnScope(index: number): Promise<void> {
+    const target = this.found[index];
+    const contract = target && typeof target.via === "object" ? (this.options.bindings[target.via.contract] ?? null) : null;
+    if (!contract?.binding.returnFocusTo) return;
+    const worlds = await this.worlds();
+    const element = await this.bound(worlds.element(index));
+    const [main] = element ? await this.bound(worlds.into("main", [element])) : [];
+    this.returnScope = main ? await this.bound(worlds.mainObject(main, contractScopeInPage, { component: contract.component })) : null;
+  }
+
+  async returnFocus(index: number, part: PartRef | null): Promise<ReturnFacts> {
+    const worlds = await this.worlds();
+    let parts: string[] = [];
+    if (part && this.returnScope) parts = await this.bound(worlds.into("isolated", (await this.bound(worlds.mainList(this.returnScope, partsInScopeInPage, { part }))).filter(Boolean)));
+    return this.bound(worlds.call<ReturnFacts>("returnFocus", { index, part }, parts));
+  }
+
   async placeFocus(index: number, pattern: BehaviourPattern): Promise<FocusPlaced> {
     return this.bound((await this.worlds()).call<FocusPlaced>("placeFocus", { index, pattern }));
   }
@@ -602,6 +626,7 @@ const ACTS: Partial<Record<BehaviourCheckId, (page: ProbePage, opened: Opened, a
   "trigger-state": triggerState,
   "dismiss-escape": dismissEscape,
   "focus-into": focusInto,
+  "focus-return": focusReturn,
 };
 
 /**
@@ -609,7 +634,7 @@ const ACTS: Partial<Record<BehaviourCheckId, (page: ProbePage, opened: Opened, a
  * watched for the close budget) saw the popup stay open: then a closing is the key's doing. Which
  * results need it.
  */
-const CONTROLLED: Partial<Record<BehaviourCheckId, readonly ScenarioOutcome["state"][]>> = { "dismiss-escape": ["passed"] };
+const CONTROLLED: Partial<Record<BehaviourCheckId, readonly ScenarioOutcome["state"][]>> = { "dismiss-escape": ["passed"], "focus-return": ["passed", "failed"] };
 
 /**
  * One check on one target, in its own fresh scenario: the popup opened and identified, then the

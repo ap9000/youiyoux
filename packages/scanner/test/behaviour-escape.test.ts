@@ -194,15 +194,15 @@ describe.skipIf(!HAVE_CHROMIUM)("dismiss-escape in a real browser", () => {
     const keys = logged("key").length;
     const clicks = logged("click").length;
     const result = await probe("/menu-ignores", { checks: ["dismiss-escape", "focus-return", "focus-into", "arrow-keys", "trigger-state"] });
-    // dismiss-escape, trigger-state and focus-into (no key) are decided; the others open the menu and stop there.
+    // dismiss-escape, focus-return (one Escape each), trigger-state and focus-into (no key) are decided; the others open the menu and stop there.
     expect(result.targets[0]!.scenarios.map((s) => [s.check, s.state, s.keys])).toEqual([
       ["dismiss-escape", "failed", ["Escape"]],
-      ["focus-return", "opened", []],
+      ["focus-return", "incomplete", ["Escape"]],
       ["focus-into", "passed", []],
       ["arrow-keys", "opened", []],
       ["trigger-state", "passed", []],
     ]);
-    expect(logged("key").slice(keys)).toEqual(["Escape"]);
+    expect(logged("key").slice(keys)).toEqual(["Escape", "Escape"]);
     expect(logged("click").slice(clicks)).toEqual(Array(5).fill("trigger-m2"));
     // Across every fixture so far: Escape is the only key the pages ever saw, and no item was clicked.
     expect(new Set(logged("key"))).toEqual(new Set(["Escape"]));

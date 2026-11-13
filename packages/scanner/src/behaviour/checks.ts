@@ -6,9 +6,9 @@
  * consent is read again and the very popup is checked again (checkContext.beforeKey). Nothing here
  * passes without positive evidence: anything that can't be told is incomplete, with why.
  */
-import { ariaToken, pageText, roleWord, type BehaviourPattern } from "@youiyoux/core";
+import { ariaToken, pageText, roleWord, type BehaviourPattern, type PartRef } from "@youiyoux/core";
 import type { FocusFacts, TriggerFacts } from "./in-page.ts";
-import { checkContext, POPUP_NOUN, type CheckArgs, type ProbePage, type ScenarioOutcome } from "./scenario.ts";
+import { checkContext, escapeUntilClosed, POPUP_NOUN, type CheckArgs, type ProbePage, type ScenarioOutcome } from "./scenario.ts";
 
 type Opened = Extract<ScenarioOutcome, { state: "opened" }>;
 
@@ -150,6 +150,62 @@ export async function focusInto(page: ProbePage, opened: Opened, args: CheckArgs
       return ctx.decided("failed", { why: `${where} (${FOCUS_INTO_MS / 1000} s after it opened)`, fix });
     }
     if (deadline() <= asked) return ctx.incomplete({ why: "ran out of time before where focus went could be judged", fix: "Next: make sure the dev server is idle, then run youiyoux behave again." });
+    await page.wait(Math.max(1, Math.min(budgets.pollMs, until - asked, deadline() - asked)));
+  }
+}
+
+/** After the popup closes, how long focus has at least to arrive (beyond the close budget from Esc): a focus() in a timer or the next frame. */
+const RETURN_AFTER_CLOSE_MS = 300;
+
+const RETURN_FIX: Partial<Record<BehaviourPattern, string>> = {
+  "menu-button": "When the menu closes with Esc, move focus back to the button that opened it.",
+  "modal-dialog": "When the dialog closes, move focus back to the button that opened it (a native <dialog> opened with showModal() does this by itself).",
+  popover: "When the popover closes, move focus back to its button (a native popover opened through popovertarget does this by itself).",
+};
+
+/** A contract's part, as a sentence names it (contract names are the design system's, never the page's). */
+const partWords = (part: PartRef): string => ("part" in part ? `the part "${part.part}"` : `the ${part.role}`);
+
+/**
+ * focus-return: dismiss-escape's steps (focus placed inside, consent and the very popup checked
+ * again, one Escape); Esc that doesn't close it within the close budget is incomplete, never a
+ * verdict on focus. Once closed, effective focus is polled until it is on the trigger (the very
+ * element clicked) or the contract's returnFocusTo part, for the close budget from Esc and at least
+ * RETURN_AFTER_CLOSE_MS after the close. Elsewhere after that fails; the trigger gone with no
+ * returnFocusTo declared is incomplete (the plan's words). The verdict stands only when the
+ * control run saw the popup stay open without Esc (probe.ts), so the closing was Esc's.
+ */
+export async function focusReturn(page: ProbePage, opened: Opened, args: CheckArgs): Promise<ScenarioOutcome> {
+  const { pattern, deadline, budgets } = args;
+  const part = args.returnFocusTo ?? null;
+  const noun = POPUP_NOUN[pattern];
+  const ctx = checkContext(page, opened, args);
+  // The trigger's component instance, held while the trigger is still there: its returnFocusTo part may be all that's left after.
+  if (part) await page.holdReturnScope(opened.index);
+  const escaped = await escapeUntilClosed(page, opened, args, ctx);
+  if (escaped.kind === "stop") return escaped.outcome;
+  if (escaped.kind === "open") return ctx.incomplete({ why: `Esc didn't close the ${noun}, so where focus returns can't be judged`, fix: `Next: make Esc close the ${noun} (dismiss-escape), then run youiyoux behave again.` });
+  const until = Math.max(escaped.pressed + budgets.closeMs, escaped.closedAt + RETURN_AFTER_CLOSE_MS);
+  for (;;) {
+    const stop = await ctx.stopped();
+    if (stop) return ctx.incomplete(stop);
+    const asked = Date.now();
+    const now = await page.returnFocus(opened.index, part);
+    if (now.at === "trigger" || now.at === "part") {
+      // Watch a moment longer: a page that leaves or sends something now is stopped, not passed.
+      await ctx.settle(budgets.graceMs);
+      const after = await ctx.stopped();
+      if (after) return ctx.incomplete(after);
+      return ctx.decided("passed", { why: now.at === "trigger" ? `when Esc closed the ${noun}, focus went back to the button that opened it` : `when Esc closed the ${noun}, focus went to ${partWords(part!)} the component contract names (returnFocusTo)`, fix: "Nothing to do: closing returns focus." });
+    }
+    if (asked >= until) {
+      if (now.trigger === "gone" && !part) return ctx.incomplete({ why: "the button that opened it is gone; declare where focus should go", fix: "Next: declare where focus goes in the component's contract (a11y.behaviour.returnFocusTo), or keep the button on the screen, then run youiyoux behave again." });
+      if (now.at === "away") return ctx.incomplete({ why: "the page lost focus to the browser itself, so where focus returned can't be judged", fix: "Next: run youiyoux behave again." });
+      const where = focusWords({ at: now.at, role: now.role, name: now.name }, noun);
+      const wanted = now.trigger === "gone" ? `${partWords(part!)} the component contract names (the button that opened it is gone)` : part ? `the button that opened it or ${partWords(part)} the component contract names` : "the button that opened it";
+      return ctx.decided("failed", { why: `when Esc closed the ${noun}, focus went to ${where}, not to ${wanted}`, fix: part ? `When the ${noun} closes, move focus to ${partWords(part)} its contract names as returnFocusTo, or back to the button that opened it.` : (RETURN_FIX[pattern] ?? "") });
+    }
+    if (deadline() <= asked) return ctx.incomplete({ why: "ran out of time before where focus returned could be judged", fix: "Next: make sure the dev server is idle, then run youiyoux behave again." });
     await page.wait(Math.max(1, Math.min(budgets.pollMs, until - asked, deadline() - asked)));
   }
 }

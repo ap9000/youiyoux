@@ -241,17 +241,15 @@ describe.skipIf(!HAVE_CHROMIUM)("standing from stored runs", () => {
     }
   }, 60_000);
 
-  test("a stored file can't decide for itself: an undecided check stays incomplete even if the file says passed, and a file that claims to be fresh isn't read", async () => {
+  test("focus-return counts like dismiss-escape (a menu that drops focus on close is a finding), and a file that claims to be fresh isn't read", async () => {
     const p = product("hand-edited", ["/esc"]);
     await behave(p, "/esc", [ESCAPE, RETURN]);
-    expect((await behaviourStanding(p.project, [RETURN], TOOL)).runs[0]).toMatchObject({ state: "incomplete", reason: expect.stringMatching(/\/esc has 1 popup that couldn't be decided \(the popup opened and was identified/) });
-    const file = join(p.root, behaviourFile("/esc"));
-    const run = JSON.parse(readFileSync(file, "utf8")) as { results: Array<{ check: string; state: string }> };
-    for (const r of run.results) if (r.check === "focus-return") r.state = "passed";
-    writeFileSync(file, JSON.stringify(run));
-    expect((await behaviourStanding(p.project, [RETURN], TOOL)).runs[0]).toMatchObject({ state: "incomplete", reason: expect.stringMatching(/couldn't be decided/) });
-    // dismiss-escape's own result in the same file still counts.
+    const returned = await behaviourStanding(p.project, [RETURN], TOOL);
+    expect(returned.runs[0]).toEqual({ rule: RETURN.id, state: "ran", findings: 1 });
+    expect(returned.failures).toEqual([expect.objectContaining({ rule: RETURN.id, result: expect.objectContaining({ check: "focus-return", state: "failed" }) })]);
     expect((await behaviourStanding(p.project, [ESCAPE], TOOL)).runs[0]).toMatchObject({ state: "ran" });
+    const file = join(p.root, behaviourFile("/esc"));
+    const run = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
     writeFileSync(file, JSON.stringify({ ...run, fresh: true }));
     expect((await behaviourStanding(p.project, [ESCAPE], TOOL)).runs[0]).toMatchObject({ state: "incomplete", reason: expect.stringMatching(/\/esc has a stored run that couldn't be used/) });
   }, 60_000);

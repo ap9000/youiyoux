@@ -82,6 +82,17 @@ export interface FocusFacts {
   readonly name: string;
 }
 
+/**
+ * Where focus went once the popup closed (focus-return): FocusFacts, with "part" when it is on (or
+ * inside) the contract's returnFocusTo part, and whether the trigger is still on the page.
+ */
+export interface ReturnFacts {
+  readonly trigger: "connected" | "gone";
+  readonly at: FocusFacts["at"] | "part";
+  readonly role: string;
+  readonly name: string;
+}
+
 /** Whether effective focus is where a key is sent from: already there, moved there by the probe (focus(), never a click or a key), or not placeable. */
 export type FocusPlaced = { readonly ok: true; readonly moved: boolean } | { readonly ok: false };
 
@@ -421,6 +432,21 @@ export function isolatedLibrary(): void {
       }
       return { ok: false };
     },
+    /**
+     * Where focus is once the popup closed: on the trigger (still the very element clicked), on the
+     * contract's returnFocusTo part (`parts`, nominated in the component's own instance and each
+     * checked here against the part's name or role), or elsewhere (FocusFacts).
+     */
+    returnFocus(wanted: { readonly index: number; readonly part: PartRef | null }, parts: Element[]): ReturnFacts {
+      const trigger = state.elements[wanted.index];
+      const facts = focusFacts(trigger, state.popup);
+      const connected = !!trigger && trigger.isConnected ? "connected" : "gone";
+      const part = wanted.part;
+      const named = part ? parts.filter((element) => element.isConnected && ("part" in part ? element.getAttribute("data-part") === part.part || element.getAttribute("data-slot") === part.part : element.getAttribute("role") === part.role || (part.role === "button" && element.localName === "button"))) : [];
+      const at = effectiveFocus();
+      if (at && named.some((element) => element === at || ancestors(at).includes(element))) return { trigger: connected, at: "part", role: at.getAttribute("role") ?? at.localName, name: accessibleName(at) };
+      return { trigger: connected, at: facts.at, role: facts.role, name: facts.name };
+    },
     /** Where effective focus is now, against the trigger and the popup identified last; nothing is moved. */
     focus(wanted: { readonly index: number }): FocusFacts {
       return focusFacts(state.elements[wanted.index], state.popup);
@@ -572,6 +598,43 @@ export function contractPopupsInPage(this: Element, args: { readonly component: 
   };
   const part = args.part;
   return [...document.querySelectorAll("*")].filter((element) => ("part" in part ? element.getAttribute("data-part") === part.part || element.getAttribute("data-slot") === part.part : element.getAttribute("role") === part.role || (part.role === "dialog" && element.localName === "dialog")) && inScope(element));
+}
+
+/**
+ * Main world, `this` the trigger: the fiber of its bound component's instance (by reference, held
+ * by the probe), so the instance's parts can be found again after the trigger itself is gone.
+ * Only a nomination scope: every element found through it is checked in the isolated world.
+ */
+export function contractScopeInPage(this: Element, args: { readonly component: string }): unknown {
+  type Fiber = { tag: number; type: unknown; return: Fiber | null };
+  const COMPONENT = new Set([0, 1, 11, 14, 15]);
+  const nameOf = (type: unknown): string | null => {
+    const t = type as { displayName?: string; name?: string; render?: { displayName?: string; name?: string }; type?: { displayName?: string; name?: string } } | null;
+    return t?.displayName || t?.name || t?.render?.displayName || t?.render?.name || t?.type?.displayName || t?.type?.name || null;
+  };
+  const key = Object.keys(this).find((k) => k.startsWith("__reactFiber$"));
+  for (let node = key ? ((this as unknown as Record<string, Fiber>)[key] ?? null) : null; node; node = node.return) if (COMPONENT.has(node.tag) && nameOf(node.type) === args.component) return node;
+  return null;
+}
+
+/**
+ * Main world, `this` a component instance's fiber (contractScopeInPage): the elements in that
+ * instance (portals included) that match `part`. Only a nomination: the isolated world checks each.
+ */
+export function partsInScopeInPage(this: { alternate?: unknown }, args: { readonly part: PartRef }): Element[] {
+  type Fiber = { return: Fiber | null };
+  const scope = this as unknown;
+  const alternate = this.alternate;
+  const fiberOf = (element: Element): Fiber | null => {
+    const key = Object.keys(element).find((k) => k.startsWith("__reactFiber$"));
+    return key ? ((element as unknown as Record<string, Fiber>)[key] ?? null) : null;
+  };
+  const inScope = (element: Element): boolean => {
+    for (let node = fiberOf(element); node; node = node.return) if (node === scope || node === alternate) return true;
+    return false;
+  };
+  const part = args.part;
+  return [...document.querySelectorAll("*")].filter((element) => ("part" in part ? element.getAttribute("data-part") === part.part || element.getAttribute("data-slot") === part.part : element.getAttribute("role") === part.role || (part.role === "button" && element.localName === "button")) && inScope(element));
 }
 
 /**
