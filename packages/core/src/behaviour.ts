@@ -109,8 +109,10 @@ export const Freshness = z
     origin: z.url(),
     /** Digest of the `screens.json` behaviour config and the route's screen path. */
     config: Digest,
-    /** Digest of every source file the scan covers, plus CSS, package.json and the lockfile. */
+    /** Digest of the app's sources, lockfiles, installed direct dependencies and behaviour.inputs files (appFingerprint). */
     app: Digest,
+    /** Digest of the effective contract bindings (every component's a11y.behaviour). */
+    bindings: Digest,
   })
   .strict();
 export type Freshness = z.infer<typeof Freshness>;
@@ -186,6 +188,15 @@ export const BehaviourConsent = z
      * results for). Absent: every route screens.json lists. Kept when probing is switched on or off.
      */
     routes: z.array(RoutePath.max(500)).min(1).max(200).optional(),
+    /**
+     * Extra files the running app reads (say `.env.development`), as globs relative to the project:
+     * their content is part of the app's fingerprint (hashed, never stored or printed).
+     */
+    inputs: z
+      .array(z.string().min(1).max(200).regex(/^(?![/\\])(?![A-Za-z]:)(?!.*\\)(?!(?:.*\/)?\.\.(?:\/|$)).+$/, "expected a glob relative to the project, without .. or a leading slash"))
+      .min(1)
+      .max(50)
+      .optional(),
   })
   .strict();
 export type BehaviourConsent = z.infer<typeof BehaviourConsent>;

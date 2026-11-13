@@ -190,7 +190,7 @@ describe("behaviour rules (slice 0: contracts)", () => {
     why: "The menu was still open 1.5 s after Esc.",
     fix: "Close the menu when Esc is pressed while focus is inside it.",
     evidence: [".youi/behaviour/run-1/menu-before.png"],
-    freshness: { rule: "a".repeat(64), tool: "0.1.29", origin: "http://localhost:5173", config: "b".repeat(12), app: "c".repeat(64) },
+    freshness: { rule: "a".repeat(64), tool: "0.1.29", origin: "http://localhost:5173", config: "b".repeat(12), app: "c".repeat(64), bindings: "d".repeat(32) },
   };
 
   test("a behaviour result is the canonical record: one check, one target, a state and what to do", () => {
@@ -234,6 +234,9 @@ describe("behaviour rules (slice 0: contracts)", () => {
     expect(BehaviourConsent.safeParse({ allowedOrigin: "http://localhost:5173", routes: [] }).success).toBe(false);
     expect(BehaviourConsent.parse({ allowedOrigin: "http://localhost:5173", routes: ["/flows"] })).toEqual({ allowedOrigin: "http://localhost:5173", generation: 0, routes: ["/flows"] });
     expect(BehaviourConsent.safeParse({ routes: ["flows"] }).success).toBe(false);
+    // Extra files the app reads: globs inside the project only.
+    expect(BehaviourConsent.safeParse({ inputs: [".env.development", "config/*.json"] }).success).toBe(true);
+    for (const glob of ["../secrets.env", "a/../../b", "/etc/passwd", "C:/x", "a\\b"]) expect(BehaviourConsent.safeParse({ inputs: [glob] }).success, glob).toBe(false);
     expect(BehaviourConsent.safeParse(true).success).toBe(false);
   });
 

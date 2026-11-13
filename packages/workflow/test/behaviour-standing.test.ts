@@ -4,6 +4,7 @@
  * made by the real probe (real headless Chromium, a fixture app on a loopback port), then the
  * project, the rule, screens.json and the stored files are changed underneath them.
  */
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -39,7 +40,7 @@ describe("no screens", () => {
   test("without screens.json, a behaviour rule is incomplete and says how to start", async () => {
     const root = mkdtempSync(join(tmpdir(), "youi-standing-none-"));
     try {
-      const standing = await behaviourStanding({ root, config: { include: ["src/**/*.tsx"], exclude: [] } } as unknown as Project, [ESCAPE], TOOL);
+      const standing = await behaviourStanding({ root, config: { include: ["src/**/*.tsx"], exclude: [] }, system: { components: [], rules: [] } } as unknown as Project, [ESCAPE], TOOL);
       expect(standing.runs).toEqual([{ rule: ESCAPE.id, state: "incomplete", reason: expect.stringMatching(/^no screens are captured yet .*youiyoux screens capture --base <url>.*youiyoux behave$/) }]);
       expect(standing.failures).toEqual([]);
     } finally {
@@ -80,17 +81,19 @@ describe.skipIf(!HAVE_CHROMIUM)("standing from stored runs", () => {
     mkdirSync(join(root, "src"), { recursive: true });
     writeFileSync(join(root, "src/app.tsx"), "export const App = () => <main />;\n");
     writeFileSync(join(root, "src/app.css"), "main { color: black; }\n");
-    writeFileSync(join(root, "README.md"), "not scanned\n");
+    writeFileSync(join(root, "vite.config.ts"), "export default {};\n");
+    mkdirSync(join(root, "node_modules/react"), { recursive: true });
+    writeFileSync(join(root, "node_modules/react/package.json"), JSON.stringify({ name: "react", version: "19.0.0" }));
     writeFileSync(join(root, "package.json"), JSON.stringify({ name, dependencies: { react: "19.0.0" } }));
     writeFileSync(join(root, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
     const doc = { schema: "youiyoux.screens/v1", project: name, source: "a test app", capturedAt: "", viewport: { width: 800, height: 600 }, base, behaviour: { allowedOrigin: base, generation: 1 }, screens: routes.map((r) => ({ route: r, path: r })) };
     const screens = join(root, ".youi/screens/screens.json");
     writeFileSync(screens, JSON.stringify(doc, null, 2));
-    return { root, project: { root, config: { include: ["src/**/*.{ts,tsx,css}"], exclude: [] } } as unknown as Project, screens, doc };
+    return { root, project: { root, config: { include: ["src/**/*.{ts,tsx,css}"], exclude: [] }, system: { components: [], rules: [] } } as unknown as Project, screens, doc };
   }
   /** `youiyoux behave` for one route, as the CLI runs it: digests and the fingerprint computed now. */
   const behave = async (p: { root: string; project: Project }, route: string, rules: readonly RuleSpec[]) =>
-    probeBehaviour({ root: p.root, route, browser, checks: rules.map((r) => ({ rule: r.id, check: (r.check as { id: "dismiss-escape" }).id, digest: ruleDigest(r) })), fingerprint: { app: await appFingerprint(p.project), tool: TOOL } });
+    probeBehaviour({ root: p.root, route, browser, checks: rules.map((r) => ({ rule: r.id, check: (r.check as { id: "dismiss-escape" }).id, digest: ruleDigest(r) })), fingerprint: { app: await appFingerprint(p.project, { inputs: (JSON.parse(readFileSync(join(p.root, ".youi/screens/screens.json"), "utf8")) as { behaviour?: { inputs?: string[] } }).behaviour?.inputs ?? [] }), tool: TOOL } });
 
   test("ran only when every route has fresh, complete results; a route never probed keeps the rule incomplete, naming it", async () => {
     const p = product("all-routes", ["/esc", "/plain"]);
@@ -118,8 +121,11 @@ describe.skipIf(!HAVE_CHROMIUM)("standing from stored runs", () => {
       writeFileSync(join(p.root, file), was);
       expect(await standing(), file).toMatchObject({ state: "ran" });
     }
-    // A file the scan doesn't cover changes nothing.
-    writeFileSync(join(p.root, "README.md"), "changed\n");
+    // Installed packages, build output and youiyoux's own files aren't the app's source.
+    for (const file of ["node_modules/left-pad/index.js", "dist/app.js", ".youi/notes.txt"]) {
+      mkdirSync(join(p.root, file, ".."), { recursive: true });
+      writeFileSync(join(p.root, file), "changed\n");
+    }
     expect(await standing()).toMatchObject({ state: "ran" });
     // The rule (its severity here): stale until probed again with it.
     expect(await standing([rule("popup.escape", "dismiss-escape", "warn")])).toMatchObject(staleBy("the rule changed"));
@@ -135,6 +141,43 @@ describe.skipIf(!HAVE_CHROMIUM)("standing from stored runs", () => {
     // Probing switched off: no result made under the old consent counts.
     await setBehaviourConsent(p.root, false);
     expect(await standing()).toMatchObject({ state: "incomplete", reason: expect.stringMatching(/\/esc is stale \(probing isn't switched on now, screens\.json's behaviour settings/) });
+  }, 60_000);
+
+  test("the fingerprint reaches what the running app reads beyond the scan: other project files, every lockfile up to the repo top, installed dependencies, behaviour.inputs; the bindings are part of the key", async () => {
+    // A product inside a git repository (its top holds the workspace lockfile); .env files are ignored by git.
+    const top = join(scratch, "mono");
+    mkdirSync(top, { recursive: true });
+    execFileSync("git", ["init", "--quiet"], { cwd: top });
+    writeFileSync(join(top, ".gitignore"), ".env*\n");
+    writeFileSync(join(top, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+    const p = product("mono/apps/web", ["/esc"]);
+    writeFileSync(join(p.root, ".env.development"), "VITE_FLAG=on\n");
+    const withInputs = { ...p.doc, behaviour: { ...(p.doc.behaviour as object), inputs: [".env.development"] } };
+    writeFileSync(p.screens, JSON.stringify(withInputs));
+    await behave(p, "/esc", [ESCAPE]);
+    const standing = async (project: Project = p.project) => (await behaviourStanding(project, [ESCAPE], TOOL)).runs[0]!;
+    expect(await standing()).toMatchObject({ state: "ran" });
+    const stale = (why: string) => ({ state: "incomplete", reason: expect.stringContaining(`/esc is stale (${why} since its run)`) });
+    const changed = async (file: string, content: string) => {
+      const was = readFileSync(file, "utf8");
+      writeFileSync(file, content);
+      const now = await standing();
+      writeFileSync(file, was);
+      expect(await standing(), file).toMatchObject({ state: "ran" });
+      return now;
+    };
+    // A config file the scan's include globs don't cover.
+    expect(await changed(join(p.root, "vite.config.ts"), "export default { base: '/x' };\n")).toMatchObject(stale("the code changed"));
+    // The workspace lockfile at the repository's top.
+    expect(await changed(join(top, "pnpm-lock.yaml"), "lockfileVersion: '9.1'\n")).toMatchObject(stale("the code changed"));
+    // A dependency installed at another version, the lockfile unchanged.
+    expect(await changed(join(p.root, "node_modules/react/package.json"), JSON.stringify({ name: "react", version: "19.1.0" }))).toMatchObject(stale("the code changed"));
+    // A file named in behaviour.inputs (git ignores it, so only that names it); its content is hashed, never stored.
+    expect(await changed(join(p.root, ".env.development"), "VITE_FLAG=off\n")).toMatchObject(stale("the code changed"));
+    expect(readFileSync(join(p.root, behaviourFile("/esc")), "utf8")).not.toContain("VITE_FLAG");
+    // The components' behaviour bindings: a binding added is a new key.
+    const bound = { ...p.project, system: { components: [{ contract: { name: "Menu", a11y: { behaviour: { pattern: "menu-button" } } } }], rules: [] } } as unknown as Project;
+    expect(await standing(bound)).toMatchObject(stale("the components' behaviour bindings changed"));
   }, 60_000);
 
   test("a fresh failure counts by its rule's severity; once stale it counts as nothing, and the rule is incomplete", async () => {

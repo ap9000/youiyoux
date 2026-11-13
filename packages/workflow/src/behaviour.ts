@@ -15,7 +15,7 @@ import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath, rename, unlink, type FileHandle } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { BEHAVIOUR_ROUTE_SCHEMA, BehaviourRouteRun, decidesBehaviour, EVIDENCE_PATH, type BehaviourCheckId, type BehaviourResult, type BehaviourTarget, type Freshness } from "@youiyoux/core";
-import { behaviourConfigDigest, behaviourConsent, probeOrigin, probeRoute, readScreensSpec, screenUrl, switchedConsent, SWITCHED_OFF, updateScreensSpec, type ContractBinding, type ProbeBudgets, type ProbeRouteOptions, type RouteProbe, type ScreensSpec } from "@youiyoux/scanner";
+import { behaviourConfigDigest, behaviourConsent, bindingsDigest, probeOrigin, probeRoute, readScreensSpec, screenUrl, switchedConsent, SWITCHED_OFF, updateScreensSpec, type ContractBinding, type ProbeBudgets, type ProbeRouteOptions, type RouteProbe, type ScreensSpec } from "@youiyoux/scanner";
 import { LiveApp } from "./live.ts";
 import { WorkflowError } from "./policy.ts";
 
@@ -287,7 +287,9 @@ export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<Pr
   const runId = randomBytes(8).toString("hex");
   const at = (options.now ?? (() => new Date()))().toISOString();
   const results: BehaviourResult[] = [];
-  const freshness = (request: BehaviourCheckRequest): Freshness => ({ rule: request.digest, tool: options.fingerprint.tool, origin: consent.origin, config, app: options.fingerprint.app });
+  // The bindings this probe actually located targets by.
+  const bindings = bindingsDigest(options.bindings ?? []);
+  const freshness = (request: BehaviourCheckRequest): Freshness => ({ rule: request.digest, tool: options.fingerprint.tool, origin: consent.origin, config, app: options.fingerprint.app, bindings });
   for (const [i, t] of probe.targets.entries()) {
     const place = lines[i];
     const target: BehaviourTarget = {

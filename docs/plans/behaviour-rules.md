@@ -173,6 +173,12 @@ re-run is cheap, a wrong pass isn't.)
 
 Stored at `.youi/behaviour/<route-hash>.json` with `writeFileAtomic`.
 
+**What the app fingerprint covers** (slice 2 review): every project file git lists (tracked, and untracked not
+ignored; else a bounded walk), without node_modules, build output or `.youi/`; every lockfile up to the repository's
+top; each installed direct dependency's package.json (name, version, integrity); and the files screens.json's
+`behaviour.inputs` globs name (content hashed, never stored or printed). The contract bindings (every component's
+`a11y.behaviour`) are their own part of the key. Residual: environment variables set outside files aren't tracked.
+
 **Integrity is checked separately from freshness** (slice 2 review). The freshness key proves what a result was made
 against, not that the stored file is whole or authentic: anyone who can write `.youi/` can write any file. So the run
 also stores every target it found (`targets`), and a rule counts on a route only with exactly one result per target

@@ -338,9 +338,13 @@ see them; `youiyoux behave [--route /x]` checks them in the running dev app, in 
 - **Runs are kept** in `.youi/behaviour/<route-hash>.json`. `youiyoux check` reads them: a behaviour
   rule has run only when every route has a fresh, complete result, and a fresh failure counts as an
   error (or warning) like any violation, filtered by `--rule` and `--quiet`. A baseline never accepts
-  a behaviour failure. A result is stale, and not counted, once any scanned source file, CSS,
-  package.json or the lockfile, the rule, youiyoux, screens.json's behaviour settings or the screen's
-  path, or the viewport changes: run `behave` again. `check --diff` lists fresh failures as
+  a behaviour failure. A result is stale, and not counted, once any of these changes: a file of the
+  project (what git lists, tracked or untracked and not ignored, without node_modules, build output
+  or .youi), any lockfile up to the repository's top, an installed direct dependency's version, the
+  files `behaviour.inputs` names (globs such as `".env.development"`: hashed, never stored or
+  printed), the rule, the components' behaviour bindings, youiyoux, screens.json's behaviour
+  settings or the screen's path, or the viewport: run `behave` again. Environment variables set
+  outside files aren't tracked. `check --diff` lists fresh failures as
   `behaviour` findings, by popup (route, pattern, component, name), not by line.
 - **Exit codes.** 1 when a rule of error severity fails or anything couldn't be decided, else 0.
   `--format github` annotates failures on their trigger's line when it is known and writes the job

@@ -11,7 +11,8 @@
  */
 import { join } from "node:path";
 import { ruleSlug, type BehaviourCheckId, type BehaviourResult, type BehaviourRouteRun, type RuleSpec } from "@youiyoux/core";
-import { appFingerprint, behaviourConsent, behaviourRoutes, POPUP_NOUN, readScreensSpec, ruleDigest, type ContractBinding, type Project, type ScreensSpec } from "@youiyoux/scanner";
+import { appFingerprint, behaviourConsent, behaviourRoutes, contractBindings, POPUP_NOUN, readScreensSpec, ruleDigest, type Project, type ScreensSpec } from "@youiyoux/scanner";
+import { BehaviourConsent } from "@youiyoux/core";
 import { behaviourTool } from "./version.ts";
 import { plural, style } from "./ui.ts";
 
@@ -33,10 +34,6 @@ export interface BehaveResult {
 
 /** The System's behaviour rules that are on. */
 export const behaviourRules = (project: Pick<Project, "system">): RuleSpec[] => project.system.rules.filter((r) => r.severity !== "off" && r.check.engine === "behaviour");
-
-/** The contract bindings a probe locates triggers and popups by (a11y.behaviour). */
-export const contractBindings = (project: Pick<Project, "system">): ContractBinding[] =>
-  project.system.components.flatMap(({ contract }) => (contract.a11y.behaviour ? [{ component: contract.name, binding: contract.a11y.behaviour }] : []));
 
 const SCREENS = ".youi/screens";
 
@@ -62,8 +59,9 @@ export async function runBehave(project: Project, options: { readonly route?: st
   if (options.route !== undefined && !listed.includes(options.route)) throw new Error(`screens.json has no route ${options.route}: it lists ${listed.join(", ")}`);
   const wanted = options.route !== undefined ? [options.route] : held;
   const checks = rules.map((r) => ({ rule: r.id, check: (r.check as { id: BehaviourCheckId }).id, digest: ruleDigest(r) }));
-  const fingerprint = { app: await appFingerprint(project), tool: behaviourTool() };
-  const bindings = contractBindings(project);
+  const declared = BehaviourConsent.safeParse(spec.behaviour ?? {});
+  const fingerprint = { app: await appFingerprint(project, { inputs: declared.success ? (declared.data.inputs ?? []) : [] }), tool: behaviourTool() };
+  const bindings = contractBindings(project.system);
   const { probeBehaviour } = await import("@youiyoux/workflow");
   const routes: BehaveRoute[] = [];
   let browser: Browser | null = null;

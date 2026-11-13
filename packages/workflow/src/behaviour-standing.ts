@@ -9,8 +9,8 @@
  * failures, and a stored pass or fail for a check this youiyoux doesn't decide isn't counted at all.
  */
 import { join } from "node:path";
-import { BEHAVIOUR_CHECKS, decidesBehaviour, ruleSlug, targetIdentityKey, type BehaviourResult, type BehaviourRouteRun, type RuleRun, type RuleSpec } from "@youiyoux/core";
-import { appFingerprint, behaviourConfigDigest, behaviourRoutes, freshnessNow, readScreensSpec, ruleDigest, staleParts, type FreshnessNow, type Project, type ScreensSpec } from "@youiyoux/scanner";
+import { BEHAVIOUR_CHECKS, BehaviourConsent, decidesBehaviour, ruleSlug, targetIdentityKey, type BehaviourResult, type BehaviourRouteRun, type RuleRun, type RuleSpec } from "@youiyoux/core";
+import { appFingerprint, behaviourConfigDigest, behaviourRoutes, bindingsDigest, contractBindings, freshnessNow, readScreensSpec, ruleDigest, staleParts, type FreshnessNow, type Project, type ScreensSpec } from "@youiyoux/scanner";
 import { readBehaviourRun } from "./behaviour.ts";
 
 /** A fresh failed result of a behaviour rule: a finding, counted by the rule's severity. */
@@ -36,7 +36,7 @@ const MAX_NAMED = 5;
  * The standing of `rules` (behaviour rules that are on) from what is stored under the project's
  * `.youi/behaviour/`. `tool` is this youiyoux's version, as `youiyoux behave` stores it.
  */
-export async function behaviourStanding(project: Pick<Project, "root" | "config">, rules: readonly RuleSpec[], tool: string): Promise<BehaviourStanding> {
+export async function behaviourStanding(project: Pick<Project, "root" | "config" | "system">, rules: readonly RuleSpec[], tool: string): Promise<BehaviourStanding> {
   const probed = rules.filter((r) => r.severity !== "off" && r.check.engine === "behaviour");
   if (probed.length === 0) return { runs: [], failures: [] };
   let spec: ScreensSpec;
@@ -64,7 +64,8 @@ export async function behaviourStanding(project: Pick<Project, "root" | "config"
   }
   // The app's fingerprint only when there is something to compare it with: reading every source file costs.
   let now: FreshnessNow | null = null;
-  const current = async (): Promise<FreshnessNow> => (now ??= freshnessNow(spec, await appFingerprint(project), tool));
+  const inputs = BehaviourConsent.safeParse(spec.behaviour ?? {});
+  const current = async (): Promise<FreshnessNow> => (now ??= freshnessNow(spec, await appFingerprint(project, { inputs: inputs.success ? (inputs.data.inputs ?? []) : [] }), tool, bindingsDigest(contractBindings(project.system))));
   const runs: RuleRun[] = [];
   const failures: BehaviourFailure[] = [];
   for (const rule of probed) {

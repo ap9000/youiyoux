@@ -57,12 +57,12 @@ export function behaviourConsent(spec: { readonly base?: unknown; readonly behav
   return { ok: true, origin: at.origin, generation: consent.data.generation };
 }
 
-/** The consent block after a switch: on for `origin`, or off (null); either way one generation on, its `routes` kept. */
-export function switchedConsent(behaviour: unknown, origin: string | null): { allowedOrigin?: string; generation: number; routes?: string[] } {
+/** The consent block after a switch: on for `origin`, or off (null); either way one generation on, its `routes` and `inputs` kept. */
+export function switchedConsent(behaviour: unknown, origin: string | null): { allowedOrigin?: string; generation: number; routes?: string[]; inputs?: string[] } {
   const was = BehaviourConsent.safeParse(behaviour);
   const generation = (was.success ? was.data.generation : 0) + 1;
-  const routes = was.success && was.data.routes ? { routes: was.data.routes } : {};
-  return origin === null ? { generation, ...routes } : { allowedOrigin: origin, generation, ...routes };
+  const kept = { ...(was.success && was.data.routes ? { routes: was.data.routes } : {}), ...(was.success && was.data.inputs ? { inputs: was.data.inputs } : {}) };
+  return origin === null ? { generation, ...kept } : { allowedOrigin: origin, generation, ...kept };
 }
 
 /**

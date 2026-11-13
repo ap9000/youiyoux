@@ -6,55 +6,149 @@
  * result is fresh only when every part it carries equals what is computed now. Nothing in the
  * stored file can say it is fresh.
  */
-import { lstat, readFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { lstat, readdir, readFile, readlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { promisify } from "node:util";
 import { BehaviourConsent, findFiles, sha256, stableStringify, type Freshness, type RuleSpec } from "@youiyoux/core";
-import { langOf } from "../parse.ts";
+import type { ContractBinding } from "./in-page.ts";
 import type { Project } from "../project.ts";
 import type { ScreensSpec } from "../screens/capture.ts";
 import { behaviourConsent } from "./guards.ts";
 
 /** Lockfiles, looked for from the project's root up to its repository's top. */
 const LOCKFILES = ["pnpm-lock.yaml", "package-lock.json", "npm-shrinkwrap.json", "yarn.lock", "bun.lock", "bun.lockb"];
+/** Folders never part of the app's source: installed packages, build output, caches, youiyoux's own. */
+const NOT_SOURCE = new Set(["node_modules", ".git", ".youi", "dist", "build", "out", ".next", ".nuxt", ".svelte-kit", ".turbo", ".vercel", ".output", "coverage", ".cache", ".parcel-cache", ".vite"]);
+/** A walk without git stops here, and says so in the digest. */
+const MAX_WALKED = 20_000;
+/** An npm package name, before it is part of a path. */
+const PACKAGE_NAME = /^(?:@[a-z0-9][a-z0-9._~-]*\/)?[a-z0-9][a-z0-9._~-]*$/;
 
+const run = promisify(execFile);
 const exists = (path: string): Promise<boolean> => lstat(path).then(() => true, () => false);
 
-/** The lockfile nearest `root`, from it upward to its repository's top (the folder holding .git); null when there is none. */
-async function lockfileOf(root: string): Promise<string | null> {
+/** The folders from `root` up to its repository's top (the folder holding .git), or to the filesystem's root. */
+async function upToRepoTop(root: string): Promise<string[]> {
+  const dirs: string[] = [];
   for (let dir = root; ; dir = dirname(dir)) {
-    for (const name of LOCKFILES) if (await exists(join(dir, name))) return join(dir, name);
-    if ((await exists(join(dir, ".git"))) || dirname(dir) === dir) return null;
+    dirs.push(dir);
+    if ((await exists(join(dir, ".git"))) || dirname(dir) === dir) return dirs;
   }
+}
+
+const notSource = (path: string): boolean => path.split("/").some((segment) => NOT_SOURCE.has(segment));
+
+/**
+ * Every source-like file under `root`: in a git checkout what git lists (tracked, and untracked
+ * that isn't ignored), else a bounded walk; installed packages, build output and caches left out.
+ */
+async function sourceFiles(root: string): Promise<{ files: string[]; note: string | null }> {
+  try {
+    const { stdout } = await run("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], { cwd: root, maxBuffer: 256 * 1024 * 1024 });
+    return { files: [...new Set(stdout.split("\0").filter((f) => f && !notSource(f)))], note: null };
+  } catch {
+    const files: string[] = [];
+    const walk = async (dir: string, prefix: string): Promise<boolean> => {
+      for (const entry of (await readdir(dir, { withFileTypes: true }).catch(() => [])).sort((a, b) => a.name.localeCompare(b.name))) {
+        if (NOT_SOURCE.has(entry.name)) continue;
+        const path = prefix ? `${prefix}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) {
+          if (!(await walk(join(dir, entry.name), path))) return false;
+        } else if (files.push(path) >= MAX_WALKED) return false;
+      }
+      return true;
+    };
+    const whole = await walk(root, "");
+    return { files, note: whole ? null : `(walk stopped at ${MAX_WALKED} files)` };
+  }
+}
+
+/** A file's content digest; a link's target (never followed out of the project); absent or unreadable marked. */
+async function contentOf(path: string): Promise<string> {
+  try {
+    const stat = await lstat(path);
+    if (stat.isSymbolicLink()) return `link:${sha256(await readlink(path))}`;
+    if (!stat.isFile()) return "not-a-file";
+    return sha256(await readFile(path));
+  } catch (error: unknown) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT" ? "none" : "unreadable";
+  }
+}
+
+/** What is installed for each direct dependency (its package.json's name, version and integrity), nearest node_modules first. */
+async function installed(root: string, dirs: readonly string[]): Promise<string[]> {
+  let pkg: Record<string, unknown>;
+  try {
+    pkg = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as Record<string, unknown>;
+  } catch {
+    return [];
+  }
+  const names = new Set<string>();
+  for (const field of ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"]) {
+    const deps = pkg[field];
+    if (deps && typeof deps === "object") for (const name of Object.keys(deps)) names.add(name);
+  }
+  const out: string[] = [];
+  for (const name of [...names].sort()) {
+    if (!PACKAGE_NAME.test(name)) {
+      out.push(`dep ${JSON.stringify(name)}:not-a-package-name`);
+      continue;
+    }
+    let found = "not-installed";
+    for (const dir of dirs) {
+      try {
+        const manifest = JSON.parse(await readFile(join(dir, "node_modules", name, "package.json"), "utf8")) as Record<string, unknown>;
+        found = sha256(stableStringify({ name: manifest.name ?? null, version: manifest.version ?? null, integrity: manifest._integrity ?? null, resolved: manifest._resolved ?? null }));
+        break;
+      } catch {
+        // Not here: the next folder up.
+      }
+    }
+    out.push(`dep ${name}:${found}`);
+  }
+  return out;
 }
 
 /**
- * The app's source fingerprint: a digest of the content of every file the scan covers (the
- * scanner's own file list, `findFiles` with the project's include and exclude, kept to the
- * languages it parses: TypeScript, JavaScript and CSS), plus package.json and the lockfile. Read
- * from disk as it is now; a file that can't be read is marked, never skipped.
+ * The app's source fingerprint (any change makes every behaviour result stale): the content of
+ *
+ * - every source-like file under the project's root (git's tracked and untracked-not-ignored files,
+ *   else a bounded walk), and every file the scan covers, wherever its include globs reach;
+ * - package.json, and every lockfile from the project's root up to its repository's top;
+ * - each direct dependency's installed package.json (name, version, integrity), so a library that
+ *   changes under an unchanged lockfile still counts;
+ * - the files screens.json's `behaviour.inputs` globs match (say `.env.development`): their content
+ *   is hashed into the digest, never stored or printed.
+ *
+ * Read from disk as it is now; a file that can't be read is marked, never skipped. Residual:
+ * environment variables set outside files aren't tracked.
  */
-export async function appFingerprint(project: Pick<Project, "root" | "config">): Promise<string> {
-  const files = (await findFiles(project.root, project.config.include, project.config.exclude)).filter((f) => langOf(f) !== null).sort();
-  const lockfile = await lockfileOf(project.root);
-  const all = [...files.map((f) => ({ name: f, path: join(project.root, f) })), { name: "(package.json)", path: join(project.root, "package.json") }, { name: "(lockfile)", path: lockfile }];
-  const entries: string[] = [];
+export async function appFingerprint(project: Pick<Project, "root" | "config">, options: { readonly inputs?: readonly string[] } = {}): Promise<string> {
+  const root = project.root;
+  const scanned = await findFiles(root, project.config.include, project.config.exclude);
+  const { files: source, note } = await sourceFiles(root);
+  const inputs = options.inputs?.length ? await findFiles(root, options.inputs.filter(safeInput), []) : [];
+  const files = [...new Set([...source, ...scanned])].sort();
+  const dirs = await upToRepoTop(root);
+  const lockfiles = dirs.flatMap((dir, depth) => LOCKFILES.map((name) => ({ name: `(lockfile ${"../".repeat(depth)}${name})`, path: join(dir, name) })));
+  const all = [...files.map((f) => ({ name: f, path: join(root, f) })), { name: "(package.json)", path: join(root, "package.json") }, ...lockfiles, ...inputs.map((f) => ({ name: `(input ${f})`, path: join(root, f) }))];
+  const entries: string[] = note ? [note] : [];
   // A few at a time: a large project's files aren't all opened at once.
-  for (let i = 0; i < all.length; i += 64) {
-    entries.push(
-      ...(await Promise.all(
-        all.slice(i, i + 64).map(async ({ name, path }) => {
-          if (path === null) return `${name}:none`;
-          try {
-            return `${name}:${sha256(await readFile(path))}`;
-          } catch (error: unknown) {
-            return `${name}:${(error as NodeJS.ErrnoException).code === "ENOENT" ? "none" : "unreadable"}`;
-          }
-        }),
-      )),
-    );
-  }
+  for (let i = 0; i < all.length; i += 64) entries.push(...(await Promise.all(all.slice(i, i + 64).map(async ({ name, path }) => `${name}:${await contentOf(path)}`))));
+  entries.push(...(await installed(root, dirs)));
   return sha256(entries.join("\n")).slice(0, 32);
 }
+
+/** A `behaviour.inputs` glob stays inside the project: relative, forward slashes, no `..`. */
+export const safeInput = (glob: string): boolean => !!glob && !glob.startsWith("/") && !glob.includes("\\") && !/^[A-Za-z]:/.test(glob) && !glob.split("/").includes("..");
+
+/** The contract bindings a probe locates triggers and popups by: every component's a11y.behaviour in the System. */
+export const contractBindings = (system: Pick<Project["system"], "components">): ContractBinding[] =>
+  system.components.flatMap(({ contract }) => (contract.a11y.behaviour ? [{ component: contract.name, binding: contract.a11y.behaviour }] : []));
+
+/** The digest of the effective contract bindings (sorted by component), part of every result's freshness. */
+export const bindingsDigest = (bindings: readonly ContractBinding[]): string => sha256(stableStringify([...bindings].sort((a, b) => a.component.localeCompare(b.component)))).slice(0, 32);
 
 /** A rule's digest: its whole definition (statement, severity, check and options), as loaded. */
 export const ruleDigest = (rule: RuleSpec): string => sha256(stableStringify(rule)).slice(0, 32);
@@ -80,14 +174,16 @@ export function behaviourRoutes(spec: Pick<ScreensSpec, "behaviour" | "screens">
 /** What a result made now, on `route`, for a rule with `ruleDigest`, would carry. `origin` is null without consent now. */
 export interface FreshnessNow {
   readonly tool: string;
+  /** bindingsDigest of the contract bindings in the System now. */
+  readonly bindings: string;
   readonly origin: string | null;
   readonly viewport: { readonly width: number; readonly height: number };
   readonly app: string;
 }
 
-export function freshnessNow(spec: Pick<ScreensSpec, "base" | "behaviour" | "viewport">, app: string, tool: string): FreshnessNow {
+export function freshnessNow(spec: Pick<ScreensSpec, "base" | "behaviour" | "viewport">, app: string, tool: string, bindings: string): FreshnessNow {
   const consent = behaviourConsent(spec);
-  return { tool, origin: consent.ok ? consent.origin : null, viewport: { width: spec.viewport.width, height: spec.viewport.height }, app };
+  return { tool, bindings, origin: consent.ok ? consent.origin : null, viewport: { width: spec.viewport.width, height: spec.viewport.height }, app };
 }
 
 /**
@@ -99,6 +195,7 @@ export function staleParts(stored: { readonly freshness: Freshness; readonly vie
   if (stored.freshness.app !== now.app) parts.push("the code changed");
   if (stored.freshness.rule !== now.rule) parts.push("the rule changed");
   if (stored.freshness.tool !== now.tool) parts.push("youiyoux changed");
+  if (stored.freshness.bindings !== now.bindings) parts.push("the components' behaviour bindings changed");
   if (stored.freshness.origin !== now.origin) parts.push(now.origin === null ? "probing isn't switched on now" : "the app's address changed");
   if (stored.freshness.config !== now.config) parts.push("screens.json's behaviour settings or the screen's path changed");
   if (stored.viewport.width !== now.viewport.width || stored.viewport.height !== now.viewport.height) parts.push("the viewport changed");

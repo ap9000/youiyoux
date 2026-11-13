@@ -203,6 +203,10 @@
         "app": {
           "type": "string",
           "pattern": "^[0-9a-f]{12,64}$"
+        },
+        "bindings": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{12,64}$"
         }
       },
       "required": [
@@ -210,7 +214,8 @@
         "tool",
         "origin",
         "config",
-        "app"
+        "app",
+        "bindings"
       ],
       "additionalProperties": false
     }
