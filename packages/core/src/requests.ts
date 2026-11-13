@@ -15,6 +15,7 @@
  * request file stays youiyoux's and the task file the runner's, so neither overwrites the other.
  */
 import { z } from "zod";
+import { BehaviourCheckId, BehaviourRunId, BehaviourTargetIdentity } from "./behaviour.ts";
 import { ElementId } from "./ids.ts";
 
 const IsoTime = z.string().datetime({ offset: true });
@@ -104,6 +105,17 @@ export const RequestTask = z.object({
 });
 export type RequestTask = z.infer<typeof RequestTask>;
 
+/**
+ * A change request filed from a failed behaviour result (the hub's Behaviour tab): the rule, check
+ * and target it failed for, the run that failed and when. Set only by youiyoux from the stored
+ * result it names, never taken from a caller. Moving the request to addressed needs a stored,
+ * fresh, passed result for the same rule, check and target from a run newer than the request.
+ */
+export const RequestBehaviour = z
+  .object({ rule: ElementId, check: BehaviourCheckId, target: BehaviourTargetIdentity, runId: BehaviourRunId, failedAt: IsoTime })
+  .strict();
+export type RequestBehaviour = z.infer<typeof RequestBehaviour>;
+
 export const RequestDoc = z.object({
   $schema: z.string().optional(),
   schema: z.literal("youi.request/v1"),
@@ -123,6 +135,8 @@ export const RequestDoc = z.object({
   before: z.string().regex(/^r-[0-9a-f]{10}\.before\.webp$/).optional(),
   /** A change request's task, scoped for a runner (none on a comment, or on a request filed before tasks were). */
   task: RequestTask.optional(),
+  /** A request filed from a failed behaviour result: what must pass, in a newer run, before it is addressed. */
+  behaviour: RequestBehaviour.optional(),
   thread: z.array(RequestEntry).max(500),
 });
 export type RequestDoc = z.infer<typeof RequestDoc>;

@@ -59,7 +59,9 @@ export const BehaviourBinding = z
 export type BehaviourBinding = z.infer<typeof BehaviourBinding>;
 
 const Digest = z.string().regex(/^[0-9a-f]{12,64}$/, "expected a hex digest");
-const RunId = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, "expected a run id");
+/** A probe run's id. */
+export const BehaviourRunId = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/, "expected a run id");
+const RunId = BehaviourRunId;
 const RoutePath = z.string().regex(/^\//, "expected a route starting with /");
 const Viewport = z.object({ width: z.number().int().positive(), height: z.number().int().positive() }).strict();
 const Box = z.object({ x: z.number(), y: z.number(), width: z.number().nonnegative(), height: z.number().nonnegative() }).strict();
