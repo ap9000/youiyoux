@@ -20,7 +20,7 @@ export const methodWord = (method: string): string => (KNOWN_METHODS.has(String(
 export type Consent = { readonly ok: true; readonly origin: string; readonly generation: number } | { readonly ok: false; readonly why: string; readonly fix: string };
 
 const switchOn = (origin: string | null): string =>
-  `Next: add "behaviour": { "allowedOrigin": "${origin ?? "<the origin of base>"}" } to .youi/screens/screens.json (by hand for now; a switch in the hub is coming).`;
+  `Next: switch probing on in the hub (youiyoux ui, then Behaviour on any screen), or add "behaviour": { "allowedOrigin": "${origin ?? "<the origin of base>"}" } to .youi/screens/screens.json by hand.`;
 
 /** The exact origin of `base` when it is an http address on this machine; else why not. */
 export function probeOrigin(base: unknown): { readonly ok: true; readonly origin: string } | { readonly ok: false; readonly why: string; readonly fix: string } {

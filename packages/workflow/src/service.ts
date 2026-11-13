@@ -28,6 +28,7 @@ import { authorize, WorkflowError, type Action } from "./policy.ts";
 import { comparePreview, notRunReason } from "./preview.ts";
 import { LiveApp } from "./live.ts";
 import { RequestStore } from "./requests.ts";
+import type { BehaviourSetup } from "./behaviour-service.ts";
 import { decisionsKey, decisionsKeyFile, ProposalStore, type ProposalCheck } from "./proposals.ts";
 import type { WorkflowStore } from "./store.ts";
 
@@ -60,6 +61,12 @@ interface WorkflowOptions extends LoadProjectOptions {
    * draft can start.
    */
   readonly ingest?: (link: string) => Promise<IngestReading>;
+  /**
+   * Behaviour probes from the hub (behaviour-service.ts): this youiyoux's version as results record
+   * it, and how to open a browser. Without it, nothing is probed from here and stored results can't
+   * be held to now.
+   */
+  readonly behaviour?: BehaviourSetup;
 }
 
 /** The design repository and project as they are right now. */
@@ -123,6 +130,13 @@ export class RuleWorkflow {
   async requests(): Promise<RequestStore> {
     const project = await this.project();
     return new RequestStore(project.root, project.config.id, this.options.now ? { now: this.options.now } : {});
+  }
+
+  /** Behaviour probes for the product: its project, and how to run them (refused when this service wasn't given a browser). */
+  async behaviour(): Promise<{ project: Project; setup: BehaviourSetup }> {
+    const setup = this.options.behaviour;
+    if (!setup) throw new WorkflowError("not-found", "behaviour probes run from the hub youiyoux ui starts; this service wasn't started with a browser for them");
+    return { project: await this.project(), setup };
   }
 
   /** A System element's contract, or null (not one, or no System). */

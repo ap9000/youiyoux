@@ -75,6 +75,14 @@ export interface ProbeRouteOptions {
   readonly stillAllowed?: () => Promise<Stop | null>;
   /** Aborted when probing is switched off: the scenario running now is closed, and the rest are not run. */
   readonly signal?: AbortSignal;
+  /**
+   * Test only the targets `test` picks (one component's, say); every other target found is still
+   * listed, its checks incomplete ("not tested in this run: it probed only <words>"), so a run of
+   * one component never reads as the whole screen checked.
+   */
+  readonly only?: { readonly test: (key: TargetKey & { readonly ordinal?: number }) => boolean; readonly words: string };
+  /** Told once the screen's targets are found: how many this run will test. */
+  readonly onFound?: (count: number) => void;
 }
 
 export type TargetScenario = { readonly check: BehaviourCheckId; readonly keys?: readonly string[] } & (ScenarioOutcome | { readonly state: "not-applicable"; readonly why: string; readonly fix: string; readonly info: readonly string[] });
@@ -583,7 +591,7 @@ export async function withGuardedPage<T>(options: { readonly browser: Browser; r
 
 const untestedWords = (reason: "targets" | "time", budgets: ProbeBudgets): Stop =>
   reason === "targets"
-    ? { why: `not tested: this screen has more than ${budgets.targets} popup triggers, and a probe tests the first ${budgets.targets}`, fix: "Next: probe fewer popups per screen (split the screen's routes in screens.json), or list fewer routes under behaviour.routes; probing one component alone comes with the hub's behaviour switch." }
+    ? { why: `not tested: this screen has more than ${budgets.targets} popup triggers, and a probe tests the first ${budgets.targets}`, fix: "Next: probe fewer popups per screen (split the screen's routes in screens.json), or list fewer routes under behaviour.routes; or run one component alone from the hub's Behaviour tab." }
     : { why: `not tested: the screen's time budget (${Math.round(budgets.routeMs / 1000)} s) ran out first`, fix: "Next: make sure the dev server is idle, then run the probe again." };
 
 /**
@@ -623,6 +631,11 @@ export async function probeRoute(options: ProbeRouteOptions): Promise<RouteProbe
     const keyed = withOrdinals(found.map((f) => ({ route: options.route, pattern: f.pattern, component: f.component, accessibleName: f.accessibleName, found: f })));
     const targets: ProbedTarget[] = [];
     let refusedFrom: Stop | null = null;
+    // Which targets this run tests (all, or the ones `only` picks), each with its place among them: the target budget counts those.
+    const chosen = keyed.map(({ found: _f, ambiguous: _a, ...key }) => !options.only || options.only.test(key));
+    const order = chosen.map((c, i) => (c ? chosen.slice(0, i).filter(Boolean).length : -1));
+    options.onFound?.(Math.min(chosen.filter(Boolean).length, budgets.targets));
+    const notChosen: Stop | null = options.only ? { why: `not tested in this run: it probed only ${options.only.words}`, fix: "Next: run the whole screen (Run on this screen in the hub, or youiyoux behave --route <route>) to test every popup here." } : null;
     for (const [n, { found: f, ambiguous, ...key }] of keyed.entries()) {
       const scenarios: TargetScenario[] = [];
       // One control run per target, shared by the checks whose result needs it (it is the same steps for each).
@@ -634,7 +647,8 @@ export async function probeRoute(options: ProbeRouteOptions): Promise<RouteProbe
           continue;
         }
         const skip = (stop: Stop): void => void scenarios.push({ check, state: "incomplete", ...stop, info: [] });
-        if (n >= budgets.targets) skip(untestedWords("targets", budgets));
+        if (!chosen[n]) skip(notChosen!);
+        else if (order[n]! >= budgets.targets) skip(untestedWords("targets", budgets));
         else if (ambiguous) skip(ambiguousWords(key, keyed.filter((k) => k.ambiguous && k.pattern === key.pattern && k.component === key.component && k.accessibleName === key.accessibleName).length));
         else if (options.signal?.aborted) skip((refusedFrom = SWITCHED_OFF));
         else if (refusedFrom) skip(refusedFrom);
@@ -647,7 +661,7 @@ export async function probeRoute(options: ProbeRouteOptions): Promise<RouteProbe
     const named = found.length >= MAX_FOUND ? `at least ${MAX_FOUND}` : String(found.length);
     const coverage = found.length === 0
       ? "No declared popups found; popups without these markers were not assessed."
-      : `${named} popup trigger${found.length === 1 ? "" : "s"} found by ARIA markers${bindings.length ? " and contract bindings" : ""}${found.length > budgets.targets ? `; the first ${budgets.targets} were tested` : ""}. Popups without these markers were not assessed; opening is by mouse click only (keyboard opening isn't verified yet).`;
+      : `${named} popup trigger${found.length === 1 ? "" : "s"} found by ARIA markers${bindings.length ? " and contract bindings" : ""}${options.only ? `; this run tested only ${options.only.words} (${chosen.filter(Boolean).length})` : found.length > budgets.targets ? `; the first ${budgets.targets} were tested` : ""}. Popups without these markers were not assessed; opening is by mouse click only (keyboard opening isn't verified yet).`;
     return { url: start, state: "probed", why: null, fix: null, coverage, targets };
   } finally {
     await close();

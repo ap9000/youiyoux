@@ -14,6 +14,7 @@ import type { IngestReading, WorkflowInfo } from "@youiyoux/workflow";
 import { agentsSetup } from "./agents-setup.ts";
 import { keptKey, type KeptKey } from "./hub-key.ts";
 import { TOOL_ROOT } from "./tool.ts";
+import { behaviourTool } from "./version.ts";
 
 interface RuleEditorOptions {
   readonly project: string;
@@ -79,7 +80,9 @@ export async function startRuleEditor(options: RuleEditorOptions): Promise<RuleE
   const load = { ...(options.config ? { configPath: resolve(options.config) } : {}), ...(options.design ? { designRoot: resolve(options.design) } : {}), ...(options.root ? { productRoot: resolve(options.root) } : {}) };
   const project = await loadProject(projectRoot, load);
   const stateDir = workflowStateDir(project, options.state);
-  const workflow = new RuleWorkflow({ projectRoot, store: new FileStore(stateDir), swapImpact, libraryLicence, ingest, ...load });
+  // Behaviour probes from the hub's Behaviour tab: results recorded as this youiyoux, a browser opened per run.
+  const behaviour = { tool: behaviourTool(), browser: async () => (await import("@youiyoux/detect")).launchBrowser(process.env.YOUI_CHROMIUM, { purpose: { what: "the hub's Behaviour tab", command: "youiyoux behave" } }) };
+  const workflow = new RuleWorkflow({ projectRoot, store: new FileStore(stateDir), swapImpact, libraryLicence, ingest, behaviour, ...load });
   const actor = { kind: "person" as const, name: userInfo().username };
   // Fails here, before the hub starts, when the design repo is not a git checkout.
   const info = await workflow.info(actor);

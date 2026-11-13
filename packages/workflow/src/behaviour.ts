@@ -37,6 +37,10 @@ export interface ProbeBehaviourOptions {
   /** What the run is made against, beyond what the probe knows: the app's source fingerprint and this youiyoux's version. */
   readonly fingerprint: { readonly app: string; readonly tool: string };
   readonly budgets?: Partial<ProbeBudgets>;
+  /** Test only these targets (one component's); the rest are listed, not tested (probeRoute's `only`). */
+  readonly only?: ProbeRouteOptions["only"];
+  /** Told how many popups this run tests, once they are found. */
+  readonly onFound?: (count: number) => void;
   readonly now?: () => Date;
   /** Tests only: the probe to run instead of probeRoute (to show the storage guards are active). */
   readonly probe?: typeof probeRoute;
@@ -302,7 +306,7 @@ export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<Pr
   const checks = [...new Set(options.checks.map((c) => c.check))];
   let probe: RouteProbe;
   try {
-    probe = await (options.probe ?? probeRoute)({ browser: options.browser, origin: consent.origin, route: options.route, path: screen.path, viewport: spec.viewport, checks, ...(options.bindings ? { bindings: options.bindings } : {}), ...(options.budgets ? { budgets: options.budgets } : {}), stillAllowed, signal: controller.signal });
+    probe = await (options.probe ?? probeRoute)({ browser: options.browser, origin: consent.origin, route: options.route, path: screen.path, viewport: spec.viewport, checks, ...(options.bindings ? { bindings: options.bindings } : {}), ...(options.budgets ? { budgets: options.budgets } : {}), ...(options.only ? { only: options.only } : {}), ...(options.onFound ? { onFound: options.onFound } : {}), stillAllowed, signal: controller.signal });
   } finally {
     running.get(key)?.delete(controller);
     if (running.get(key)?.size === 0) running.delete(key);

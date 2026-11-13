@@ -11,6 +11,7 @@ export * from "./preview.ts";
 export * from "./live.ts";
 export * from "./behaviour.ts";
 export * from "./behaviour-standing.ts";
+export * from "./behaviour-service.ts";
 export * from "./requests.ts";
 export * from "./proposals.ts";
 export * from "./service.ts";

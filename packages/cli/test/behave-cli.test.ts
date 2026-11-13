@@ -90,9 +90,9 @@ describe("youiyoux behave without consent", () => {
     const before = requests.length;
     expect(await run("behave")).toBe(1);
     expect(err).toContain("Probes click buttons that open menus and dialogs in your running app. Use a dev app with test data. Probing isn't switched on for this app.");
-    expect(err).toContain(`Next: add "behaviour": { "allowedOrigin": "${base}" } to .youi/screens/screens.json (by hand for now; a switch in the hub is coming).`);
-    // Never pointing at a hub tab that doesn't exist yet.
-    expect(err).not.toContain("Behaviour tab");
+    expect(err).toContain(`Next: switch probing on in the hub (youiyoux ui, then Behaviour on any screen), or add "behaviour": { "allowedOrigin": "${base}" } to .youi/screens/screens.json by hand.`);
+    // The hub's switch, which exists now, is named first.
+    expect(err).toContain("switch probing on in the hub");
     expect(requests.length).toBe(before);
     expect(existsSync(join(app, ".youi/behaviour"))).toBe(false);
   });
