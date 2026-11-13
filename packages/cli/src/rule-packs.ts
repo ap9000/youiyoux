@@ -8,10 +8,11 @@
  * in the running app checks them (`youiyoux behave`), so until one has run `youiyoux check` says
  * they are incomplete, never clean.
  */
-import { lstat, realpath } from "node:fs/promises";
+import { randomBytes } from "node:crypto";
+import { link, lstat, mkdir, readdir, readFile, realpath, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
-import { stringify } from "yaml";
-import { RuleSpec, writeFileAtomic, type BehaviourCheckId, type LoadedSystem } from "@youiyoux/core";
+import { parse as parseYaml, stringify } from "yaml";
+import { RuleSpec, withFileLock, type BehaviourCheckId, type LoadedSystem } from "@youiyoux/core";
 
 /** What every behaviour rule's agent text ends with: how an agent sees that its fix works. */
 const VERIFY = "Verify with ui_behave (or `youiyoux behave --route <route>`).";
@@ -146,30 +147,93 @@ export interface AddedRules {
   readonly kept: ReadonlyArray<{ readonly file: string; readonly why: string }>;
 }
 
+/** The lock `rules add` writers take turns under, in the rules folder (not a rule file: the loader reads only *.rule.yaml). */
+export const RULES_LOCK = ".youi-rules.lock";
+/** How long a second `rules add` waits for the first before giving up, naming the holder. */
+const LOCK_WAIT_MS = 10_000;
+
+/** The ids of the rule files in the folder now, read from disk (a file that can't be read as a rule names no id). */
+async function idsOnDisk(dir: string): Promise<Set<string>> {
+  const ids = new Set<string>();
+  const names = await readdir(dir).catch((error: NodeJS.ErrnoException) => (error.code === "ENOENT" ? [] : Promise.reject(error)));
+  for (const name of names.filter((n) => n.endsWith(".rule.yaml"))) {
+    try {
+      const id = (parseYaml(await readFile(join(dir, name), "utf8")) as { id?: unknown } | null)?.id;
+      if (typeof id === "string") ids.add(id);
+    } catch {
+      // Not readable as YAML: it names no id, and its file name is still never written over.
+    }
+  }
+  return ids;
+}
+
 /**
- * Write a pack's rule files into the System's rules folder, each atomically, never over a file or
- * an id that is already there. Writes those files and nothing else.
+ * The file published at `path` only if nothing is there: written whole to an exclusive temp file
+ * beside it, then hard-linked into place (link fails if the name exists, whoever made it, even a
+ * dangling link), then the temp removed. False when the name was taken.
  */
-export async function addRulePack(target: RulePackTarget, pack: RulePack, options: { readonly dryRun?: boolean } = {}): Promise<AddedRules> {
+async function publishNew(path: string, content: string): Promise<boolean> {
+  const temp = join(dirname(path), `.${process.pid}.${randomBytes(6).toString("hex")}.tmp`);
+  await writeFile(temp, content, { encoding: "utf8", flag: "wx" });
+  try {
+    await link(temp, path);
+    return true;
+  } catch (error: unknown) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return false;
+    throw error;
+  } finally {
+    await unlink(temp).catch(() => undefined);
+  }
+}
+
+export interface AddRulePackOptions {
+  readonly dryRun?: boolean;
+  /** Tests only: called after the ids and names are read under the lock, before each file is published. */
+  readonly beforePublish?: (file: string) => Promise<void>;
+}
+
+/**
+ * Write a pack's rule files into the System's rules folder, never over a file or an id that is
+ * already there. Writers take turns under the folder's lock; inside it the ids are read again from
+ * disk, and each file is published only if its name is still free (link, never rename), so a rule
+ * someone else made meanwhile is kept, not replaced. Writes those files (and the lock, removed after)
+ * and nothing else.
+ */
+export async function addRulePack(target: RulePackTarget, pack: RulePack, options: AddRulePackOptions = {}): Promise<AddedRules> {
   const dir = join(target.root, target.system.config.rules);
   const base = await realpath(target.root);
   // The folder, or (not made yet) its nearest existing parent, through every link.
-  let real: string | null = null;
-  for (let at = dir; real === null; at = dirname(at)) real = await realpath(at).catch((error: NodeJS.ErrnoException) => (error.code === "ENOENT" && dirname(at) !== at ? null : Promise.reject(error)));
-  if (real !== base && !real.startsWith(base + sep)) throw new Error(`the rules folder ${target.system.config.rules} leads outside the design repo (to ${relative(base, real)}): rules add writes only inside it`);
-  const ids = new Set(target.system.rules.map((r) => r.id));
-  const added: string[] = [];
-  const kept: Array<{ file: string; why: string }> = [];
-  const writes: Array<{ path: string; content: string }> = [];
-  for (const { file, spec } of pack.rules(target.system.config.id)) {
-    const path = join(dir, file);
-    if (ids.has(spec.id)) kept.push({ file, why: `${spec.id} is already a rule of ${target.system.config.id}` });
-    else if (await lstat(path).then(() => true, () => false)) kept.push({ file, why: `${file} is already in the rules folder` });
-    else {
-      writes.push({ path, content: ruleYaml(spec) });
-      added.push(file);
+  const inside = async (): Promise<void> => {
+    let real: string | null = null;
+    for (let at = dir; real === null; at = dirname(at)) real = await realpath(at).catch((error: NodeJS.ErrnoException) => (error.code === "ENOENT" && dirname(at) !== at ? null : Promise.reject(error)));
+    if (real !== base && !real.startsWith(base + sep)) throw new Error(`the rules folder ${target.system.config.rules} leads outside the design repo (to ${relative(base, real)}): rules add writes only inside it`);
+  };
+  await inside();
+  const rules = pack.rules(target.system.config.id);
+  const sort = async (ids: Set<string>) => {
+    const free: Array<{ file: string; spec: RuleSpec }> = [];
+    const kept: Array<{ file: string; why: string }> = [];
+    for (const rule of rules) {
+      if (ids.has(rule.spec.id)) kept.push({ file: rule.file, why: `${rule.spec.id} is already a rule of ${target.system.config.id}` });
+      else if (await lstat(join(dir, rule.file)).then(() => true, () => false)) kept.push({ file: rule.file, why: `${rule.file} is already in the rules folder` });
+      else free.push(rule);
     }
+    return { free, kept };
+  };
+  if (options.dryRun) {
+    const { free, kept } = await sort(new Set([...target.system.rules.map((r) => r.id), ...(await idsOnDisk(dir))]));
+    return { pack: pack.name, dir, added: free.map((r) => r.file), kept };
   }
-  if (!options.dryRun) for (const w of writes) await writeFileAtomic(w.path, w.content);
-  return { pack: pack.name, dir, added, kept };
+  await mkdir(dir, { recursive: true });
+  await inside();
+  return withFileLock(join(dir, RULES_LOCK), async () => {
+    const { free, kept } = await sort(await idsOnDisk(dir));
+    const added: string[] = [];
+    for (const { file, spec } of free) {
+      await options.beforePublish?.(file);
+      if (await publishNew(join(dir, file), ruleYaml(spec))) added.push(file);
+      else kept.push({ file, why: `${file} was made by someone else meanwhile` });
+    }
+    return { pack: pack.name, dir, added, kept };
+  }, { waitMs: LOCK_WAIT_MS });
 }

@@ -10,9 +10,9 @@ import { join } from "node:path";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { parse as parseYaml } from "yaml";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { BEHAVIOUR_CHECK_IDS, renderJsonSchemas, RuleSpec } from "@youiyoux/core";
+import { BEHAVIOUR_CHECK_IDS, getSystem, loadDesignRepo, renderJsonSchemas, RuleSpec } from "@youiyoux/core";
 import { main } from "../src/index.ts";
-import { RULE_PACKS, ruleYaml } from "../src/rule-packs.ts";
+import { addRulePack, RULE_PACKS, RULES_LOCK, ruleYaml } from "../src/rule-packs.ts";
 
 const FIXTURE = join(import.meta.dirname, "../../scanner/test/fixtures/expo-app");
 const DEMO = join(import.meta.dirname, "../../../examples/demo-design");
@@ -188,5 +188,59 @@ describe("nothing else adds them", () => {
     await run("check", "--project", app, "--design", design, "--json");
     expect(await rulesIn(join(design, "rules"))).toEqual(before);
     expect(before.some((f) => f.startsWith("behaviour."))).toBe(false);
+  });
+});
+
+describe("rules add under concurrency", () => {
+  const pack = RULE_PACKS.find((p) => p.name === "behaviour")!;
+  const target = async () => ({ root: design, system: getSystem(await loadDesignRepo(design)) });
+  const mine = (id: string, check: string) => ["schema: youi.rule/v1", `id: youi:demo/rule/${id}`, "title: Mine", "severity: error", "statement: Mine.", "agent: Mine.", "check:", "  engine: behaviour", `  id: ${check}`, ""].join("\n");
+
+  test("a file another writer makes between the check and the write is kept, never replaced", async () => {
+    const theirs = mine("theirs", "focus-into");
+    const added = await addRulePack(await target(), pack, {
+      beforePublish: async (file) => {
+        if (file === "behaviour.focus-into.rule.yaml") await writeFile(join(design, "rules", file), theirs);
+      },
+    });
+    expect(added.added).toEqual(SIX.filter((f) => f !== "behaviour.focus-into.rule.yaml"));
+    expect(added.kept).toEqual([{ file: "behaviour.focus-into.rule.yaml", why: "behaviour.focus-into.rule.yaml was made by someone else meanwhile" }]);
+    expect(await readFile(join(design, "rules/behaviour.focus-into.rule.yaml"), "utf8")).toBe(theirs);
+    // No temp file or lock is left behind.
+    expect((await readdir(join(design, "rules"))).filter((f) => f.startsWith(".") || f === RULES_LOCK)).toEqual([]);
+  });
+
+  test("ids are read again under the lock: a rule with one of the pack's ids, added after the System was loaded, is kept", async () => {
+    const loaded = await target();
+    await writeFile(join(design, "rules/my-escape.rule.yaml"), mine("behaviour.dismiss-escape", "dismiss-escape"));
+    const added = await addRulePack(loaded, pack);
+    expect(added.kept).toEqual([{ file: "behaviour.dismiss-escape.rule.yaml", why: "youi:demo/rule/behaviour.dismiss-escape is already a rule of demo" }]);
+    await expect(readFile(join(design, "rules/behaviour.dismiss-escape.rule.yaml"), "utf8")).rejects.toThrow();
+    // The System still loads: no id is there twice.
+    expect(getSystem(await loadDesignRepo(design)).rules.filter((r) => r.id.endsWith("/behaviour.dismiss-escape"))).toHaveLength(1);
+  });
+
+  test("two at once take turns: the second waits for the first's lock, then finds every rule there and writes nothing", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((done) => (release = done));
+    let entered!: () => void;
+    const inside = new Promise<void>((done) => (entered = done));
+    const first = addRulePack(await target(), pack, {
+      beforePublish: async () => {
+        entered();
+        await gate;
+      },
+    });
+    await inside;
+    let secondDone = false;
+    const second = addRulePack(await target(), pack).then((r) => ((secondDone = true), r));
+    await new Promise((done) => setTimeout(done, 300));
+    // The first holds the lock between its check and its writes: the second hasn't run.
+    expect(secondDone).toBe(false);
+    release();
+    expect((await first).added).toEqual(SIX);
+    const after = await second;
+    expect(after.added).toEqual([]);
+    expect(after.kept.map((k) => k.why)).toEqual(SIX.map((f) => `youi:demo/rule/${f.replace(".rule.yaml", "")} is already a rule of demo`));
   });
 });
