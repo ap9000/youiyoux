@@ -87,8 +87,13 @@ export async function triggerState(page: ProbePage, opened: Opened, args: CheckA
     if ((await page.popupState(opened.index, pattern, args.popup)) !== "open") return ctx.incomplete({ why: `the ${noun} closed before the button's state could be read`, fix: `Next: keep the ${noun} open until it is dismissed, then run youiyoux behave again.` });
     const verdict = judgeTriggerState(pattern, opened.closed, now);
     if (verdict.ok) {
-      ctx.extra.push(...verdict.info);
-      return ctx.decided("passed", { why: verdict.why, fix: "Nothing to do: the button says when its popup is open." });
+      // Still so at the end of the grace moment (the button's state read again, the popup still open); else judged again.
+      const held = await ctx.pass({ why: verdict.why, fix: "Nothing to do: the button says when its popup is open." }, async () => judgeTriggerState(pattern, opened.closed, await page.triggerFacts(opened.index)).ok && (await page.popupState(opened.index, pattern, args.popup)) === "open");
+      if (held !== "moved") {
+        if (held.state === "passed") ctx.extra.push(...verdict.info);
+        return held.state === "passed" ? { ...held, info: ctx.info() } : held;
+      }
+      continue;
     }
     if (asked >= until) return ctx.decided("failed", { why: verdict.why, fix: TRIGGER_FIX[pattern] });
     if (deadline() <= asked) return ctx.incomplete({ why: "ran out of time before the button's state could be read", fix: "Next: make sure the dev server is idle, then run youiyoux behave again." });
@@ -145,7 +150,16 @@ export async function focusInto(page: ProbePage, opened: Opened, args: CheckArgs
     const now = await page.focus(opened.index);
     if (!now.open) return ctx.incomplete({ why: `the ${noun} closed before where focus went could be judged`, fix: `Next: keep the ${noun} open until it is dismissed, then run youiyoux behave again.` });
     const inside = pattern === "menu-button" ? now.at === "item" && now.role !== "option" : now.at === "item" || now.at === "inside" || now.at === "popup";
-    if (inside) return ctx.decided("passed", { why: `focus moved to ${focusWords(now, noun)} when it opened`, fix: "Nothing to do: opening moves focus in." });
+    if (inside) {
+      // Still inside at the end of the grace moment (focus read again, the popup still open); else judged again, until the budget.
+      const held = await ctx.pass({ why: `focus moved to ${focusWords(now, noun)} when it opened`, fix: "Nothing to do: opening moves focus in." }, async () => {
+        const f = await page.focus(opened.index);
+        return f.open && (pattern === "menu-button" ? f.at === "item" && f.role !== "option" : f.at === "item" || f.at === "inside" || f.at === "popup");
+      });
+      if (held !== "moved") return held;
+      if (deadline() <= Date.now()) return ctx.incomplete({ why: "ran out of time before where focus went could be judged", fix: "Next: make sure the dev server is idle, then run youiyoux behave again." });
+      continue;
+    }
     if (now.at === "away") return ctx.incomplete({ why: "the page lost focus to the browser itself, so where the app put it can't be judged", fix: "Next: run youiyoux behave again." });
     if (asked >= until) {
       const where = now.at === "trigger" ? `focus stayed on the button that opened the ${noun}` : now.at === "popup" ? `focus went to the ${noun} itself, not to one of its items` : `focus went to ${focusWords(now, noun)}, not ${pattern === "menu-button" ? "to one of the menu's items" : "inside the dialog"}`;
@@ -220,10 +234,40 @@ export async function focusReturn(page: ProbePage, opened: Opened, args: CheckAr
 
 /** focus-trap judges dialogs with up to this many tabbable elements (2 presses each, plus a wrap through the browser's toolbar). */
 export const MAX_TRAP_TABBABLES = 20;
-/** After a key, how long focus has to land (a trap that moves it in a focusin handler or the next frame). */
+/** After a key, how long focus has to land where it should (a trap that moves it in a focusin handler or the next frame). */
 const KEY_LAND_MS = 200;
-/** After a key, the first look: at once (the key's own handlers have run by the time it resolves), then polled. */
-const KEY_FIRST_LOOK_MS = 0;
+/** After a key, focus is read only once it has stayed put this long: never on the first look. */
+const STABLE_MS = 60;
+/** After a key, how often focus is read while it settles. */
+const SETTLE_POLL_MS = 20;
+/** After a key, focus that hasn't stayed put by then can't be judged. */
+const SETTLE_MAX_MS = 400;
+
+/** Why a key's outcome can't be judged when focus keeps moving after it. */
+const KEPT_MOVING = { why: "focus kept moving after the key, so where it landed can't be judged", fix: "Next: check this popup's keyboard behaviour by hand." };
+/** Why a pass doesn't stand when focus moved again during the moment after the last key. */
+const MOVED_AFTER = { why: "focus moved again just after the last key, so the result can't be judged", fix: "Next: make sure nothing moves focus later on its own (a timer, an animation's end), then run youiyoux behave again." };
+
+/**
+ * Where focus is after a key, read only once it has stayed the same (`sign` unchanged) for
+ * STABLE_MS: as soon as it is both settled and where `want` says, or settled once KEY_LAND_MS have
+ * passed; null when it hasn't settled by SETTLE_MAX_MS (or the scenario's time). Never the first look.
+ */
+async function settled<T>(ctx: ReturnType<typeof checkContext>, deadline: () => number, read: () => Promise<T>, sign: (facts: T) => string, want: (facts: T) => boolean): Promise<T | null> {
+  const pressed = Date.now();
+  let last = await read();
+  let since = Date.now();
+  for (;;) {
+    await ctx.settle(SETTLE_POLL_MS);
+    const now = await read();
+    if (sign(now) !== sign(last)) since = Date.now();
+    last = now;
+    const steady = Date.now() - since >= STABLE_MS;
+    const elapsed = Date.now() - pressed;
+    if (steady && (want(last) || elapsed >= KEY_LAND_MS)) return last;
+    if (elapsed >= SETTLE_MAX_MS || deadline() <= Date.now()) return null;
+  }
+}
 /** After focus is placed, how long the page's focus handlers get before the first key. */
 const PLACE_SETTLE_MS = 100;
 
@@ -267,16 +311,8 @@ export async function focusTrap(page: ProbePage, opened: Opened, args: CheckArgs
     await page.press(key);
     return null;
   };
-  /** Where focus is after a key: looked at until `want` holds, or KEY_LAND_MS after the press. */
-  const look = async (want: (facts: Awaited<ReturnType<ProbePage["trap"]>>) => boolean) => {
-    const pressed = Date.now();
-    await ctx.settle(KEY_FIRST_LOOK_MS);
-    for (;;) {
-      const facts = await page.trap(false);
-      if (want(facts) || Date.now() - pressed >= KEY_LAND_MS || args.deadline() <= Date.now()) return facts;
-      await ctx.settle(25);
-    }
-  };
+  /** Where focus is after a key, once it has settled (null: it kept moving). */
+  const look = (want: (facts: TrapFacts) => boolean): Promise<TrapFacts | null> => settled(ctx, args.deadline, () => page.trap(false), (f) => JSON.stringify([f.open, f.stale, f.at]), want);
   const closedStop = { why: "the dialog closed while Tab was pressed, so the focus trap can't be judged", fix: "Next: keep the dialog open while Tab moves through it, then run youiyoux behave again." };
   const staleStop = { why: "the dialog's focusable elements changed while Tab was pressed, so the order can't be judged", fix: "Next: keep the dialog's contents steady while Tab moves through it, then run youiyoux behave again." };
   const uncounted = (key: string): Stop => ({ why: `${key} moved focus to something inside the dialog that isn't counted as focusable (a scrolling area, say), so the order can't be judged`, fix: "Next: check Tab and Shift+Tab in this dialog by hand." });
@@ -289,6 +325,7 @@ export async function focusTrap(page: ProbePage, opened: Opened, args: CheckArgs
       const refused = await press(key, away);
       if (refused) return ctx.incomplete(refused);
       const now = await look((f) => f.at.kind === "popup" || f.at.kind === "inside");
+      if (!now) return ctx.incomplete(KEPT_MOVING);
       // After every key, before anything is decided from it: what the guards refused, and where the page is.
       const stop = await ctx.stopped();
       if (stop) return ctx.incomplete(stop);
@@ -302,7 +339,11 @@ export async function focusTrap(page: ProbePage, opened: Opened, args: CheckArgs
       return ctx.decided("failed", { why: `${key} moved focus out of the dialog (to ${focusWords({ at: now.at.kind, role: now.at.role, name: now.at.name }, "dialog")}); with nothing focusable inside, the dialog itself should keep focus`, fix: TRAP_FIX });
     }
     if (native) ctx.extra.push("a native <dialog> shown with showModal(): the browser keeps focus inside it (Tab passes through its own toolbar)");
-    return ctx.pass({ why: "with nothing focusable inside, the dialog kept focus on Tab and Shift+Tab", fix: "Nothing to do: focus stays inside the dialog." });
+    const kept = await ctx.pass({ why: "with nothing focusable inside, the dialog kept focus on Tab and Shift+Tab", fix: "Nothing to do: focus stays inside the dialog." }, async () => {
+      const f = await page.trap(false);
+      return f.open && (f.at.kind === "popup" || f.at.kind === "inside" || (native && f.at.kind === "away"));
+    });
+    return kept === "moved" ? ctx.incomplete(MOVED_AFTER) : kept;
   }
   if (start.at.kind !== "tabbable") return ctx.incomplete(changed);
   let k = start.at.i;
@@ -315,11 +356,13 @@ export async function focusTrap(page: ProbePage, opened: Opened, args: CheckArgs
       let refused = await press(key, false);
       if (refused) return ctx.incomplete(refused);
       let now = await look(arrived);
+      if (!now) return ctx.incomplete(KEPT_MOVING);
       if (native && wraps && now.open && now.at.kind === "away") {
         // A native modal at its end: Chrome passes focus through its own toolbar; one more press comes back in.
         refused = await press(key, true);
         if (refused) return ctx.incomplete(refused);
         now = await look(arrived);
+        if (!now) return ctx.incomplete(KEPT_MOVING);
       }
       // After every key, before anything is decided from it: what the guards refused, and where the page is.
       const stop = await ctx.stopped();
@@ -339,7 +382,12 @@ export async function focusTrap(page: ProbePage, opened: Opened, args: CheckArgs
     }
   }
   if (native) ctx.extra.push("a native <dialog> shown with showModal(): the browser keeps focus inside it (at the ends Tab passes through its own toolbar); the order was checked");
-  return ctx.pass({ why: n === 1 ? "Tab and Shift+Tab kept focus on the dialog's only focusable element" : `Tab and Shift+Tab stayed inside the dialog, visiting its ${n} focusable elements in order and wrapping round`, fix: "Nothing to do: focus stays inside the dialog." });
+  const trapped = await ctx.pass({ why: n === 1 ? "Tab and Shift+Tab kept focus on the dialog's only focusable element" : `Tab and Shift+Tab stayed inside the dialog, visiting its ${n} focusable elements in order and wrapping round`, fix: "Nothing to do: focus stays inside the dialog." }, async () => {
+    // Still where the last key put it, the dialog still open.
+    const f = await page.trap(false);
+    return f.open && !f.stale && f.at.kind === "tabbable" && f.at.i === k;
+  });
+  return trapped === "moved" ? ctx.incomplete(MOVED_AFTER) : trapped;
 }
 
 /** arrow-keys checks lists of up to this many items: every move both ways and both ends are pressed, about two presses an item. */
@@ -389,15 +437,8 @@ export async function arrowKeys(page: ProbePage, opened: Opened, args: CheckArgs
     await page.press(key);
     return null;
   };
-  const look = async (want: (facts: ItemFacts) => boolean): Promise<ItemFacts> => {
-    const pressed = Date.now();
-    await ctx.settle(KEY_FIRST_LOOK_MS);
-    for (;;) {
-      const facts = await page.items(opened.index, pattern, false);
-      if (want(facts) || Date.now() - pressed >= KEY_LAND_MS || args.deadline() <= Date.now()) return facts;
-      await ctx.settle(20);
-    }
-  };
+  /** Where focus is after a key, once it has settled (null: it kept moving). */
+  const look = (want: (facts: ItemFacts) => boolean): Promise<ItemFacts | null> => settled(ctx, args.deadline, () => page.items(opened.index, pattern, false), (f) => JSON.stringify([f.open, f.stale, f.at]), want);
   const start = await page.items(opened.index, pattern, false);
   if (start.stale) return ctx.incomplete({ why: `the ${noun}'s ${itemNoun}s changed before arrow keys were pressed`, fix: `Next: keep the ${noun}'s contents steady while it is open, then run youiyoux behave again.` });
   let at: number;
@@ -446,6 +487,7 @@ export async function arrowKeys(page: ProbePage, opened: Opened, args: CheckArgs
     const refused = await press(key);
     if (refused) return { outcome: ctx.incomplete(refused) };
     const now = await look((f) => f.at.kind === "item" && (next.includes(f.at.i) || end.includes(f.at.i)));
+    if (!now) return { outcome: ctx.incomplete(KEPT_MOVING) };
     // After every key, before anything is decided from it: what the guards refused, and where the page is.
     const stop = await ctx.stopped();
     if (stop) return { outcome: ctx.incomplete(stop) };
@@ -504,11 +546,19 @@ export async function arrowKeys(page: ProbePage, opened: Opened, args: CheckArgs
       }
       if (refused) return ctx.incomplete(refused);
       const now = await look((f) => f.at.kind === "item" && (wanted as readonly number[]).includes(f.at.i));
+      if (!now) return ctx.incomplete(KEPT_MOVING);
       const stop = await ctx.stopped();
       if (stop) return ctx.incomplete(stop);
+      if (now.at.kind === "item") at = now.at.i;
+      else at = Number.NaN;
       const yes = now.open && now.at.kind === "item" && (wanted as readonly number[]).includes(now.at.i);
       ctx.extra.push(`${key} moves to the ${key === "End" ? "last" : "first"} ${itemNoun}: ${yes ? "yes" : "no"}`);
     }
   }
-  return ctx.pass({ why: `ArrowDown and ArrowUp moved through the ${noun}'s ${n} ${itemNoun}${n === 1 ? "" : "s"} in order, every move both ways and at both ends`, fix: "Nothing to do: arrow keys move through it." });
+  const moved = await ctx.pass({ why: `ArrowDown and ArrowUp moved through the ${noun}'s ${n} ${itemNoun}${n === 1 ? "" : "s"} in order, every move both ways and at both ends`, fix: "Nothing to do: arrow keys move through it." }, async () => {
+    // Still where the last key put it, the popup still open.
+    const f = await page.items(opened.index, pattern, false);
+    return f.open && !f.stale && f.at.kind === "item" && f.at.i === at;
+  });
+  return moved === "moved" ? ctx.incomplete(MOVED_AFTER) : moved;
 }

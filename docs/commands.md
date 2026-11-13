@@ -354,7 +354,7 @@ see them; `youiyoux behave [--route /x]` checks them in the running dev app, in 
   consent is read again; never Enter, Space or typing. Opening is by mouse click only, so keyboard
   opening isn't verified. Anything the probe can't tell is *incomplete*, never a pass. Text the page
   supplies (names, attribute values) is quoted and cleaned in every result, never echoed raw. A
-  route has 300 s.
+  scenario has 5 s (15 s for focus-trap and arrow-keys); a route has 300 s.
 - **Runs are kept** in `.youi/behaviour/<route-hash>.json`. `youiyoux check` reads them: a behaviour
   rule has run only when every route has a fresh, complete result, and a fresh failure counts as an
   error (or warning) like any violation, filtered by `--rule` and `--quiet`. A baseline never accepts

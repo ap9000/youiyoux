@@ -28,8 +28,13 @@ import { arrowKeys, focusInto, focusReturn, focusTrap, triggerState } from "./ch
 export interface ProbeBudgets {
   /** Targets tested per route; the rest are named as untested. */
   readonly targets: number;
-  /** One scenario, from the end of its load to the popup identified. */
+  /** One scenario, from the end of its load to its verdict. */
   readonly scenarioMs: number;
+  /**
+   * The same for focus-trap and arrow-keys, which press up to about a hundred keys, each read only
+   * once focus has settled (about 0.1 s a key): a 50-item list or a 20-element dialog fits.
+   */
+  readonly keyedScenarioMs: number;
   /** The whole route, discovery included. */
   readonly routeMs: number;
   /** Waiting for the popup after the click. */
@@ -47,7 +52,7 @@ export interface ProbeBudgets {
  * the control run dismiss-escape and focus-return share), each with its own load: 300 s covers 20
  * targets at about 2 s a scenario. Anything past it is incomplete and named, never skipped quietly.
  */
-export const PROBE_BUDGETS: ProbeBudgets = { targets: 20, scenarioMs: 5_000, routeMs: 300_000, openMs: 2_000, closeMs: 1_500, loadMs: 15_000, settleMs: 2_000 };
+export const PROBE_BUDGETS: ProbeBudgets = { targets: 20, scenarioMs: 5_000, keyedScenarioMs: 15_000, routeMs: 300_000, openMs: 2_000, closeMs: 1_500, loadMs: 15_000, settleMs: 2_000 };
 /** Triggers looked for per route: past the budget, only to name them as untested. */
 const MAX_FOUND = 200;
 const POLL_MS = 50;
@@ -676,7 +681,8 @@ async function scenario(guarded: GuardedContext, start: string, options: ProbeRo
   const close = { closeMs: budgets.closeMs, pollMs: POLL_MS, graceMs: GRACE_MS };
   const act = decidesBehaviour(check) ? ACTS[check] : undefined;
   const returnFocusTo = typeof found.via === "object" ? (bindings[found.via.contract]?.binding.returnFocusTo ?? null) : null;
-  const tested = await onFreshPage(guarded, start, options, key, found, bindings, budgets, routeDeadline, CHECK_KEYS[check], (page, opened, deadline, popup) =>
+  const scenarioMs = check === "focus-trap" || check === "arrow-keys" ? budgets.keyedScenarioMs : budgets.scenarioMs;
+  const tested = await onFreshPage(guarded, start, options, key, found, bindings, { ...budgets, scenarioMs }, routeDeadline, CHECK_KEYS[check], (page, opened, deadline, popup) =>
     act ? act(page, opened, { start, origin: options.origin, pattern: key.pattern, popup, returnFocusTo, deadline, budgets: close, ...(options.stillAllowed ? { beforeInput: options.stillAllowed } : {}), ...(options.signal ? { signal: options.signal } : {}) }) : Promise.resolve(opened),
   );
   if (!(CONTROLLED[check] ?? []).includes(tested.state) || (tested.state !== "passed" && tested.state !== "failed")) return tested;

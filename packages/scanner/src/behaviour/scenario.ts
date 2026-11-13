@@ -336,13 +336,18 @@ export function checkContext(page: ProbePage, opened: Extract<ScenarioOutcome, {
     incomplete: (stop: Stop): ScenarioOutcome => ({ state: "incomplete", ...stop, info: info(), dataBlocked: dataBlocked() }),
     decided: (state: "passed" | "failed", stop: Stop): ScenarioOutcome => ({ state, popup: opened.popup, ...stop, info: info(), dataBlocked: dataBlocked() }),
     /**
-     * A pass, but only once the page has been watched for the grace moment after the last key and
-     * nothing was refused and the address didn't change: otherwise incomplete.
+     * A pass, but only once the page has been watched for the grace moment after the last key (or
+     * look), nothing was refused, the address didn't change, and `still` (the check's own facts read
+     * again at the end of that moment: effective focus, the popup open or closed) still says what the
+     * pass rests on. A guard event: incomplete. `still` no longer holding: "moved", and the check
+     * judges again or says it can't tell.
      */
-    async pass(stop: Stop): Promise<ScenarioOutcome> {
+    async pass(stop: Stop, still: () => Promise<boolean>): Promise<ScenarioOutcome | "moved"> {
       await page.wait(Math.max(0, Math.min(args.budgets.graceMs, args.deadline() - Date.now())));
       const after = await stopped();
-      return after ? { state: "incomplete", ...after, info: info(), dataBlocked: dataBlocked() } : { state: "passed", popup: opened.popup, ...stop, info: info(), dataBlocked: dataBlocked() };
+      if (after) return { state: "incomplete", ...after, info: info(), dataBlocked: dataBlocked() };
+      if (!(await still())) return "moved";
+      return { state: "passed", popup: opened.popup, ...stop, info: info(), dataBlocked: dataBlocked() };
     },
     /** Wait `ms`, never past the scenario's deadline. */
     settle: (ms: number): Promise<void> => page.wait(Math.max(0, Math.min(ms, args.deadline() - Date.now()))),
@@ -372,17 +377,16 @@ export function checkContext(page: ProbePage, opened: Extract<ScenarioOutcome, {
  * first, couldn't tell which popup) is incomplete, never a pass or a fail.
  */
 export async function dismissEscape(page: ProbePage, opened: Extract<ScenarioOutcome, { state: "opened" }>, args: CheckArgs): Promise<ScenarioOutcome> {
-  const { deadline, budgets, pattern } = args;
+  const { budgets, pattern } = args;
   const noun = POPUP_NOUN[pattern];
   const ctx = checkContext(page, opened, args);
   const escaped = await escapeUntilClosed(page, opened, args, ctx);
   if (escaped.kind === "stop") return escaped.outcome;
   if (escaped.kind === "open") return ctx.decided("failed", { why: `Esc did nothing: the ${noun} was still open after ${budgets.closeMs / 1000} s`, fix: ESCAPE_FIX[pattern] });
-  // Watch a moment longer: Esc that leaves the page or sends something is stopped, not passed.
-  await page.wait(Math.max(0, Math.min(budgets.graceMs, deadline() - Date.now())));
-  const after = await ctx.stopped();
-  if (after) return ctx.incomplete(after);
-  return ctx.decided("passed", { why: `Esc closed the ${noun}`, fix: "Nothing to do: Esc closes it." });
+  // Watch a moment longer: Esc that leaves the page or sends something is stopped, not passed; and
+  // the popup must still be closed at the end of that moment.
+  const held = await ctx.pass({ why: `Esc closed the ${noun}`, fix: "Nothing to do: Esc closes it." }, async () => (await page.popupState(opened.index, pattern, args.popup)) !== "open");
+  return held === "moved" ? ctx.incomplete({ why: `the ${noun} opened again just after Esc closed it, so Esc can't be judged`, fix: `Next: keep the ${noun} closed once Esc closes it, then run youiyoux behave again.` }) : held;
 }
 
 /** How Esc went: the popup seen closed (at `closedAt`), still open after the whole close budget, or stopped (an incomplete outcome). */
