@@ -55,6 +55,7 @@ describe("trigger-state's verdict, from the button's state closed and open", () 
     expect(judgeTriggerState("combobox-listbox", facts({ expanded: "false" }), facts({ expanded: "true" }))).toEqual({ ok: false, why: "aria-controls is missing: the combobox doesn't name its listbox" });
     expect(judgeTriggerState("popover", facts({ popovertarget: true }), facts({ popovertarget: true, popovertargetPopup: true }))).toMatchObject({ ok: true });
     expect(judgeTriggerState("popover", facts({ popovertarget: true, expanded: "false" }), facts({ popovertarget: true, popovertargetPopup: true, expanded: "false" }))).toMatchObject({ ok: false });
+    expect(judgeTriggerState("popover", facts({ popovertarget: true, expanded: "true" }), facts({ popovertarget: true, popovertargetPopup: true, expanded: "true" }))).toEqual({ ok: false, why: 'aria-expanded is set by hand and says "true" before the popover opened; popovertarget already says whether it is open' });
     expect(judgeTriggerState("popover", facts({}), facts({ expanded: "true" }))).toEqual({ ok: false, why: "the button doesn't name its popover: it has neither popovertarget nor aria-controls" });
   });
 });
@@ -156,6 +157,7 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
     "/ts-combobox-closed": () => page(combobox({ id: "c3", input: 'role="combobox" aria-controls="c3"' })),
     "/ts-popover": () => page(`<button data-log="trigger-p1" popovertarget="p1">Info</button><div popover id="p1"><button>Got it</button></div>`),
     "/ts-popover-stale": () => page(`<button data-log="trigger-p2" popovertarget="p2" aria-expanded="false">Info</button><div popover id="p2"><button>Got it</button></div>`),
+    "/ts-popover-always": () => page(`<button data-log="trigger-p5" popovertarget="p5" aria-expanded="true">Info</button><div popover id="p5"><button>Got it</button></div>`),
     "/ts-disclosure": () => page(`<button data-log="trigger-p3" aria-expanded="false" aria-controls="p3" onclick="document.getElementById('p3').hidden=false;this.setAttribute('aria-expanded','true')">Filters</button><div id="p3" hidden><button>Apply</button></div>`),
     "/ts-dialog": () => page(`<button data-log="trigger-d1" aria-haspopup="dialog" onclick="document.getElementById('d1').showModal()">Settings</button><dialog id="d1"><button>Close</button></dialog>`),
     "/ts-repeated": () => page(menu({ name: "More", id: "r1" }) + menu({ name: "More", id: "r2" })),
@@ -447,6 +449,8 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
     test("a native popovertarget passes by itself; a hand-set aria-expanded that never changes fails; a disclosure-style popover passes; a dialog's button isn't checked", async () => {
       expect(await one("/ts-popover", "trigger-state")).toMatchObject({ state: "passed", why: "the button names its popover with popovertarget, so the browser says whether it is open" });
       expect(await one("/ts-popover-stale", "trigger-state")).toMatchObject({ state: "failed", why: expect.stringMatching(/^aria-expanded is set by hand and says "false" while the popover is open/) });
+      // aria-expanded="true" set by hand and never changed: right while open, wrong while closed.
+      expect(await one("/ts-popover-always", "trigger-state")).toMatchObject({ state: "failed", why: 'aria-expanded is set by hand and says "true" before the popover opened; popovertarget already says whether it is open' });
       expect(await one("/ts-disclosure", "trigger-state")).toMatchObject({ state: "passed" });
       const clicks = logged("click").length;
       expect(await one("/ts-dialog", "trigger-state")).toMatchObject({ state: "not-applicable" });

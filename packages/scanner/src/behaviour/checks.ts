@@ -42,6 +42,8 @@ export function judgeTriggerState(pattern: BehaviourPattern, closed: TriggerFact
   const bad = (why: string): TriggerVerdict => ({ ok: false, why });
   if (pattern === "popover" && open.popovertarget) {
     if (open.popovertargetPopup !== true) return bad("popovertarget doesn't name the popover that opened");
+    // A hand-set aria-expanded must agree in both states: "false" (or off) while closed, "true" (or off) while open.
+    if (closed.expanded !== null && closed.expanded !== "false") return bad(`aria-expanded is set by hand and says ${ariaToken(closed.expanded)} before the popover opened; popovertarget already says whether it is open`);
     if (open.expanded !== null && open.expanded !== "true") return bad(`aria-expanded is set by hand and says ${ariaToken(open.expanded)} while the popover is open; popovertarget already says whether it is open`);
     return { ok: true, why: "the button names its popover with popovertarget, so the browser says whether it is open", info: [] };
   }
