@@ -176,9 +176,15 @@ Stored at `.youi/behaviour/<route-hash>.json` with `writeFileAtomic`.
 
 **What the app fingerprint covers** (slice 2 review): every project file git lists (tracked, and untracked not
 ignored; else a bounded walk), without node_modules, build output or `.youi/`; every lockfile up to the repository's
-top; each installed direct dependency's package.json (name, version, integrity); and the files screens.json's
-`behaviour.inputs` globs name (content hashed, never stored or printed). The contract bindings (every component's
-`a11y.behaviour`) are their own part of the key. Residual: environment variables set outside files aren't tracked.
+top, with the package managers' install state there (pnpm's `node_modules/.modules.yaml` and `.pnpm/lock.yaml`, npm's
+`node_modules/.package-lock.json`, yarn's `node_modules/.yarn-state.yml` and `.yarn/install-state.gz`: transitive
+versions and integrity); each installed direct dependency's package.json (name, version, integrity); and the files
+screens.json's `behaviour.inputs` globs name, through a link only when it stays inside the project (content hashed,
+never stored or printed). The contract bindings (every component's `a11y.behaviour`) are their own part of the key.
+When the file list can't be the whole app (git failing in a repository, the 20,000-file walk cap, a folder or file
+that can't be read, an input leading outside the project), the fingerprint is incomplete: nothing can be fresh
+against it, `behave` refuses with why and `check` says why per route. Residuals: environment variables set outside
+files, and hand edits inside node_modules, aren't tracked.
 
 **Integrity is checked separately from freshness** (slice 2 review). The freshness key proves what a result was made
 against, not that the stored file is whole or authentic: anyone who can write `.youi/` can write any file. So the run

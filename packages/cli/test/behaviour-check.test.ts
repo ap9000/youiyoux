@@ -66,7 +66,7 @@ async function stored(route: string, targets: readonly Target[]): Promise<void> 
   const project = await loadProject(app, { designRoot: design });
   const spec = JSON.parse(await readFile(join(app, ".youi/screens/screens.json"), "utf8")) as typeof SCREENS;
   const r = project.system.rules.find((x) => x.id === RULE_ID)!;
-  const freshness = { rule: ruleDigest(r), tool: behaviourTool(), origin: ORIGIN, config: behaviourConfigDigest(spec, route), app: await appFingerprint(project), bindings: bindingsDigest(contractBindings(project.system)) };
+  const freshness = { rule: ruleDigest(r), tool: behaviourTool(), origin: ORIGIN, config: behaviourConfigDigest(spec, route), app: (await appFingerprint(project)).digest, bindings: bindingsDigest(contractBindings(project.system)) };
   const at = "2026-11-12T10:00:00.000Z";
   const results = targets.map((t) => {
     const pattern = t.pattern ?? "menu-button";

@@ -3,7 +3,7 @@
  * server on a loopback port in real headless Chromium, storing runs that `youiyoux check` then
  * reads. Without consent it refuses with the plan's words before any browser opens.
  */
-import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
@@ -111,6 +111,20 @@ describe("youiyoux behave without consent", () => {
     expect(await run("behave")).toBe(1);
     expect(err).toContain("screens.json lists no screens, so there is nothing to probe: add the app's screens to .youi/screens/screens.json");
     expect(out).not.toContain("passed");
+    expect(requests.length).toBe(before);
+  });
+
+  test("when the app's fingerprint can't cover the whole app, nothing is probed: refused with why, exit 1", async () => {
+    await screens(true);
+    await mkdir(join(app, "secret"));
+    await chmod(join(app, "secret"), 0o000);
+    const before = requests.length;
+    try {
+      expect(await run("behave")).toBe(1);
+    } finally {
+      await chmod(join(app, "secret"), 0o755);
+    }
+    expect(err).toContain("behaviour results couldn't be kept fresh, so nothing was probed: the folder secret couldn't be read");
     expect(requests.length).toBe(before);
   });
 

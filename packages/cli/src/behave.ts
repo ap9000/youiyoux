@@ -62,7 +62,10 @@ export async function runBehave(project: Project, options: { readonly route?: st
   if (wanted.length === 0) throw new Error("screens.json lists no screens, so there is nothing to probe: add the app's screens to .youi/screens/screens.json as \"screens\": [{ \"route\": \"/\", \"path\": \"/\" }] (youiyoux screens capture --base <url> then records them), then run youiyoux behave");
   const checks = rules.map((r) => ({ rule: r.id, check: (r.check as { id: BehaviourCheckId }).id, digest: ruleDigest(r) }));
   const declared = BehaviourConsent.safeParse(spec.behaviour ?? {});
-  const fingerprint = { app: await appFingerprint(project, { inputs: declared.success ? (declared.data.inputs ?? []) : [] }), tool: behaviourTool() };
+  const app = await appFingerprint(project, { inputs: declared.success ? (declared.data.inputs ?? []) : [] });
+  // Results that could never be shown fresh aren't worth a probe: refused, with why, before anything opens.
+  if (app.incomplete) throw new Error(`behaviour results couldn't be kept fresh, so nothing was probed: ${app.incomplete}`);
+  const fingerprint = { app: app.digest, tool: behaviourTool() };
   const bindings = contractBindings(project.system);
   const { probeBehaviour } = await import("@youiyoux/workflow");
   const routes: BehaveRoute[] = [];

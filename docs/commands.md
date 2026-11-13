@@ -343,8 +343,11 @@ see them; `youiyoux behave [--route /x]` checks them in the running dev app, in 
   or .youi), any lockfile up to the repository's top, an installed direct dependency's version, the
   files `behaviour.inputs` names (globs such as `".env.development"`: hashed, never stored or
   printed), the rule, the components' behaviour bindings, youiyoux, screens.json's behaviour
-  settings or the screen's path, or the viewport: run `behave` again. Environment variables set
-  outside files aren't tracked. `check --diff` lists fresh failures as
+  settings or the screen's path, or the viewport: run `behave` again. The package managers' install
+  state counts too (transitive versions). If the file list can't be the whole app (git failing,
+  more than 20,000 files outside git, a folder that can't be read, an input outside the project),
+  nothing can be fresh: `behave` refuses and `check` says why. Environment variables set outside
+  files, and hand edits inside node_modules, aren't tracked. `check --diff` lists fresh failures as
   `behaviour` findings, by popup (route, pattern, component, name), not by line.
 - **Exit codes.** 1 when a rule of error severity fails or anything couldn't be decided, else 0.
   `--format github` annotates failures on their trigger's line when it is known and writes the job

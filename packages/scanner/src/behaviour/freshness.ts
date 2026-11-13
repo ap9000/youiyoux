@@ -7,8 +7,8 @@
  * stored file can say it is fresh.
  */
 import { execFile } from "node:child_process";
-import { lstat, readdir, readFile, readlink } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { lstat, readdir, readFile, readlink, realpath } from "node:fs/promises";
+import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { promisify } from "node:util";
 import { BehaviourConsent, findFiles, sha256, stableStringify, type Freshness, type RuleSpec } from "@youiyoux/core";
 import type { ContractBinding } from "./in-page.ts";
@@ -40,41 +40,74 @@ async function upToRepoTop(root: string): Promise<string[]> {
 const notSource = (path: string): boolean => path.split("/").some((segment) => NOT_SOURCE.has(segment));
 
 /**
- * Every source-like file under `root`: in a git checkout what git lists (tracked, and untracked
+ * Every source-like file under `root`: in a git repository what git lists (tracked, and untracked
  * that isn't ignored), else a bounded walk; installed packages, build output and caches left out.
+ * `incomplete` (git failing in a repository, the walk's cap reached, a folder that can't be read)
+ * means the list isn't the whole app, so nothing can be shown fresh against it.
  */
-async function sourceFiles(root: string): Promise<{ files: string[]; note: string | null }> {
-  try {
-    const { stdout } = await run("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], { cwd: root, maxBuffer: 256 * 1024 * 1024 });
-    return { files: [...new Set(stdout.split("\0").filter((f) => f && !notSource(f)))], note: null };
-  } catch {
-    const files: string[] = [];
-    const walk = async (dir: string, prefix: string): Promise<boolean> => {
-      for (const entry of (await readdir(dir, { withFileTypes: true }).catch(() => [])).sort((a, b) => a.name.localeCompare(b.name))) {
-        if (NOT_SOURCE.has(entry.name)) continue;
-        const path = prefix ? `${prefix}/${entry.name}` : entry.name;
-        if (entry.isDirectory()) {
-          if (!(await walk(join(dir, entry.name), path))) return false;
-        } else if (files.push(path) >= MAX_WALKED) return false;
-      }
-      return true;
-    };
-    const whole = await walk(root, "");
-    return { files, note: whole ? null : `(walk stopped at ${MAX_WALKED} files)` };
+async function sourceFiles(root: string, inRepo: boolean, maxWalked: number): Promise<{ files: string[]; incomplete: string | null }> {
+  if (inRepo) {
+    try {
+      const { stdout } = await run("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], { cwd: root, maxBuffer: 256 * 1024 * 1024 });
+      return { files: [...new Set(stdout.split("\0").filter((f) => f && !notSource(f)))], incomplete: null };
+    } catch (error: unknown) {
+      return { files: [], incomplete: `git couldn't list the app's files (${(error instanceof Error ? error.message : String(error)).split("\n")[0]})` };
+    }
   }
+  const files: string[] = [];
+  let incomplete: string | null = null;
+  const walk = async (dir: string, prefix: string): Promise<void> => {
+    let entries;
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      incomplete ??= `the folder ${prefix || "."} couldn't be read`;
+      return;
+    }
+    for (const entry of entries.sort((x, y) => x.name.localeCompare(y.name))) {
+      if (incomplete) return;
+      if (NOT_SOURCE.has(entry.name)) continue;
+      const path = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) await walk(join(dir, entry.name), path);
+      else if (files.push(path) > maxWalked) incomplete = `the app has more than ${maxWalked} files outside git; add it to git or list what it reads under behaviour.inputs`;
+    }
+  };
+  await walk(root, "");
+  return { files, incomplete };
 }
 
-/** A file's content digest; a link's target (never followed out of the project); absent or unreadable marked. */
-async function contentOf(path: string): Promise<string> {
+/** A file's content digest; a link's target text (the target, if in the project, is listed itself); a file that can't be read makes the fingerprint incomplete. */
+async function contentOf(path: string, problems: string[], name: string): Promise<string> {
   try {
     const stat = await lstat(path);
     if (stat.isSymbolicLink()) return `link:${sha256(await readlink(path))}`;
     if (!stat.isFile()) return "not-a-file";
     return sha256(await readFile(path));
   } catch (error: unknown) {
-    return (error as NodeJS.ErrnoException).code === "ENOENT" ? "none" : "unreadable";
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "none";
+    problems.push(`${name} couldn't be read`);
+    return "unreadable";
   }
 }
+
+/** A behaviour.inputs file's content, through a link only when its real path stays inside the project's real root. */
+async function inputContentOf(root: string, file: string, problems: string[]): Promise<string> {
+  try {
+    const real = await realpath(join(root, file));
+    const inside = relative(await realpath(root), real);
+    if (inside === "" || inside.startsWith(`..${sep}`) || inside === ".." || isAbsolute(inside)) {
+      problems.push(`behaviour.inputs names ${file}, which leads outside the project`);
+      return "outside";
+    }
+    return sha256(await readFile(real));
+  } catch {
+    problems.push(`behaviour.inputs names ${file}, which couldn't be read`);
+    return "unreadable";
+  }
+}
+
+/** Package managers' install state (transitive versions and integrity): pnpm, npm, yarn. */
+const INSTALL_STATE = ["node_modules/.modules.yaml", "node_modules/.pnpm/lock.yaml", "node_modules/.package-lock.json", "node_modules/.yarn-state.yml", ".yarn/install-state.gz"];
 
 /** What is installed for each direct dependency (its package.json's name, version and integrity), nearest node_modules first. */
 async function installed(root: string, dirs: readonly string[]): Promise<string[]> {
@@ -110,34 +143,47 @@ async function installed(root: string, dirs: readonly string[]): Promise<string[
   return out;
 }
 
+/** The app's fingerprint, or why it can't be trusted (`incomplete`): then no result can be fresh against it. */
+export interface AppFingerprint {
+  readonly digest: string;
+  readonly incomplete: string | null;
+}
+
 /**
  * The app's source fingerprint (any change makes every behaviour result stale): the content of
  *
- * - every source-like file under the project's root (git's tracked and untracked-not-ignored files,
- *   else a bounded walk), and every file the scan covers, wherever its include globs reach;
- * - package.json, and every lockfile from the project's root up to its repository's top;
- * - each direct dependency's installed package.json (name, version, integrity), so a library that
- *   changes under an unchanged lockfile still counts;
- * - the files screens.json's `behaviour.inputs` globs match (say `.env.development`): their content
- *   is hashed into the digest, never stored or printed.
+ * - every source-like file under the project's root (in a git repository, git's tracked and
+ *   untracked-not-ignored files; else a walk bounded at `maxWalked`, 20000), and every file the
+ *   scan covers, wherever its include globs reach;
+ * - package.json, every lockfile, and the package managers' install state (pnpm's
+ *   node_modules/.modules.yaml and .pnpm/lock.yaml, npm's node_modules/.package-lock.json, yarn's
+ *   node_modules/.yarn-state.yml and .yarn/install-state.gz, which record transitive versions and
+ *   integrity) from the project's root up to its repository's top;
+ * - each direct dependency's installed package.json (name, version, integrity);
+ * - the files screens.json's `behaviour.inputs` globs name (say `.env.development`), through a
+ *   link only if it stays inside the project: their content is hashed, never stored or printed.
  *
- * Read from disk as it is now; a file that can't be read is marked, never skipped. Residual:
- * environment variables set outside files aren't tracked.
+ * Incomplete, with why, when the file list isn't the whole app (git failing in a repository, the
+ * walk's cap, a folder or file that can't be read, an input outside the project). Residuals: hand
+ * edits inside node_modules and environment variables set outside files aren't tracked.
  */
-export async function appFingerprint(project: Pick<Project, "root" | "config">, options: { readonly inputs?: readonly string[] } = {}): Promise<string> {
+export async function appFingerprint(project: Pick<Project, "root" | "config">, options: { readonly inputs?: readonly string[]; readonly maxWalked?: number } = {}): Promise<AppFingerprint> {
   const root = project.root;
+  const dirs = await upToRepoTop(root);
+  const inRepo = await exists(join(dirs.at(-1)!, ".git"));
   const scanned = await findFiles(root, project.config.include, project.config.exclude);
-  const { files: source, note } = await sourceFiles(root);
+  const { files: source, incomplete } = await sourceFiles(root, inRepo, options.maxWalked ?? MAX_WALKED);
+  const problems: string[] = incomplete ? [incomplete] : [];
   const inputs = options.inputs?.length ? await findFiles(root, options.inputs.filter(safeInput), []) : [];
   const files = [...new Set([...source, ...scanned])].sort();
-  const dirs = await upToRepoTop(root);
-  const lockfiles = dirs.flatMap((dir, depth) => LOCKFILES.map((name) => ({ name: `(lockfile ${"../".repeat(depth)}${name})`, path: join(dir, name) })));
-  const all = [...files.map((f) => ({ name: f, path: join(root, f) })), { name: "(package.json)", path: join(root, "package.json") }, ...lockfiles, ...inputs.map((f) => ({ name: `(input ${f})`, path: join(root, f) }))];
-  const entries: string[] = note ? [note] : [];
+  const perDir = dirs.flatMap((dir, depth) => [...LOCKFILES, ...INSTALL_STATE].map((name) => ({ name: `(${"../".repeat(depth)}${name})`, path: join(dir, name) })));
+  const all = [...files.map((f) => ({ name: f, path: join(root, f) })), { name: "(package.json)", path: join(root, "package.json") }, ...perDir];
+  const entries: string[] = [];
   // A few at a time: a large project's files aren't all opened at once.
-  for (let i = 0; i < all.length; i += 64) entries.push(...(await Promise.all(all.slice(i, i + 64).map(async ({ name, path }) => `${name}:${await contentOf(path)}`))));
+  for (let i = 0; i < all.length; i += 64) entries.push(...(await Promise.all(all.slice(i, i + 64).map(async ({ name, path }) => `${name}:${await contentOf(path, problems, name)}`))));
+  for (const file of inputs) entries.push(`(input ${file}):${await inputContentOf(root, file, problems)}`);
   entries.push(...(await installed(root, dirs)));
-  return sha256(entries.join("\n")).slice(0, 32);
+  return { digest: sha256(entries.join("\n")).slice(0, 32), incomplete: problems.length ? problems.slice(0, 3).join("; ") : null };
 }
 
 /** A `behaviour.inputs` glob stays inside the project: relative, forward slashes, no `..`. */

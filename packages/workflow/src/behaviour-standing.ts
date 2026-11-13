@@ -63,9 +63,13 @@ export async function behaviourStanding(project: Pick<Project, "root" | "config"
     }
   }
   // The app's fingerprint only when there is something to compare it with: reading every source file costs.
-  let now: FreshnessNow | null = null;
+  let now: Now | null = null;
   const inputs = BehaviourConsent.safeParse(spec.behaviour ?? {});
-  const current = async (): Promise<FreshnessNow> => (now ??= freshnessNow(spec, await appFingerprint(project, { inputs: inputs.success ? (inputs.data.inputs ?? []) : [] }), tool, bindingsDigest(contractBindings(project.system))));
+  const current = async (): Promise<Now> => {
+    if (now) return now;
+    const app = await appFingerprint(project, { inputs: inputs.success ? (inputs.data.inputs ?? []) : [] });
+    return (now = { ...freshnessNow(spec, app.digest, tool, bindingsDigest(contractBindings(project.system))), appIncomplete: app.incomplete });
+  };
   const runs: RuleRun[] = [];
   const failures: BehaviourFailure[] = [];
   for (const rule of probed) {
@@ -88,13 +92,18 @@ export async function behaviourStanding(project: Pick<Project, "root" | "config"
 }
 
 /** Whether `route`'s stored run is a fresh, complete result set for `rule`; its fresh failures either way. */
-async function routeState(rule: RuleSpec, route: string, run: BehaviourRouteRun | null, spec: ScreensSpec, current: () => Promise<FreshnessNow>): Promise<RouteState> {
+/** What a result made now would carry, and why the app's fingerprint can't be trusted, if it can't. */
+type Now = FreshnessNow & { readonly appIncomplete: string | null };
+
+async function routeState(rule: RuleSpec, route: string, run: BehaviourRouteRun | null, spec: ScreensSpec, current: () => Promise<Now>): Promise<RouteState> {
   const no = (why: string, failures: readonly BehaviourResult[] = []): RouteState => ({ route, fresh: false, why, failures });
   if (!run) return no("was never probed");
   const entry = run.rules.find((r) => r.rule === rule.id);
   if (!entry) return no("was probed, but not for this rule");
   if (rule.check.engine !== "behaviour" || entry.check !== rule.check.id) return no("was probed for another check under this rule's id");
   const now = { ...(await current()), rule: ruleDigest(rule), config: behaviourConfigDigest(spec, route) };
+  // Without a whole fingerprint nothing can be shown fresh, so nothing counts.
+  if (now.appIncomplete) return no(`can't be shown fresh: ${now.appIncomplete}`);
   const stale = staleParts({ freshness: entry.freshness, viewport: run.viewport }, now);
   if (stale.length > 0) return no(`is stale (${stale.join(", ")} since its run)`);
   if (run.state === "incomplete") return no(`couldn't be probed (${run.why})`);
@@ -109,10 +118,12 @@ async function routeState(rule: RuleSpec, route: string, run: BehaviourRouteRun 
   for (const r of mine) seen.set(targetIdentityKey(r.target), (seen.get(targetIdentityKey(r.target)) ?? 0) + 1);
   const missing = [...expected].filter((k) => !seen.has(k)).length;
   const extra = [...seen].filter(([k, n]) => !expected.has(k) || n > 1).length;
-  if (missing > 0 || extra > 0) return no(`has a stored run whose results don't match the popups it found (${missing} missing, ${extra} extra or repeated); run youiyoux behave again`);
+  // A fresh failure that stands on its own (its target found once, a decided check that applies)
+  // counts even when the rest of the run doesn't add up: a broken file can't hide it.
+  const counted = mine.filter((r) => r.state === "failed" && decidesBehaviour(r.check) && BEHAVIOUR_CHECKS[r.check].patterns.includes(r.pattern) && expected.has(targetIdentityKey(r.target)) && seen.get(targetIdentityKey(r.target)) === 1);
+  if (missing > 0 || extra > 0) return no(`has a stored run whose results don't match the popups it found (${missing} missing, ${extra} extra or repeated); run youiyoux behave again`, counted);
   const wrongNa = mine.filter((r) => (r.state === "not-applicable") === BEHAVIOUR_CHECKS[r.check].patterns.includes(r.pattern));
-  if (wrongNa.length > 0) return no(`has a stored run that says ${wrongNa[0]!.check} ${wrongNa[0]!.state === "not-applicable" ? "doesn't apply to" : "applies to"} a ${wrongNa[0]!.pattern}, which it ${wrongNa[0]!.state === "not-applicable" ? "does" : "doesn't"}; run youiyoux behave again`);
-  const counted = mine.filter((r) => decidesBehaviour(r.check) && r.state === "failed");
+  if (wrongNa.length > 0) return no(`has a stored run that says ${wrongNa[0]!.check} ${wrongNa[0]!.state === "not-applicable" ? "doesn't apply to" : "applies to"} a ${wrongNa[0]!.pattern}, which it ${wrongNa[0]!.state === "not-applicable" ? "does" : "doesn't"}; run youiyoux behave again`, counted);
   const undecided = mine.filter((r) => r.state === "incomplete" || r.state === "error" || ((r.state === "passed" || r.state === "failed") && !decidesBehaviour(r.check)));
   if (undecided.length > 0) return no(`has ${undecided.length} popup${undecided.length === 1 ? "" : "s"} that couldn't be decided (${undecided[0]!.why})`, counted);
   return { route, fresh: true, why: null, failures: counted };

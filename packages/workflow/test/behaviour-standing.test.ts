@@ -5,7 +5,7 @@
  * project, the rule, screens.json and the stored files are changed underneath them.
  */
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -56,7 +56,7 @@ describe.skipIf(!HAVE_CHROMIUM)("standing from stored runs", () => {
   const scratch = mkdtempSync(join(tmpdir(), "youi-standing-"));
   const MENU = (id: string, closes: boolean) =>
     `<button aria-haspopup="menu" aria-expanded="false" aria-controls="${id}" onclick="const m=document.getElementById('${id}');m.hidden=false;m.querySelector('li').focus()">Actions</button><ul role="menu" id="${id}" hidden onkeydown="${closes ? "if (event.key === 'Escape') this.hidden = true" : ""}"><li role="menuitem" tabindex="-1">Rename</li></ul>`;
-  const PAGES: Record<string, string> = { "/esc": MENU("m1", true), "/esc-ignored": MENU("m2", false), "/plain": "<p>No popups here.</p>" };
+  const PAGES: Record<string, string> = { "/esc": MENU("m1", true), "/esc-ignored": MENU("m2", false), "/plain": "<p>No popups here.</p>", "/mixed": MENU("m3", true).replace(">Actions<", ">Open<") + MENU("m4", false).replace(">Actions<", ">Stuck<") };
 
   beforeAll(async () => {
     server = createServer((req, res) => {
@@ -93,7 +93,7 @@ describe.skipIf(!HAVE_CHROMIUM)("standing from stored runs", () => {
   }
   /** `youiyoux behave` for one route, as the CLI runs it: digests and the fingerprint computed now. */
   const behave = async (p: { root: string; project: Project }, route: string, rules: readonly RuleSpec[]) =>
-    probeBehaviour({ root: p.root, route, browser, checks: rules.map((r) => ({ rule: r.id, check: (r.check as { id: "dismiss-escape" }).id, digest: ruleDigest(r) })), fingerprint: { app: await appFingerprint(p.project, { inputs: (JSON.parse(readFileSync(join(p.root, ".youi/screens/screens.json"), "utf8")) as { behaviour?: { inputs?: string[] } }).behaviour?.inputs ?? [] }), tool: TOOL } });
+    probeBehaviour({ root: p.root, route, browser, checks: rules.map((r) => ({ rule: r.id, check: (r.check as { id: "dismiss-escape" }).id, digest: ruleDigest(r) })), fingerprint: { app: (await appFingerprint(p.project, { inputs: (JSON.parse(readFileSync(join(p.root, ".youi/screens/screens.json"), "utf8")) as { behaviour?: { inputs?: string[] } }).behaviour?.inputs ?? [] })).digest, tool: TOOL } });
 
   test("ran only when every route has fresh, complete results; a route never probed keeps the rule incomplete, naming it", async () => {
     const p = product("all-routes", ["/esc", "/plain"]);
@@ -212,6 +212,33 @@ describe.skipIf(!HAVE_CHROMIUM)("standing from stored runs", () => {
     // Repeated: one target, two results.
     writeFileSync(file, JSON.stringify({ ...run, results: [...run.results, ...run.results] }));
     expect((await behaviourStanding(p.project, [ESCAPE], TOOL)).runs[0]).toMatchObject({ state: "incomplete", reason: expect.stringMatching(/0 missing, 1 extra or repeated/) });
+  }, 60_000);
+
+  test("a run that doesn't add up still counts a failure that stands on its own: one target's pass deleted, the other's fresh failure remains", async () => {
+    const p = product("partial", ["/mixed"]);
+    await behave(p, "/mixed", [ESCAPE]);
+    const file = join(p.root, behaviourFile("/mixed"));
+    const run = JSON.parse(readFileSync(file, "utf8")) as { results: Array<{ state: string; target: { accessibleName: string } }> };
+    expect(run.results.map((r) => [r.target.accessibleName, r.state])).toEqual([["Open", "passed"], ["Stuck", "failed"]]);
+    writeFileSync(file, JSON.stringify({ ...run, results: run.results.filter((r) => r.state !== "passed") }));
+    const standing = await behaviourStanding(p.project, [ESCAPE], TOOL);
+    expect(standing.runs[0]).toMatchObject({ state: "incomplete", reason: expect.stringMatching(/\/mixed has a stored run whose results don't match the popups it found \(1 missing, 0 extra or repeated\)/) });
+    expect(standing.failures).toEqual([expect.objectContaining({ rule: ESCAPE.id, result: expect.objectContaining({ state: "failed", target: expect.objectContaining({ accessibleName: "Stuck" }) }) })]);
+  }, 60_000);
+
+  test("a fingerprint that can't cover the whole app shows nothing fresh: a folder it can't read leaves the rule incomplete and counts nothing", async () => {
+    const p = product("unreadable", ["/esc-ignored"]);
+    await behave(p, "/esc-ignored", [ESCAPE]);
+    expect((await behaviourStanding(p.project, [ESCAPE], TOOL)).failures).toHaveLength(1);
+    mkdirSync(join(p.root, "secret"));
+    chmodSync(join(p.root, "secret"), 0o000);
+    try {
+      const standing = await behaviourStanding(p.project, [ESCAPE], TOOL);
+      expect(standing.runs[0]).toMatchObject({ state: "incomplete", reason: expect.stringContaining("/esc-ignored can't be shown fresh: the folder secret couldn't be read") });
+      expect(standing.failures).toEqual([]);
+    } finally {
+      chmodSync(join(p.root, "secret"), 0o755);
+    }
   }, 60_000);
 
   test("a stored file can't decide for itself: an undecided check stays incomplete even if the file says passed, and a file that claims to be fresh isn't read", async () => {
