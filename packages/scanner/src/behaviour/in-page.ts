@@ -820,13 +820,22 @@ export function labelsInPage(this: Element, args: { readonly component: string |
     break;
   }
   const INTERNAL = /\/node_modules\/|\/\.vite\/deps\/|\/_next\/static\/chunks\/(?:framework|main|webpack)|react-dom|jsx-dev-runtime|jsx-runtime/;
+  // A gap: library or runtime code between two of the app's frames, or an owner with no frame of
+  // the app's own. The caller never moves a line across one.
+  const GAP: Frame = { url: "", line: 0, column: 0 };
+  const isGap = (f: Frame | undefined): boolean => f !== undefined && f.line === 0;
   const framesOf = (fiber: Fiber | null): Frame[] => {
     const stack = fiber?._debugStack && typeof fiber._debugStack === "object" && "stack" in fiber._debugStack ? fiber._debugStack.stack : undefined;
     const frames: Frame[] = [];
     for (const text of String(stack ?? "").split("\n").slice(1)) {
       if (/react[-_]stack[-_]bottom[-_]frame/.test(text)) break;
       const match = /((?:https?|file):\/\/[^\s()]+?):(\d+):(\d+)\)?\s*$/.exec(text);
-      if (!match || INTERNAL.test(match[1]!)) continue;
+      if (!match) continue;
+      // The JSX runtime's own frames come first; library code after one of the app's frames is a gap.
+      if (INTERNAL.test(match[1]!)) {
+        if (frames.length > 0 && !isGap(frames.at(-1))) frames.push(GAP);
+        continue;
+      }
       frames.push({ url: match[1]!.slice(0, 2000), line: Number(match[2]), column: Number(match[3]) });
       if (frames.length >= args.maxFrames) break;
     }
@@ -839,9 +848,17 @@ export function labelsInPage(this: Element, args: { readonly component: string |
   const seen = new Set<Fiber>();
   for (let node: Fiber | null = own; node && !seen.has(node) && frames.length < args.maxFrames; node = node._debugOwner && typeof node._debugOwner === "object" && "tag" in node._debugOwner ? node._debugOwner : null) {
     seen.add(node);
-    for (const frame of framesOf(node)) if (frames.length < args.maxFrames && !frames.some((f) => f.url === frame.url && f.line === frame.line && f.column === frame.column)) frames.push(frame);
+    const found = framesOf(node);
+    if (!found.some((f) => !isGap(f)) && frames.length > 0 && !isGap(frames.at(-1))) frames.push(GAP);
+    for (const frame of found) {
+      if (frames.length >= args.maxFrames) break;
+      if (isGap(frame)) {
+        if (frames.length > 0 && !isGap(frames.at(-1))) frames.push(GAP);
+      } else if (!frames.some((f) => f.url === frame.url && f.line === frame.line && f.column === frame.column)) frames.push(frame);
+    }
   }
-  return { component: args.component ?? (owner ? nameOf(owner.type) : null), frames: frames.length ? frames : framesOf(owner) };
+  while (isGap(frames.at(-1))) frames.pop();
+  return { component: args.component ?? (owner ? nameOf(owner.type) : null), frames: frames.length ? frames : framesOf(owner).filter((f) => !isGap(f)) };
 }
 
 /**

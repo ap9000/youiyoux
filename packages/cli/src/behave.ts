@@ -98,8 +98,8 @@ export const behaveExitCode = (result: BehaveResult): number => (result.errors >
 
 const MARK: Record<BehaviourResult["state"], string> = { passed: "✓ passed", failed: "✖ failed", "not-applicable": "- n/a", incomplete: "! incomplete", error: "! error" };
 
-/** Which popup: its pattern's noun, its name, and file:line when locating found it. */
-const popupOf = (r: BehaviourResult): string => `${POPUP_NOUN[r.pattern]} ${pageText(r.target.accessibleName)}${r.target.ordinal !== undefined ? ` #${r.target.ordinal + 1}` : ""}${r.target.file && r.target.line ? ` (${r.target.file}:${r.target.line}${r.target.lineIs === "component" ? ", the component's own line" : ""})` : ""}`;
+/** Which popup: its pattern's noun, its name, and file:line when locating found it (and the shared wrapper's line that renders it). */
+const popupOf = (r: BehaviourResult): string => `${POPUP_NOUN[r.pattern]} ${pageText(r.target.accessibleName)}${r.target.ordinal !== undefined ? ` #${r.target.ordinal + 1}` : ""}${r.target.file && r.target.line ? ` (${r.target.file}:${r.target.line}${r.target.lineIs === "component" ? ", the component's own line" : ""}${r.target.renderedBy ? `, rendered by ${r.target.renderedBy.file}:${r.target.renderedBy.line}` : ""})` : ""}`;
 
 function mark(r: BehaviourResult, severity: string | undefined): string {
   const text = MARK[r.state];

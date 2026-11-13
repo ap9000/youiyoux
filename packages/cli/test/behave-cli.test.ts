@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { launchBrowser } from "@youiyoux/detect";
 import { behaviourFile } from "@youiyoux/workflow";
+import { behaveText } from "../src/behave.ts";
 import { main } from "../src/index.ts";
 
 const FIXTURE = join(import.meta.dirname, "../../scanner/test/fixtures/expo-app");
@@ -88,6 +89,22 @@ const run = async (...args: string[]): Promise<number> => {
   return main([...args, "--project", app, "--design", design]);
 };
 const plain = (text: string): string => text.replace(/\u001b\[[0-9;]*m/g, "");
+
+describe("youiyoux behave's text", () => {
+  test("says where each popup's button is used, and the shared wrapper's line that renders it, in plain words", () => {
+    const freshness = { rule: "0123456789ab", tool: "youiyoux@test", origin: "http://127.0.0.1:5173", config: "0123456789ab", app: "0123456789ab", bindings: "0123456789ab" };
+    const result = (name: string, target: Record<string, unknown>) => ({ runId: "r", at: "2026-11-13T00:00:00.000Z", viewport: { width: 1280, height: 800 }, route: "/", rule: "youi:demo/rule/popup.escape", target: { route: "/", pattern: "modal-dialog" as const, component: "RailButton", accessibleName: name, ...target }, pattern: "modal-dialog" as const, check: "dismiss-escape" as const, state: "passed" as const, why: "Esc closed the dialog", fix: "Next: none.", info: [], dataBlocked: false, evidence: [], freshness });
+    const run = { schema: "youiyoux.behaviour/v1" as const, route: "/", runId: "r", at: "2026-11-13T00:00:00.000Z", origin: "http://127.0.0.1:5173", viewport: { width: 1280, height: 800 }, state: "probed" as const, why: null, fix: null, coverage: "3 popup triggers found by ARIA markers.", notes: [], rules: [], targets: [], results: [
+      result("Search", { file: "src/shell/NavRail.tsx", line: 112, renderedBy: { file: "src/shell/NavRail.tsx", line: 65 } }),
+      result("Invite", { file: "src/Invite.tsx", line: 9 }),
+      result("Alone", { file: "src/ui/Button.tsx", line: 1, lineIs: "component" }),
+    ] };
+    const text = behaveText({ rules: [{ id: "youi:demo/rule/popup.escape", severity: "warning", check: { engine: "behaviour", id: "dismiss-escape" } }] as never, routes: [{ route: "/", run: run as never, problem: null }], errors: 0, warnings: 0, incomplete: false }).replace(/\u001b\[[0-9;]*m/g, "");
+    expect(text).toContain("dialog 'Search' (src/shell/NavRail.tsx:112, rendered by src/shell/NavRail.tsx:65)");
+    expect(text).toContain("dialog 'Invite' (src/Invite.tsx:9)");
+    expect(text).toContain("dialog 'Alone' (src/ui/Button.tsx:1, the component's own line)");
+  });
+});
 
 describe("youiyoux behave without consent", () => {
   test("is refused with the plan's words, exit 1, before anything opens", async () => {

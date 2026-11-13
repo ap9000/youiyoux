@@ -15,7 +15,7 @@ import { existsSync } from "node:fs";
 import { lstat, readFile, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, sep } from "node:path";
 import { writeFileAtomic } from "@youiyoux/core";
-import { editJsx, readScreensSpec, resolvePlaces, type JsxEdit, type Place, type RawPlace, type SourceMapCache } from "@youiyoux/scanner";
+import { editJsx, readScreensSpec, resolvePlaces, type JsxEdit, type Place, type RawPlace, type ResolveChoice, type SourceMapCache } from "@youiyoux/scanner";
 import type { LiveCodeEdit, LiveInfo } from "./api.ts";
 import { WorkflowError } from "./policy.ts";
 
@@ -59,9 +59,10 @@ export class LiveApp {
   /**
    * The places' frames mapped to the product's files and lines. `origin` pins where scripts and maps
    * may be fetched from (a behaviour probe passes the origin it was consented for, so a base that
-   * moves mid-run is never followed); without it, the origin of screens.json's base now.
+   * moves mid-run is never followed); without it, the origin of screens.json's base now. `skip` and
+   * `promote` choose among a place's frames (resolvePlaces' ResolveChoice).
    */
-  async resolve(places: readonly RawPlace[], options: { readonly origin?: string; readonly skip?: (file: string) => boolean } = {}): Promise<Place[]> {
+  async resolve(places: readonly RawPlace[], options: { readonly origin?: string } & ResolveChoice = {}): Promise<Place[]> {
     let origin: string;
     if (options.origin) origin = new URL(options.origin).origin;
     else {
@@ -83,7 +84,7 @@ export class LiveApp {
       return text !== null && text.length <= MAX_TEXT ? text : null;
     };
     if (this.maps.size > MAX_KEPT) this.maps.clear();
-    return resolvePlaces(places, fetchText, this.root, undefined, this.maps, options.skip);
+    return resolvePlaces(places, fetchText, this.root, undefined, this.maps, { ...(options.skip ? { skip: options.skip } : {}), ...(options.promote ? { promote: options.promote } : {}) });
   }
 
   /**

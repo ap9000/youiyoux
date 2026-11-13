@@ -25,13 +25,20 @@ export class ModuleGraph {
   /** Source overrides (unsaved or virtual files), by project-relative path. */
   private readonly overrides: ReadonlyMap<string, string>;
   private readonly parse: ModuleParser;
+  /**
+   * Reads a module's source by project-relative path, before anything is opened; null: the module is
+   * unreadable (a caller that must never read outside the root, or through a link, says so here).
+   * Without it, the file under the root is read as it is.
+   */
+  private readonly read: ((file: string) => Promise<string | null>) | null;
 
-  constructor(root: string, resolver: ModuleResolver, modules: Map<string, ModuleInfo | null>, overrides: ReadonlyMap<string, string> = new Map(), parse: ModuleParser = parseModule) {
+  constructor(root: string, resolver: ModuleResolver, modules: Map<string, ModuleInfo | null>, overrides: ReadonlyMap<string, string> = new Map(), parse: ModuleParser = parseModule, read?: (file: string) => Promise<string | null>) {
     this.root = root;
     this.resolver = resolver;
     this.modules = modules;
     this.overrides = overrides;
     this.parse = parse;
+    this.read = read ?? null;
   }
 
   /** A module by project-relative path, parsing it on demand (files outside the include globs too). */
@@ -41,7 +48,11 @@ export class ModuleGraph {
     if (!loading) {
       loading = (async () => {
         try {
-          const source = this.overrides.get(file) ?? (await readFile(join(this.root, file), "utf8"));
+          const source = this.overrides.get(file) ?? (this.read ? await this.read(file) : await readFile(join(this.root, file), "utf8"));
+          if (source === null) {
+            this.modules.set(file, null);
+            return null;
+          }
           const info = await this.parse(file, source);
           this.modules.set(file, info);
           return info;
