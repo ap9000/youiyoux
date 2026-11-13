@@ -453,7 +453,7 @@ Residuals:
 4. Focus that moves later than the settle window (60 ms after it stops, at most 400 ms) and the
    grace moment (250 ms after the last key or look) isn't seen.
 
-## Slice 4 review record (2026-11-12)
+## Slice 4 review record (2026-11-12, residuals accepted by Alex)
 
 Built: the hub's service routes (`POST /api/behaviour/run`, `GET /api/behaviour/run`, `GET
 /api/behaviour?route=`, `GET /api/screens/behaviour`), change requests whose target, `behaviour`
