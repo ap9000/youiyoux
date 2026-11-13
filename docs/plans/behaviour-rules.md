@@ -452,3 +452,51 @@ Residuals:
    frames are reported incomplete, not checked.
 4. Focus that moves later than the settle window (60 ms after it stops, at most 400 ms) and the
    grace moment (250 ms after the last key or look) isn't seen.
+
+## Slice 4 review record (2026-11-12)
+
+Built: the hub's service routes (`POST /api/behaviour/run`, `GET /api/behaviour/run`, `GET
+/api/behaviour?route=`, `GET /api/screens/behaviour`), change requests whose target, `behaviour`
+link and acceptance the service builds from a stored failed result, `RequestStore.setStatus`
+holding addressed to a newer fresh pass, MCP `ui_behave` on the same path (`runBehaviour`), and
+the hub's Behaviour tab (a picked component) and section (a screen), checked in a real browser at
+1280 and 390.
+
+Codex code review: round 1 NO-GO (7 findings), round 2 (final) 5 closed, 2 partial, 1 new; all
+fixed with regression tests, each shown to fail with its fix mutated or reverted:
+
+- A request's changes (reply, status, reopening) run under that request's lock, reading it again
+  inside, so an addressed check awaiting evidence can't write over a person's reopening. The lock
+  is slice 1's design, moved into core (`acquireFileLock`), shared with screens.json's writers.
+- A route's run is claimed across processes (`.youi/behaviour/<route-hash>.json.lock`) and
+  published only under its claim: `probeBehaviour` takes or is handed one (only claims
+  `claimRoute` issued count), checks it still holds, refuses to replace a run that started later,
+  then writes; `writeYouiFile` refuses run files; `youiyoux behave` runs through `runBehaviour`.
+- A run's `startedAt` (schema) is when its claim was taken, before the app is hashed or a browser
+  opens; a request is addressed only by a run started after it was filed or last reopened.
+- Filing and addressed read the design definitions (rules, contract bindings) from disk at each
+  check, never a cached project, and compute the app's fingerprint anew.
+- Readings for display share one fingerprint calculation and reuse it for 2 s.
+- The component filter is proven on the production `probeRoute` `only` in real Chromium, and
+  `YOUI_SECURITY_GATE=1` makes that test fail rather than skip without Chromium.
+- An open tab reads its results again on focus, on becoming visible, every 30 s while visible, and
+  when the hub's snapshot changes.
+- A lock that exists but can't be read (no permission, a folder in its place) counts as a live
+  holder: waited for until the deadline, then refused naming it; only a vanished lock is retried
+  at once.
+
+Residuals:
+
+1. Exclusion across processes is per route, not per app: a hub and an MCP server (or `behave`)
+   may probe different routes at the same time. Within one process, one run per app.
+2. The hub's display may show results as fresh for up to 2 s after a code change (the fingerprint
+   is reused for display); nothing is ever accepted from that reading.
+3. A contender that dies after winning a dead lock's marker, before removing the lock, leaves it
+   in place: takers time out naming the files to delete by hand (as for screens.json, slice 1
+   residual 2).
+4. An idle open tab refreshes eventually: on focus or visibility at once, otherwise within 30 s.
+5. Between the claim's last `holds()` check and the run file's rename, someone removing the live
+   lock by hand could let another run start; a process on the same account is out of scope
+   (slice 2 residual 4).
+6. `youiyoux behave` still computes the fingerprint once up front (one refusal before any browser
+   opens when it can't be whole), then again per route.
