@@ -18,9 +18,9 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
-import { BEHAVIOUR_CHECKS, BehaviourConsent, BehaviourPattern, cleanText, decidesBehaviour, pageText, targetIdentityKey, type BehaviourCheckId, type BehaviourResult, type BehaviourRouteRun, type BehaviourTargetIdentity, type RequestBehaviour, type RequestTarget, type RuleSpec } from "@youiyoux/core";
+import { acquireFileLock, BEHAVIOUR_CHECKS, BehaviourConsent, FileLockBusy, type HeldLock, BehaviourPattern, cleanText, decidesBehaviour, pageText, targetIdentityKey, type BehaviourCheckId, type BehaviourResult, type BehaviourRouteRun, type BehaviourTargetIdentity, type RequestBehaviour, type RequestTarget, type RuleSpec } from "@youiyoux/core";
 import { appFingerprint, behaviourConfigDigest, behaviourConsent, bindingsDigest, contractBindings, CONSENT_WORDS, freshnessNow, POPUP_NOUN, probeOrigin, readScreensSpec, ruleDigest, screenSlug, staleParts, type FreshnessNow, type ProbeBudgets, type probeRoute, type Project, type ScreensSpec } from "@youiyoux/scanner";
-import { probeBehaviour, readBehaviourRun, type ProbeBehaviourOptions, type ProbeBehaviourResult } from "./behaviour.ts";
+import { behaviourFile, probeBehaviour, readBehaviourRun, youiPath, type ProbeBehaviourOptions, type ProbeBehaviourResult } from "./behaviour.ts";
 import { WorkflowError } from "./policy.ts";
 
 /** What running probes needs beyond the project: this youiyoux's version (as results record it) and a browser. */
@@ -103,12 +103,28 @@ function readSpec(root: string): ScreensSpec {
 }
 
 /**
- * Start a probe of one route (or of the popups `target` picks on it). Everything that refuses
- * does so here, before it returns and before any browser opens: no behaviour rules, no screens,
- * no consent (the plan's words), a route screens.json doesn't list, or a run already going for
- * this product. `done` settles with the stored run, or with why nothing was stored.
+ * The route's run claim, across processes: `.youi/behaviour/<route-hash>.json.lock` (core's
+ * acquireFileLock: link-created owner token, a live holder never broken, a dead one only by one
+ * contender). Taken without waiting; held for the whole probe and its publication.
  */
-export function runBehaviour(project: BehaviourProject, setup: BehaviourSetup, input: { readonly route: string; readonly target?: BehaviourTargetFilter | null; readonly by: "person" | "agent" }): { readonly run: ActiveBehaviourRun; readonly done: Promise<ProbeBehaviourResult> } {
+async function claimRoute(root: string, route: string): Promise<HeldLock> {
+  const file = await youiPath(root, behaviourFile(route), "write");
+  try {
+    return await acquireFileLock(`${file}.lock`, { waitMs: 0 });
+  } catch (error: unknown) {
+    if (error instanceof FileLockBusy) throw new WorkflowError("conflict", `a behaviour run is already going for this app (${route}, in another youiyoux: ${error.who}): wait for it to finish, then run again; if no youiyoux is running, delete ${behaviourFile(route)}.lock`);
+    throw error;
+  }
+}
+
+/**
+ * Start a probe of one route (or of the popups `target` picks on it). Everything that refuses
+ * does so here, before it resolves and before any browser opens: no behaviour rules, no screens,
+ * no consent (the plan's words), a route screens.json doesn't list, a run already going for this
+ * product in this process, or for this route in any process (the route's claim). `done` settles
+ * with the stored run, or with why nothing was stored; the claim is held until then.
+ */
+export async function runBehaviour(project: BehaviourProject, setup: BehaviourSetup, input: { readonly route: string; readonly target?: BehaviourTargetFilter | null; readonly by: "person" | "agent" }): Promise<{ readonly run: ActiveBehaviourRun; readonly done: Promise<ProbeBehaviourResult> }> {
   const key = resolve(project.root);
   const going = active.get(key);
   if (going) throw new WorkflowError("conflict", `a behaviour run is already going for this app (${going.route}${going.target ? `, ${filterWords(going.target)}` : ""}, started ${going.startedAt}): wait for it to finish, then run again`);
@@ -123,6 +139,13 @@ export function runBehaviour(project: BehaviourProject, setup: BehaviourSetup, i
   const run: { -readonly [K in keyof ActiveBehaviourRun]: ActiveBehaviourRun[K] } = { route: input.route, target, startedAt: new Date().toISOString(), popups: null, by: input.by };
   // Claimed before anything is awaited: a second caller in this process sees it at once.
   active.set(key, run);
+  let claim: HeldLock;
+  try {
+    claim = await claimRoute(project.root, input.route);
+  } catch (error: unknown) {
+    if (active.get(key) === run) active.delete(key);
+    throw error;
+  }
   const probe = async (): Promise<ProbeBehaviourResult> => {
     const declared = BehaviourConsent.safeParse(spec.behaviour ?? {});
     const app = await appFingerprint(project, { inputs: declared.success ? (declared.data.inputs ?? []) : [] });
@@ -155,6 +178,7 @@ export function runBehaviour(project: BehaviourProject, setup: BehaviourSetup, i
       last.set(key, { route: input.route, target, at: new Date().toISOString(), runId: null, problem: cleanText(error instanceof Error ? error.message : String(error), 1000) || "the run failed" });
       throw error;
     } finally {
+      await claim.release();
       if (active.get(key) === run) active.delete(key);
     }
   })();

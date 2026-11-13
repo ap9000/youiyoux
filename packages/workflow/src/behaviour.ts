@@ -372,6 +372,10 @@ export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<Pr
   if (results.some((r) => (r.state === "passed" || r.state === "failed") && !decidesBehaviour(r.check))) throw new WorkflowError("internal", "the probe made a result it can't make yet; nothing was stored");
   const rules = [...new Map(options.checks.map((c) => [c.rule, { rule: c.rule, check: c.check, freshness: freshness(c) }])).values()];
   const run = cleanBehaviourRun(BehaviourRouteRun.parse({ schema: BEHAVIOUR_ROUTE_SCHEMA, route: options.route, runId, at, startedAt, origin: consent.origin, viewport: spec.viewport, state: probe.state, why: probe.why === null ? null : cleanText(probe.why, 1000) || "it couldn't be probed", fix: probe.fix === null ? null : cleanText(probe.fix, 1000) || "Next: run youiyoux behave again.", coverage: probe.coverage, rules, targets: probe.targets.map((t) => ({ route: options.route, pattern: t.key.pattern, component: t.key.component, accessibleName: t.key.accessibleName, ...(t.key.ordinal !== undefined ? { ordinal: t.key.ordinal } : {}) })), results }));
+  // A run started later than this one is already kept (another process published first): this
+  // one is obsolete, and never replaces newer evidence with older.
+  const stored = await readBehaviourRun(options.root, options.route).catch(() => null);
+  if (stored?.startedAt && Date.parse(stored.startedAt) > Date.parse(startedAt)) throw new WorkflowError("conflict", `a newer run of ${options.route} (started ${stored.startedAt}) is already kept, so this one (started ${startedAt}) was discarded; nothing was written`);
   const file = await writeYouiFile(options.root, behaviourFile(options.route), `${JSON.stringify(run, null, 2)}\n`);
   return { run, file, probe };
 }

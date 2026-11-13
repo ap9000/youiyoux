@@ -151,7 +151,7 @@ describe.skipIf(MISSING !== null)("a component's run in a real browser", () => {
     try {
       const project = await loadProject(s.box.project, { designRoot: s.box.design });
       const real: BehaviourSetup = { tool: TOOL, browser: () => launchBrowser(process.env.YOUI_CHROMIUM, { download: false }) };
-      const { run } = await runBehaviour(project, real, { route: "/x", target: { component: null, accessibleName: "Open" }, by: "person" }).done;
+      const { run } = await (await runBehaviour(project, real, { route: "/x", target: { component: null, accessibleName: "Open" }, by: "person" })).done;
       expect(new Set(opened)).toEqual(new Set(["a"]));
       expect(run.results.find((r) => r.target.accessibleName === "Open")).toMatchObject({ state: "passed" });
       expect(run.results.find((r) => r.target.accessibleName === "Stuck")).toMatchObject({ state: "incomplete", why: "not tested in this run: it probed only the popup 'Open' in plain markup (no component)" });

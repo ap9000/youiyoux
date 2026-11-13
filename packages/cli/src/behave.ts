@@ -10,8 +10,8 @@
  * that couldn't be probed), else 0. `youiyoux check` then reads the stored runs.
  */
 import { join } from "node:path";
-import { pageText, ruleSlug, type BehaviourCheckId, type BehaviourResult, type BehaviourRouteRun, type RuleSpec } from "@youiyoux/core";
-import { appFingerprint, behaviourConsent, behaviourRoutes, contractBindings, POPUP_NOUN, readScreensSpec, ruleDigest, type Project, type ScreensSpec } from "@youiyoux/scanner";
+import { pageText, ruleSlug, type BehaviourResult, type BehaviourRouteRun, type RuleSpec } from "@youiyoux/core";
+import { appFingerprint, behaviourConsent, behaviourRoutes, POPUP_NOUN, readScreensSpec, type Project, type ScreensSpec } from "@youiyoux/scanner";
 import { BehaviourConsent } from "@youiyoux/core";
 import { behaviourTool } from "./version.ts";
 import { plural, style } from "./ui.ts";
@@ -38,8 +38,8 @@ export const behaviourRules = (project: Pick<Project, "system">): RuleSpec[] => 
 const SCREENS = ".youi/screens";
 
 /**
- * Probe and store. `browser` opens the browser only once consent and routes have been checked;
- * the caller closes it.
+ * Probe and store. `browser` opens a browser for each route, only once consent and routes have
+ * been checked; each is closed when its route's run ends (the caller may close the last again).
  */
 export async function runBehave(project: Project, options: { readonly route?: string; readonly browser: () => Promise<Browser> }): Promise<BehaveResult> {
   const rules = behaviourRules(project);
@@ -60,24 +60,22 @@ export async function runBehave(project: Project, options: { readonly route?: st
   const wanted = options.route !== undefined ? [options.route] : held;
   // No routes is nothing checked, never "0 checks passed".
   if (wanted.length === 0) throw new Error("screens.json lists no screens, so there is nothing to probe: add the app's screens to .youi/screens/screens.json as \"screens\": [{ \"route\": \"/\", \"path\": \"/\" }] (youiyoux screens capture --base <url> then records them), then run youiyoux behave");
-  const checks = rules.map((r) => ({ rule: r.id, check: (r.check as { id: BehaviourCheckId }).id, digest: ruleDigest(r) }));
   const declared = BehaviourConsent.safeParse(spec.behaviour ?? {});
   const app = await appFingerprint(project, { inputs: declared.success ? (declared.data.inputs ?? []) : [] });
   // Results that could never be shown fresh aren't worth a probe: refused, with why, before anything opens.
   if (app.incomplete) throw new Error(`behaviour results couldn't be kept fresh, so nothing was probed: ${app.incomplete}`);
-  const fingerprint = { app: app.digest, tool: behaviourTool() };
-  const bindings = contractBindings(project.system);
-  const { probeBehaviour } = await import("@youiyoux/workflow");
+  // Every route through the service's own path (runBehaviour): the same checks, the route's run
+  // claim across processes, and a run started earlier never replacing one started later.
+  const { runBehaviour } = await import("@youiyoux/workflow");
+  const setup = { tool: behaviourTool(), browser: options.browser };
   const routes: BehaveRoute[] = [];
-  let browser: Browser | null = null;
   for (const route of wanted) {
     if (unknown.includes(route)) {
       routes.push({ route, run: null, problem: "screens.json's behaviour.routes names it, but it isn't one of the screens listed; nothing was probed" });
       continue;
     }
-    browser ??= await options.browser();
     try {
-      const { run } = await probeBehaviour({ root: project.root, route, browser, checks, bindings, fingerprint });
+      const { run } = await (await runBehaviour(project, setup, { route, by: "person" })).done;
       routes.push({ route, run, problem: null });
     } catch (error: unknown) {
       routes.push({ route, run: null, problem: (error instanceof Error ? error.message : String(error)).split("\n")[0]! });

@@ -134,7 +134,7 @@ describe("addressed", () => {
     control.verdict = "passed";
     try {
       await tick();
-      const run = runBehaviour(project, setup, { route: "/x", by: "agent" }).done;
+      const run = (await runBehaviour(project, setup, { route: "/x", by: "agent" })).done;
       for (let i = 0; i < 100 && control.probes === 0; i++) await tick();
       // The run has started; now the person reopens it.
       await tick();
@@ -160,19 +160,19 @@ describe("addressed", () => {
     await expect(store.setStatus(agent, request.id, "addressed", "done")).rejects.toThrow(/this request has no newer run$/);
     await tick();
     control.verdict = "passed";
-    await runBehaviour(project, setup, { route: "/x", by: "agent" }).done;
+    await (await runBehaviour(project, setup, { route: "/x", by: "agent" })).done;
     expect((await store.setStatus(agent, request.id, "addressed", "done")).status).toBe("addressed");
     // Reopened by a person: a pass from before the reopening no longer counts.
     await store.setStatus({ kind: "person", name: "p" }, request.id, "open", "still broken on Safari");
     await expect(store.setStatus(agent, request.id, "addressed", "done")).rejects.toThrow(/this request has no newer run$/);
     // Results made by another youiyoux are stale here: not a pass.
     control.verdict = "failed";
-    await runBehaviour(project, setup, { route: "/x", by: "agent" }).done;
+    await (await runBehaviour(project, setup, { route: "/x", by: "agent" })).done;
     const run = JSON.parse(readFileSync(join(s.box.project, behaviourFile("/x")), "utf8")) as BehaviourRouteRun;
     const again = await store.createFromBehaviour({ kind: "person", name: "p" }, { route: "/x", runId: run.runId, index: userMenu(run.results) });
     await tick();
     control.verdict = "passed";
-    await runBehaviour(project, setup, { route: "/x", by: "agent" }).done;
+    await (await runBehaviour(project, setup, { route: "/x", by: "agent" })).done;
     const other = new RequestStore(s.box.project, "expo-fixture", { behaviour: behaviourEvidence(project, "youiyoux other") });
     await expect(other.setStatus(agent, again.id, "addressed", "done")).rejects.toThrow(/the last run is stale \(youiyoux changed since it ran\)$/);
     expect((await store.setStatus(agent, again.id, "addressed", "done")).status).toBe("addressed");

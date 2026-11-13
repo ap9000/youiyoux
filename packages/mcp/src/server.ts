@@ -476,7 +476,7 @@ export function createServer(options: ServerOptions): McpServer {
         ...(options.behave?.budgets ? { budgets: options.behave.budgets } : {}),
       };
       // The one service path: consent, rules and the route checked before any browser opens.
-      await runBehaviour(project, setup, { route, target: target ?? null, by: "agent" }).done;
+      await (await runBehaviour(project, setup, { route, target: target ?? null, by: "agent" })).done;
       const view = await behaviourRouteView(project, setup.tool, route);
       const shown = view.results.filter((r) => r.state !== "not-applicable");
       const failed = shown.filter((r) => r.counts && r.state === "failed").length;

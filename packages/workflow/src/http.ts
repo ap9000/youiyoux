@@ -216,7 +216,7 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string, opti
   if (path === "/api/behaviour/run" && method === "POST") {
     const input = parse(BehaviourRunInput, await readJson(req));
     const { project, setup } = await workflow.behaviour();
-    const { run, done } = runBehaviour(project, setup, { route: input.route, target: input.target ?? null, by: actor.kind });
+    const { run, done } = await runBehaviour(project, setup, { route: input.route, target: input.target ?? null, by: actor.kind });
     // Its outcome is kept for GET /api/behaviour/run; nothing waits on it here.
     done.catch(() => undefined);
     return send(res, 202, { running: run });
