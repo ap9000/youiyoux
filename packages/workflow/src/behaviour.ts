@@ -221,7 +221,7 @@ export function cleanBehaviourRun(run: BehaviourRouteRun): BehaviourRouteRun {
       why: words(r.why, "no reason was given"),
       fix: words(r.fix, "Next: run youiyoux behave again."),
       info: r.info.map((line) => cleanText(line, 1000)).filter(Boolean),
-      target: { ...identity(r.target), ...(r.target.file !== undefined ? { file: cleanText(r.target.file, 500) || "unknown" } : {}), ...(r.target.domPath !== undefined ? { domPath: cleanText(r.target.domPath, 300) || "body" } : {}) },
+      target: { ...identity(r.target), ...(r.target.file !== undefined ? { file: cleanText(r.target.file, 500) || "unknown" } : {}), ...(r.target.renderedBy !== undefined ? { renderedBy: { file: cleanText(r.target.renderedBy.file, 500) || "unknown", line: r.target.renderedBy.line } } : {}), ...(r.target.domPath !== undefined ? { domPath: cleanText(r.target.domPath, 300) || "body" } : {}) },
     })),
   };
 }
@@ -387,9 +387,11 @@ async function probeUnderClaim(options: ProbeBehaviourOptions, claim: RouteClaim
   const folder = options.componentsDir ? posix.normalize(options.componentsDir.replace(/\\/g, "/")).replace(/\/+$/, "") : null;
   const ownComponents = folder && folder !== "." && !folder.startsWith("..") ? (file: string): boolean => file === folder || file.startsWith(`${folder}/`) : null;
   // File and line, for display: fetched only from the consented origin (never a base that moved
-  // since, never another origin a frame names), no redirects, bounded in size and time.
+  // since, never another origin a frame names), no redirects, bounded in size and time. Each
+  // trigger's line is the first on its owner chain that no other trigger found here goes through
+  // (`distinct`): past a wrapper several share, to where this one is used, the wrapper's line kept.
   const lines = await new LiveApp(options.root, spec.project)
-    .resolve(probe.targets.map((t) => ({ name: t.key.component ?? t.found.domPath, owner: null, frames: t.found.frames, box: t.found.box, depth: 0 })), { origin: consent.origin, ...(ownComponents ? { skip: ownComponents } : {}) })
+    .resolve(probe.targets.map((t) => ({ name: t.key.component ?? t.found.domPath, owner: null, frames: t.found.frames, box: t.found.box, depth: 0 })), { origin: consent.origin, distinct: true, ...(ownComponents ? { skip: ownComponents } : {}) })
     .catch(() => probe.targets.map(() => ({ file: null, line: null })));
   const runId = randomBytes(8).toString("hex");
   const at = now().toISOString();
@@ -405,7 +407,7 @@ async function probeUnderClaim(options: ProbeBehaviourOptions, claim: RouteClaim
       component: t.key.component,
       accessibleName: t.key.accessibleName,
       ...(t.key.ordinal !== undefined ? { ordinal: t.key.ordinal } : {}),
-      ...(place?.file && place.line ? { file: place.file, line: place.line, ...(place.own ? { lineIs: "component" as const } : {}) } : {}),
+      ...(place?.file && place.line ? { file: place.file, line: place.line, ...(place.own ? { lineIs: "component" as const } : {}), ...(place.renderedBy && !place.own ? { renderedBy: place.renderedBy } : {}) } : {}),
       domPath: t.found.domPath || "body",
       box: { x: t.found.box.x, y: t.found.box.y, width: Math.max(0, t.found.box.width), height: Math.max(0, t.found.box.height) },
     };

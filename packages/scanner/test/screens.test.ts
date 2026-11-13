@@ -98,6 +98,98 @@ describe("source maps", () => {
   });
 });
 
+describe("which line a place gets, with distinct (behaviour triggers)", () => {
+  const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const vlq = (n: number): string => {
+    let v = n < 0 ? (-n << 1) | 1 : n << 1;
+    let out = "";
+    do {
+      let digit = v & 31;
+      v >>>= 5;
+      if (v) digit |= 32;
+      out += B64[digit];
+    } while (v);
+    return out;
+  };
+  // One served module whose generated line N maps to the Nth [file, line] here (column 1): the frames' JSX calls.
+  const AT: ReadonlyArray<readonly [string, number]> = [
+    ["src/shell/NavRail.tsx", 65], // 1: RailButton's <button>, which every rail button goes through
+    ["src/shell/NavRail.tsx", 109], // 2: <RailButton label="Connect your agent">
+    ["src/shell/NavRail.tsx", 112], // 3: <RailButton label="Search">
+    ["src/shell/Shell.tsx", 10], // 4: <NavRail />
+    ["src/ui/Button.tsx", 5], // 5: the System's Button's <button>
+    ["src/pages/Page.tsx", 20], // 6: an inline <button aria-haspopup> in a page
+    ["src/pages/Page.tsx", 24], // 7: another
+    ["src/app/App.tsx", 3], // 8: <Page />
+    ["src/pages/Row.tsx", 5], // 9: a row's menu button
+    ["src/pages/List.tsx", 20], // 10: rows.map((r) => <Row …/>)
+  ];
+  const sources = [...new Set(AT.map(([file]) => file))];
+  let previous = { source: 0, line: 0 };
+  const mappings = AT.map(([file, line]) => {
+    const source = sources.indexOf(file);
+    const segment = vlq(0) + vlq(source - previous.source) + vlq(line - 1 - previous.line) + vlq(0);
+    previous = { source, line: line - 1 };
+    return segment;
+  }).join(";");
+  const module = `${AT.map(() => "x").join("\n")}\n//# sourceMappingURL=data:application/json;base64,${Buffer.from(JSON.stringify({ version: 3, sources: sources.map((s) => `/${s}`), mappings })).toString("base64")}`;
+  const fetchText = async (url: string) => (url.startsWith("http://localhost/app.js") ? module : null);
+  const place = (name: string, ...lines: number[]) => ({ name, owner: null, frames: lines.map((line) => ({ url: "http://localhost/app.js", line, column: 1 })), box: { x: 0, y: 0, width: 1, height: 1 }, depth: 0 });
+  const skip = (file: string) => file.startsWith("src/ui/");
+  const lines = (placed: Array<{ file: string | null; line: number | null; own?: true; renderedBy?: { file: string; line: number } }>) => placed.map((p) => [`${p.file}:${p.line}`, p.renderedBy ? `${p.renderedBy.file}:${p.renderedBy.line}` : null, p.own ?? null]);
+
+  test("a wrapper outside componentsDir used in two places: each trigger points at its own usage, the wrapper's line kept as rendered by", async () => {
+    const rail = [place("Connect your agent", 1, 2, 4), place("Search", 1, 3, 4)];
+    expect(lines(await resolvePlaces(rail, fetchText, null, undefined, undefined, { skip, distinct: true }))).toEqual([
+      ["src/shell/NavRail.tsx:109", "src/shell/NavRail.tsx:65", null],
+      ["src/shell/NavRail.tsx:112", "src/shell/NavRail.tsx:65", null],
+    ]);
+    // Through a System Button inside the wrapper too: its own line is passed over first, as before.
+    const viaButton = [place("Connect your agent", 5, 1, 2, 4), place("Search", 5, 1, 3, 4)];
+    expect(lines(await resolvePlaces(viaButton, fetchText, null, undefined, undefined, { skip, distinct: true }))).toEqual([
+      ["src/shell/NavRail.tsx:109", "src/shell/NavRail.tsx:65", null],
+      ["src/shell/NavRail.tsx:112", "src/shell/NavRail.tsx:65", null],
+    ]);
+    // Without distinct (screens capture), the first of the app's own lines, as it always was.
+    expect(lines(await resolvePlaces(rail, fetchText, null, undefined, undefined, { skip }))).toEqual([
+      ["src/shell/NavRail.tsx:65", null, null],
+      ["src/shell/NavRail.tsx:65", null, null],
+    ]);
+  });
+
+  test("a plain inline button is unchanged: its own line, alone or beside another", async () => {
+    expect(lines(await resolvePlaces([place("Filters", 6, 8), place("Sort", 7, 8)], fetchText, null, undefined, undefined, { skip, distinct: true }))).toEqual([
+      ["src/pages/Page.tsx:20", null, null],
+      ["src/pages/Page.tsx:24", null, null],
+    ]);
+    expect(lines(await resolvePlaces([place("Filters", 6, 8)], fetchText, null, undefined, undefined, { skip, distinct: true }))).toEqual([["src/pages/Page.tsx:20", null, null]]);
+  });
+
+  test("a component inside componentsDir is unchanged: where the app renders it, or its own line marked own when nothing else maps", async () => {
+    // Both go through the System's Button (line 5): that line is skipped, never a reason to walk further.
+    expect(lines(await resolvePlaces([place("Filters", 5, 6, 8), place("Sort", 5, 7, 8)], fetchText, null, undefined, undefined, { skip, distinct: true }))).toEqual([
+      ["src/pages/Page.tsx:20", null, null],
+      ["src/pages/Page.tsx:24", null, null],
+    ]);
+    expect(lines(await resolvePlaces([place("Alone", 5), place("Also alone", 5)], fetchText, null, undefined, undefined, { skip, distinct: true }))).toEqual([
+      ["src/ui/Button.tsx:5", null, true],
+      ["src/ui/Button.tsx:5", null, true],
+    ]);
+  });
+
+  test("when every line is shared (a list's rows), the first, as without distinct; a line is never one off the frames", async () => {
+    expect(lines(await resolvePlaces([place("Row 1", 9, 10, 8), place("Row 2", 9, 10, 8)], fetchText, null, undefined, undefined, { skip, distinct: true }))).toEqual([
+      ["src/pages/Row.tsx:5", null, null],
+      ["src/pages/Row.tsx:5", null, null],
+    ]);
+    // A frame that doesn't map is passed over; the chosen line is always one of the place's own mapped frames.
+    expect(lines(await resolvePlaces([place("Connect your agent", 1, 99, 2), place("Search", 1, 3)], fetchText, null, undefined, undefined, { skip, distinct: true }))).toEqual([
+      ["src/shell/NavRail.tsx:109", "src/shell/NavRail.tsx:65", null],
+      ["src/shell/NavRail.tsx:112", "src/shell/NavRail.tsx:65", null],
+    ]);
+  });
+});
+
 describe("screens.json", () => {
   test("a route's file name, and a document that would clash or lacks a field is refused", () => {
     expect(["/", "*", "/flows/[id]", "/Settings"].map(screenSlug)).toEqual(["root", "app-shell", "flows-id", "settings"]);

@@ -92,11 +92,17 @@ export const BehaviourTarget = z
     file: z.string().min(1).optional(),
     line: z.number().int().positive().optional(),
     /**
-     * Where file:line points: absent, where the app renders the button (the first frame outside the
-     * product's own components folder); `component`, inside that component itself, because nothing
-     * of the app's own mapped.
+     * Where file:line points: absent, where the app renders the button (on React's owner chain, the
+     * first line outside the product's own components folder that no other popup trigger on the
+     * screen goes through); `component`, inside that component itself, because nothing of the app's
+     * own mapped.
      */
     lineIs: z.literal("component").optional(),
+    /**
+     * Only when file:line is past a line other triggers share: that line, the first of the app's own
+     * on the owner chain (a wrapper such as a rail button, where the button element is written).
+     */
+    renderedBy: z.object({ file: z.string().min(1), line: z.number().int().positive() }).strict().optional(),
     domPath: z.string().min(1).optional(),
     box: Box.optional(),
   })

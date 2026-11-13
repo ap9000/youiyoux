@@ -209,6 +209,21 @@ describe("a component's popups", () => {
   });
 });
 
+describe("where a popup's button is", () => {
+  test("its file:line, the shared wrapper that renders it as rendered by, or its own line said so; nothing extra otherwise", async () => {
+    const at = (name: string, where: Record<string, unknown>) => result(0, "dismiss-escape", "passed", { target: { route: "/flows", pattern: "menu-button", component: "UserMenu", accessibleName: name, ...where } }, "UserMenu", name);
+    answer.view = view({ results: [at("Search", { file: "src/shell/NavRail.tsx", line: 112, renderedBy: { file: "src/shell/NavRail.tsx", line: 65 } }), at("More", { file: "src/user-menu.tsx", line: 12 }), at("Alone", { file: "src/ui/Button.tsx", line: 1, lineIs: "component" })] });
+    const { container } = render(<BehaviourPanel route="/flows" component={{ name: "UserMenu" }} />);
+    await screen.findByText(/Results from/);
+    const lines = [...container.querySelectorAll<HTMLElement>("[data-behaviour-popup] code.ml-auto")].map((c) => [c.textContent, c.getAttribute("title")]);
+    expect(lines).toEqual([
+      ["src/shell/NavRail.tsx:112 (rendered by src/shell/NavRail.tsx:65)", "Where this button is used. The wrapper that renders it, shared with other popups, is at src/shell/NavRail.tsx:65"],
+      ["src/user-menu.tsx:12", null],
+      ["src/ui/Button.tsx:1 (its own line)", "The component's own line: where the app renders it wasn't found"],
+    ]);
+  });
+});
+
 describe("route notes", () => {
   test("a socket the screen opened while it loaded is said once, as a note, not on each row", async () => {
     const note = "while the screen loaded, the page tried to open a WebSocket or tunnel to 127.0.0.1:5173; it was blocked (a dev server's reload socket, often); every popup here was tested without it";
