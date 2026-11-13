@@ -510,7 +510,7 @@ class PlaywrightProbePage implements ProbePage {
 
 const untestedWords = (reason: "targets" | "time", budgets: ProbeBudgets): Stop =>
   reason === "targets"
-    ? { why: `not tested: this screen has more than ${budgets.targets} popup triggers, and a probe tests the first ${budgets.targets}`, fix: "Next: probe fewer popups per screen (split the screen's routes in screens.json), or run the probe on this component alone once the hub's Behaviour tab can." }
+    ? { why: `not tested: this screen has more than ${budgets.targets} popup triggers, and a probe tests the first ${budgets.targets}`, fix: "Next: probe fewer popups per screen (split the screen's routes in screens.json), or list fewer routes under behaviour.routes; probing one component alone comes with the hub's behaviour switch." }
     : { why: `not tested: the screen's time budget (${Math.round(budgets.routeMs / 1000)} s) ran out first`, fix: "Next: make sure the dev server is idle, then run the probe again." };
 
 /**

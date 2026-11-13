@@ -58,6 +58,8 @@ export async function runBehave(project: Project, options: { readonly route?: st
   const listed = spec.screens.map((s) => s.route);
   if (options.route !== undefined && !listed.includes(options.route)) throw new Error(`screens.json has no route ${options.route}: it lists ${listed.join(", ")}`);
   const wanted = options.route !== undefined ? [options.route] : held;
+  // No routes is nothing checked, never "0 checks passed".
+  if (wanted.length === 0) throw new Error("screens.json lists no screens, so there is nothing to probe: add the app's screens to .youi/screens/screens.json as \"screens\": [{ \"route\": \"/\", \"path\": \"/\" }] (youiyoux screens capture --base <url> then records them), then run youiyoux behave");
   const checks = rules.map((r) => ({ rule: r.id, check: (r.check as { id: BehaviourCheckId }).id, digest: ruleDigest(r) }));
   const declared = BehaviourConsent.safeParse(spec.behaviour ?? {});
   const fingerprint = { app: await appFingerprint(project, { inputs: declared.success ? (declared.data.inputs ?? []) : [] }), tool: behaviourTool() };

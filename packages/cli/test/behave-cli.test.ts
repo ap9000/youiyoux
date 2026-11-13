@@ -75,8 +75,8 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-const screens = (consent: boolean) =>
-  writeFile(join(app, ".youi/screens/screens.json"), JSON.stringify({ schema: "youiyoux.screens/v1", project: "app", source: "the fixture", capturedAt: "", viewport: { width: 800, height: 600 }, base, ...(consent ? { behaviour: { allowedOrigin: base } } : {}), screens: [{ route: "/", path: "/" }, { route: "/settings", path: "/settings" }] }));
+const screens = (consent: boolean, list = [{ route: "/", path: "/" }, { route: "/settings", path: "/settings" }]) =>
+  writeFile(join(app, ".youi/screens/screens.json"), JSON.stringify({ schema: "youiyoux.screens/v1", project: "app", source: "the fixture", capturedAt: "", viewport: { width: 800, height: 600 }, base, ...(consent ? { behaviour: { allowedOrigin: base } } : {}), screens: list }));
 const run = async (...args: string[]): Promise<number> => {
   out = "";
   err = "";
@@ -90,7 +90,9 @@ describe("youiyoux behave without consent", () => {
     const before = requests.length;
     expect(await run("behave")).toBe(1);
     expect(err).toContain("Probes click buttons that open menus and dialogs in your running app. Use a dev app with test data. Probing isn't switched on for this app.");
-    expect(err).toContain(`"allowedOrigin": "${base}"`);
+    expect(err).toContain(`Next: add "behaviour": { "allowedOrigin": "${base}" } to .youi/screens/screens.json (by hand for now; a switch in the hub is coming).`);
+    // Never pointing at a hub tab that doesn't exist yet.
+    expect(err).not.toContain("Behaviour tab");
     expect(requests.length).toBe(before);
     expect(existsSync(join(app, ".youi/behaviour"))).toBe(false);
   });
@@ -101,6 +103,15 @@ describe("youiyoux behave without consent", () => {
     await screens(true);
     expect(await run("behave", "--route", "/nowhere")).toBe(1);
     expect(err).toContain("screens.json has no route /nowhere: it lists /, /settings");
+  });
+
+  test("with consent and rules but no screens listed, nothing is checked: refused, exit 1, never 0 checks passed", async () => {
+    await screens(true, []);
+    const before = requests.length;
+    expect(await run("behave")).toBe(1);
+    expect(err).toContain("screens.json lists no screens, so there is nothing to probe: add the app's screens to .youi/screens/screens.json");
+    expect(out).not.toContain("passed");
+    expect(requests.length).toBe(before);
   });
 
   test("with no behaviour rules on, there is nothing to probe: exit 0, no browser", async () => {
