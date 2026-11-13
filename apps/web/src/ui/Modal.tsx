@@ -31,7 +31,7 @@ export function Modal({ title, description, icon: Icon, onClose, onSubmit, foote
     <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-scrim animate-fade" />
-        <Dialog.Content
+        <Dialog.Content aria-modal="true"
           {...(description ? {} : { "aria-describedby": undefined })}
           className="fixed inset-x-0 top-[12vh] z-50 mx-auto flex max-h-[76vh] w-[min(440px,calc(100vw-24px))] flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-popover outline-none animate-pop max-sm:top-[8vh]"
         >

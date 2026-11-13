@@ -86,7 +86,7 @@ export function Sheet({ open, onOpenChange, variant, title, description, childre
     <Dialog.Root open={open} onOpenChange={(next) => (setOffset(0), onOpenChange(next))}>
       <Dialog.Portal>
         <Dialog.Overlay className="inv-scrim fixed inset-0 z-50 bg-scrim" />
-        <Dialog.Content
+        <Dialog.Content aria-modal="true"
           ref={contentRef}
           data-variant={variant}
           data-size={size}

@@ -99,7 +99,7 @@ export function DraftDialog({ report, element, onClose }: { report: DetectReport
     <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-scrim animate-fade" />
-        <Dialog.Content className="fixed inset-x-0 top-[10vh] z-50 mx-auto w-[min(560px,calc(100vw-24px))] rounded-xl border border-line bg-surface shadow-popover outline-none animate-pop">
+        <Dialog.Content aria-modal="true" className="fixed inset-x-0 top-[10vh] z-50 mx-auto w-[min(560px,calc(100vw-24px))] rounded-xl border border-line bg-surface shadow-popover outline-none animate-pop">
           <header className="flex h-12 items-center border-b border-line px-5">
             <Dialog.Title className="text-heading">Draft Library item</Dialog.Title>
             <Dialog.Close aria-label="Close" className="ml-auto grid size-7 place-items-center rounded-md text-muted hover:bg-raised hover:text-ink">
