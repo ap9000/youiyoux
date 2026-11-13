@@ -96,6 +96,26 @@ export const BehaviourTarget = z
 export type BehaviourTarget = z.infer<typeof BehaviourTarget>;
 
 /**
+ * What a result was made against: recomputed when it is read and compared, never trusted from the
+ * file. Any part that differs now makes the result stale.
+ */
+export const Freshness = z
+  .object({
+    /** Digest of the rule file and its options. */
+    rule: Digest,
+    /** The youiyoux version that ran the probe. */
+    tool: z.string().min(1),
+    /** The exact origin probed (scheme, host and port). */
+    origin: z.url(),
+    /** Digest of the `screens.json` behaviour config and the route's screen path. */
+    config: Digest,
+    /** Digest of every source file the scan covers, plus CSS, package.json and the lockfile. */
+    app: Digest,
+  })
+  .strict();
+export type Freshness = z.infer<typeof Freshness>;
+
+/**
  * passed / failed: the check ran and decided. not-applicable: the check does not apply to this
  * pattern (never a pass). incomplete: it could not tell (popup never identified, the page tried to
  * leave, over budget). error: the probe itself failed. Only `passed` ever counts as clean.
@@ -131,20 +151,7 @@ export const BehaviourResult = z
      * What this result was made against. It is stale (shown as stale, never counted as a pass)
      * when any part differs now, or when its route or viewport does.
      */
-    freshness: z
-      .object({
-        /** Digest of the rule file and its options. */
-        rule: Digest,
-        /** The youiyoux version that ran the probe. */
-        tool: z.string().min(1),
-        /** The exact origin probed (scheme, host and port). */
-        origin: z.url(),
-        /** Digest of the `screens.json` behaviour config. */
-        config: Digest,
-        /** Digest of every source file the scan covers, plus CSS, package.json and the lockfile. */
-        app: Digest,
-      })
-      .strict(),
+    freshness: Freshness,
   })
   .strict()
   .refine((r) => r.target.route === r.route && r.target.pattern === r.pattern, "target route and pattern must match the result's");
@@ -159,9 +166,20 @@ export const LOOPBACK_HOSTNAMES: readonly string[] = ["127.0.0.1", "localhost", 
  * `screens.json`'s `base` is exactly it, and it is on this machine; the field being there is never
  * enough (a capture can move `base`). Switched off, the block keeps only its `generation`, which
  * every switch (on, off, or consent dropped by a move) raises by one, so a running probe can tell
- * that consent changed under it, even if it was switched back on.
+ * that consent changed under it, even if it was switched back on. `routes`, when set, narrows the
+ * routes behaviour rules are held to.
  */
-export const BehaviourConsent = z.object({ allowedOrigin: z.string().min(1).max(200).optional(), generation: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(0) }).strict();
+export const BehaviourConsent = z
+  .object({
+    allowedOrigin: z.string().min(1).max(200).optional(),
+    generation: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).default(0),
+    /**
+     * The routes behaviour rules are held to (`youiyoux behave` probes, `youiyoux check` needs fresh
+     * results for). Absent: every route screens.json lists. Kept when probing is switched on or off.
+     */
+    routes: z.array(RoutePath.max(500)).min(1).max(200).optional(),
+  })
+  .strict();
 export type BehaviourConsent = z.infer<typeof BehaviourConsent>;
 
 export const BEHAVIOUR_ROUTE_SCHEMA = "youiyoux.behaviour/v1";
@@ -186,9 +204,19 @@ export const BehaviourRouteRun = z
     fix: z.string().min(1).nullable(),
     /** What was looked at, in a sentence (no popups found is said, never left as a zero). */
     coverage: z.string().min(1),
+    /**
+     * The rules this run probed, each with what it was made against: a route with no popups has no
+     * results, and this still says which rules it was probed for, and when that goes stale.
+     */
+    rules: z.array(z.object({ rule: ElementId, check: BehaviourCheckId, freshness: Freshness }).strict()).default([]),
     results: z.array(BehaviourResult),
   })
   .strict()
   .refine((r) => r.results.every((x) => x.route === r.route && x.runId === r.runId), "every result must be this run's, on this route")
+  .refine((r) => new Set(r.rules.map((x) => x.rule)).size === r.rules.length, "each rule is listed once")
+  .refine(
+    (r) => r.results.every((x) => r.rules.some((c) => c.rule === x.rule && c.check === x.check && JSON.stringify(c.freshness) === JSON.stringify(x.freshness))),
+    "every result is for a rule the run lists, with that rule's check and freshness",
+  )
   .refine((r) => (r.state === "incomplete") === (r.why !== null) && (r.why === null) === (r.fix === null), "an incomplete run says why and what to do; a probed one doesn't");
 export type BehaviourRouteRun = z.infer<typeof BehaviourRouteRun>;

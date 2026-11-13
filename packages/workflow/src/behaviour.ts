@@ -14,8 +14,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath, rename, unlink, type FileHandle } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
-import { BEHAVIOUR_ROUTE_SCHEMA, BehaviourRouteRun, decidesBehaviour, EVIDENCE_PATH, type BehaviourCheckId, type BehaviourResult, type BehaviourTarget } from "@youiyoux/core";
-import { behaviourConsent, probeOrigin, probeRoute, readScreensSpec, screenUrl, switchedConsent, SWITCHED_OFF, updateScreensSpec, type ContractBinding, type ProbeBudgets, type ProbeRouteOptions, type RouteProbe, type ScreensSpec } from "@youiyoux/scanner";
+import { BEHAVIOUR_ROUTE_SCHEMA, BehaviourRouteRun, decidesBehaviour, EVIDENCE_PATH, type BehaviourCheckId, type BehaviourResult, type BehaviourTarget, type Freshness } from "@youiyoux/core";
+import { behaviourConfigDigest, behaviourConsent, probeOrigin, probeRoute, readScreensSpec, screenUrl, switchedConsent, SWITCHED_OFF, updateScreensSpec, type ContractBinding, type ProbeBudgets, type ProbeRouteOptions, type RouteProbe, type ScreensSpec } from "@youiyoux/scanner";
 import { LiveApp } from "./live.ts";
 import { WorkflowError } from "./policy.ts";
 
@@ -254,7 +254,7 @@ export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<Pr
   } catch (error: unknown) {
     throw new WorkflowError("forbidden", error instanceof Error ? error.message : String(error));
   }
-  const config = digest(JSON.stringify(spec.behaviour)).slice(0, 16);
+  const config = behaviourConfigDigest(spec, options.route);
   // Asked before every scenario and immediately before every click: the same origin and the same
   // generation as when the run began, or the rest stops (switched off, moved, or switched again).
   const stillAllowed = async () => {
@@ -287,6 +287,7 @@ export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<Pr
   const runId = randomBytes(8).toString("hex");
   const at = (options.now ?? (() => new Date()))().toISOString();
   const results: BehaviourResult[] = [];
+  const freshness = (request: BehaviourCheckRequest): Freshness => ({ rule: request.digest, tool: options.fingerprint.tool, origin: consent.origin, config, app: options.fingerprint.app });
   for (const [i, t] of probe.targets.entries()) {
     const place = lines[i];
     const target: BehaviourTarget = {
@@ -321,13 +322,14 @@ export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<Pr
         // Tested with the popup's data requests blocked (after the click): said on every result of the scenario.
         dataBlocked: "dataBlocked" in scenario ? scenario.dataBlocked === true : false,
         evidence: [],
-        freshness: { rule: request.digest, tool: options.fingerprint.tool, origin: consent.origin, config, app: options.fingerprint.app },
+        freshness: freshness(request),
       });
     }
   }
   // Belt and braces: only a decided check is ever stored passed or failed.
   if (results.some((r) => (r.state === "passed" || r.state === "failed") && !decidesBehaviour(r.check))) throw new WorkflowError("internal", "the probe made a result it can't make yet; nothing was stored");
-  const run = BehaviourRouteRun.parse({ schema: BEHAVIOUR_ROUTE_SCHEMA, route: options.route, runId, at, origin: consent.origin, viewport: spec.viewport, state: probe.state, why: probe.why, fix: probe.fix, coverage: probe.coverage, results });
+  const rules = [...new Map(options.checks.map((c) => [c.rule, { rule: c.rule, check: c.check, freshness: freshness(c) }])).values()];
+  const run = BehaviourRouteRun.parse({ schema: BEHAVIOUR_ROUTE_SCHEMA, route: options.route, runId, at, origin: consent.origin, viewport: spec.viewport, state: probe.state, why: probe.why, fix: probe.fix, coverage: probe.coverage, rules, results });
   const file = await writeYouiFile(options.root, behaviourFile(options.route), `${JSON.stringify(run, null, 2)}\n`);
   return { run, file, probe };
 }

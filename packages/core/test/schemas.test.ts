@@ -210,8 +210,14 @@ describe("behaviour rules (slice 0: contracts)", () => {
   });
 
   test("a route's run holds only its own results, says why when incomplete, and consent names one origin and nothing else", () => {
-    const run = { schema: "youiyoux.behaviour/v1", route: "/flows", runId: "run-1", at: "2026-11-12T10:00:00Z", origin: "http://localhost:5173", viewport: { width: 1440, height: 900 }, state: "probed", why: null, fix: null, coverage: "1 popup trigger found.", results: [result] };
+    const run = { schema: "youiyoux.behaviour/v1", route: "/flows", runId: "run-1", at: "2026-11-12T10:00:00Z", origin: "http://localhost:5173", viewport: { width: 1440, height: 900 }, state: "probed", why: null, fix: null, coverage: "1 popup trigger found.", rules: [{ rule: result.rule, check: result.check, freshness: result.freshness }], results: [result] };
     expect(BehaviourRouteRun.safeParse(run).success).toBe(true);
+    // Every result belongs to a rule the run lists, with that rule's check and freshness; each rule once.
+    expect(BehaviourRouteRun.safeParse({ ...run, rules: [] }).success).toBe(false);
+    expect(BehaviourRouteRun.safeParse({ ...run, rules: [{ ...run.rules[0]!, check: "focus-trap" }] }).success).toBe(false);
+    expect(BehaviourRouteRun.safeParse({ ...run, rules: [{ ...run.rules[0]!, freshness: { ...result.freshness, app: "ffffffffffff" } }] }).success).toBe(false);
+    expect(BehaviourRouteRun.safeParse({ ...run, rules: [run.rules[0]!, run.rules[0]!] }).success).toBe(false);
+    expect(BehaviourRouteRun.safeParse({ ...run, results: [], fresh: true }).success).toBe(false);
     expect(BehaviourRouteRun.safeParse({ ...run, results: [{ ...result, runId: "run-2" }] }).success).toBe(false);
     expect(BehaviourRouteRun.safeParse({ ...run, route: "/other" }).success).toBe(false);
     expect(BehaviourRouteRun.safeParse({ ...run, state: "incomplete" }).success).toBe(false);
@@ -221,6 +227,8 @@ describe("behaviour rules (slice 0: contracts)", () => {
     expect(BehaviourConsent.parse({ generation: 3 })).toEqual({ generation: 3 });
     expect(BehaviourConsent.safeParse({ allowedOrigin: "http://localhost:5173", generation: -1 }).success).toBe(false);
     expect(BehaviourConsent.safeParse({ allowedOrigin: "http://localhost:5173", routes: [] }).success).toBe(false);
+    expect(BehaviourConsent.parse({ allowedOrigin: "http://localhost:5173", routes: ["/flows"] })).toEqual({ allowedOrigin: "http://localhost:5173", generation: 0, routes: ["/flows"] });
+    expect(BehaviourConsent.safeParse({ routes: ["flows"] }).success).toBe(false);
     expect(BehaviourConsent.safeParse(true).success).toBe(false);
   });
 

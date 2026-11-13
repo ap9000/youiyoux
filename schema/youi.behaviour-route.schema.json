@@ -77,6 +77,69 @@
       "type": "string",
       "minLength": 1
     },
+    "rules": {
+      "default": [],
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "rule": {
+            "type": "string",
+            "pattern": "^youi:([a-z][a-z0-9-]*)\\/(token|component|rule|migration)\\/([a-z0-9][a-z0-9.\\-]*)$"
+          },
+          "check": {
+            "type": "string",
+            "enum": [
+              "trigger-state",
+              "dismiss-escape",
+              "focus-into",
+              "focus-return",
+              "focus-trap",
+              "arrow-keys"
+            ]
+          },
+          "freshness": {
+            "type": "object",
+            "properties": {
+              "rule": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{12,64}$"
+              },
+              "tool": {
+                "type": "string",
+                "minLength": 1
+              },
+              "origin": {
+                "type": "string",
+                "format": "uri"
+              },
+              "config": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{12,64}$"
+              },
+              "app": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{12,64}$"
+              }
+            },
+            "required": [
+              "rule",
+              "tool",
+              "origin",
+              "config",
+              "app"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "rule",
+          "check",
+          "freshness"
+        ],
+        "additionalProperties": false
+      }
+    },
     "results": {
       "type": "array",
       "items": {

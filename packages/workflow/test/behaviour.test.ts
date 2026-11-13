@@ -195,8 +195,11 @@ describe("evidence and run files stay inside the real .youi/", () => {
       symlinkSync(join(root, ".youi"), join(linked, ".youi"));
       await expect(writeEvidence(linked, ".youi/behaviour/c.png", Buffer.from([1]))).rejects.toThrow(/\.youi is a link/);
       // A stored run naming evidence through a link is refused when read.
-      const run = { schema: "youiyoux.behaviour/v1", route: "/menu", runId: "r1", at: "2026-11-12T00:00:00.000Z", origin: "http://127.0.0.1:5173", viewport: { width: 800, height: 600 }, state: "probed", why: null, fix: null, coverage: "x", results: [{ runId: "r1", at: "2026-11-12T00:00:00.000Z", viewport: { width: 800, height: 600 }, route: "/menu", rule: "youi:demo/rule/menus-close", target: { route: "/menu", pattern: "menu-button", component: null, accessibleName: "Actions" }, pattern: "menu-button", check: "dismiss-escape", state: "incomplete", why: "w", fix: "f", info: [], evidence: [".youi/behaviour/escape/secret.png"], freshness: { rule: "0123456789ab", tool: "t", origin: "http://127.0.0.1:5173", config: "0123456789ab", app: "0123456789ab" } }] };
+      const run = { schema: "youiyoux.behaviour/v1", route: "/menu", runId: "r1", at: "2026-11-12T00:00:00.000Z", origin: "http://127.0.0.1:5173", viewport: { width: 800, height: 600 }, state: "probed", why: null, fix: null, coverage: "x", rules: [{ rule: "youi:demo/rule/menus-close", check: "dismiss-escape", freshness: { rule: "0123456789ab", tool: "t", origin: "http://127.0.0.1:5173", config: "0123456789ab", app: "0123456789ab" } }], results: [{ runId: "r1", at: "2026-11-12T00:00:00.000Z", viewport: { width: 800, height: 600 }, route: "/menu", rule: "youi:demo/rule/menus-close", target: { route: "/menu", pattern: "menu-button", component: null, accessibleName: "Actions" }, pattern: "menu-button", check: "dismiss-escape", state: "incomplete", why: "w", fix: "f", info: [], evidence: [".youi/behaviour/escape/secret.png"], freshness: { rule: "0123456789ab", tool: "t", origin: "http://127.0.0.1:5173", config: "0123456789ab", app: "0123456789ab" } }] };
       expect(BehaviourRouteRun.safeParse(run).success).toBe(true);
+      // A result for a rule the run doesn't list, or with another freshness than its rule's, isn't a run.
+      expect(BehaviourRouteRun.safeParse({ ...run, rules: [] }).success).toBe(false);
+      expect(BehaviourRouteRun.safeParse({ ...run, rules: [{ ...run.rules[0]!, freshness: { ...run.rules[0]!.freshness, app: "fedcba987654" } }] }).success).toBe(false);
       writeFileSync(join(root, behaviourFile("/menu")), JSON.stringify(run));
       await expect(readBehaviourRun(root, "/menu")).rejects.toThrow(/goes through a link/);
     } finally {
@@ -331,6 +334,8 @@ describe.skipIf(!HAVE_CHROMIUM)("probing a running app", () => {
     expect(run).toMatchObject({ route: "/menu", origin: base, state: "probed" });
     expect(run.results.map((r) => [r.check, r.state])).toEqual([["focus-return", "incomplete"], ["focus-trap", "not-applicable"]]);
     expect(run.results[0]).toMatchObject({ target: { route: "/menu", pattern: "menu-button", component: null, accessibleName: "Actions" }, why: expect.stringMatching(/opened and was identified \(by aria-controls\), but this youiyoux doesn't decide focus-return yet/), freshness: { origin: base, app: FINGERPRINT.app, tool: FINGERPRINT.tool } });
+    // Which rules the run was for, each with what it was made against.
+    expect(run.rules.map((r) => [r.rule, r.check])).toEqual([["youi:demo/rule/menus-return", "focus-return"], ["youi:demo/rule/dialogs-trap", "focus-trap"]]);
     expect(run.results[0]!.target).not.toHaveProperty("file");
     // Its click only loads an image (a static file): nothing was blocked.
     expect(run.results.map((r) => r.dataBlocked)).toEqual([false, false]);

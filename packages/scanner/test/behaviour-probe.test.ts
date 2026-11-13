@@ -70,6 +70,8 @@ describe("consent and the probe's own address", () => {
     expect(moved).toEqual({ project: "x", base: "http://localhost:6006", behaviour: { generation: 1 } });
     expect(withBase({ ...spec, behaviour: { allowedOrigin: "http://localhost:5173", generation: 7 } }, "http://localhost:6006").behaviour).toEqual({ generation: 8 });
     expect(withBase({ project: "x", behaviour: { generation: 2 } }, "http://localhost:6006").behaviour).toEqual({ generation: 2 });
+    // The routes behaviour rules are held to stay through a switch.
+    expect(withBase({ ...spec, behaviour: { allowedOrigin: "http://localhost:5173", routes: ["/flows"] } }, "http://localhost:6006").behaviour).toEqual({ generation: 1, routes: ["/flows"] });
     expect(behaviourConsent({ base: "http://localhost:6006", behaviour: { generation: 2 } })).toMatchObject({ ok: false, why: expect.stringMatching(/Probing isn't switched on/) });
     // Even if a block survived a move (an old youiyoux, a hand edit), it is checked against the origin.
     expect(behaviourConsent({ ...spec, base: "http://localhost:6006" }).ok).toBe(false);
