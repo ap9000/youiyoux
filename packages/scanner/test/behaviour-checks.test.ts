@@ -128,7 +128,7 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
       if (e.key === "ArrowDown" && i === o.breakAt) { e.preventDefault(); return; }
       if (e.key === "ArrowDown") j = i + step >= items.length ? (o.stay ? i : 0) : i + step;
       else if (e.key === "ArrowUp") j = i - step < 0 ? (o.stay ? i : items.length - 1) : i - step;
-      else if (e.key === "Home") j = 0; else if (e.key === "End") j = items.length - 1;
+      else if (e.key === "Home" && !o.noHomeEnd) j = 0; else if (e.key === "End" && !o.noHomeEnd) j = items.length - 1;
       if (j === null) return; e.preventDefault(); items[j].focus(); });`;
   /** aria-activedescendant on a combobox; `o` makes it name a missing id or an element outside the listbox. */
   const ACTIVE = `window.active = (cbId, lbId, o = {}) => document.getElementById(cbId).addEventListener("keydown", (e) => {
@@ -167,7 +167,11 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
     "/ts-popover": () => page(`<button data-log="trigger-p1" popovertarget="p1">Info</button><div popover id="p1"><button>Got it</button></div>`),
     "/ts-popover-stale": () => page(`<button data-log="trigger-p2" popovertarget="p2" aria-expanded="false">Info</button><div popover id="p2"><button>Got it</button></div>`),
     "/ts-popover-always": () => page(`<button data-log="trigger-p5" popovertarget="p5" aria-expanded="true">Info</button><div popover id="p5"><button>Got it</button></div>`),
-    "/ts-disclosure": () => page(`<button data-log="trigger-p3" aria-expanded="false" aria-controls="p3" onclick="document.getElementById('p3').hidden=false;this.setAttribute('aria-expanded','true')">Filters</button><div id="p3" hidden><button>Apply</button></div>`),
+    "/ts-controls-popover": () => page(`<button data-log="trigger-p3" aria-expanded="false" aria-controls="p3" onclick="document.getElementById('p3').hidden=false;this.setAttribute('aria-expanded','true')">Filters</button><div id="p3" role="dialog" aria-label="Filters" hidden><button>Apply</button></div>`),
+    // A disclosure: a section of the page that folds open (no popup role, not a native popover). Out of scope in v1, so never a target.
+    "/ts-disclosure": () => page(`<button data-log="trigger-p4" aria-expanded="false" aria-controls="p4" onclick="document.getElementById('p4').hidden=false;this.setAttribute('aria-expanded','true')">Details</button><div id="p4" hidden><p>More about this.</p></div>`),
+    // aria-expanded with aria-controls naming nothing yet (rendered only when open): can't be told from a disclosure, so not a target either.
+    "/ts-controls-absent": () => page(`<button data-log="trigger-p6" aria-expanded="false" aria-controls="p6">Later</button>`),
     "/ts-dialog": () => page(`<button data-log="trigger-d1" aria-haspopup="dialog" onclick="document.getElementById('d1').showModal()">Settings</button><dialog id="d1"><button>Close</button></dialog>`),
     "/ts-repeated": () => page(menu({ name: "More", id: "r1" }) + menu({ name: "More", id: "r2" })),
     // Page-supplied words that must never reach a result raw.
@@ -221,6 +225,17 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
     // A menu that stays at its ends, whose last arrow (ArrowUp at the top: staying) moves focus outside 120 ms later.
     "/ak-stay-jumps": () => arrowMenu("a8", `rove("a8", { stay: true }); document.getElementById("a8").addEventListener("keydown", (e) => { if (e.key === "ArrowUp" && document.activeElement === document.querySelector("#a8 [role^=menuitem]")) setTimeout(() => document.querySelector("[data-log=after]").focus(), 120); });`),
     "/ak-menu-stays": () => arrowMenu("a2", 'rove("a2", { stay: true })'),
+    "/ak-no-home-end": () => arrowMenu("a9", 'rove("a9", { noHomeEnd: true })'),
+    // Names as a browser joins them: block parts stay apart, inline parts run on, aria-hidden is left out.
+    "/names-blocks": () =>
+      page(
+        menu({
+          id: "nb",
+          name: '<span style="display:block">Share</span><span style="display:block">and export</span>',
+          open: FIRST("nb"),
+          items: '<li role="menuitem" tabindex="-1"><span style="display:block">Copy sync command</span><span style="display:block">youiyoux sync</span><span aria-hidden="true">⌘C</span></li><li role="menuitem" tabindex="-1">Re<b>name</b></li>',
+        }),
+      ),
     "/ak-menu-to-disabled": () => arrowMenu("a3", 'rove("a3", { disabledToo: true })'),
     "/ak-menu-skips": () => arrowMenu("a4", 'rove("a4", { step: 2 })'),
     "/ak-menu-static": () => arrowMenu("a5", ""),
@@ -347,6 +362,14 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
       expect(new Set(wraps.keys)).toEqual(new Set(["ArrowDown", "ArrowUp", "End", "Home"]));
       expect(await one("/ak-menu-stays", "arrow-keys")).toMatchObject({ state: "passed", info: expect.arrayContaining(["at the last menu item, ArrowDown stays on it", "at the first menu item, ArrowUp stays on it"]) });
       expect(new Set(logged("key").slice(keys))).toEqual(new Set(["ArrowDown", "ArrowUp", "End", "Home"]));
+    }, 60_000);
+
+    test("Home and End are reported only when focus was somewhere else first; a menu that ignores them is never said to answer them", async () => {
+      const result = await one("/ak-no-home-end", "arrow-keys");
+      expect(result).toMatchObject({ state: "passed" });
+      expect(result.info).not.toContain("Home moves to the first menu item: yes");
+      expect(result.info).not.toContain("End moves to the last menu item: yes");
+      expect(result.info.filter((line) => /^(?:Home|End) moves to the (?:first|last) menu item: (?:no|couldn't tell \(focus was already there\))$/.test(line))).toHaveLength(2);
     }, 60_000);
 
     test("APG lets disabled items take focus: a menu (and a combobox) whose arrows land on them passes, saying so", async () => {
@@ -525,15 +548,31 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
       expect(await one("/ts-combobox-closed", "trigger-state")).toMatchObject({ state: "failed", why: 'aria-expanded isn\'t set while the listbox is closed (a combobox says "false")' });
     }, 60_000);
 
-    test("a native popovertarget passes by itself; a hand-set aria-expanded that never changes fails; a disclosure-style popover passes; a dialog's button isn't checked", async () => {
+    test("a native popovertarget passes by itself; a hand-set aria-expanded that never changes fails; aria-controls naming a popup-role element passes; a dialog's button isn't checked", async () => {
       expect(await one("/ts-popover", "trigger-state")).toMatchObject({ state: "passed", why: "the button names its popover with popovertarget, so the browser says whether it is open" });
       expect(await one("/ts-popover-stale", "trigger-state")).toMatchObject({ state: "failed", why: expect.stringMatching(/^aria-expanded is set by hand and says "false" while the popover is open/) });
       // aria-expanded="true" set by hand and never changed: right while open, wrong while closed.
       expect(await one("/ts-popover-always", "trigger-state")).toMatchObject({ state: "failed", why: 'aria-expanded is set by hand and says "true" before the popover opened; popovertarget already says whether it is open' });
-      expect(await one("/ts-disclosure", "trigger-state")).toMatchObject({ state: "passed" });
+      expect(await one("/ts-controls-popover", "trigger-state")).toMatchObject({ state: "passed" });
       const clicks = logged("click").length;
       expect(await one("/ts-dialog", "trigger-state")).toMatchObject({ state: "not-applicable" });
       // Not applicable: nothing was clicked.
+      expect(logged("click").slice(clicks)).toEqual([]);
+    }, 60_000);
+
+    test("names are joined as a browser joins them: block parts stay apart, inline parts run on, aria-hidden parts are left out", async () => {
+      const result = await probe("/names-blocks", ["focus-into"]);
+      expect(result.targets[0]!.key.accessibleName).toBe("Share and export");
+      expect(result.targets[0]!.scenarios[0]).toMatchObject({ state: "passed", why: "focus moved to the menu item 'Copy sync command youiyoux sync' inside the menu when it opened" });
+    }, 60_000);
+
+    test("a disclosure (aria-expanded and aria-controls on a section of the page) is not a popover: not a target, never clicked", async () => {
+      const clicks = logged("click").length;
+      for (const path of ["/ts-disclosure", "/ts-controls-absent"]) {
+        const result = await probe(path, ["trigger-state", "dismiss-escape"]);
+        expect(result.targets, path).toEqual([]);
+        expect(result.coverage, path).toBe("No declared popups found; popups without these markers were not assessed.");
+      }
       expect(logged("click").slice(clicks)).toEqual([]);
     }, 60_000);
 

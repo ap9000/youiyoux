@@ -91,7 +91,7 @@ describe.skipIf(!HAVE_CHROMIUM)("dismiss-escape in a real browser", () => {
     "/drops-relationship": () =>
       page(
         `<button data-log="trigger-cp" aria-expanded="false" aria-controls="cp" onclick="const p=document.getElementById('cp');p.hidden=false;this.setAttribute('aria-expanded','true');p.querySelector('button').focus()">Filters</button>` +
-          `<div id="cp" hidden onkeydown="if (event.key === 'Escape') document.querySelector('[data-log=trigger-cp]').removeAttribute('aria-controls')"><button data-log="inside-cp">Apply</button></div>`,
+          `<div id="cp" role="dialog" aria-label="Filters" hidden onkeydown="if (event.key === 'Escape') document.querySelector('[data-log=trigger-cp]').removeAttribute('aria-controls')"><button data-log="inside-cp">Apply</button></div>`,
       ),
     // A menu whose Esc handler renames it, and leaves it open.
     "/renames-popup": () => page(menu("Actions", "m11", "this.id = 'renamed'")),

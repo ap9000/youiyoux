@@ -211,10 +211,39 @@ export function isolatedLibrary(): void {
   // A name as the probe keeps it: control, format and direction characters dropped, whitespace collapsed (the same rule as core's cleanText).
   const text = (value: string | null | undefined): string => (value ?? "").replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/gu, " ").replace(/\s+/g, " ").trim();
   const byId = (element: Element, id: string): Element | null => ((element.getRootNode() as Document | ShadowRoot).getElementById?.(id) as Element | null) ?? document.getElementById(id);
+  /**
+   * An element's text as a name, the way a browser joins it: every element that isn't laid out
+   * inline (a block, a flex item, a table cell) starts and ends a word, so "Copy sync command" in
+   * one block and "youiyoux sync" in the next stay two phrases; an aria-hidden part is left out, a
+   * labelled part gives its label, an image its alt. Bounded in depth and length.
+   */
+  const textOf = (root: Node): string => {
+    let out = "";
+    const walk = (node: Node, depth: number): void => {
+      if (out.length > 400 || depth > 32) return;
+      if (node.nodeType === Node.TEXT_NODE) {
+        out += node.nodeValue ?? "";
+        return;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) return;
+      const element = node as Element;
+      if (element !== root && element.getAttribute("aria-hidden") === "true") return;
+      const display = element === root ? "inline" : getComputedStyle(element).display;
+      const apart = display !== "inline" && display !== "contents";
+      if (apart) out += " ";
+      const label = element !== root ? element.getAttribute("aria-label") : null;
+      if (label) out += label;
+      else if (element.localName === "img") out += element.getAttribute("alt") ?? "";
+      else for (const child of element.childNodes) walk(child, depth + 1);
+      if (apart) out += " ";
+    };
+    walk(root, 0);
+    return out;
+  };
   const accessibleName = (element: Element): string => {
     const labelledby = element.getAttribute("aria-labelledby");
     if (labelledby) {
-      const named = text(labelledby.split(/\s+/).map((id) => byId(element, id)?.textContent ?? "").join(" "));
+      const named = text(labelledby.split(/\s+/).map((id) => { const by = byId(element, id); return by ? textOf(by) : ""; }).join(" "));
       if (named) return named.slice(0, 200);
     }
     const label = text(element.getAttribute("aria-label"));
@@ -222,11 +251,11 @@ export function isolatedLibrary(): void {
     if (element.localName === "input") {
       const input = element as HTMLInputElement;
       if (input.type === "button") return text(input.value).slice(0, 200);
-      const fromLabel = text(input.labels ? [...input.labels].map((l) => l.textContent).join(" ") : "");
+      const fromLabel = text(input.labels ? [...input.labels].map((l) => textOf(l)).join(" ") : "");
       if (fromLabel) return fromLabel.slice(0, 200);
       return text(element.getAttribute("title") || element.getAttribute("placeholder")).slice(0, 200);
     }
-    return text(element.textContent || element.getAttribute("title")).slice(0, 200);
+    return (text(textOf(element)) || text(element.getAttribute("title"))).slice(0, 200);
   };
   const isModal = (element: Element | null): boolean =>
     !!element && (element.localName === "dialog" || element.getAttribute("role") === "alertdialog" || (element.getAttribute("role") === "dialog" && element.getAttribute("aria-modal") === "true"));
@@ -239,7 +268,11 @@ export function isolatedLibrary(): void {
     if (popup === "menu" || popup === "true") return "menu-button";
     if (popup === "dialog" || (element.getAttribute("command") === "show-modal" && element.hasAttribute("commandfor")) || isModal(controlled)) return "modal-dialog";
     if (element.hasAttribute("popovertarget")) return "popover";
-    if (element.hasAttribute("aria-expanded") && controls) return "popover";
+    // aria-expanded with aria-controls is a popover only when what it controls is one (a native
+    // popover, or a menu, listbox or dialog); otherwise it is a disclosure (a section that folds
+    // open in the page), which v1 doesn't check, so it is not a target. A controlled element that
+    // isn't there yet can't be told apart from a disclosure's, so it isn't one either.
+    if (element.hasAttribute("aria-expanded") && controlled && (controlled.hasAttribute("popover") || ["menu", "listbox", "dialog", "alertdialog"].includes(controlled.getAttribute("role") ?? ""))) return "popover";
     return null;
   };
   const domPath = (element: Element): string => {

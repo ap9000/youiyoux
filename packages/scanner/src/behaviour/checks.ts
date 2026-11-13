@@ -539,6 +539,11 @@ export async function arrowKeys(page: ProbePage, opened: Opened, args: CheckArgs
   // Home and End: information only (APG makes them optional for a listbox), never a failure.
   if (n >= 2) {
     for (const [key, wanted] of [["End", [n - 1, lastEnabled]], ["Home", [0, firstEnabled]]] as const) {
+      // Focus already where the key should take it: pressing it would show nothing either way.
+      if ((wanted as readonly number[]).includes(at)) {
+        ctx.extra.push(`${key} moves to the ${key === "End" ? "last" : "first"} ${itemNoun}: couldn't tell (focus was already there)`);
+        continue;
+      }
       const refused = await press(key);
       if (refused === changed) {
         ctx.extra.push(`${key} wasn't tried: the ${noun} closed or focus left it`);
