@@ -9,7 +9,7 @@
  * failures, and a stored pass or fail for a check this youiyoux doesn't decide isn't counted at all.
  */
 import { join } from "node:path";
-import { decidesBehaviour, ruleSlug, type BehaviourResult, type BehaviourRouteRun, type RuleRun, type RuleSpec } from "@youiyoux/core";
+import { BEHAVIOUR_CHECKS, decidesBehaviour, ruleSlug, targetIdentityKey, type BehaviourResult, type BehaviourRouteRun, type RuleRun, type RuleSpec } from "@youiyoux/core";
 import { appFingerprint, behaviourConfigDigest, behaviourRoutes, freshnessNow, readScreensSpec, ruleDigest, staleParts, type FreshnessNow, type Project, type ScreensSpec } from "@youiyoux/scanner";
 import { readBehaviourRun } from "./behaviour.ts";
 
@@ -100,6 +100,17 @@ async function routeState(rule: RuleSpec, route: string, run: BehaviourRouteRun 
   const mine = run.results.filter((r) => r.rule === rule.id);
   // Each result is held to the same key (the schema ties it to its rule's entry) and to now.
   if (mine.some((r) => staleParts(r, now).length > 0 || r.route !== route)) return no("is stale (a result was made against something else)");
+  // Integrity (the freshness key proves what a result was made against, not that the file is
+  // whole): exactly one result per target the run found, and not-applicable only where the
+  // check doesn't apply to the target's pattern.
+  const expected = new Set(run.targets.map(targetIdentityKey));
+  const seen = new Map<string, number>();
+  for (const r of mine) seen.set(targetIdentityKey(r.target), (seen.get(targetIdentityKey(r.target)) ?? 0) + 1);
+  const missing = [...expected].filter((k) => !seen.has(k)).length;
+  const extra = [...seen].filter(([k, n]) => !expected.has(k) || n > 1).length;
+  if (missing > 0 || extra > 0) return no(`has a stored run whose results don't match the popups it found (${missing} missing, ${extra} extra or repeated); run youiyoux behave again`);
+  const wrongNa = mine.filter((r) => (r.state === "not-applicable") === BEHAVIOUR_CHECKS[r.check].patterns.includes(r.pattern));
+  if (wrongNa.length > 0) return no(`has a stored run that says ${wrongNa[0]!.check} ${wrongNa[0]!.state === "not-applicable" ? "doesn't apply to" : "applies to"} a ${wrongNa[0]!.pattern}, which it ${wrongNa[0]!.state === "not-applicable" ? "does" : "doesn't"}; run youiyoux behave again`);
   const counted = mine.filter((r) => decidesBehaviour(r.check) && r.state === "failed");
   const undecided = mine.filter((r) => r.state === "incomplete" || r.state === "error" || ((r.state === "passed" || r.state === "failed") && !decidesBehaviour(r.check)));
   if (undecided.length > 0) return no(`has ${undecided.length} popup${undecided.length === 1 ? "" : "s"} that couldn't be decided (${undecided[0]!.why})`, counted);

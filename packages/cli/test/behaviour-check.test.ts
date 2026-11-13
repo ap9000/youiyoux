@@ -85,7 +85,7 @@ async function stored(route: string, targets: readonly Target[]): Promise<void> 
       freshness,
     };
   });
-  const run = BehaviourRouteRun.parse({ schema: BEHAVIOUR_ROUTE_SCHEMA, route, runId: "run1", at, origin: ORIGIN, viewport: spec.viewport, state: "probed", why: null, fix: null, coverage: `${targets.length} popup triggers found by ARIA markers.`, rules: [{ rule: RULE_ID, check: "dismiss-escape", freshness }], results });
+  const run = BehaviourRouteRun.parse({ schema: BEHAVIOUR_ROUTE_SCHEMA, route, runId: "run1", at, origin: ORIGIN, viewport: spec.viewport, state: "probed", why: null, fix: null, coverage: `${targets.length} popup triggers found by ARIA markers.`, rules: [{ rule: RULE_ID, check: "dismiss-escape", freshness }], targets: results.map((r) => ({ route, pattern: r.pattern, component: r.target.component, accessibleName: r.target.accessibleName })), results });
   await mkdir(join(app, ".youi/behaviour"), { recursive: true });
   await writeFile(join(app, behaviourFile(route)), JSON.stringify(run));
 }

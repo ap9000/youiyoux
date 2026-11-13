@@ -149,6 +149,28 @@ describe.skipIf(!HAVE_CHROMIUM)("standing from stored runs", () => {
     expect(stale.runs[0]).toMatchObject({ state: "incomplete", reason: expect.stringMatching(/stale \(the code changed/) });
   }, 60_000);
 
+  test("a stored run must hold one result per popup it found, and not-applicable only where the check doesn't apply: a deleted or relabelled failure isn't clean", async () => {
+    const p = product("integrity", ["/esc-ignored"]);
+    await behave(p, "/esc-ignored", [ESCAPE]);
+    const file = join(p.root, behaviourFile("/esc-ignored"));
+    const run = JSON.parse(readFileSync(file, "utf8")) as { targets: unknown[]; results: Array<{ state: string; target: Record<string, unknown> }> };
+    expect(run.targets).toEqual([{ route: "/esc-ignored", pattern: "menu-button", component: null, accessibleName: "Actions" }]);
+    expect((await behaviourStanding(p.project, [ESCAPE], TOOL)).failures).toHaveLength(1);
+    // The failure taken out, the rule's entry kept.
+    writeFileSync(file, JSON.stringify({ ...run, results: [] }));
+    const deleted = await behaviourStanding(p.project, [ESCAPE], TOOL);
+    expect(deleted.failures).toEqual([]);
+    expect(deleted.runs[0]).toMatchObject({ state: "incomplete", reason: expect.stringMatching(/\/esc-ignored has a stored run whose results don't match the popups it found \(1 missing, 0 extra or repeated\)/) });
+    // dismiss-escape relabelled not-applicable: it applies to every pattern.
+    writeFileSync(file, JSON.stringify({ ...run, results: run.results.map((r) => ({ ...r, state: "not-applicable" })) }));
+    const relabelled = await behaviourStanding(p.project, [ESCAPE], TOOL);
+    expect(relabelled.failures).toEqual([]);
+    expect(relabelled.runs[0]).toMatchObject({ state: "incomplete", reason: expect.stringMatching(/says dismiss-escape doesn't apply to a menu-button, which it does/) });
+    // Repeated: one target, two results.
+    writeFileSync(file, JSON.stringify({ ...run, results: [...run.results, ...run.results] }));
+    expect((await behaviourStanding(p.project, [ESCAPE], TOOL)).runs[0]).toMatchObject({ state: "incomplete", reason: expect.stringMatching(/0 missing, 1 extra or repeated/) });
+  }, 60_000);
+
   test("a stored file can't decide for itself: an undecided check stays incomplete even if the file says passed, and a file that claims to be fresh isn't read", async () => {
     const p = product("hand-edited", ["/esc"]);
     await behave(p, "/esc", [ESCAPE, RETURN]);

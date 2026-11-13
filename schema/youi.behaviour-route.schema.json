@@ -140,6 +140,53 @@
         "additionalProperties": false
       }
     },
+    "targets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "route": {
+            "type": "string",
+            "pattern": "^\\/"
+          },
+          "pattern": {
+            "type": "string",
+            "enum": [
+              "menu-button",
+              "combobox-listbox",
+              "modal-dialog",
+              "popover"
+            ]
+          },
+          "component": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "accessibleName": {
+            "type": "string"
+          },
+          "ordinal": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "route",
+          "pattern",
+          "component",
+          "accessibleName"
+        ],
+        "additionalProperties": false
+      }
+    },
     "results": {
       "type": "array",
       "items": {
@@ -386,6 +433,7 @@
     "why",
     "fix",
     "coverage",
+    "targets",
     "results"
   ],
   "additionalProperties": false

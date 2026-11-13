@@ -115,6 +115,14 @@ export const Freshness = z
   .strict();
 export type Freshness = z.infer<typeof Freshness>;
 
+/** A target's identity alone (what matching uses): route, pattern, component, accessible name, ordinal. */
+export const BehaviourTargetIdentity = z
+  .object({ route: RoutePath, pattern: BehaviourPattern, component: z.string().min(1).nullable(), accessibleName: z.string(), ordinal: z.number().int().nonnegative().optional() })
+  .strict();
+export type BehaviourTargetIdentity = z.infer<typeof BehaviourTargetIdentity>;
+/** The identity's key: equal for the same target, whatever display fields it carries. */
+export const targetIdentityKey = (t: BehaviourTargetIdentity): string => JSON.stringify([t.route, t.pattern, t.component, t.accessibleName, t.ordinal ?? null]);
+
 /**
  * passed / failed: the check ran and decided. not-applicable: the check does not apply to this
  * pattern (never a pass). incomplete: it could not tell (popup never identified, the page tried to
@@ -209,11 +217,18 @@ export const BehaviourRouteRun = z
      * results, and this still says which rules it was probed for, and when that goes stale.
      */
     rules: z.array(z.object({ rule: ElementId, check: BehaviourCheckId, freshness: Freshness }).strict()).default([]),
+    /**
+     * Every popup trigger the run found on the route, by identity: each listed rule must have
+     * exactly one result per target (checked where results are read), so a result taken out of
+     * the file reads as missing, never as clean.
+     */
+    targets: z.array(BehaviourTargetIdentity),
     results: z.array(BehaviourResult),
   })
   .strict()
   .refine((r) => r.results.every((x) => x.route === r.route && x.runId === r.runId), "every result must be this run's, on this route")
   .refine((r) => new Set(r.rules.map((x) => x.rule)).size === r.rules.length, "each rule is listed once")
+  .refine((r) => new Set(r.targets.map(targetIdentityKey)).size === r.targets.length && r.targets.every((t) => t.route === r.route), "each target is listed once, on this route")
   .refine(
     (r) => r.results.every((x) => r.rules.some((c) => c.rule === x.rule && c.check === x.check && JSON.stringify(c.freshness) === JSON.stringify(x.freshness))),
     "every result is for a rule the run lists, with that rule's check and freshness",

@@ -173,6 +173,12 @@ re-run is cheap, a wrong pass isn't.)
 
 Stored at `.youi/behaviour/<route-hash>.json` with `writeFileAtomic`.
 
+**Integrity is checked separately from freshness** (slice 2 review). The freshness key proves what a result was made
+against, not that the stored file is whole or authentic: anyone who can write `.youi/` can write any file. So the run
+also stores every target it found (`targets`), and a rule counts on a route only with exactly one result per target
+and `not-applicable` only where the pattern table says the check doesn't apply; anything else is that route
+incomplete. A deliberate forgery by a process on the same account remains out of scope (as for evidence paths).
+
 **Presentation merges**, it doesn't convert: rule screens (`RulesScreen.tsx`, `RuleDetail.tsx`), the per-screen
 "Rule issues" section (`ScreenDetail.tsx:447`) and `IssueCounts.tsx` read violations and behaviour results through
 one adapter that keeps the two kinds distinct (a behaviour row shows route + target, file:line when known).

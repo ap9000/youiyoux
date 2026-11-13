@@ -329,7 +329,7 @@ export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<Pr
   // Belt and braces: only a decided check is ever stored passed or failed.
   if (results.some((r) => (r.state === "passed" || r.state === "failed") && !decidesBehaviour(r.check))) throw new WorkflowError("internal", "the probe made a result it can't make yet; nothing was stored");
   const rules = [...new Map(options.checks.map((c) => [c.rule, { rule: c.rule, check: c.check, freshness: freshness(c) }])).values()];
-  const run = BehaviourRouteRun.parse({ schema: BEHAVIOUR_ROUTE_SCHEMA, route: options.route, runId, at, origin: consent.origin, viewport: spec.viewport, state: probe.state, why: probe.why, fix: probe.fix, coverage: probe.coverage, rules, results });
+  const run = BehaviourRouteRun.parse({ schema: BEHAVIOUR_ROUTE_SCHEMA, route: options.route, runId, at, origin: consent.origin, viewport: spec.viewport, state: probe.state, why: probe.why, fix: probe.fix, coverage: probe.coverage, rules, targets: probe.targets.map((t) => ({ route: options.route, pattern: t.key.pattern, component: t.key.component, accessibleName: t.key.accessibleName, ...(t.key.ordinal !== undefined ? { ordinal: t.key.ordinal } : {}) })), results });
   const file = await writeYouiFile(options.root, behaviourFile(options.route), `${JSON.stringify(run, null, 2)}\n`);
   return { run, file, probe };
 }
