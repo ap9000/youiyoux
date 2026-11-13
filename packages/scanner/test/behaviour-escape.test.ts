@@ -97,6 +97,11 @@ describe.skipIf(!HAVE_CHROMIUM)("dismiss-escape in a real browser", () => {
     "/renames-popup": () => page(menu("Actions", "m11", "this.id = 'renamed'")),
     // A menu replaced on Esc by an identical one, still open.
     "/replaced-open": () => page(menu("Actions", "m12", "const c = this.cloneNode(true); this.replaceWith(c); c.querySelector('[role=menuitem]').focus();")),
+    // Focus moving in closes the menu by itself, later than the probe's settle: at 180 ms, at 1.2 s. Esc does nothing.
+    "/delayed-180": () => page(menu("Actions", "m14", "").replace(";m.querySelector('[role=menuitem]').focus()", "").replace('data-log="item-m14"', `data-log="item-m14" onfocus="setTimeout(() => { ${CLOSE("m14").replace(/'/g, "&#39;")} }, 180)"`)),
+    "/delayed-1200": () => page(menu("Actions", "m15", "").replace(";m.querySelector('[role=menuitem]').focus()", "").replace('data-log="item-m15"', `data-log="item-m15" onfocus="setTimeout(() => { ${CLOSE("m15").replace(/'/g, "&#39;")} }, 1200)"`)),
+    // Esc hides the menu and shows an identical one with the same id in its place.
+    "/hides-and-replaces": () => page(menu("Actions", "m16", "const c = this.cloneNode(true); this.hidden = true; this.after(c); c.hidden = false; c.querySelector('[role=menuitem]').focus();")),
     // A menu removed from the page on Esc: closed.
     "/removed": () => page(menu("Actions", "m13", "document.querySelector('[aria-controls=m13]').focus(); this.remove();")),
     // Esc closes it, and also tries to send a POST.
@@ -215,6 +220,18 @@ describe.skipIf(!HAVE_CHROMIUM)("dismiss-escape in a real browser", () => {
     expect(only(await probe("/renames-popup"))).toMatchObject({ state: "failed", why: "Esc did nothing: the menu was still open after 1.5 s" });
     expect(only(await probe("/replaced-open"))).toMatchObject({ state: "failed" });
     expect(only(await probe("/removed"))).toMatchObject({ state: "passed", why: "Esc closed the menu" });
+  }, 60_000);
+
+  test("a control run without Esc decides whether a closing is Esc's: a menu that closes itself after focus moves in (at 180 ms, at 1.2 s) is incomplete, never passed; a normal menu still passes", async () => {
+    const keys = logged("key").length;
+    for (const path of ["/delayed-180", "/delayed-1200"]) expect(only(await probe(path)), path).toMatchObject({ state: "incomplete", why: "the menu closes on its own after focus moves into it (a run without Esc saw it close), so Esc can't be judged", keys: ["Escape"] });
+    // One Escape per test scenario; the control sends none.
+    expect(logged("key").slice(keys)).toEqual(["Escape", "Escape"]);
+    expect(only(await probe("/menu-esc"))).toMatchObject({ state: "passed", info: expect.arrayContaining(["a control run without Esc saw the menu stay open for 1.5 s"]) });
+  }, 60_000);
+
+  test("a hidden original with a showing replacement of the same id is still open: Esc that swaps the menu fails, never passes", async () => {
+    expect(only(await probe("/hides-and-replaces"))).toMatchObject({ state: "failed", why: "Esc did nothing: the menu was still open after 1.5 s" });
   }, 60_000);
 
   test("consent is read after focus is placed, immediately before Esc: revoked while focus moved in, no key is sent", async () => {

@@ -66,7 +66,7 @@ export function isolatedLibrary(): void {
   type Pattern = "menu-button" | "combobox-listbox" | "modal-dialog" | "popover";
   const ROLE: Record<Pattern, string> = { "menu-button": '[role="menu"]', "combobox-listbox": '[role="listbox"]', "modal-dialog": 'dialog,[role="dialog"],[role="alertdialog"]', popover: "[popover]" };
   const POPUP = '[role="menu"],[role="listbox"],[role="dialog"],[role="alertdialog"],[role="tooltip"],dialog,[popover]';
-  const state = { elements: [] as Element[], before: [] as Element[], clicked: null as EventTarget | null, watching: false, popup: null as Element | null, popupId: null as string | null, popupRole: null as string | null };
+  const state = { elements: [] as Element[], before: [] as Element[], clicked: null as EventTarget | null, watching: false, popup: null as Element | null, popupId: null as string | null, popupRole: null as string | null, atKey: [] as Element[] };
   const all = (): Element[] => {
     const out: Element[] = [];
     const collect = (root: Document | ShadowRoot): void => {
@@ -222,6 +222,8 @@ export function isolatedLibrary(): void {
     state.popupId = popup.id || null;
     state.popupRole = roleOf(popup);
   };
+  /** An element of the popup's kind: the pattern's role, or the identified popup's own role. */
+  const ofKind = (element: Element, pattern: Pattern): boolean => element.matches(ROLE[pattern]) || (element.getAttribute("role") !== null && roleOf(element) === state.popupRole);
   /** Effective focus inside `popup`, or (combobox) DOM focus on the combobox. */
   const focusPlaced = (trigger: Element, popup: Element, pattern: Pattern): boolean => {
     if (pattern === "combobox-listbox" && deepActive() === trigger) return true;
@@ -260,6 +262,7 @@ export function isolatedLibrary(): void {
     },
     markShowing(pattern: Pattern): void {
       state.before = all().filter((element) => element.matches(ROLE[pattern]) && shown(element));
+      state.atKey = state.before;
     },
     /**
      * The exact element found, checked again now: still connected, still a usable launcher, still
@@ -358,35 +361,39 @@ export function isolatedLibrary(): void {
     ready(wanted: { readonly index: number; readonly pattern: Pattern }): boolean {
       const trigger = state.elements[wanted.index];
       const popup = state.popup;
-      return !!trigger && !!popup && popup.isConnected && shown(popup) && focusPlaced(trigger, popup, wanted.pattern);
+      const ok = !!trigger && !!popup && popup.isConnected && shown(popup) && focusPlaced(trigger, popup, wanted.pattern);
+      // What of its kind shows at the moment the key goes (or would go): anything showing later is new.
+      if (ok) state.atKey = all().filter((element) => ofKind(element, wanted.pattern) && shown(element));
+      return ok;
     },
     /**
-     * Whether the popup identified is closed now, judged on that element itself: never by the
-     * trigger's relationship, which an app can drop while the popup stays open. Connected: open
-     * while it shows. Detached: "detached" (the caller reconciles).
+     * Whether the popup identified is open now, judged on that element itself: never by the
+     * trigger's relationship, which an app can drop while the popup stays open. Hidden or removed:
+     * "check", and the caller reconciles (a replacement with its identity may be showing).
      */
-    popupState(): "open" | "closed" | "detached" | "unknown" {
+    popupState(): "open" | "check" | "unknown" {
       const popup = state.popup;
       if (!popup) return "unknown";
-      if (popup.isConnected) return shown(popup) ? "open" : "closed";
-      return "detached";
+      // Hidden or removed: never closed before what may have replaced it is looked for (reconcile).
+      return popup.isConnected && shown(popup) ? "open" : "check";
     },
     /**
-     * The popup identified was removed: did something with its identity replace it? Its id (the
-     * relationship's target), or the contract's popup part (`parts`, nominated again), with the same
-     * role. One: that is the popup now (open while it shows). Several: can't tell. None: closed, but
-     * only if nothing new of its kind shows; otherwise can't tell. Never closed by default.
+     * The popup identified is hidden or removed: does something with its identity show in its place?
+     * Its id (the relationship's target), or the contract's popup part (`parts`, nominated again),
+     * with the same role. One showing: that is the popup now, open. Several: can't tell. None:
+     * closed, but only if nothing new of its kind shows since the key; otherwise can't tell.
      */
     reconcile(wanted: { readonly pattern: Pattern }, parts: Element[]): "open" | "closed" | "unknown" {
       const sameRole = (element: Element): boolean => roleOf(element) === state.popupRole;
       const byIdNow = state.popupId ? all().filter((element) => element.id === state.popupId && sameRole(element)) : [];
-      const same = [...new Set([...byIdNow, ...parts.filter((element) => element.isConnected && sameRole(element))])];
-      if (same.length > 1) return "unknown";
-      if (same.length === 1) {
-        remember(same[0]!);
-        return shown(same[0]!) ? "open" : "closed";
+      const showing = [...new Set([...byIdNow, ...parts.filter((element) => element.isConnected && sameRole(element))])].filter(shown);
+      if (showing.length > 1) return "unknown";
+      if (showing.length === 1) {
+        remember(showing[0]!);
+        return "open";
       }
-      const fresh = all().filter((element) => (element.matches(ROLE[wanted.pattern]) || (element.getAttribute("role") !== null && sameRole(element))) && shown(element) && !state.before.includes(element));
+      // Nothing with its identity shows: closed only if nothing new of its kind shows since the key.
+      const fresh = all().filter((element) => element !== state.popup && ofKind(element, wanted.pattern) && shown(element) && !state.atKey.includes(element));
       return fresh.length === 0 ? "closed" : "unknown";
     },
     /** A sign-in form shows: a visible password field. */

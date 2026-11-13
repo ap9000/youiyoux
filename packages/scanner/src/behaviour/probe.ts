@@ -22,7 +22,7 @@ import { dataWords, describeUrl, requestVerdict, screenUrl, STATIC_RESOURCE_TYPE
 import { ambiguousWords, withOrdinals, type TargetKey } from "./identity.ts";
 import type { Frame } from "../screens/locate.ts";
 import { contractPopupsInPage, isolatedLibrary, labelsInPage, nominateContractTriggersInPage, PROBE_INIT_SCRIPT, type ClickPoint, type ContractBinding, type FocusPlaced, type FoundTarget, type IsolatedTarget, type PopupFound } from "./in-page.ts";
-import { assertSafeKey, dataBlockedIn, dismissEscape, infoFromEvents, openAndIdentify, openScreen, SWITCHED_OFF, type GuardEvent, type ProbePage, type SafeKey, type ScenarioOutcome, type Stop } from "./scenario.ts";
+import { assertSafeKey, dataBlockedIn, dismissEscape, infoFromEvents, openAndIdentify, openScreen, POPUP_NOUN, staysOpenWithoutKey, SWITCHED_OFF, type GuardEvent, type ProbePage, type SafeKey, type ScenarioOutcome, type Stop } from "./scenario.ts";
 
 export interface ProbeBudgets {
   /** Targets tested per route; the rest are named as untested. */
@@ -41,7 +41,7 @@ export interface ProbeBudgets {
   readonly settleMs: number;
 }
 
-export const PROBE_BUDGETS: ProbeBudgets = { targets: 20, scenarioMs: 5_000, routeMs: 90_000, openMs: 2_000, closeMs: 1_500, loadMs: 15_000, settleMs: 2_000 };
+export const PROBE_BUDGETS: ProbeBudgets = { targets: 20, scenarioMs: 5_000, routeMs: 150_000, openMs: 2_000, closeMs: 1_500, loadMs: 15_000, settleMs: 2_000 };
 /** Triggers looked for per route: past the budget, only to name them as untested. */
 const MAX_FOUND = 200;
 const POLL_MS = 50;
@@ -466,9 +466,9 @@ class PlaywrightProbePage implements ProbePage {
 
   async popupState(index: number, pattern: BehaviourPattern, popup: PartRef | null): Promise<"open" | "closed" | "unknown"> {
     const worlds = await this.worlds();
-    const now = await this.bound(worlds.call<"open" | "closed" | "detached" | "unknown">("popupState", null));
-    if (now !== "detached") return now;
-    // Removed: reconciled by identity (its id, or the contract's popup part nominated again), never assumed closed.
+    const now = await this.bound(worlds.call<"open" | "check" | "unknown">("popupState", null));
+    if (now !== "check") return now;
+    // Hidden or removed: reconciled by identity (its id, or the contract's popup part nominated again), never assumed closed.
     const target = this.found[index];
     const contract = target && typeof target.via === "object" ? (this.options.bindings[target.via.contract] ?? null) : null;
     let parts: string[] = [];
@@ -578,7 +578,42 @@ export async function probeRoute(options: ProbeRouteOptions): Promise<RouteProbe
   }
 }
 
+/**
+ * One check on one target. dismiss-escape is decided in its own fresh scenario, and a pass only
+ * stands when a second fresh scenario, the control (the same steps, no key), saw the popup stay
+ * open for the whole close budget; otherwise it is incomplete.
+ */
 async function scenario(guarded: GuardedContext, start: string, options: ProbeRouteOptions, key: TargetKey, found: FoundTarget, bindings: readonly ContractBinding[], budgets: ProbeBudgets, routeDeadline: number, check: BehaviourCheckId): Promise<ScenarioOutcome & { readonly keys: readonly string[] }> {
+  const close = { closeMs: budgets.closeMs, pollMs: POLL_MS, graceMs: GRACE_MS };
+  const signal = options.signal ? { signal: options.signal } : {};
+  const tested = await onFreshPage(guarded, start, options, key, found, bindings, budgets, routeDeadline, (page, opened, deadline, popup) =>
+    // Only a check this youiyoux decides goes on past the opening; the rest stay undecided.
+    decidesBehaviour(check) ? dismissEscape(page, opened, { start, origin: options.origin, pattern: key.pattern, popup, deadline, budgets: close, ...(options.stillAllowed ? { beforeInput: options.stillAllowed } : {}), ...signal }) : Promise.resolve(opened),
+  );
+  if (tested.state !== "passed") return tested;
+  const control = await onFreshPage(guarded, start, options, key, found, bindings, budgets, routeDeadline, (page, opened, deadline, popup) => staysOpenWithoutKey(page, opened, { start, origin: options.origin, pattern: key.pattern, popup, deadline, budgets: close, ...signal }));
+  const info = [...new Set([...tested.info, ...control.info])];
+  const dataBlocked = tested.dataBlocked === true || control.dataBlocked === true;
+  if (control.state === "passed") return { ...tested, info: [...info, `a control run without Esc saw the ${POPUP_NOUN[key.pattern]} stay open for ${budgets.closeMs / 1000} s`], dataBlocked };
+  if (control.state === "incomplete" || control.state === "error") {
+    const opening = control.why.startsWith("the control run") || control.why.includes("can't be judged") || control.why === SWITCHED_OFF.why;
+    return { state: "incomplete", why: opening ? control.why : `the control run (the same steps without Esc) couldn't be completed: ${control.why}`, fix: control.fix, info, dataBlocked, keys: tested.keys };
+  }
+  return { state: "incomplete", why: "the control run (the same steps without Esc) couldn't be completed", fix: "Next: run youiyoux behave again.", info, dataBlocked, keys: tested.keys };
+}
+
+/** A fresh page on the screen: the target found again, its trigger clicked, the popup identified; then `act`. */
+async function onFreshPage(
+  guarded: GuardedContext,
+  start: string,
+  options: ProbeRouteOptions,
+  key: TargetKey,
+  found: FoundTarget,
+  bindings: readonly ContractBinding[],
+  budgets: ProbeBudgets,
+  routeDeadline: number,
+  act: (page: PlaywrightProbePage, opened: Extract<ScenarioOutcome, { state: "opened" }>, deadline: () => number, popup: PartRef | null) => Promise<ScenarioOutcome>,
+): Promise<ScenarioOutcome & { readonly keys: readonly string[] }> {
   // Loading has its own bound; the scenario's own budget starts once the screen is open.
   const clock = { deadline: Math.min(routeDeadline, Date.now() + budgets.loadMs + budgets.settleMs) };
   const deadline = (): number => clock.deadline;
@@ -590,10 +625,8 @@ async function scenario(guarded: GuardedContext, start: string, options: ProbeRo
   const keys = (): readonly string[] => [...page.keys()];
   try {
     const opened = await openAndIdentify(page, { start, origin: options.origin, wanted: key, popup, deadline, budgets: { openMs: budgets.openMs, pollMs: POLL_MS, graceMs: GRACE_MS }, ...(options.stillAllowed ? { beforeClick: options.stillAllowed } : {}), ...(options.signal ? { signal: options.signal } : {}) });
-    // Only a check this youiyoux decides goes on past the opening; the rest stay undecided.
-    if (opened.state !== "opened" || !decidesBehaviour(check)) return { ...opened, keys: keys() };
-    const decided = await dismissEscape(page, opened, { start, origin: options.origin, pattern: key.pattern, popup, deadline, budgets: { closeMs: budgets.closeMs, pollMs: POLL_MS, graceMs: GRACE_MS }, ...(options.stillAllowed ? { beforeInput: options.stillAllowed } : {}), ...(options.signal ? { signal: options.signal } : {}) });
-    return { ...decided, keys: keys() };
+    if (opened.state !== "opened") return { ...opened, keys: keys() };
+    return { ...(await act(page, opened, deadline, popup)), keys: keys() };
   } catch (error: unknown) {
     const info = infoFromEvents(page.events());
     const dataBlocked = dataBlockedIn(page.events());

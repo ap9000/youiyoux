@@ -325,3 +325,37 @@ export async function dismissEscape(
     await page.wait(Math.max(1, Math.min(budgets.pollMs, until - at, deadline() - at)));
   }
 }
+
+/**
+ * The control for dismiss-escape, in its own fresh scenario: the popup opened and focus placed
+ * exactly as the test does, then NO key; the popup watched for the whole close budget. "passed"
+ * here means only "it stayed open by itself" (internal, never stored): then an Escape scenario's
+ * closing is Esc's doing. If it closes (or can't be told apart) on its own, Esc can't be judged.
+ */
+export async function staysOpenWithoutKey(
+  page: ProbePage,
+  opened: Extract<ScenarioOutcome, { state: "opened" }>,
+  args: { readonly start: string; readonly origin: string; readonly pattern: BehaviourPattern; readonly popup: PartRef | null; readonly deadline: () => number; readonly budgets: CloseBudgets; readonly signal?: AbortSignal },
+): Promise<ScenarioOutcome> {
+  const { start, origin, deadline, budgets, pattern } = args;
+  const noun = POPUP_NOUN[pattern];
+  const incomplete = (stop: Stop): ScenarioOutcome => ({ state: "incomplete", ...stop, info: [...new Set([...opened.info, ...infoFromEvents(page.events())])], dataBlocked: opened.dataBlocked === true || dataBlockedIn(page.events()) });
+  const stopped = async (): Promise<Stop | null> => (args.signal?.aborted ? SWITCHED_OFF : null) ?? stopFromEvents(page.events()) ?? moved(start, await page.location(), origin);
+  const closesItself: Stop = { why: `the ${noun} closes on its own after focus moves into it (a run without Esc saw it close), so Esc can't be judged`, fix: `Next: keep the ${noun} open until Esc (or a choice) closes it, then run youiyoux behave again.` };
+  const focus = await page.placeFocus(opened.index, pattern);
+  if (!focus.ok) return incomplete({ why: `the control run (the same steps without Esc) couldn't place focus inside the ${noun}, so Esc can't be judged`, fix: FOCUS_FIX[pattern] });
+  await page.wait(Math.max(0, Math.min(FOCUS_SETTLE_MS, deadline() - Date.now())));
+  if (!(await page.ready(opened.index, pattern))) return incomplete(closesItself);
+  // From where Esc would be pressed, for the whole close budget.
+  const until = Date.now() + budgets.closeMs;
+  for (;;) {
+    const stop = await stopped();
+    if (stop) return incomplete(stop);
+    const asked = Date.now();
+    const now = await page.popupState(opened.index, pattern, args.popup);
+    if (now !== "open") return incomplete(closesItself);
+    if (asked >= until) return { state: "passed", popup: opened.popup, why: `the ${noun} stayed open for ${budgets.closeMs / 1000} s without Esc`, fix: "Nothing to do.", info: opened.info, dataBlocked: opened.dataBlocked === true || dataBlockedIn(page.events()) };
+    if (deadline() <= asked) return incomplete({ why: "the control run (the same steps without Esc) ran out of time, so Esc can't be judged", fix: "Next: make sure the dev server is idle, then run youiyoux behave again." });
+    await page.wait(Math.max(1, Math.min(budgets.pollMs, until - asked, deadline() - asked)));
+  }
+}
