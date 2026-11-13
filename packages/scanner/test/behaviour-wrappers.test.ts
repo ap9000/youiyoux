@@ -4,10 +4,12 @@
  * component's uses, read from the source with the scanner's parser and module graph. Never from the
  * page's other triggers; anything uncertain keeps the line that renders the button.
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, describe, expect, test } from "vitest";
+import { labelsInPage } from "../src/behaviour/in-page.ts";
 import { resolvePlaces, WrapperIndex, type PlaceLine } from "../src/index.ts";
 
 const scratch = mkdtempSync(join(tmpdir(), "youi-wrappers-"));
@@ -158,6 +160,84 @@ export function UsesFar() {
   // A button at the top level of a module, in no component.
   "src/loose/loose.tsx": `export const loose = <button aria-haspopup="menu" />;
 `,
+  // Solo is used once here; links (below) would add uses if they were read.
+  "src/solo/Solo.tsx": `export function Solo() {
+  return <button aria-haspopup="menu" />;
+}
+export function UsesSolo() {
+  return <Solo />;
+}
+`,
+  // W wrapped by a library's higher-order component, used twice: the library's frame sits between.
+  "src/hoc/Hoc.tsx": `import { externalHoc } from "some-lib";
+export const W = externalHoc(() => <button aria-haspopup="menu" />);
+export function UsesW() {
+  return (
+    <div>
+      <W />
+      <W />
+    </div>
+  );
+}
+`,
+  // Two declarations on one line, and two invocations on one line: A is used twice, B once.
+  "src/adj/Adj.tsx": `function A() { return <button aria-haspopup="menu" />; } function B() { return <button aria-haspopup="dialog" />; }
+export function Uses() { return <div><A /><B /></div>; }
+export function UsesA() { return <A />; }
+`,
+  // W used once for real; the other <W /> names a parameter, and <V /> a local, not the top-level ones.
+  "src/shadow/Shadow.tsx": `import { V } from "./V";
+export function W() {
+  return <button aria-haspopup="menu" />;
+}
+export function One() {
+  return <div><W /><V /></div>;
+}
+function Other({ W }: { W: () => null }) {
+  return <W />;
+}
+function Third() {
+  const V = () => null;
+  return <V />;
+}
+`,
+  "src/shadow/V.tsx": `export function V() {
+  return <button aria-haspopup="menu" />;
+}
+`,
+  // Q used twice, both through a barrel that doesn't parse cleanly.
+  "src/bb/Q.tsx": `export function Q() {
+  return <button aria-haspopup="menu" />;
+}
+`,
+  "src/bb/index.ts": `export { Q } from "./Q";
+const oops = (;
+`,
+  "src/bb/UsesQ.tsx": `import { Q } from ".";
+export function UsesQ() {
+  return (
+    <div>
+      <Q />
+      <Q />
+    </div>
+  );
+}
+`,
+  // M used twice, once across several lines.
+  "src/multi/Multi.tsx": `function M() {
+  return <button aria-haspopup="menu" />;
+}
+export function Ms() {
+  return (
+    <div>
+      <M
+        a="1"
+      />
+      <M />
+    </div>
+  );
+}
+`,
   // Outside the include globs.
   "other/Wrapper.tsx": `function Wrap() {
   return <button aria-haspopup="menu" />;
@@ -176,12 +256,27 @@ for (const [file, text] of Object.entries(FILES)) {
 // ../outside/barrel.ts beside the project root re-exports Far: a file no result is fresh against.
 mkdirSync(join(scratch, "outside"), { recursive: true });
 writeFileSync(join(scratch, "outside/barrel.ts"), 'export { Far } from "../app/src/far/Far";\n');
-const sources = { root, include: ["src/**/*.{ts,tsx}"], exclude: [], tsconfig: "tsconfig.json" };
-/** The line of `file` holding `needle` (the nth match), as a frame's line. */
+// Links: one to a file outside the root that uses Solo, one to a file inside the root that uses Solo.
+const SOLO_USE = 'import { Solo } from "../solo/Solo";\nexport function Linked() {\n  return <Solo />;\n}\n';
+writeFileSync(join(scratch, "outside/UsesSolo.tsx"), SOLO_USE);
+mkdirSync(join(root, "src/link"), { recursive: true });
+symlinkSync(join(scratch, "outside/UsesSolo.tsx"), join(root, "src/link/Out.tsx"));
+mkdirSync(join(root, "src/real"), { recursive: true });
+writeFileSync(join(root, "src/real/In.tsx"), "export const nothing = null;\n");
+writeFileSync(join(root, "src/link-target.txt"), SOLO_USE);
+symlinkSync(join(root, "src/link-target.txt"), join(root, "src/link/In.tsx"));
+/** Every file the index opens. */
+const reads: string[] = [];
+const sources = { root, include: ["src/**/*.{ts,tsx}"], exclude: [], tsconfig: "tsconfig.json", readFile: async (path: string) => (reads.push(path), readFile(path, "utf8")) };
+/** Where `needle` is in `file` (the nth match), as a frame: line and column. */
 const at = (file: string, needle: string, nth = 0): PlaceLine => {
-  const line = FILES[file]!.split("\n").flatMap((text, i) => (text.includes(needle) ? [i + 1] : []))[nth];
-  if (!line) throw new Error(`no ${needle} in ${file}`);
-  return { file, line, column: 1 };
+  const found = FILES[file]!.split("\n").flatMap((text, i) => {
+    const out: PlaceLine[] = [];
+    for (let column = text.indexOf(needle); column >= 0; column = text.indexOf(needle, column + 1)) out.push({ file, line: i + 1, column: column + 1 });
+    return out;
+  })[nth];
+  if (!found) throw new Error(`no ${needle} in ${file}`);
+  return found;
 };
 const show = (l: PlaceLine | null) => (l ? `${l.file}:${l.line}` : null);
 
@@ -206,12 +301,7 @@ describe("where a popup's button is used", () => {
 
   test("the answer depends only on the code: the same frames give the same line however many triggers the screen has", async () => {
     // Source-mapped frames for each row's button: Row's <button>, List's map, Dashboard's <List> (left or right).
-    const MAP: ReadonlyArray<readonly [string, number]> = [
-      ["src/list/Row.tsx", at("src/list/Row.tsx", "<button").line],
-      ["src/list/List.tsx", at("src/list/List.tsx", "<Row").line],
-      ["src/list/Dashboard.tsx", at("src/list/Dashboard.tsx", "<List", 0).line],
-      ["src/list/Dashboard.tsx", at("src/list/Dashboard.tsx", "<List", 1).line],
-    ];
+    const MAP: readonly PlaceLine[] = [at("src/list/Row.tsx", "<button"), at("src/list/List.tsx", "<Row"), at("src/list/Dashboard.tsx", "<List", 0), at("src/list/Dashboard.tsx", "<List", 1)];
     const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     const vlq = (n: number): string => {
       let v = n < 0 ? (-n << 1) | 1 : n << 1;
@@ -224,12 +314,12 @@ describe("where a popup's button is used", () => {
       } while (v);
       return out;
     };
-    const files = [...new Set(MAP.map(([f]) => f))];
-    let previous = { source: 0, line: 0 };
-    const mappings = MAP.map(([file, line]) => {
+    const files = [...new Set(MAP.map((p) => p.file))];
+    let previous = { source: 0, line: 0, column: 0 };
+    const mappings = MAP.map(({ file, line, column }) => {
       const source = files.indexOf(file);
-      const segment = vlq(0) + vlq(source - previous.source) + vlq(line - 1 - previous.line) + vlq(0);
-      previous = { source, line: line - 1 };
+      const segment = vlq(0) + vlq(source - previous.source) + vlq(line - 1 - previous.line) + vlq(column - 1 - previous.column);
+      previous = { source, line: line - 1, column: column - 1 };
       return segment;
     }).join(";");
     const module = `${MAP.map(() => "x").join("\n")}\n//# sourceMappingURL=data:application/json;base64,${Buffer.from(JSON.stringify({ version: 3, sources: files.map((f) => `/${f}`), mappings })).toString("base64")}`;
@@ -283,6 +373,68 @@ describe("where a popup's button is used", () => {
     expect(await index.usage(at("src/half/Half.tsx", "<button"), [at("src/half/Half.tsx", "<Half")])).toBeNull();
     expect(await index.usage(at("other/Wrapper.tsx", "<button"), [at("other/Wrapper.tsx", "<Wrap")])).toBeNull();
     expect(await index.usage(at("src/far/Far.tsx", "<button"), [at("src/far/UsesFar.tsx", "<Far")])).toBeNull();
+    // A frame without a column, first or next.
+    expect(await index.usage({ ...rail, column: 0 }, [at("src/shell/NavRail.tsx", 'label="Search"')])).toBeNull();
+    expect(await index.usage(rail, [{ ...at("src/shell/NavRail.tsx", 'label="Search"'), column: 0 }])).toBeNull();
+    const m = at("src/multi/Multi.tsx", "<button");
+    expect(show(await index.usage(m, [at("src/multi/Multi.tsx", 'a="1"')]))).toBe("src/multi/Multi.tsx:8");
+    expect(await index.usage(m, [{ ...at("src/multi/Multi.tsx", 'a="1"'), column: 0 }])).toBeNull();
+  });
+
+  test("nothing outside the root is opened, and a linked file adds no uses (outside the root or inside it)", async () => {
+    reads.length = 0;
+    const run = new WrapperIndex(sources);
+    expect(await run.usage(at("src/far/Far.tsx", "<button"), [at("src/far/UsesFar.tsx", "<Far")])).toBeNull();
+    const real = realpathSync(root);
+    expect(reads.length).toBeGreaterThan(5);
+    expect(reads.filter((path) => !path.startsWith(`${real}/`))).toEqual([]);
+    expect(reads.filter((path) => path.includes("/link/") || path.endsWith("link-target.txt"))).toEqual([]);
+    // Solo has one use of its own; the two links would make three.
+    expect(await run.usage(at("src/solo/Solo.tsx", "<button"), [at("src/solo/Solo.tsx", "<Solo")])).toBeNull();
+  });
+
+  test("a frame that couldn't be placed between the button and a use (a library's higher-order component) is never crossed", async () => {
+    const button = at("src/hoc/Hoc.tsx", "<button");
+    const use = at("src/hoc/Hoc.tsx", "<W", 1);
+    // With the library's frame known to be there, the line stays where the button is written.
+    expect(await index.usage(button, [{ file: "", line: 0, column: 0, uncertain: true }, use])).toBeNull();
+    // (Without it, W's second use would be taken: what the boundary stops.)
+    expect(show(await index.usage(button, [use]))).toBe("src/hoc/Hoc.tsx:7");
+    // The page marks the gap: an owner whose frames are all a library's, or a library's frame after the app's.
+    const stack = (...frames: string[]) => ({ stack: ["Error: react-stack-top-frame", "    at exports.jsxDEV (http://x/node_modules/.vite/deps/react_jsx-dev-runtime.js:1:1)", ...frames.map((f) => `    at ${f}`), "    at react-stack-bottom-frame (http://x/node_modules/.vite/deps/react-dom.js:9:9)"].join("\n") });
+    const fiber = (debug: { stack: string }, owner: unknown) => ({ tag: 0, type: function Inner() {}, return: null, _debugStack: debug, _debugOwner: owner });
+    const app = fiber(stack("UsesW (http://x/src/hoc/Hoc.tsx:7:7)"), null);
+    const hoc = fiber(stack("render (http://x/node_modules/.vite/deps/some-lib.js:5:5)"), app);
+    const host = { ...fiber(stack("anonymous (http://x/src/hoc/Hoc.tsx:2:36)"), hoc), tag: 5, type: "button" };
+    const element = { "__reactFiber$x": host };
+    const gap = { url: "", line: 0, column: 0 };
+    expect(labelsInPage.call(element as unknown as Element, { component: null, maxFrames: 6 }).frames).toEqual([{ url: "http://x/src/hoc/Hoc.tsx", line: 2, column: 36 }, gap, { url: "http://x/src/hoc/Hoc.tsx", line: 7, column: 7 }]);
+    const direct = { ...fiber(stack("anonymous (http://x/src/hoc/Hoc.tsx:2:36)"), app), tag: 5, type: "button" };
+    expect(labelsInPage.call({ "__reactFiber$x": direct } as unknown as Element, { component: null, maxFrames: 6 }).frames).toEqual([{ url: "http://x/src/hoc/Hoc.tsx", line: 2, column: 36 }, { url: "http://x/src/hoc/Hoc.tsx", line: 7, column: 7 }]);
+    // Library code called by the app's frame, inside one owner's stack, is a gap too.
+    const called = { ...fiber(stack("cb (http://x/src/hoc/Hoc.tsx:2:36)", "Lib (http://x/node_modules/.vite/deps/some-lib.js:3:3)"), app), tag: 5, type: "button" };
+    expect(labelsInPage.call({ "__reactFiber$x": called } as unknown as Element, { component: null, maxFrames: 6 }).frames).toEqual([{ url: "http://x/src/hoc/Hoc.tsx", line: 2, column: 36 }, gap, { url: "http://x/src/hoc/Hoc.tsx", line: 7, column: 7 }]);
+  });
+
+  test("by position, not line: adjacent declarations on one line, and two elements on one line", async () => {
+    const a = at("src/adj/Adj.tsx", "<button", 0);
+    const b = at("src/adj/Adj.tsx", "<button", 1);
+    // B's button is in B (used once), not A (used twice), though they share line 1.
+    expect(await index.usage(b, [at("src/adj/Adj.tsx", "<B")])).toBeNull();
+    // Even handed one of A's uses, B's button is B's: never A's two uses.
+    expect(await index.usage(b, [at("src/adj/Adj.tsx", "<A", 0)])).toBeNull();
+    // A's next frame inside <A /> on line 2 is taken; one inside <B /> on the same line is not A's use.
+    expect(show(await index.usage(a, [at("src/adj/Adj.tsx", "<A", 0)]))).toBe("src/adj/Adj.tsx:2");
+    expect(await index.usage(a, [at("src/adj/Adj.tsx", "<B")])).toBeNull();
+  });
+
+  test("a JSX name bound inside the statement around it (a parameter, a local) isn't a use of the top-level one", async () => {
+    expect(await index.usage(at("src/shadow/Shadow.tsx", "<button"), [at("src/shadow/Shadow.tsx", "<W", 0)])).toBeNull();
+    expect(await index.usage(at("src/shadow/V.tsx", "<button"), [at("src/shadow/Shadow.tsx", "<V", 0)])).toBeNull();
+  });
+
+  test("a use reached through a module that doesn't parse cleanly (a broken barrel) isn't counted", async () => {
+    expect(await index.usage(at("src/bb/Q.tsx", "<button"), [at("src/bb/UsesQ.tsx", "<Q", 1)])).toBeNull();
   });
 
   test("the sources are read once per index (one behaviour run): a later edit is seen by the next run, not mid-run", async () => {

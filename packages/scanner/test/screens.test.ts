@@ -150,13 +150,24 @@ describe("which line a place gets, with promote (behaviour triggers)", () => {
     const seen: Array<[string, string[]]> = [];
     await resolvePlaces([place("Via Button", 5, 1, 5, 2, 4)], fetchText, null, undefined, undefined, { skip, promote: async (first, rest) => (seen.push([`${first.file}:${first.line}`, rest.map((l) => `${l.file}:${l.line}${l.skipped ? " skipped" : ""}`)]), null) });
     expect(seen).toEqual([["src/shell/NavRail.tsx:65", ["src/ui/Button.tsx:5 skipped", "src/shell/NavRail.tsx:109", "src/shell/Shell.tsx:10"]]]);
+    // A frame after the first line that couldn't be placed (no map for it, or a gap the page marked) is handed over as a boundary, in order; a gap is never fetched.
+    const handed: string[][] = [];
+    const record = async (_first: PlaceLine, rest: readonly PlaceLine[]) => (handed.push(rest.map((l) => (l.uncertain ? "boundary" : `${l.file}:${l.line}`))), null);
+    const gapPlace = { ...place("Gapped", 1), frames: [...place("x", 1).frames, { url: "", line: 0, column: 0 }, { url: "http://localhost/app.js", line: 99, column: 1 }, ...place("x", 2).frames] };
+    const fetched: string[] = [];
+    await resolvePlaces([gapPlace], async (url) => (fetched.push(url), fetchText(url)), null, undefined, undefined, { skip, promote: record });
+    expect(handed).toEqual([["boundary", "boundary", "src/shell/NavRail.tsx:109"]]);
+    expect(fetched).not.toContain("");
+    // Screens capture (no promote) picks as before, gaps or not.
+    expect(lines(await resolvePlaces([gapPlace], fetchText, null, undefined, undefined, { skip }))).toEqual([["src/shell/NavRail.tsx:65", null, null]]);
     // A line that isn't one of the place's own, a skipped one, or a promote that throws: the first line, no rendered by.
     const elsewhere = async () => ({ file: "src/pages/Page.tsx", line: 20, column: 1 });
     const system = async (_first: PlaceLine, rest: readonly PlaceLine[]) => rest.find((l) => l.skipped) ?? null;
+    const gap = async (_first: PlaceLine, rest: readonly PlaceLine[]) => rest.find((l) => l.uncertain) ?? null;
     const throws = async (): Promise<PlaceLine | null> => {
       throw new Error("no");
     };
-    for (const promote of [elsewhere, system, throws]) expect(lines(await resolvePlaces([place("Via Button", 1, 5, 2)], fetchText, null, undefined, undefined, { skip, promote }))).toEqual([["src/shell/NavRail.tsx:65", null, null]]);
+    for (const promote of [elsewhere, system, gap, throws]) expect(lines(await resolvePlaces([place("Via Button", 1, 5, 99, 2)], fetchText, null, undefined, undefined, { skip, promote }))).toEqual([["src/shell/NavRail.tsx:65", null, null]]);
     // Without promote (screens capture), the first of the app's own lines, as it always was.
     expect(lines(await resolvePlaces(rail, fetchText, null, undefined, undefined, { skip }))).toEqual([
       ["src/shell/NavRail.tsx:65", null, null],

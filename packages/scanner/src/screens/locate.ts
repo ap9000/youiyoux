@@ -87,6 +87,11 @@ export interface PlaceLine {
   readonly column: number;
   /** In a skipped file (a component of the System's own): passed to `promote` in order, never shown. */
   readonly skipped?: true;
+  /**
+   * A frame between the first line and the next that couldn't be placed (no map, outside the root, a
+   * library's, or a gap the page marked): passed to `promote` in order, never shown, never crossed.
+   */
+  readonly uncertain?: true;
 }
 
 /** How resolvePlaces picks a place's line among its frames. */
@@ -421,11 +426,26 @@ export async function resolvePlaces(raw: readonly RawPlace[], fetchText: (url: s
       // the app rendered it; only when nothing else maps is it used, marked `own`.
       const lines: PlaceLine[] = [];
       let own: PlaceLine | null = null;
+      // With `promote`, a frame after the first line that can't be placed is kept as a boundary: promotion never crosses it.
+      const boundary = () => {
+        if (promote && lines.length > 0) lines.push({ file: "", line: 0, column: 0, uncertain: true });
+      };
       for (const frame of place.frames) {
+        // A gap the page marked (an owner with no frame of the app's own): never fetched.
+        if (!(frame.line >= 1) || !frame.url) {
+          boundary();
+          continue;
+        }
         const map = await mapFor(frame.url);
         const original = map ? originalPosition(map, frame.line, frame.column) : null;
-        if (!original) continue;
-        if (/(?:^|\/)node_modules\/|^webpack\/|^\(webpack\)/.test(original.source)) continue;
+        if (!original) {
+          boundary();
+          continue;
+        }
+        if (/(?:^|\/)node_modules\/|^webpack\/|^\(webpack\)/.test(original.source)) {
+          boundary();
+          continue;
+        }
         const file = projectPath(original.source, frame.url, root);
         if (file && skip?.(file)) {
           if (lines.length === 0) own ??= { file, line: original.line, column: original.column };
@@ -434,18 +454,19 @@ export async function resolvePlaces(raw: readonly RawPlace[], fetchText: (url: s
         }
         if (file) {
           const line = { file, line: original.line, column: original.column };
-          if (!lines.some((l) => lineKey(l) === lineKey(line))) lines.push(line);
+          if (!lines.some((l) => !l.uncertain && lineKey(l) === lineKey(line))) lines.push(line);
           if (!promote) break;
           continue;
         }
         if (lines.length === 0) notes.outside.add(original.source);
+        else boundary();
       }
       if (lines.length > 0) {
         const first = lines[0]!;
         const rest = lines.slice(1);
         const up = promote ? await promote(first, rest).catch(() => null) : null;
         // Belt and braces: only one of the place's own lines is ever shown.
-        const chosen = (up && !up.skipped && rest.find((l) => !l.skipped && lineKey(l) === lineKey(up))) || first;
+        const chosen = (up && !up.skipped && !up.uncertain && rest.find((l) => !l.skipped && !l.uncertain && lineKey(l) === lineKey(up))) || first;
         return { ...base, file: chosen.file, line: chosen.line, column: chosen.column, ...(chosen !== first ? { renderedBy: { file: first.file, line: first.line } } : {}) };
       }
       if (own) return { ...base, ...own, own: true };
