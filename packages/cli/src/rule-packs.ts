@@ -34,11 +34,11 @@ const BEHAVIOUR: readonly Starter[] = [
     check: "trigger-state",
     title: "A popup's button says when it is open",
     statement:
-      'The button that opens a menu, listbox or popover says what it opens and whether it is open: aria-expanded is "false" while closed and "true" while open, aria-haspopup fits the popup ("menu" for a menu; a combobox implies its listbox), and aria-controls, when present, names the popup itself (a combobox needs it). A popovertarget button gets this from the browser.',
+      'The button that opens a popup says whether it is open. A menu button has aria-haspopup="menu" (or "true"), and aria-expanded="true" while the menu is open ("false" or left off while it is closed); aria-controls, if set, names the menu. A combobox has aria-expanded="false" while its listbox is closed and "true" while it is open, and aria-controls naming the listbox; aria-haspopup is left off or "listbox". Any other popover\'s button either uses popovertarget (the browser says whether it is open; a hand-set aria-expanded must agree) or has aria-controls naming the popover and aria-expanded="true" while it is open ("false" or left off while it is closed). A modal dialog\'s button isn\'t checked.',
     rationale: "A screen reader announces the button, not the popup. Without aria-expanded a person can't tell that pressing it opened anything, or that something is still open.",
-    agent: `On a button that opens a menu, listbox or popover, set aria-haspopup ("menu" for a menu), aria-expanded={open} and aria-controls={the popup's id}, or use popovertarget for a native popover. ${VERIFY}`,
+    agent: `Menu button: aria-haspopup="menu" and aria-expanded={open}. Combobox: aria-expanded={open}, always set, and aria-controls={the listbox's id}; aria-haspopup off or "listbox". Other popovers: popovertarget, or aria-controls={the popover's id} with aria-expanded={open}; they need no aria-haspopup. ${VERIFY}`,
     bad: ['<button aria-haspopup="menu" onClick={() => setOpen(!open)}>More</button> // never says it is open'],
-    good: ['<button aria-haspopup="menu" aria-expanded={open} aria-controls="more-menu" onClick={() => setOpen(!open)}>More</button>', '<button popovertarget="filters">Filters</button>'],
+    good: ['<button aria-haspopup="menu" aria-expanded={open} aria-controls="more-menu" onClick={() => setOpen(!open)}>More</button>', '<input role="combobox" aria-expanded={open} aria-controls="city-options" />', '<button popovertarget="filters">Filters</button>'],
   },
   {
     name: "behaviour.dismiss-escape",
@@ -46,7 +46,7 @@ const BEHAVIOUR: readonly Starter[] = [
     title: "Esc closes the popup",
     statement: "Pressing Esc closes an open menu, listbox, modal dialog or popover: with focus inside the popup (or on the combobox), one Esc closes it within a second and a half.",
     rationale: "Esc is how keyboard and screen reader users get out. A popup that ignores it traps them, or leaves something covering the page.",
-    agent: `Close the popup on Escape: handle keydown "Escape" on the popup (or on the combobox) and close it; a native <dialog> opened with showModal() and a [popover] close on Esc by themselves. ${VERIFY}`,
+    agent: `Close the popup on Escape: handle keydown "Escape" on the popup (or on the combobox) and close it. A native <dialog> opened with showModal() and an auto popover (popover or popover="auto") close on Esc by themselves; a popover="manual" doesn't, so close it yourself. ${VERIFY}`,
     bad: ['<div role="menu">…</div> // no Escape handling: it stays open'],
     good: ['<div role="menu" onKeyDown={(e) => { if (e.key === "Escape") close(); }}>…</div>'],
   },

@@ -4,7 +4,7 @@ title: Esc closes the popup
 severity: warn
 statement: "Pressing Esc closes an open menu, listbox, modal dialog or popover: with focus inside the popup (or on the combobox), one Esc closes it within a second and a half."
 rationale: Esc is how keyboard and screen reader users get out. A popup that ignores it traps them, or leaves something covering the page.
-agent: 'Close the popup on Escape: handle keydown "Escape" on the popup (or on the combobox) and close it; a native <dialog> opened with showModal() and a [popover] close on Esc by themselves. Verify with ui_behave (or `youiyoux behave --route <route>`).'
+agent: "Close the popup on Escape: handle keydown \"Escape\" on the popup (or on the combobox) and close it. A native <dialog> opened with showModal() and an auto popover (popover or popover=\"auto\") close on Esc by themselves; a popover=\"manual\" doesn't, so close it yourself. Verify with ui_behave (or `youiyoux behave --route <route>`)."
 check:
   engine: behaviour
   id: dismiss-escape

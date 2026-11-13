@@ -458,7 +458,10 @@ filed or last reopened, under the rules as they are then. A person still closes 
 - **Environment variables set outside files, and hand edits inside node_modules,** don't make a result
   stale.
 - **Unusual Tab orders** (positive tabindex, shadow roots holding something focusable, radio buttons,
-  frames) are reported incomplete, not checked; so is focus that moves later than about 400 ms.
+  frames) are reported incomplete, not checked.
+- **Late focus moves.** Focus that keeps moving and never settles is reported as can't tell; focus
+  that moves only later than the probe waits (about 400 ms after a key, plus a 250 ms grace moment)
+  may be missed.
 - **Horizontal menus, submenus and lists over 50 items** aren't checked yet.
 - **One run per screen at a time:** a second run of the same route is refused while one holds it;
   different routes may run at once.

@@ -11,6 +11,7 @@ import { Ajv2020 } from "ajv/dist/2020.js";
 import { parse as parseYaml } from "yaml";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { BEHAVIOUR_CHECK_IDS, getSystem, loadDesignRepo, renderJsonSchemas, RuleSpec } from "@youiyoux/core";
+import { judgeTriggerState, type TriggerFacts } from "@youiyoux/scanner";
 import { main } from "../src/index.ts";
 import { addRulePack, RULE_PACKS, RULES_LOCK, ruleYaml } from "../src/rule-packs.ts";
 
@@ -70,6 +71,36 @@ describe("the behaviour pack", () => {
     }
     expect(rules.map((r) => (r.spec.check as { id: string }).id)).toEqual([...BEHAVIOUR_CHECK_IDS]);
   });
+});
+
+test("trigger-state's words say what the check decides, pattern by pattern", () => {
+  const spec = RULE_PACKS.find((p) => p.name === "behaviour")!.rules("acme").find((r) => r.file === "behaviour.trigger-state.rule.yaml")!.spec;
+  const facts = (f: Partial<TriggerFacts>): TriggerFacts => ({ connected: true, expanded: null, haspopup: null, controls: false, controlsPopup: null, popovertarget: false, popovertargetPopup: null, popupRole: null, ...f });
+  // A menu button may leave aria-expanded off while closed, and needs aria-haspopup "menu" (or "true").
+  expect(spec.statement).toContain('aria-expanded="true" while the menu is open ("false" or left off while it is closed)');
+  expect(judgeTriggerState("menu-button", facts({ haspopup: "menu" }), facts({ haspopup: "menu", expanded: "true" })).ok).toBe(true);
+  expect(judgeTriggerState("menu-button", facts({ haspopup: "true" }), facts({ haspopup: "true", expanded: "true" })).ok).toBe(true);
+  expect(judgeTriggerState("menu-button", facts({}), facts({ expanded: "true" })).ok).toBe(false);
+  // A combobox must say "false" while closed, and name its listbox; aria-haspopup off or "listbox".
+  expect(spec.statement).toContain('A combobox has aria-expanded="false" while its listbox is closed');
+  expect(judgeTriggerState("combobox-listbox", facts({}), facts({ expanded: "true", controls: true, controlsPopup: true, popupRole: "listbox" })).ok).toBe(false);
+  expect(judgeTriggerState("combobox-listbox", facts({ expanded: "false" }), facts({ expanded: "true", controls: true, controlsPopup: true, popupRole: "listbox" })).ok).toBe(true);
+  expect(judgeTriggerState("combobox-listbox", facts({ expanded: "false", haspopup: "menu" }), facts({ expanded: "true", haspopup: "menu", controls: true, controlsPopup: true, popupRole: "listbox" })).ok).toBe(false);
+  // Any other popover needs no aria-haspopup: aria-controls and aria-expanded, or popovertarget.
+  expect(spec.agent).toContain("they need no aria-haspopup");
+  expect(judgeTriggerState("popover", facts({}), facts({ expanded: "true", controls: true, controlsPopup: true, popupRole: "popover" })).ok).toBe(true);
+  expect(judgeTriggerState("popover", facts({ popovertarget: true }), facts({ popovertarget: true, popovertargetPopup: true })).ok).toBe(true);
+  expect(judgeTriggerState("popover", facts({ popovertarget: true, expanded: "true" }), facts({ popovertarget: true, popovertargetPopup: true, expanded: "true" })).ok).toBe(false);
+});
+
+test("dismiss-escape's words don't promise a manual popover closes on Esc", () => {
+  const agent = RULE_PACKS.find((p) => p.name === "behaviour")!.rules("acme").find((r) => r.file === "behaviour.dismiss-escape.rule.yaml")!.spec.agent;
+  expect(agent).toContain('an auto popover (popover or popover="auto") close on Esc by themselves; a popover="manual" doesn\'t, so close it yourself');
+});
+
+test("the hub's own System holds the behaviour pack word for word", async () => {
+  const hub = join(import.meta.dirname, "../../../apps/web/design/rules");
+  for (const { file, spec } of RULE_PACKS.find((p) => p.name === "behaviour")!.rules("youiyoux")) expect(RuleSpec.parse(parseYaml(await readFile(join(hub, file), "utf8"))), file).toEqual(spec);
 });
 
 describe("youiyoux rules add", () => {
