@@ -179,7 +179,33 @@ export async function readEvidence(root: string, path: string): Promise<Buffer> 
   return readYouiFile(root, path);
 }
 
-/** A route's last run, if there is one; its evidence paths are each proved to stay in the real `.youi/`. */
+/**
+ * Every string of a run that is shown to people or agents, made safe (cleanText: no control,
+ * format or default-ignorable character, whitespace collapsed, capped): the run's why, fix and
+ * coverage, each result's why, fix and info, and every target's name, component, file and DOM path.
+ * Applied when a run is written and again whenever one is read, so a run kept by an older youiyoux
+ * (or edited by hand) never reaches standing, behave or check with raw page text. Idempotent.
+ */
+export function cleanBehaviourRun(run: BehaviourRouteRun): BehaviourRouteRun {
+  const words = (text: string, fallback: string): string => cleanText(text, 1000) || fallback;
+  const identity = <T extends { accessibleName: string; component: string | null }>(t: T): T => ({ ...t, accessibleName: cleanText(t.accessibleName, 200), component: t.component === null ? null : cleanText(t.component, 200) || null });
+  return {
+    ...run,
+    why: run.why === null ? null : words(run.why, "it couldn't be probed"),
+    fix: run.fix === null ? null : words(run.fix, "Next: run youiyoux behave again."),
+    coverage: words(run.coverage, "Coverage wasn't recorded."),
+    targets: run.targets.map(identity),
+    results: run.results.map((r) => ({
+      ...r,
+      why: words(r.why, "no reason was given"),
+      fix: words(r.fix, "Next: run youiyoux behave again."),
+      info: r.info.map((line) => cleanText(line, 1000)).filter(Boolean),
+      target: { ...identity(r.target), ...(r.target.file !== undefined ? { file: cleanText(r.target.file, 500) || "unknown" } : {}), ...(r.target.domPath !== undefined ? { domPath: cleanText(r.target.domPath, 300) || "body" } : {}) },
+    })),
+  };
+}
+
+/** A route's last run, if there is one, its display strings made safe (cleanBehaviourRun); its evidence paths are each proved to stay in the real `.youi/`. */
 export async function readBehaviourRun(root: string, route: string): Promise<BehaviourRouteRun | null> {
   let text: string;
   try {
@@ -191,7 +217,8 @@ export async function readBehaviourRun(root: string, route: string): Promise<Beh
   const parsed = BehaviourRouteRun.safeParse(JSON.parse(text));
   if (!parsed.success || parsed.data.route !== route) throw new WorkflowError("invalid", `${behaviourFile(route)} isn't a behaviour run for ${route}: run the probe again`);
   for (const result of parsed.data.results) for (const path of result.evidence) await youiPath(root, path, "read");
-  return parsed.data;
+  // Made safe on every read, whatever wrote it and however fresh it is.
+  return cleanBehaviourRun(parsed.data);
 }
 
 function readSpec(root: string): ScreensSpec {
@@ -337,7 +364,7 @@ export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<Pr
   // Belt and braces: only a decided check is ever stored passed or failed.
   if (results.some((r) => (r.state === "passed" || r.state === "failed") && !decidesBehaviour(r.check))) throw new WorkflowError("internal", "the probe made a result it can't make yet; nothing was stored");
   const rules = [...new Map(options.checks.map((c) => [c.rule, { rule: c.rule, check: c.check, freshness: freshness(c) }])).values()];
-  const run = BehaviourRouteRun.parse({ schema: BEHAVIOUR_ROUTE_SCHEMA, route: options.route, runId, at, origin: consent.origin, viewport: spec.viewport, state: probe.state, why: probe.why === null ? null : cleanText(probe.why, 1000) || "it couldn't be probed", fix: probe.fix === null ? null : cleanText(probe.fix, 1000) || "Next: run youiyoux behave again.", coverage: probe.coverage, rules, targets: probe.targets.map((t) => ({ route: options.route, pattern: t.key.pattern, component: t.key.component, accessibleName: t.key.accessibleName, ...(t.key.ordinal !== undefined ? { ordinal: t.key.ordinal } : {}) })), results });
+  const run = cleanBehaviourRun(BehaviourRouteRun.parse({ schema: BEHAVIOUR_ROUTE_SCHEMA, route: options.route, runId, at, origin: consent.origin, viewport: spec.viewport, state: probe.state, why: probe.why === null ? null : cleanText(probe.why, 1000) || "it couldn't be probed", fix: probe.fix === null ? null : cleanText(probe.fix, 1000) || "Next: run youiyoux behave again.", coverage: probe.coverage, rules, targets: probe.targets.map((t) => ({ route: options.route, pattern: t.key.pattern, component: t.key.component, accessibleName: t.key.accessibleName, ...(t.key.ordinal !== undefined ? { ordinal: t.key.ordinal } : {}) })), results }));
   const file = await writeYouiFile(options.root, behaviourFile(options.route), `${JSON.stringify(run, null, 2)}\n`);
   return { run, file, probe };
 }
