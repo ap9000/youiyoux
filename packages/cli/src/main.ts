@@ -1415,7 +1415,7 @@ async function cmdRequests(values: Values, positionals: string[]): Promise<numbe
   const { RequestStore, requestBrief, behaviourEvidence } = await import("@youiyoux/workflow");
   const { project, root } = await product(values);
   // A request filed from a behaviour result is marked addressed only once the check passes again, fresh (read as this youiyoux makes results).
-  const store = new RequestStore(root, project?.config.id ?? basename(root), project ? { behaviour: behaviourEvidence(project, behaviourTool()) } : {});
+  const store = new RequestStore(root, project?.config.id ?? basename(root), project ? { behaviour: behaviourEvidence(() => loadProject(resolve(values.project ?? process.cwd()), loadOptions(values)), behaviourTool()) } : {});
   const agent = { kind: "agent", name: "youiyoux CLI" } as const;
   const one = (request: Parameters<typeof requestBrief>[0]): number => {
     const brief = requestBrief(request, root);

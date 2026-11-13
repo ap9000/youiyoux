@@ -130,7 +130,7 @@ export class RuleWorkflow {
   async requests(): Promise<RequestStore> {
     const project = await this.project();
     const behaviour = this.options.behaviour;
-    return new RequestStore(project.root, project.config.id, { ...(this.options.now ? { now: this.options.now } : {}), ...(behaviour ? { behaviour: behaviourEvidence(project, behaviour.tool) } : {}) });
+    return new RequestStore(project.root, project.config.id, { ...(this.options.now ? { now: this.options.now } : {}), ...(behaviour ? { behaviour: behaviourEvidence(() => this.project(), behaviour.tool) } : {}) });
   }
 
   /** Behaviour probes for the product: its project, and how to run them (refused when this service wasn't given a browser). */

@@ -330,10 +330,16 @@ function placedBox(root: string, route: string, name: string, file: string | und
 
 const verify = (route: string): string => `run \`youiyoux behave --route ${route}\` first`;
 
-/** Change requests' reading of behaviour results for `project`, as this youiyoux (`tool`) would make them now. */
-export function behaviourEvidence(project: BehaviourProject, tool: string): BehaviourEvidence {
+/**
+ * Change requests' reading of behaviour results, as this youiyoux (`tool`) would make them now.
+ * `load` gives the design definitions as they are on disk now (rules and contract bindings), read
+ * again for every filing and every addressed check, never a copy held for display: a pass made
+ * under a rule or binding that has changed since is stale.
+ */
+export function behaviourEvidence(load: () => Promise<BehaviourProject>, tool: string): BehaviourEvidence {
   return {
     async failure(ref) {
+      const project = await load();
       const view = await behaviourRouteView(project, tool, ref.route);
       if (view.problem) throw new WorkflowError("conflict", `${ref.route}'s stored run couldn't be read (${view.problem}): run it again, then file from the new result`);
       if (!view.run || view.run.runId !== ref.runId) throw new WorkflowError("conflict", `that result is gone: ${ref.route} was ${view.run ? "probed again since" : "never probed, or its run was removed"}; look again and file from the result shown now`);
@@ -352,7 +358,7 @@ export function behaviourEvidence(project: BehaviourProject, tool: string): Beha
       const route = link.target.route;
       let view: BehaviourRouteView;
       try {
-        view = await behaviourRouteView(project, tool, route);
+        view = await behaviourRouteView(await load(), tool, route);
       } catch (error: unknown) {
         return `${verify(route)}; the stored runs couldn't be read (${cleanText(error instanceof Error ? error.message : String(error), 300)})`;
       }

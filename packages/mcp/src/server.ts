@@ -450,7 +450,9 @@ export function createServer(options: ServerOptions): McpServer {
   async function requests(): Promise<{ store: RequestStore; root: string }> {
     const project = await state.loadProject().catch(() => null);
     const root = project?.root ?? resolve(options.productRoot ?? options.projectRoot);
-    const evidence = project && options.behaviourTool ? { behaviour: behaviourEvidence(project, options.behaviourTool) } : {};
+    // Behaviour evidence reads the definitions on disk at each check, not the cached project.
+    const fresh = () => loadProject(options.projectRoot, { ...(options.configPath ? { configPath: options.configPath } : {}), ...(options.designRoot ? { designRoot: options.designRoot } : {}), ...(options.productRoot ? { productRoot: options.productRoot } : {}) });
+    const evidence = project && options.behaviourTool ? { behaviour: behaviourEvidence(fresh, options.behaviourTool) } : {};
     return { store: new RequestStore(root, project?.config.id ?? basename(root), evidence), root };
   }
 

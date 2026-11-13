@@ -16,6 +16,8 @@ import { behaviourEvidence, behaviourFile, RequestStore, runBehaviour, WorkflowE
 import { behaviourSandbox, control, escape, NAME, RULE_ID, setup, tick, TOOL, UNSAFE } from "./behaviour-sandbox.ts";
 
 const s = behaviourSandbox();
+/** The definitions as they are on disk now, as every caller gives them. */
+const fresh = () => loadProject(s.box.project, { designRoot: s.box.design });
 let mcp: Client;
 beforeAll(async () => {
   const server = createMcp({ projectRoot: s.box.project, designRoot: s.box.design, behaviourTool: TOOL, render: { download: false } });
@@ -124,7 +126,7 @@ describe("addressed", () => {
   test("a run that started before the request was reopened doesn't address it, though it finished after", async () => {
     const project = await loadProject(s.box.project, { designRoot: s.box.design });
     const { runId, index } = await failing();
-    const store = new RequestStore(s.box.project, "expo-fixture", { behaviour: behaviourEvidence(project, TOOL) });
+    const store = new RequestStore(s.box.project, "expo-fixture", { behaviour: behaviourEvidence(fresh, TOOL) });
     const person = { kind: "person", name: "p" } as const;
     const request = await store.createFromBehaviour(person, { route: "/x", runId, index });
     await store.setStatus(person, request.id, "closed", "fine for now");
@@ -151,10 +153,38 @@ describe("addressed", () => {
     await expect(store.setStatus({ kind: "agent", name: "a" }, request.id, "addressed", "done")).rejects.toThrow(/this request has no newer run$/);
   });
 
+  test("a pass made under a rule that has changed since doesn't address, for a store made before the change and for MCP's cached project", async () => {
+    const { runId, index } = await failing();
+    const file = async () => ((await s.write("/api/requests", { kind: "change", behaviour: { route: "/x", runId, index } })).json as { id: string }).id;
+    const viaStore = await file();
+    const viaMcp = await file();
+    const viaHttp = await file();
+    await tick();
+    control.verdict = "passed";
+    await s.runFromHub();
+    // Made, and MCP's project read, before the rule changes.
+    const store = new RequestStore(s.box.project, "expo-fixture", { behaviour: behaviourEvidence(fresh, TOOL) });
+    await tool("requests_list", {});
+    const ruleFile = join(s.box.design, "rules/popup.escape.rule.yaml");
+    const was = readFileSync(ruleFile, "utf8");
+    writeFileSync(ruleFile, was.replace("severity: error", "severity: warn"));
+    try {
+      const stale = /the last run is stale \(the rule changed since it ran\)$/;
+      await expect(store.setStatus({ kind: "agent", name: "a" }, viaStore, "addressed", "done")).rejects.toThrow(stale);
+      const agent = await tool("request_addressed", { id: viaMcp, message: "done" });
+      expect(agent.isError).toBe(true);
+      expect(String(agent.data.error)).toMatch(stale);
+      expect((await s.write(`/api/requests/${viaHttp}/status`, { status: "addressed", body: "done" })).json.error).toMatch(stale);
+    } finally {
+      writeFileSync(ruleFile, was);
+    }
+    expect((await store.setStatus({ kind: "agent", name: "a" }, viaStore, "addressed", "done")).status).toBe("addressed");
+  });
+
   test("the store holds every caller to it, with results read as this youiyoux makes them", async () => {
     const project = await loadProject(s.box.project, { designRoot: s.box.design });
     const { runId, index } = await failing();
-    const store = new RequestStore(s.box.project, "expo-fixture", { behaviour: behaviourEvidence(project, TOOL) });
+    const store = new RequestStore(s.box.project, "expo-fixture", { behaviour: behaviourEvidence(fresh, TOOL) });
     const request = await store.createFromBehaviour({ kind: "person", name: "p" }, { route: "/x", runId, index });
     const agent = { kind: "agent", name: "a" } as const;
     await expect(store.setStatus(agent, request.id, "addressed", "done")).rejects.toThrow(/this request has no newer run$/);
@@ -173,7 +203,7 @@ describe("addressed", () => {
     await tick();
     control.verdict = "passed";
     await (await runBehaviour(project, setup, { route: "/x", by: "agent" })).done;
-    const other = new RequestStore(s.box.project, "expo-fixture", { behaviour: behaviourEvidence(project, "youiyoux other") });
+    const other = new RequestStore(s.box.project, "expo-fixture", { behaviour: behaviourEvidence(fresh, "youiyoux other") });
     await expect(other.setStatus(agent, again.id, "addressed", "done")).rejects.toThrow(/the last run is stale \(youiyoux changed since it ran\)$/);
     expect((await store.setStatus(agent, again.id, "addressed", "done")).status).toBe("addressed");
   });
