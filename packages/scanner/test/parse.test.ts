@@ -61,8 +61,8 @@ describe("valid TypeScript the parser cannot read is named, with its line and th
     expect(await problemOf("src/res.ts", "export async function read() {\n  await using = foo();\n}\n")).toMatch(new RegExp(`${escapeRegExp(GENERIC)}$`));
   });
 
-  test("an unrelated syntax error gets the generic Next with its line; && and &amp; are not bare &", async () => {
-    const source = `export function Panel() {\n  return <div>{a && b}</div>;\n}\nexport const bad = 1 +* 2;\nexport const ok = <b>Tom &amp; Jerry</b>;\n`;
+  test("an unrelated syntax error gets the generic Next with its line; &&, &amp; and a stray & outside JSX are not a bare & in JSX text", async () => {
+    const source = `export function Panel() {\n  return <div>{a && b}</div>;\n}\nexport const bad = 1 & * 2;\nexport const ok = <b>Tom &amp; Jerry</b>;\n`;
     expect(await problemOf("src/Panel.tsx", source)).toBe(`the parser could not read line 4, so UI elements there were not read. ${GENERIC}`);
   });
 
