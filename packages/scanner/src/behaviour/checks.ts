@@ -182,8 +182,7 @@ export async function focusReturn(page: ProbePage, opened: Opened, args: CheckAr
   const part = args.returnFocusTo ?? null;
   const noun = POPUP_NOUN[pattern];
   const ctx = checkContext(page, opened, args);
-  // The trigger's component instance, held while the trigger is still there: its returnFocusTo part may be all that's left after.
-  if (part) await page.holdReturnScope(opened.index);
+  // The returnFocusTo part (if declared) was found and held before the click, from the page's structure (openAndIdentify).
   const escaped = await escapeUntilClosed(page, opened, args, ctx);
   if (escaped.kind === "stop") return escaped.outcome;
   if (escaped.kind === "open") return ctx.incomplete({ why: `Esc didn't close the ${noun}, so where focus returns can't be judged`, fix: `Next: make Esc close the ${noun} (dismiss-escape), then run youiyoux behave again.` });
@@ -192,14 +191,14 @@ export async function focusReturn(page: ProbePage, opened: Opened, args: CheckAr
     const stop = await ctx.stopped();
     if (stop) return ctx.incomplete(stop);
     const asked = Date.now();
-    const now = await page.returnFocus(opened.index, part);
+    const now = await page.returnFocus(opened.index);
     if (now.at === "trigger" || now.at === "part") {
       // Watch a moment longer: a page that leaves or sends something now is stopped, not passed;
       // and focus must still be there (and the popup still closed) at the end of that moment.
       await ctx.settle(budgets.graceMs);
       const after = await ctx.stopped();
       if (after) return ctx.incomplete(after);
-      const again = await page.returnFocus(opened.index, part);
+      const again = await page.returnFocus(opened.index);
       const reopened = (await page.popupState(opened.index, pattern, args.popup)) === "open";
       if ((again.at === "trigger" || again.at === "part") && !reopened) return ctx.decided("passed", { why: again.at === "trigger" ? `when Esc closed the ${noun}, focus went back to the button that opened it` : `when Esc closed the ${noun}, focus went to ${partWords(part!)} the component contract names (returnFocusTo)`, fix: "Nothing to do: closing returns focus." });
       // It moved on (or the popup opened again): keep watching until the budget, and judge where it ends.
@@ -207,6 +206,7 @@ export async function focusReturn(page: ProbePage, opened: Opened, args: CheckAr
       continue;
     }
     if (asked >= until) {
+      if (part && now.part !== "one") return ctx.incomplete({ why: "couldn't tell which element focus should return to", fix: `Next: give the component exactly one element with ${partWords(part)} near its button (it must be there before the popup opens), then run youiyoux behave again.` });
       if (now.trigger === "gone" && !part) return ctx.incomplete({ why: "the button that opened it is gone; declare where focus should go", fix: "Next: declare where focus goes in the component's contract (a11y.behaviour.returnFocusTo), or keep the button on the screen, then run youiyoux behave again." });
       if (now.at === "away") return ctx.incomplete({ why: "the page lost focus to the browser itself, so where focus returned can't be judged", fix: "Next: run youiyoux behave again." });
       const where = focusWords({ at: now.at, role: now.role, name: now.name }, noun);

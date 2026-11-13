@@ -88,6 +88,11 @@ export interface FocusFacts {
  */
 export interface ReturnFacts {
   readonly trigger: "connected" | "gone";
+  /**
+   * The contract's returnFocusTo part, as found before the click (holdReturnTarget): exactly one
+   * element ("one"), none, or several (can't tell which); null when no part was declared.
+   */
+  readonly part: "one" | "none" | "several" | null;
   readonly at: FocusFacts["at"] | "part";
   readonly role: string;
   readonly name: string;
@@ -156,7 +161,7 @@ export function isolatedLibrary(): void {
   type Pattern = "menu-button" | "combobox-listbox" | "modal-dialog" | "popover";
   const ROLE: Record<Pattern, string> = { "menu-button": '[role="menu"]', "combobox-listbox": '[role="listbox"]', "modal-dialog": 'dialog,[role="dialog"],[role="alertdialog"]', popover: "[popover]" };
   const POPUP = '[role="menu"],[role="listbox"],[role="dialog"],[role="alertdialog"],[role="tooltip"],dialog,[popover]';
-  const state = { items: [] as Element[], tabbables: [] as Element[], elements: [] as Element[], before: [] as Element[], clicked: null as EventTarget | null, watching: false, popup: null as Element | null, popupId: null as string | null, popupRole: null as string | null, atKey: [] as Element[] };
+  const state = { returnTarget: null as Element | null, returnPart: null as "one" | "none" | "several" | null, items: [] as Element[], tabbables: [] as Element[], elements: [] as Element[], before: [] as Element[], clicked: null as EventTarget | null, watching: false, popup: null as Element | null, popupId: null as string | null, popupRole: null as string | null, atKey: [] as Element[] };
   const all = (): Element[] => {
     const out: Element[] = [];
     const collect = (root: Document | ShadowRoot): void => {
@@ -508,19 +513,47 @@ export function isolatedLibrary(): void {
       return { ok: false };
     },
     /**
-     * Where focus is once the popup closed: on the trigger (still the very element clicked), on the
-     * contract's returnFocusTo part (`parts`, nominated in the component's own instance and each
-     * checked here against the part's name or role), or elsewhere (FocusFacts).
+     * Before the click, while the trigger is there: the contract's returnFocusTo part, found from
+     * the page's structure alone (never from what the page's scripts say): the trigger's nearest
+     * ancestor that holds an element with that part's name (data-part / data-slot) or role, besides
+     * the trigger itself; exactly one such element is the part, held for after the popup closes.
+     * None, or several in that nearest ancestor, and focus there can't be judged.
      */
-    returnFocus(wanted: { readonly index: number; readonly part: PartRef | null }, parts: Element[]): ReturnFacts {
+    holdReturnTarget(wanted: { readonly index: number; readonly part: PartRef }): "one" | "none" | "several" {
+      const trigger = state.elements[wanted.index];
+      const part = wanted.part;
+      const is = (element: Element): boolean => ("part" in part ? element.getAttribute("data-part") === part.part || element.getAttribute("data-slot") === part.part : element.getAttribute("role") === part.role || (part.role === "button" && element.localName === "button"));
+      state.returnTarget = null;
+      state.returnPart = "none";
+      if (!trigger) return state.returnPart;
+      for (const scope of ancestors(trigger)) {
+        const found: Element[] = [];
+        const collect = (node: Element | ShadowRoot): void => {
+          for (const element of node.querySelectorAll("*")) {
+            if (element !== trigger && !trigger.contains(element) && is(element)) found.push(element);
+            if (element.shadowRoot) collect(element.shadowRoot);
+          }
+        };
+        collect(scope);
+        if (found.length === 0) continue;
+        state.returnPart = found.length === 1 ? "one" : "several";
+        state.returnTarget = found.length === 1 ? found[0]! : null;
+        break;
+      }
+      return state.returnPart;
+    },
+    /**
+     * Where focus is once the popup closed: on the trigger (still the very element clicked), on the
+     * returnFocusTo part held before the click (or inside it), or elsewhere (FocusFacts).
+     */
+    returnFocus(wanted: { readonly index: number }): ReturnFacts {
       const trigger = state.elements[wanted.index];
       const facts = focusFacts(trigger, state.popup);
       const connected = !!trigger && trigger.isConnected ? "connected" : "gone";
-      const part = wanted.part;
-      const named = part ? parts.filter((element) => element.isConnected && ("part" in part ? element.getAttribute("data-part") === part.part || element.getAttribute("data-slot") === part.part : element.getAttribute("role") === part.role || (part.role === "button" && element.localName === "button"))) : [];
+      const target = state.returnTarget;
       const at = effectiveFocus();
-      if (at && named.some((element) => element === at || ancestors(at).includes(element))) return { trigger: connected, at: "part", role: at.getAttribute("role") ?? at.localName, name: accessibleName(at) };
-      return { trigger: connected, at: facts.at, role: facts.role, name: facts.name };
+      if (at && target && target.isConnected && (at === target || ancestors(at).includes(target))) return { trigger: connected, part: state.returnPart, at: "part", role: at.getAttribute("role") ?? at.localName, name: accessibleName(at) };
+      return { trigger: connected, part: state.returnPart, at: facts.at, role: facts.role, name: facts.name };
     },
     /**
      * The identified dialog's focus-trap facts (TrapFacts). `first`: this look's tabbable list is
@@ -763,43 +796,6 @@ export function contractPopupsInPage(this: Element, args: { readonly component: 
   };
   const part = args.part;
   return [...document.querySelectorAll("*")].filter((element) => ("part" in part ? element.getAttribute("data-part") === part.part || element.getAttribute("data-slot") === part.part : element.getAttribute("role") === part.role || (part.role === "dialog" && element.localName === "dialog")) && inScope(element));
-}
-
-/**
- * Main world, `this` the trigger: the fiber of its bound component's instance (by reference, held
- * by the probe), so the instance's parts can be found again after the trigger itself is gone.
- * Only a nomination scope: every element found through it is checked in the isolated world.
- */
-export function contractScopeInPage(this: Element, args: { readonly component: string }): unknown {
-  type Fiber = { tag: number; type: unknown; return: Fiber | null };
-  const COMPONENT = new Set([0, 1, 11, 14, 15]);
-  const nameOf = (type: unknown): string | null => {
-    const t = type as { displayName?: string; name?: string; render?: { displayName?: string; name?: string }; type?: { displayName?: string; name?: string } } | null;
-    return t?.displayName || t?.name || t?.render?.displayName || t?.render?.name || t?.type?.displayName || t?.type?.name || null;
-  };
-  const key = Object.keys(this).find((k) => k.startsWith("__reactFiber$"));
-  for (let node = key ? ((this as unknown as Record<string, Fiber>)[key] ?? null) : null; node; node = node.return) if (COMPONENT.has(node.tag) && nameOf(node.type) === args.component) return node;
-  return null;
-}
-
-/**
- * Main world, `this` a component instance's fiber (contractScopeInPage): the elements in that
- * instance (portals included) that match `part`. Only a nomination: the isolated world checks each.
- */
-export function partsInScopeInPage(this: { alternate?: unknown }, args: { readonly part: PartRef }): Element[] {
-  type Fiber = { return: Fiber | null };
-  const scope = this as unknown;
-  const alternate = this.alternate;
-  const fiberOf = (element: Element): Fiber | null => {
-    const key = Object.keys(element).find((k) => k.startsWith("__reactFiber$"));
-    return key ? ((element as unknown as Record<string, Fiber>)[key] ?? null) : null;
-  };
-  const inScope = (element: Element): boolean => {
-    for (let node = fiberOf(element); node; node = node.return) if (node === scope || node === alternate) return true;
-    return false;
-  };
-  const part = args.part;
-  return [...document.querySelectorAll("*")].filter((element) => ("part" in part ? element.getAttribute("data-part") === part.part || element.getAttribute("data-slot") === part.part : element.getAttribute("role") === part.role || (part.role === "button" && element.localName === "button")) && inScope(element));
 }
 
 /**

@@ -37,10 +37,10 @@ export interface ProbePage {
   identify(index: number, pattern: BehaviourPattern, popup: PartRef | null): Promise<PopupFound>;
   /** Where effective focus is now, against the trigger and the popup `identify` found last; nothing is moved. */
   focus(index: number): Promise<FocusFacts>;
-  /** While the trigger is still there: hold its bound component's instance, so its returnFocusTo part can be found once the trigger is gone. */
-  holdReturnScope(index: number): Promise<void>;
-  /** Where focus is once the popup closed: the trigger, the contract's returnFocusTo part, or elsewhere; and whether the trigger is still there. */
-  returnFocus(index: number, part: PartRef | null): Promise<ReturnFacts>;
+  /** Before the click: find the contract's returnFocusTo part from the page's structure, in the probe's own world, and hold it. */
+  holdReturnTarget(index: number, part: PartRef): Promise<"one" | "none" | "several">;
+  /** Where focus is once the popup closed: the trigger, the held returnFocusTo part, or elsewhere; and whether the trigger is still there. */
+  returnFocus(index: number): Promise<ReturnFacts>;
   /** Effective focus inside the popup `identify` found last (or on the combobox), moved there with focus() if it isn't. */
   placeFocus(index: number, pattern: BehaviourPattern): Promise<FocusPlaced>;
   /**
@@ -208,6 +208,8 @@ export async function openAndIdentify(
     readonly origin: string;
     readonly wanted: TargetKey;
     readonly popup: PartRef | null;
+    /** The contract's returnFocusTo part, when its binding declares one: found and held before the click. */
+    readonly returnFocusTo?: PartRef | null;
     readonly deadline: () => number;
     readonly budgets: Budgets;
     /** Asked immediately before the click: null while probing is still allowed, else why not (nothing is clicked). */
@@ -227,6 +229,7 @@ export async function openAndIdentify(
   if (match.state === "missing") return incomplete({ why: `the button ${pageText(wanted.accessibleName)} wasn't on the screen when it was opened again`, fix: "Next: run the probe again; a button that shows only after something else happens isn't probed yet." });
   await page.markShowing(wanted.pattern);
   const closed = await page.triggerFacts(match.index);
+  if (args.returnFocusTo) await page.holdReturnTarget(match.index, args.returnFocusTo);
   // Consent is read again at the last moment: switched off, moved or switched again since the run
   // began (another generation), and nothing is clicked.
   const refused = cancelled() ?? (await args.beforeClick?.()) ?? cancelled();
