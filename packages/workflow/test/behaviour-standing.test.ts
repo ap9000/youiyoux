@@ -56,7 +56,10 @@ describe.skipIf(!HAVE_CHROMIUM)("standing from stored runs", () => {
   const scratch = mkdtempSync(join(tmpdir(), "youi-standing-"));
   const MENU = (id: string, closes: boolean) =>
     `<button aria-haspopup="menu" aria-expanded="false" aria-controls="${id}" onclick="const m=document.getElementById('${id}');m.hidden=false;m.querySelector('li').focus()">Actions</button><ul role="menu" id="${id}" hidden onkeydown="${closes ? "if (event.key === 'Escape') this.hidden = true" : ""}"><li role="menuitem" tabindex="-1">Rename</li></ul>`;
-  const PAGES: Record<string, string> = { "/dialog": `<button aria-haspopup="dialog" onclick="document.getElementById('d1').showModal()">Settings</button><dialog id="d1"><button>One</button><button>Two</button></dialog>`, "/esc": MENU("m1", true), "/esc-ignored": MENU("m2", false), "/plain": "<p>No popups here.</p>", "/mixed": MENU("m3", true).replace(">Actions<", ">Open<") + MENU("m4", false).replace(">Actions<", ">Stuck<") };
+  const PAGES: Record<string, string> = {
+    "/combobox": `<label for="cb">Fruit</label><input id="cb" role="combobox" aria-expanded="false" aria-controls="lb" onclick="document.getElementById('lb').hidden=false;this.setAttribute('aria-expanded','true')" onkeydown="if (event.key === 'Escape') { document.getElementById('lb').hidden=true; this.setAttribute('aria-expanded','false'); }"><ul role="listbox" id="lb" hidden><li role="option" id="o1">Apple</li><li role="option" id="o2">Pear</li></ul>`,
+    "/popover": `<button popovertarget="pp">Info</button><div popover id="pp"><button>Got it</button></div>`,
+    "/dialog": `<button aria-haspopup="dialog" onclick="document.getElementById('d1').showModal()">Settings</button><dialog id="d1"><button>One</button><button>Two</button></dialog>`, "/esc": MENU("m1", true), "/esc-ignored": MENU("m2", false), "/plain": "<p>No popups here.</p>", "/mixed": MENU("m3", true).replace(">Actions<", ">Open<") + MENU("m4", false).replace(">Actions<", ">Stuck<") };
 
   beforeAll(async () => {
     server = createServer((req, res) => {
@@ -226,14 +229,14 @@ describe.skipIf(!HAVE_CHROMIUM)("standing from stored runs", () => {
     expect(standing.failures).toEqual([expect.objectContaining({ rule: ESCAPE.id, result: expect.objectContaining({ state: "failed", target: expect.objectContaining({ accessibleName: "Stuck" }) }) })]);
   }, 60_000);
 
-  test("not-applicable is held to the full pattern table for every check: stored for a check that applies, or a verdict stored for one that doesn't, leaves the rule incomplete", async () => {
+  test("not-applicable is held to the full pattern table for every check and all four patterns: stored for a check that applies, or a verdict stored for one that doesn't, leaves the rule incomplete", async () => {
     const ALL = BEHAVIOUR_CHECK_IDS.map((check) => rule(`popup.${check}`, check));
-    const p = product("table", ["/esc", "/dialog"]);
-    await behave(p, "/esc", ALL);
-    await behave(p, "/dialog", ALL);
-    // As stored by the probe, every rule has run: a menu and a modal dialog, each check decided or not-applicable by the table.
+    const ROUTES = [["/esc", "menu-button"], ["/combobox", "combobox-listbox"], ["/dialog", "modal-dialog"], ["/popover", "popover"]] as const;
+    const p = product("table", ROUTES.map(([route]) => route));
+    for (const [route] of ROUTES) await behave(p, route, ALL);
+    // As stored by the probe, every rule has run: one target of each of the four patterns, each check decided or not-applicable by the table.
     expect((await behaviourStanding(p.project, ALL, TOOL)).runs.map((r) => [r.rule, r.state])).toEqual(ALL.map((r) => [r.id, "ran"]));
-    for (const [route, pattern] of [["/esc", "menu-button"], ["/dialog", "modal-dialog"]] as const) {
+    for (const [route, pattern] of ROUTES) {
       const file = join(p.root, behaviourFile(route));
       const was = readFileSync(file, "utf8");
       for (const check of BEHAVIOUR_CHECK_IDS) {
@@ -246,7 +249,7 @@ describe.skipIf(!HAVE_CHROMIUM)("standing from stored runs", () => {
       }
       writeFileSync(file, was);
     }
-  }, 120_000);
+  }, 240_000);
 
   test("a run stored by an older youiyoux with raw page text is made safe on read: standing's failures and reasons carry no control characters, and names are capped", async () => {
     const p = product("old-format", ["/esc-ignored", "/esc"]);
