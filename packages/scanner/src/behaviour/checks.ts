@@ -285,22 +285,19 @@ const tabbableWords = (t: { readonly role: string; readonly name: string } | und
  * wrong next element fails. Each key goes only after consent is read again and the very dialog
  * (still showing, DOM focus inside) is checked again; where focus is, is DOM focus, whatever
  * aria-activedescendant names. Not modal, a popup open inside it at any read (latched: one that
- * shows for a moment still counts; the one listbox screens.json declares part of the dialog, held
- * and looked at again on every read, isn't one: TrapFacts), a frame, a
+ * shows only for a moment still counts; a listbox always showing inside, as a command palette's
+ * list is, can't be told from a popup opened inside, so it counts too), a frame, a
  * Tab order it doesn't model (positive tabindex, a shadow root, radio buttons), more than MAX_TRAP_TABBABLES elements, or focus landing on
  * something not counted as tabbable: incomplete, never guessed.
  */
 export async function focusTrap(page: ProbePage, opened: Opened, args: CheckArgs): Promise<ScenarioOutcome> {
   const { pattern } = args;
   const ctx = checkContext(page, opened, args);
-  const first = await page.trap(true, args.dialogContent?.declared ?? null);
+  const first = await page.trap(true);
   if (!first.open) return ctx.incomplete({ why: "the dialog closed before Tab could be pressed", fix: "Next: keep the dialog open until it is dismissed, then run youiyoux behave again." });
   if (!first.modal) return ctx.incomplete({ why: 'the dialog it opened isn\'t modal (a <dialog> shown with show() or the open attribute, or role="dialog" without aria-modal="true"), so focus isn\'t held inside it', fix: 'Next: if it should be modal, open it with showModal(), or give it aria-modal="true" and keep focus inside; a dialog that isn\'t modal isn\'t checked for a focus trap.' });
-  if (first.nested && first.undeclared && args.dialogContent)
-    return ctx.incomplete({
-      why: "a listbox is showing inside the dialog and nothing declares it part of the dialog's own content, so the focus trap can't be judged",
-      fix: `Next: if this listbox is part of the dialog itself (a command palette's list, always showing), not a popup opened inside it, add ${args.dialogContent.declare} to "dialogContent" in the "behaviour" block of .youi/screens/screens.json, then run youiyoux behave again; otherwise open the dialog with nothing else open inside it.`,
-    });
+  if (first.nested === "listbox")
+    return ctx.incomplete({ why: "a listbox is showing inside the dialog, so the focus trap can't be judged: youiyoux can't tell a list that is part of the dialog (a command palette's, say) from a popup opened inside it", fix: "Next: check Tab and Shift+Tab in this dialog by hand: focus should stay inside it, moving through its focusable elements in order and wrapping round." });
   if (first.nested) return ctx.incomplete({ why: `a ${roleWord(first.nested)} is open inside the dialog, so the focus trap can't be judged`, fix: "Next: open the dialog with nothing else open inside it, then run youiyoux behave again." });
   if (first.frame) return ctx.incomplete({ why: "the dialog holds a frame; Tab order through frames isn't checked yet", fix: "Next: check Tab and Shift+Tab in this dialog by hand." });
   if (first.unmodelled) return ctx.incomplete({ why: `this dialog's tab order uses ${first.unmodelled}, which youiyoux doesn't model yet`, fix: "Next: check Tab and Shift+Tab in this dialog by hand." });
@@ -320,30 +317,23 @@ export async function focusTrap(page: ProbePage, opened: Opened, args: CheckArgs
     return null;
   };
   /**
-   * The first popup violation any read saw (popupStop), latched: a popup that shows for a moment, or
-   * the declared listbox removed and put back, makes the result incomplete even once it clears.
+   * The first popup any read saw open inside the dialog, latched: one that shows only for a moment
+   * makes the result incomplete even once it has gone again.
    */
   let seen: Stop | null = null;
   const read = async (after: string): Promise<TrapFacts> => {
     const f = await page.trap(false);
-    seen ??= popupStop(f, after);
+    seen ??= f.nested ? { why: `${after}, a ${roleWord(f.nested)} was open inside the dialog, so the focus trap can't be judged`, fix: "Next: check Tab and Shift+Tab in this dialog by hand." } : null;
     return f;
   };
-  /** Where focus is after a key, once it has settled (null: it kept moving); every read on the way is held to popupStop. */
+  /** Where focus is after a key, once it has settled (null: it kept moving); every read on the way is held to `seen`. */
   const look = (key: string, want: (facts: TrapFacts) => boolean): Promise<TrapFacts | null> => settled(ctx, args.deadline, () => read(`after ${key}`), (f) => JSON.stringify([f.open, f.stale, f.at]), want);
   const closedStop = { why: "the dialog closed while Tab was pressed, so the focus trap can't be judged", fix: "Next: keep the dialog open while Tab moves through it, then run youiyoux behave again." };
   const staleStop = { why: "the dialog's focusable elements changed while Tab was pressed, so the order can't be judged", fix: "Next: keep the dialog's contents steady while Tab moves through it, then run youiyoux behave again." };
-  /** A popup showing inside the dialog that isn't its declared content, or the declared listbox changed: either way, not the dialog's own Tab order. */
-  function popupStop(f: TrapFacts, after: string): Stop | null {
-    if (f.nested) return { why: `${after}, a ${roleWord(f.nested)} was open inside the dialog, so the focus trap can't be judged`, fix: "Next: check Tab and Shift+Tab in this dialog by hand." };
-    if (f.contentChanged) return { why: `the listbox screens.json declares part of the dialog changed ${after} (it stopped showing, left the dialog or became another kind of popup), so the focus trap can't be judged`, fix: "Next: check Tab and Shift+Tab in this dialog by hand; if that listbox is a popup opened inside the dialog, remove its dialogContent entry from screens.json." };
-    return null;
-  }
   const uncounted = (key: string): Stop => ({ why: `${key} moved focus to something inside the dialog that isn't counted as focusable (a scrolling area, say), so the order can't be judged`, fix: "Next: check Tab and Shift+Tab in this dialog by hand." });
   const start = await read("once focus was placed");
   if (seen) return ctx.incomplete(seen);
   if (start.stale) return ctx.incomplete(staleStop);
-  if (first.content > 0) ctx.extra.push("the listbox showing inside the dialog when it opened was taken as part of the dialog's own content, as screens.json's behaviour.dialogContent declares");
   if (n === 0) {
     if (start.at.kind !== "popup" && start.at.kind !== "inside") return ctx.incomplete(changed);
     let away = false;

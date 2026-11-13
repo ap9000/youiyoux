@@ -113,28 +113,11 @@ export type TrapAt = { readonly kind: "tabbable"; readonly i: number } | { reado
  * popup open inside it, a frame, a Tab order it doesn't model), its tabbable elements in Tab
  * order (role and name, for the words), where focus is, and whether that list changed since the
  * first look.
- *
- * A listbox can be part of the dialog's own content rather than a popup opened inside it (a
- * command palette's always-visible list), but the page's markup can't say so: only the person can,
- * in screens.json (`behaviour.dialogContent`, passed here as `content: "listbox"`). Even then it
- * counts only if, at the first look (before any key, with nothing in the dialog clicked), it is
- * the one role="listbox" element inside the dialog's DOM that is showing, not a native popover or
- * <dialog>, whose nearest popup-role ancestor is the dialog itself. That element is held for the
- * whole check and looked at again on every read: if it stops showing, leaves the dialog, or stops
- * being such a listbox (`contentChanged`), it may have been a popup after all; any other popup
- * showing inside the dialog, at any look, is `nested`.
  */
 export interface TrapFacts {
   readonly open: boolean;
   readonly modal: "native" | "aria" | null;
-  /** A popup showing inside the dialog that isn't part of its content (its role, else its tag). */
   readonly nested: string | null;
-  /** The first look's nested popup is the one listbox that would count as the dialog's content, had the person declared it. */
-  readonly undeclared: boolean;
-  /** How many listboxes the first look took as part of the dialog's content (0 or 1). */
-  readonly content: number;
-  /** The listbox taken as content stopped showing, left the dialog or stopped being such a listbox since the first look. */
-  readonly contentChanged: boolean;
   readonly frame: boolean;
   /** What makes the dialog's Tab order something youiyoux doesn't model yet, if anything. */
   readonly unmodelled: "positive tabindex" | "a shadow root" | "radio buttons" | null;
@@ -184,7 +167,7 @@ export function isolatedLibrary(): void {
   type Pattern = "menu-button" | "combobox-listbox" | "modal-dialog" | "popover";
   const ROLE: Record<Pattern, string> = { "menu-button": '[role="menu"]', "combobox-listbox": '[role="listbox"]', "modal-dialog": 'dialog,[role="dialog"],[role="alertdialog"]', popover: "[popover]" };
   const POPUP = '[role="menu"],[role="listbox"],[role="dialog"],[role="alertdialog"],[role="tooltip"],dialog,[popover]';
-  const state = { returnTarget: null as Element | null, returnPart: null as "one" | "none" | "several" | null, items: [] as Element[], tabbables: [] as Element[], content: [] as Element[], elements: [] as Element[], before: [] as Element[], clicked: null as EventTarget | null, watching: false, popup: null as Element | null, popupId: null as string | null, popupRole: null as string | null, atKey: [] as Element[] };
+  const state = { returnTarget: null as Element | null, returnPart: null as "one" | "none" | "several" | null, items: [] as Element[], tabbables: [] as Element[], elements: [] as Element[], before: [] as Element[], clicked: null as EventTarget | null, watching: false, popup: null as Element | null, popupId: null as string | null, popupRole: null as string | null, atKey: [] as Element[] };
   const all = (): Element[] => {
     const out: Element[] = [];
     const collect = (root: Document | ShadowRoot): void => {
@@ -644,22 +627,13 @@ export function isolatedLibrary(): void {
      * The identified dialog's focus-trap facts (TrapFacts). `first`: this look's tabbable list is
      * the one later looks are held to (any change since is `stale`).
      */
-    trap(wanted: { readonly first: boolean; readonly content: "listbox" | null }): TrapFacts {
+    trap(wanted: { readonly first: boolean }): TrapFacts {
       const popup = state.popup;
-      const none: TrapFacts = { open: false, modal: null, nested: null, undeclared: false, content: 0, contentChanged: false, frame: false, unmodelled: null, tabbables: [], at: { kind: "outside", role: "none", name: "" }, stale: false };
+      const none: TrapFacts = { open: false, modal: null, nested: null, frame: false, unmodelled: null, tabbables: [], at: { kind: "outside", role: "none", name: "" }, stale: false };
       if (!popup) return none;
       const open = popup.isConnected && shown(popup);
       const modal = popup.localName === "dialog" ? (popup.matches(":modal") ? "native" : null) : (popup.getAttribute("role") === "dialog" || popup.getAttribute("role") === "alertdialog") && popup.getAttribute("aria-modal") === "true" ? "aria" : null;
-      const showing = [...popup.querySelectorAll(POPUP)].filter((element) => element.getAttribute("role") !== "tooltip" && shown(element));
-      /** A listbox that looks like part of the dialog: showing inside its DOM, no native popover or <dialog>, no other popup between. */
-      const contentLike = (element: Element): boolean => element.isConnected && shown(element) && element.getAttribute("role") === "listbox" && element.localName !== "dialog" && !element.hasAttribute("popover") && ancestors(element).includes(popup) && ancestors(element).find((e) => e.matches(POPUP)) === popup;
-      const eligible = showing.filter(contentLike);
-      // Part of the dialog's content (TrapFacts): only declared by the person, only the one listbox that looks so at the first look, held after.
-      if (wanted.first) state.content = wanted.content === "listbox" && eligible.length === 1 ? eligible : [];
-      // Looked at again on every read: the very element, still such a listbox.
-      const contentChanged = state.content.some((element) => !contentLike(element));
-      const nestedEl = showing.find((element) => !state.content.includes(element) || !contentLike(element));
-      const undeclared = wanted.first && wanted.content !== "listbox" && showing.length === 1 && eligible.length === 1;
+      const nestedEl = [...popup.querySelectorAll(POPUP)].find((element) => element.getAttribute("role") !== "tooltip" && shown(element));
       const { list, frame, unmodelled } = tabbablesIn(popup);
       if (wanted.first) state.tabbables = list;
       const stale = list.length !== state.tabbables.length || list.some((element, i) => element !== state.tabbables[i]);
@@ -673,7 +647,7 @@ export function isolatedLibrary(): void {
       else if (active === popup) at = { kind: "popup", ...of(active) };
       else if (ancestors(active).includes(popup)) at = { kind: "inside", ...of(active) };
       else at = { kind: "outside", ...of(active) };
-      return { open, modal, nested: nestedEl ? (nestedEl.getAttribute("role") ?? nestedEl.localName) : null, undeclared, content: state.content.length, contentChanged, frame, unmodelled, tabbables: state.tabbables.map((element) => of(element)), at, stale };
+      return { open, modal, nested: nestedEl ? (nestedEl.getAttribute("role") ?? nestedEl.localName) : null, frame, unmodelled, tabbables: state.tabbables.map((element) => of(element)), at, stale };
     },
     /**
      * Focus on one of the dialog's tabbable elements before Tab is pressed: where the app put it is

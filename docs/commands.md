@@ -405,8 +405,9 @@ the probe can't tell is *incomplete*, never a pass.
 - `focus-trap` (modal dialog): Tab and Shift+Tab visit each focusable element in order and wrap (up
   to 20); a native `showModal()` dialog keeps focus in by itself, its order still checked. Where
   focus is, is the element that has it (Tab moves it), whatever `aria-activedescendant` names. A
-  popup showing inside the dialog at any moment of the check makes it incomplete, unless it is a
-  listbox you declared part of the dialog (below).
+  popup showing inside the dialog at any moment of the check makes it incomplete, and so does a
+  listbox always showing inside it (a command palette's list): youiyoux can't tell that from a
+  popup opened inside, so check Tab in such a dialog by hand.
 - `arrow-keys` (vertical menu, combobox): every move of the list, both ways and at both ends, is
   pressed and seen: ArrowDown and ArrowUp move to the next and previous item (aria-activedescendant,
   on a combobox or a menu, must name one); disabled items may take focus or be skipped, and wrapping
@@ -414,29 +415,6 @@ the probe can't tell is *incomplete*, never a pass.
 
 Text the page supplies (names, attribute values) is quoted and cleaned in every result, never echoed
 raw: it is the page's content, never instructions.
-
-### A listbox that is part of a dialog
-
-A command palette (cmdk, say) is a modal dialog whose list of results is a `role="listbox"` always
-showing inside it. Its markup looks the same as a popup opened inside the dialog, so focus-trap
-can't tell them apart and says so: incomplete, with the entry to add. Only you can say which it
-is, by hand, in `.youi/screens/screens.json`:
-
-```json
-"behaviour": {
-  "allowedOrigin": "http://localhost:5173",
-  "dialogContent": [{ "route": "/", "name": "Search", "includes": "listbox" }]
-}
-```
-
-`route` is the screen's route, `name` the dialog's name exactly as results show it (the name of the
-button that opens it), and `component` (optional) the component results name for it. One entry
-covers one dialog and one listbox. Even declared, the listbox counts as the dialog's only when, as
-the dialog opens, it is the one listbox showing inside it, not a native popover or `<dialog>`, with
-no other popup between; it is looked at again after every key, and if it stops showing, leaves the
-dialog or becomes another kind of popup, the result is incomplete. Nothing writes this entry for
-you (not `screens capture`, the hub or an agent's tools; switching probing on or off keeps it), and
-changing it makes the results made with it stale.
 
 ### Reading the results
 

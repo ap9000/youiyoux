@@ -15,7 +15,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath, rename, unlink, type FileHandle } from "node:fs/promises";
 import { dirname, isAbsolute, join, posix, relative, sep } from "node:path";
-import { acquireFileLock, BEHAVIOUR_ROUTE_SCHEMA, BehaviourConsent, BehaviourRouteRun, cleanText, FileLockBusy, type HeldLock, decidesBehaviour, EVIDENCE_PATH, type BehaviourCheckId, type BehaviourResult, type BehaviourTarget, type Freshness } from "@youiyoux/core";
+import { acquireFileLock, BEHAVIOUR_ROUTE_SCHEMA, BehaviourRouteRun, cleanText, FileLockBusy, type HeldLock, decidesBehaviour, EVIDENCE_PATH, type BehaviourCheckId, type BehaviourResult, type BehaviourTarget, type Freshness } from "@youiyoux/core";
 import { behaviourConfigDigest, behaviourConsent, bindingsDigest, CHECK_KEYS, probeOrigin, probeRoute, readScreensSpec, screenUrl, switchedConsent, SWITCHED_OFF, updateScreensSpec, type ContractBinding, type ProbeBudgets, type ProbeRouteOptions, type RouteProbe, type ScreensSpec } from "@youiyoux/scanner";
 import { LiveApp } from "./live.ts";
 import { WorkflowError } from "./policy.ts";
@@ -377,12 +377,9 @@ async function probeUnderClaim(options: ProbeBehaviourOptions, claim: RouteClaim
   if (!running.has(key)) running.set(key, new Set());
   running.get(key)!.add(controller);
   const checks = [...new Set(options.checks.map((c) => c.check))];
-  // The person's own declarations, read from the very spec the config digest was made from (so a result is fresh only while they stay as they are).
-  const declared = BehaviourConsent.safeParse(spec.behaviour ?? {});
-  const dialogContent = declared.success ? declared.data.dialogContent : undefined;
   let probe: RouteProbe;
   try {
-    probe = await (options.probe ?? probeRoute)({ browser: options.browser, origin: consent.origin, route: options.route, path: screen.path, viewport: spec.viewport, checks, ...(options.bindings ? { bindings: options.bindings } : {}), ...(options.budgets ? { budgets: options.budgets } : {}), ...(options.only ? { only: options.only } : {}), ...(options.onFound ? { onFound: options.onFound } : {}), ...(dialogContent ? { dialogContent } : {}), stillAllowed, signal: controller.signal });
+    probe = await (options.probe ?? probeRoute)({ browser: options.browser, origin: consent.origin, route: options.route, path: screen.path, viewport: spec.viewport, checks, ...(options.bindings ? { bindings: options.bindings } : {}), ...(options.budgets ? { budgets: options.budgets } : {}), ...(options.only ? { only: options.only } : {}), ...(options.onFound ? { onFound: options.onFound } : {}), stillAllowed, signal: controller.signal });
   } finally {
     running.get(key)?.delete(controller);
     if (running.get(key)?.size === 0) running.delete(key);
