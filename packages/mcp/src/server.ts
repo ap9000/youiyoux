@@ -495,7 +495,7 @@ export function createServer(options: ServerOptions): McpServer {
           state: r.state,
           popup: popupWords(r.target),
           ...(r.target.file && r.target.line ? { at: `${r.target.file}:${r.target.line}${r.target.lineIs === "component" ? " (the component's own line: where the app renders it wasn't found)" : ""}` } : {}),
-          ...(r.target.file && r.target.line && r.target.renderedBy ? { renderedBy: `${r.target.renderedBy.file}:${r.target.renderedBy.line} (a wrapper other popups share; at is where this one is used)` } : {}),
+          ...(r.target.file && r.target.line && r.target.renderedBy ? { renderedBy: `${r.target.renderedBy.file}:${r.target.renderedBy.line} (the component that renders the button, which the code uses in more than one place; at is where this one is used)` } : {}),
           why: r.why,
           ...(r.state !== "passed" ? { fix: r.fix } : {}),
           ...(r.info.length ? { info: r.info } : {}),

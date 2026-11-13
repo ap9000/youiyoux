@@ -7,7 +7,7 @@ import { build, transform } from "esbuild";
 import { chromium, type Browser } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { launchBrowser } from "@youiyoux/detect";
-import { BRIDGE_VERSION, type BridgeEdited, type BridgeProps, captureScreens, captureText, decodeMap, liveBridge, mapNotes, sourceMapOf, originalPosition, projectPath, readScreensSpec, resolvePlaces, screenSlug, whyNoLines, type BridgeAt, type PlacesFile, type SourceMapCache } from "../src/index.ts";
+import { BRIDGE_VERSION, type BridgeEdited, type BridgeProps, captureScreens, captureText, decodeMap, liveBridge, mapNotes, sourceMapOf, originalPosition, projectPath, readScreensSpec, resolvePlaces, screenSlug, whyNoLines, type BridgeAt, type PlaceLine, type PlacesFile, type SourceMapCache } from "../src/index.ts";
 
 const PACKAGE = join(import.meta.dirname, "..");
 const scratch = mkdtempSync(join(tmpdir(), "youi-screens-"));
@@ -98,7 +98,7 @@ describe("source maps", () => {
   });
 });
 
-describe("which line a place gets, with distinct (behaviour triggers)", () => {
+describe("which line a place gets, with promote (behaviour triggers)", () => {
   const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
   const vlq = (n: number): string => {
     let v = n < 0 ? (-n << 1) | 1 : n << 1;
@@ -138,55 +138,32 @@ describe("which line a place gets, with distinct (behaviour triggers)", () => {
   const skip = (file: string) => file.startsWith("src/ui/");
   const lines = (placed: Array<{ file: string | null; line: number | null; own?: true; renderedBy?: { file: string; line: number } }>) => placed.map((p) => [`${p.file}:${p.line}`, p.renderedBy ? `${p.renderedBy.file}:${p.renderedBy.line}` : null, p.own ?? null]);
 
-  test("a wrapper outside componentsDir used in two places: each trigger points at its own usage, the wrapper's line kept as rendered by", async () => {
+  test("promote may move a place to one of its own later lines, keeping the first as rendered by; never to a line off its frames or in a skipped file", async () => {
     const rail = [place("Connect your agent", 1, 2, 4), place("Search", 1, 3, 4)];
-    expect(lines(await resolvePlaces(rail, fetchText, null, undefined, undefined, { skip, distinct: true }))).toEqual([
+    // A promote that takes the next line.
+    const next = async (_first: PlaceLine, rest: readonly PlaceLine[]) => rest[0] ?? null;
+    expect(lines(await resolvePlaces(rail, fetchText, null, undefined, undefined, { skip, promote: next }))).toEqual([
       ["src/shell/NavRail.tsx:109", "src/shell/NavRail.tsx:65", null],
       ["src/shell/NavRail.tsx:112", "src/shell/NavRail.tsx:65", null],
     ]);
-    // Through a System Button inside the wrapper too: its own line is passed over first, as before.
-    const viaButton = [place("Connect your agent", 5, 1, 2, 4), place("Search", 5, 1, 3, 4)];
-    expect(lines(await resolvePlaces(viaButton, fetchText, null, undefined, undefined, { skip, distinct: true }))).toEqual([
-      ["src/shell/NavRail.tsx:109", "src/shell/NavRail.tsx:65", null],
-      ["src/shell/NavRail.tsx:112", "src/shell/NavRail.tsx:65", null],
-    ]);
-    // Without distinct (screens capture), the first of the app's own lines, as it always was.
+    // It is handed the first app line and the rest in order, a skipped (System) line marked, never the System line before the first.
+    const seen: Array<[string, string[]]> = [];
+    await resolvePlaces([place("Via Button", 5, 1, 5, 2, 4)], fetchText, null, undefined, undefined, { skip, promote: async (first, rest) => (seen.push([`${first.file}:${first.line}`, rest.map((l) => `${l.file}:${l.line}${l.skipped ? " skipped" : ""}`)]), null) });
+    expect(seen).toEqual([["src/shell/NavRail.tsx:65", ["src/ui/Button.tsx:5 skipped", "src/shell/NavRail.tsx:109", "src/shell/Shell.tsx:10"]]]);
+    // A line that isn't one of the place's own, a skipped one, or a promote that throws: the first line, no rendered by.
+    const elsewhere = async () => ({ file: "src/pages/Page.tsx", line: 20, column: 1 });
+    const system = async (_first: PlaceLine, rest: readonly PlaceLine[]) => rest.find((l) => l.skipped) ?? null;
+    const throws = async (): Promise<PlaceLine | null> => {
+      throw new Error("no");
+    };
+    for (const promote of [elsewhere, system, throws]) expect(lines(await resolvePlaces([place("Via Button", 1, 5, 2)], fetchText, null, undefined, undefined, { skip, promote }))).toEqual([["src/shell/NavRail.tsx:65", null, null]]);
+    // Without promote (screens capture), the first of the app's own lines, as it always was.
     expect(lines(await resolvePlaces(rail, fetchText, null, undefined, undefined, { skip }))).toEqual([
       ["src/shell/NavRail.tsx:65", null, null],
       ["src/shell/NavRail.tsx:65", null, null],
     ]);
-  });
-
-  test("a plain inline button is unchanged: its own line, alone or beside another", async () => {
-    expect(lines(await resolvePlaces([place("Filters", 6, 8), place("Sort", 7, 8)], fetchText, null, undefined, undefined, { skip, distinct: true }))).toEqual([
-      ["src/pages/Page.tsx:20", null, null],
-      ["src/pages/Page.tsx:24", null, null],
-    ]);
-    expect(lines(await resolvePlaces([place("Filters", 6, 8)], fetchText, null, undefined, undefined, { skip, distinct: true }))).toEqual([["src/pages/Page.tsx:20", null, null]]);
-  });
-
-  test("a component inside componentsDir is unchanged: where the app renders it, or its own line marked own when nothing else maps", async () => {
-    // Both go through the System's Button (line 5): that line is skipped, never a reason to walk further.
-    expect(lines(await resolvePlaces([place("Filters", 5, 6, 8), place("Sort", 5, 7, 8)], fetchText, null, undefined, undefined, { skip, distinct: true }))).toEqual([
-      ["src/pages/Page.tsx:20", null, null],
-      ["src/pages/Page.tsx:24", null, null],
-    ]);
-    expect(lines(await resolvePlaces([place("Alone", 5), place("Also alone", 5)], fetchText, null, undefined, undefined, { skip, distinct: true }))).toEqual([
-      ["src/ui/Button.tsx:5", null, true],
-      ["src/ui/Button.tsx:5", null, true],
-    ]);
-  });
-
-  test("when every line is shared (a list's rows), the first, as without distinct; a line is never one off the frames", async () => {
-    expect(lines(await resolvePlaces([place("Row 1", 9, 10, 8), place("Row 2", 9, 10, 8)], fetchText, null, undefined, undefined, { skip, distinct: true }))).toEqual([
-      ["src/pages/Row.tsx:5", null, null],
-      ["src/pages/Row.tsx:5", null, null],
-    ]);
-    // A frame that doesn't map is passed over; the chosen line is always one of the place's own mapped frames.
-    expect(lines(await resolvePlaces([place("Connect your agent", 1, 99, 2), place("Search", 1, 3)], fetchText, null, undefined, undefined, { skip, distinct: true }))).toEqual([
-      ["src/shell/NavRail.tsx:109", "src/shell/NavRail.tsx:65", null],
-      ["src/shell/NavRail.tsx:112", "src/shell/NavRail.tsx:65", null],
-    ]);
+    // The System component's own line when nothing else maps, as before.
+    expect(lines(await resolvePlaces([place("Alone", 5)], fetchText, null, undefined, undefined, { skip, promote: next }))).toEqual([["src/ui/Button.tsx:5", null, true]]);
   });
 });
 

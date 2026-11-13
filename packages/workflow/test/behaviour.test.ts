@@ -470,22 +470,39 @@ describe.skipIf(!HAVE_CHROMIUM)("probing a running app", () => {
     expect([alone.file, alone.line, alone.lineIs]).toEqual(["src/components/ui/button.tsx", 1, "component"]);
   }, 60_000);
 
-  test("a button rendered by an app wrapper used in two places points at each one's own usage, the wrapper's line kept as rendered by, and both are stored", async () => {
+  test("a button rendered by a component the code uses in two places points at each one's own usage, read from the source, the component's line kept as rendered by", async () => {
     const root = product("wrapped", { base, behaviour: { allowedOrigin: base } }, [{ route: "/wrapped", path: "/wrapped" }]);
-    const { run } = await probeBehaviour({ root, route: "/wrapped", browser, checks: CHECKS, fingerprint: FINGERPRINT, componentsDir: "src/components/ui" });
-    const where = (name: string) => {
-      const t = run.results.find((r) => r.target.accessibleName === name)!.target;
-      return [t.file, t.line, t.lineIs, t.renderedBy];
+    // The source the page's frames map to: RailButton's <button> on line 11, its two uses on lines 12 and 13.
+    mkdirSync(join(root, "src/shell"), { recursive: true });
+    const comments = Array.from({ length: 10 }, (_, i) => `// line ${i + 1}`).join("\n");
+    writeFileSync(join(root, "src/shell/NavRail.tsx"), `${comments}\nfunction RailButton({ label }: { label: string }) { return <button aria-label={label} />; }\nexport function NavRail() { return <nav><RailButton label="Search" />\n<RailButton label="Shortcuts" /></nav>; }\n`);
+    const sources = { include: ["src/**/*.tsx"], exclude: [], tsconfig: "tsconfig.json" };
+    const at = async (withSources: boolean) => {
+      const { run } = await probeBehaviour({ root, route: "/wrapped", browser, checks: CHECKS, fingerprint: FINGERPRINT, componentsDir: "src/components/ui", ...(withSources ? { sources } : {}) });
+      return run.results.map((r) => [r.target.accessibleName, r.target.file, r.target.line, r.target.lineIs, r.target.renderedBy]);
     };
-    expect(where("Search")).toEqual(["src/shell/NavRail.tsx", 12, undefined, { file: "src/shell/NavRail.tsx", line: 11 }]);
-    expect(where("Shortcuts")).toEqual(["src/shell/NavRail.tsx", 13, undefined, { file: "src/shell/NavRail.tsx", line: 11 }]);
+    expect(await at(true)).toEqual([
+      ["Search", "src/shell/NavRail.tsx", 12, undefined, { file: "src/shell/NavRail.tsx", line: 11 }],
+      ["Shortcuts", "src/shell/NavRail.tsx", 13, undefined, { file: "src/shell/NavRail.tsx", line: 11 }],
+    ]);
     // As kept and read back.
     const kept = (await readBehaviourRun(root, "/wrapped"))!;
     expect(kept.results.map((r) => [r.target.accessibleName, r.target.line, r.target.renderedBy?.line])).toEqual([
       ["Search", 12, 11],
       ["Shortcuts", 13, 11],
     ]);
-  }, 60_000);
+    // Without the sources, nothing is known about RailButton's uses: the line that renders the button, as before.
+    expect((await at(false)).map((r) => [r[0], r[2], r[4]])).toEqual([
+      ["Search", 11, undefined],
+      ["Shortcuts", 11, undefined],
+    ]);
+    // RailButton used in one place only: its own line, whatever the page shows.
+    writeFileSync(join(root, "src/shell/NavRail.tsx"), `${comments}\nfunction RailButton({ label }: { label: string }) { return <button aria-label={label} />; }\nexport function NavRail() { return <nav><RailButton label="Search" /></nav>; }\n`);
+    expect((await at(true)).map((r) => [r[0], r[2], r[4]])).toEqual([
+      ["Search", 11, undefined],
+      ["Shortcuts", 11, undefined],
+    ]);
+  }, 90_000);
 
   test("a capture that moves base to another origin leaves no consent to probe with", async () => {
     const root = product("moved", { base: "http://127.0.0.1:1", behaviour: { allowedOrigin: "http://127.0.0.1:1" } }, [{ route: "/", path: "/" }]);

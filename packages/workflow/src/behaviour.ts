@@ -16,7 +16,7 @@ import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath, rename, unlink, type FileHandle } from "node:fs/promises";
 import { dirname, isAbsolute, join, posix, relative, sep } from "node:path";
 import { acquireFileLock, BEHAVIOUR_ROUTE_SCHEMA, BehaviourRouteRun, cleanText, FileLockBusy, type HeldLock, decidesBehaviour, EVIDENCE_PATH, type BehaviourCheckId, type BehaviourResult, type BehaviourTarget, type Freshness } from "@youiyoux/core";
-import { behaviourConfigDigest, behaviourConsent, bindingsDigest, CHECK_KEYS, probeOrigin, probeRoute, readScreensSpec, screenUrl, switchedConsent, SWITCHED_OFF, updateScreensSpec, type ContractBinding, type ProbeBudgets, type ProbeRouteOptions, type RouteProbe, type ScreensSpec } from "@youiyoux/scanner";
+import { behaviourConfigDigest, behaviourConsent, bindingsDigest, CHECK_KEYS, probeOrigin, probeRoute, readScreensSpec, screenUrl, switchedConsent, SWITCHED_OFF, updateScreensSpec, type ContractBinding, type ProbeBudgets, type ProbeRouteOptions, type RouteProbe, type ScreensSpec, WrapperIndex, type WrapperSources } from "@youiyoux/scanner";
 import { LiveApp } from "./live.ts";
 import { WorkflowError } from "./policy.ts";
 
@@ -44,6 +44,12 @@ export interface ProbeBehaviourOptions {
    * where the app renders it, the first frame outside this folder, not the component's own line.
    */
   readonly componentsDir?: string;
+  /**
+   * The product's sources (youi.project.json's include, exclude and tsconfig): when a button's line
+   * is inside a component the code uses in more than one place, file:line is where this one is used
+   * and that line is kept as `renderedBy` (scanner's WrapperIndex). Without it, the line as found.
+   */
+  readonly sources?: Omit<WrapperSources, "root">;
   /** Told how many popups this run tests, once they are found. */
   readonly onFound?: (count: number) => void;
   readonly now?: () => Date;
@@ -387,11 +393,12 @@ async function probeUnderClaim(options: ProbeBehaviourOptions, claim: RouteClaim
   const folder = options.componentsDir ? posix.normalize(options.componentsDir.replace(/\\/g, "/")).replace(/\/+$/, "") : null;
   const ownComponents = folder && folder !== "." && !folder.startsWith("..") ? (file: string): boolean => file === folder || file.startsWith(`${folder}/`) : null;
   // File and line, for display: fetched only from the consented origin (never a base that moved
-  // since, never another origin a frame names), no redirects, bounded in size and time. Each
-  // trigger's line is the first on its owner chain that no other trigger found here goes through
-  // (`distinct`): past a wrapper several share, to where this one is used, the wrapper's line kept.
+  // since, never another origin a frame names), no redirects, bounded in size and time. A line
+  // inside a component the code uses in more than one place moves one hop, to where this one is
+  // used, read from the source once per run (never from other triggers on the screen).
+  const wrappers = options.sources ? new WrapperIndex({ root: options.root, ...options.sources }) : null;
   const lines = await new LiveApp(options.root, spec.project)
-    .resolve(probe.targets.map((t) => ({ name: t.key.component ?? t.found.domPath, owner: null, frames: t.found.frames, box: t.found.box, depth: 0 })), { origin: consent.origin, distinct: true, ...(ownComponents ? { skip: ownComponents } : {}) })
+    .resolve(probe.targets.map((t) => ({ name: t.key.component ?? t.found.domPath, owner: null, frames: t.found.frames, box: t.found.box, depth: 0 })), { origin: consent.origin, ...(ownComponents ? { skip: ownComponents } : {}), ...(wrappers ? { promote: (first, rest) => wrappers.usage(first, rest) } : {}) })
     .catch(() => probe.targets.map(() => ({ file: null, line: null })));
   const runId = randomBytes(8).toString("hex");
   const at = now().toISOString();

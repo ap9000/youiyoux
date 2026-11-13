@@ -60,7 +60,7 @@ export class LiveApp {
    * The places' frames mapped to the product's files and lines. `origin` pins where scripts and maps
    * may be fetched from (a behaviour probe passes the origin it was consented for, so a base that
    * moves mid-run is never followed); without it, the origin of screens.json's base now. `skip` and
-   * `distinct` choose among a place's frames (resolvePlaces' ResolveChoice).
+   * `promote` choose among a place's frames (resolvePlaces' ResolveChoice).
    */
   async resolve(places: readonly RawPlace[], options: { readonly origin?: string } & ResolveChoice = {}): Promise<Place[]> {
     let origin: string;
@@ -84,7 +84,7 @@ export class LiveApp {
       return text !== null && text.length <= MAX_TEXT ? text : null;
     };
     if (this.maps.size > MAX_KEPT) this.maps.clear();
-    return resolvePlaces(places, fetchText, this.root, undefined, this.maps, { ...(options.skip ? { skip: options.skip } : {}), ...(options.distinct ? { distinct: true } : {}) });
+    return resolvePlaces(places, fetchText, this.root, undefined, this.maps, { ...(options.skip ? { skip: options.skip } : {}), ...(options.promote ? { promote: options.promote } : {}) });
   }
 
   /**

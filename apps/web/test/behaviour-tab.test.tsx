@@ -217,7 +217,7 @@ describe("where a popup's button is", () => {
     await screen.findByText(/Results from/);
     const lines = [...container.querySelectorAll<HTMLElement>("[data-behaviour-popup] code.ml-auto")].map((c) => [c.textContent, c.getAttribute("title")]);
     expect(lines).toEqual([
-      ["src/shell/NavRail.tsx:112 (rendered by src/shell/NavRail.tsx:65)", "Where this button is used. The wrapper that renders it, shared with other popups, is at src/shell/NavRail.tsx:65"],
+      ["src/shell/NavRail.tsx:112 (rendered by src/shell/NavRail.tsx:65)", "Where this button is used. The component that renders it, which your code uses in more than one place, is at src/shell/NavRail.tsx:65"],
       ["src/user-menu.tsx:12", null],
       ["src/ui/Button.tsx:1 (its own line)", "The component's own line: where the app renders it wasn't found"],
     ]);

@@ -140,7 +140,7 @@ function Popup({ results, onFiled }: { results: readonly BehaviourResultView[]; 
         </span>
         {t.component && <code className="font-mono text-mono-sm text-muted">{t.component}</code>}
         {t.file && t.line && (
-          <code className="ml-auto truncate font-mono text-mono-sm text-faint" {...(t.lineIs === "component" ? { title: "The component's own line: where the app renders it wasn't found" } : t.renderedBy ? { title: `Where this button is used. The wrapper that renders it, shared with other popups, is at ${t.renderedBy.file}:${t.renderedBy.line}` } : {})}>
+          <code className="ml-auto truncate font-mono text-mono-sm text-faint" {...(t.lineIs === "component" ? { title: "The component's own line: where the app renders it wasn't found" } : t.renderedBy ? { title: `Where this button is used. The component that renders it, which your code uses in more than one place, is at ${t.renderedBy.file}:${t.renderedBy.line}` } : {})}>
             {t.file}:{t.line}
             {t.lineIs === "component" && " (its own line)"}
             {t.renderedBy && ` (rendered by ${t.renderedBy.file}:${t.renderedBy.line})`}

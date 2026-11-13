@@ -74,10 +74,19 @@ export interface Place {
   /** The line is inside a skipped file (a component of the System's own): no frame where the app rendered it mapped. */
   readonly own?: true;
   /**
-   * With `distinct`: the line past which this one was chosen, the first of the app's own lines on
-   * the place's frames, which other places in the same call go through too (a wrapper's JSX).
+   * With `promote`: the line past which this one was chosen, the first of the app's own lines on
+   * the place's frames, inside a component the code uses in more than one place.
    */
   readonly renderedBy?: { readonly file: string; readonly line: number };
+}
+
+/** One of the project's lines a place's frames map to. */
+export interface PlaceLine {
+  readonly file: string;
+  readonly line: number;
+  readonly column: number;
+  /** In a skipped file (a component of the System's own): passed to `promote` in order, never shown. */
+  readonly skipped?: true;
 }
 
 /** How resolvePlaces picks a place's line among its frames. */
@@ -88,11 +97,11 @@ export interface ResolveChoice {
    */
   readonly skip?: (file: string) => boolean;
   /**
-   * Pass over the app's own lines that another place in the same call also goes through (the same
-   * file, line and column: one wrapper's JSX), to the first that is this place's alone, keeping the
-   * first as `renderedBy`. When every line is shared (a list's rows), the first, as without it.
+   * Given the place's first line of the app's own and the project's lines after it (nearest first,
+   * skipped ones included and marked), the line to show instead, or null to keep the first; the
+   * first is then kept as `renderedBy`. Only an unskipped line from `rest` is taken.
    */
-  readonly distinct?: boolean;
+  readonly promote?: (first: PlaceLine, rest: readonly PlaceLine[]) => Promise<PlaceLine | null>;
 }
 
 /** Components recorded per page, at most. */
@@ -376,7 +385,7 @@ export type SourceMapCache = Map<string, Promise<SourceMap | null>>;
  * served differently, so it is never answered from an old one.
  */
 export async function resolvePlaces(raw: readonly RawPlace[], fetchText: (url: string) => Promise<string | null>, root: string | null = null, notes: MapNotes = mapNotes(), cache?: SourceMapCache, choice: ResolveChoice = {}): Promise<Place[]> {
-  const { skip, distinct = false } = choice;
+  const { skip, promote } = choice;
   const maps = new Map<string, Promise<SourceMap | null>>();
   const mapFor = (url: string): Promise<SourceMap | null> => {
     const module = url.replace(/[?#].*$/, "");
@@ -403,16 +412,15 @@ export async function resolvePlaces(raw: readonly RawPlace[], fetchText: (url: s
     }
     return found;
   };
-  type Line = { readonly file: string; readonly line: number; readonly column: number };
-  const lineKey = (l: Line): string => JSON.stringify([l.file, l.line, l.column]);
-  const found = await Promise.all(
-    raw.map(async (place) => {
+  const lineKey = (l: PlaceLine): string => JSON.stringify([l.file, l.line, l.column]);
+  return Promise.all(
+    raw.map(async (place): Promise<Place> => {
       const base = { name: place.name, owner: place.owner, box: place.box, depth: place.depth, ...(place.html ? { html: place.html } : {}) };
-      // The app's own lines on the frames, nearest first: only the first unless `distinct` needs them all.
+      // The app's own lines on the frames, nearest first: only the first unless `promote` needs them all.
       // A frame in a skipped file (a component of the System's own) is passed over for the next, where
       // the app rendered it; only when nothing else maps is it used, marked `own`.
-      const lines: Line[] = [];
-      let own: Line | null = null;
+      const lines: PlaceLine[] = [];
+      let own: PlaceLine | null = null;
       for (const frame of place.frames) {
         const map = await mapFor(frame.url);
         const original = map ? originalPosition(map, frame.line, frame.column) : null;
@@ -420,32 +428,30 @@ export async function resolvePlaces(raw: readonly RawPlace[], fetchText: (url: s
         if (/(?:^|\/)node_modules\/|^webpack\/|^\(webpack\)/.test(original.source)) continue;
         const file = projectPath(original.source, frame.url, root);
         if (file && skip?.(file)) {
-          own ??= { file, line: original.line, column: original.column };
+          if (lines.length === 0) own ??= { file, line: original.line, column: original.column };
+          else if (promote) lines.push({ file, line: original.line, column: original.column, skipped: true });
           continue;
         }
         if (file) {
           const line = { file, line: original.line, column: original.column };
           if (!lines.some((l) => lineKey(l) === lineKey(line))) lines.push(line);
-          if (!distinct) break;
+          if (!promote) break;
           continue;
         }
         if (lines.length === 0) notes.outside.add(original.source);
       }
-      return { place, base, lines, own };
+      if (lines.length > 0) {
+        const first = lines[0]!;
+        const rest = lines.slice(1);
+        const up = promote ? await promote(first, rest).catch(() => null) : null;
+        // Belt and braces: only one of the place's own lines is ever shown.
+        const chosen = (up && !up.skipped && rest.find((l) => !l.skipped && lineKey(l) === lineKey(up))) || first;
+        return { ...base, file: chosen.file, line: chosen.line, column: chosen.column, ...(chosen !== first ? { renderedBy: { file: first.file, line: first.line } } : {}) };
+      }
+      if (own) return { ...base, ...own, own: true };
+      // No map: the served module's own path names the file, but not the line.
+      const unmapped = place.frames[0];
+      return { ...base, file: unmapped ? projectPath(unmapped.url.replace(/[?#].*$/, ""), unmapped.url, null) : null, line: null, column: null };
     }),
   );
-  // With `distinct`: how many places go through each line.
-  const sharedBy = new Map<string, number>();
-  if (distinct) for (const { lines } of found) for (const line of lines) sharedBy.set(lineKey(line), (sharedBy.get(lineKey(line)) ?? 0) + 1);
-  return found.map(({ place, base, lines, own }): Place => {
-    if (lines.length > 0) {
-      const chosen = (distinct ? lines.find((l) => sharedBy.get(lineKey(l)) === 1) : undefined) ?? lines[0]!;
-      const first = lines[0]!;
-      return { ...base, file: chosen.file, line: chosen.line, column: chosen.column, ...(chosen !== first ? { renderedBy: { file: first.file, line: first.line } } : {}) };
-    }
-    if (own) return { ...base, ...own, own: true };
-    // No map: the served module's own path names the file, but not the line.
-    const unmapped = place.frames[0];
-    return { ...base, file: unmapped ? projectPath(unmapped.url.replace(/[?#].*$/, ""), unmapped.url, null) : null, line: null, column: null };
-  });
 }

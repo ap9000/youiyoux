@@ -418,13 +418,13 @@ Runs are kept in `.youi/behaviour/<route-hash>.json`. `youiyoux check` reads the
 has run only when every route has a fresh, complete result, and a fresh failure counts as an error
 (or warning) like any violation, filtered by `--rule` and `--quiet`. A baseline never accepts a
 behaviour failure. `check --diff` lists fresh failures as `behaviour` findings, by popup (route,
-pattern, component, name), not by line. A popup's file:line is where your app renders its button:
-on React's owner chain, the first line outside the product's components folder that no other popup
-on the screen goes through. So a button from a wrapper several popups share (a rail or toolbar
-button component) points at the line that uses the wrapper for this popup, and the wrapper's own
-line is shown as "rendered by"; a button only one popup uses points at its own line, and when every
-line is shared (a list's rows) it is the first. Only when none maps is it the component's own line,
-and it says so. A screen that opened a socket as it loaded (a dev server's reload socket)
+pattern, component, name), not by line. A popup's file:line is where your app renders its button,
+the first line outside the product's components folder. If the button's line is inside a component
+your code uses in more than one place, the line is where this one is used, and the component's line
+is shown as "rendered by". Uses are read from your source (the include globs, through imports and
+aliases), never from what else is on the screen; when anything is uncertain (a file that doesn't
+parse cleanly, a use that can't be resolved) the line stays where the button is written. Only when
+none maps is it the component's own line, and it says so. A screen that opened a socket as it loaded (a dev server's reload socket)
 has that said once, as a note on the route, not on every result. In the hub, results show when they were made; an open
 Behaviour tab reads them again on focus and every 30 s.
 
