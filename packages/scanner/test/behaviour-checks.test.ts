@@ -192,6 +192,10 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
     "/ft-leaves-page": () => `<!doctype html><meta charset="utf-8"><title>fixture</title><body>${LOGGER}${modal({ id: "t9", open: FOCUS1("t9") })}</body>`,
     // A good trap whose last move (Shift+Tab from its second button) also changes the address.
     "/ft-last-moves": () => page(modal({ id: "t10", open: FOCUS1("t10"), body: "<button>One</button><button>Two</button><button>Three</button>", onKey: `${TRAP} if (event.key === 'Tab' && event.shiftKey && document.activeElement === this.querySelectorAll('button')[1]) history.pushState({}, '', '/ft-moved');` })),
+    // Tab orders youiyoux doesn't model: each is incomplete, never a verdict.
+    "/ft-positive": () => page(`<button data-log="trigger-n6" aria-haspopup="dialog" onclick="document.getElementById('n6').showModal()">Order</button><dialog id="n6"><button>One</button><button tabindex="2">Two</button><button>Three</button></dialog>`),
+    "/ft-radios": () => page(`<button data-log="trigger-n7" aria-haspopup="dialog" onclick="document.getElementById('n7').showModal()">Size</button><dialog id="n7"><label><input type="radio" name="s" checked> S</label><label><input type="radio" name="s"> M</label><button>OK</button></dialog>`),
+    "/ft-shadow": () => page(`<button data-log="trigger-n8" aria-haspopup="dialog" onclick="document.getElementById('n8').showModal()">Shadow</button><dialog id="n8"><button>One</button><span id="host"></span></dialog>`, "document.getElementById('host').attachShadow({ mode: 'open' }).innerHTML = '<button>Inside</button>';"),
     "/ft-swallows": () => page(modal({ id: "t3", open: FOCUS1("t3"), onKey: "if (event.key === 'Tab') event.preventDefault()" })),
     "/ft-wrong-wrap": () => page(modal({ id: "t4", open: FOCUS1("t4"), body: "<button>One</button><button>Two</button><button>Three</button>", onKey: TRAP.replace("t[0].focus()", "t[1].focus()") })),
     "/ft-zero": () => page(modal({ id: "t5", attrs: 'tabindex="-1"', body: "<p>Saved.</p>", open: "document.getElementById('t5').focus()", onKey: "if (event.key === 'Tab') event.preventDefault()" })),
@@ -416,6 +420,10 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
       expect(logged("click").slice(clicks)).toEqual(["trigger-r1", "trigger-r1", "trigger-r1"]);
     }, 60_000);
   });
+
+  test("focus-trap doesn't guess a Tab order it doesn't model: positive tabindex, a shadow root or radio buttons are incomplete, and no key is sent", async () => {
+    for (const [path, what] of [["/ft-positive", "positive tabindex"], ["/ft-shadow", "a shadow root"], ["/ft-radios", "radio buttons"]] as const) expect(await one(path, "focus-trap"), path).toMatchObject({ state: "incomplete", why: `this dialog's tab order uses ${what}, which youiyoux doesn't model yet`, keys: [] });
+  }, 60_000);
 
   describe("focus-into", () => {
     test("a menu passes when the app moves focus to an item (at once or 300 ms later); container focus, or focus left on the button, fails, and the probe never places focus itself", async () => {

@@ -240,7 +240,7 @@ const tabbableWords = (t: { readonly role: string; readonly name: string } | und
  * there); the order is still checked. Focus leaving the dialog, Tab that doesn't move it, or a
  * wrong next element fails. Each key goes only after consent is read again and the very dialog
  * (still showing, focus inside) is checked again. Not modal, a popup open inside it, a frame, a
- * radio group with nothing chosen, more than MAX_TRAP_TABBABLES elements, or focus landing on
+ * Tab order it doesn't model (positive tabindex, a shadow root, radio buttons), more than MAX_TRAP_TABBABLES elements, or focus landing on
  * something not counted as tabbable: incomplete, never guessed.
  */
 export async function focusTrap(page: ProbePage, opened: Opened, args: CheckArgs): Promise<ScenarioOutcome> {
@@ -251,7 +251,7 @@ export async function focusTrap(page: ProbePage, opened: Opened, args: CheckArgs
   if (!first.modal) return ctx.incomplete({ why: 'the dialog it opened isn\'t modal (a <dialog> shown with show() or the open attribute, or role="dialog" without aria-modal="true"), so focus isn\'t held inside it', fix: 'Next: if it should be modal, open it with showModal(), or give it aria-modal="true" and keep focus inside; a dialog that isn\'t modal isn\'t checked for a focus trap.' });
   if (first.nested) return ctx.incomplete({ why: `a ${roleWord(first.nested)} is open inside the dialog, so the focus trap can't be judged`, fix: "Next: open the dialog with nothing else open inside it, then run youiyoux behave again." });
   if (first.frame) return ctx.incomplete({ why: "the dialog holds a frame; Tab order through frames isn't checked yet", fix: "Next: check Tab and Shift+Tab in this dialog by hand." });
-  if (first.radio) return ctx.incomplete({ why: "the dialog has a radio group with nothing chosen, whose Tab stop depends on the direction; that isn't checked yet", fix: "Next: choose one radio button by default, or check Tab in this dialog by hand." });
+  if (first.unmodelled) return ctx.incomplete({ why: `this dialog's tab order uses ${first.unmodelled}, which youiyoux doesn't model yet`, fix: "Next: check Tab and Shift+Tab in this dialog by hand." });
   const n = first.tabbables.length;
   if (n > MAX_TRAP_TABBABLES) return ctx.incomplete({ why: `the dialog has ${n} focusable elements; focus-trap checks dialogs with up to ${MAX_TRAP_TABBABLES}`, fix: "Next: check Tab and Shift+Tab in this dialog by hand." });
   const placed = await page.trapPlace();

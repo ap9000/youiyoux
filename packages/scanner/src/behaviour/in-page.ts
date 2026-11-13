@@ -99,7 +99,7 @@ export type TrapAt = { readonly kind: "tabbable"; readonly i: number } | { reado
 /**
  * A modal dialog's focus facts (focus-trap): whether it is modal (a native <dialog> shown with
  * showModal(), or role dialog/alertdialog with aria-modal="true"), what would stop the check (a
- * popup open inside it, a frame, a radio group with nothing chosen), its tabbable elements in Tab
+ * popup open inside it, a frame, a Tab order it doesn't model), its tabbable elements in Tab
  * order (role and name, for the words), where focus is, and whether that list changed since the
  * first look.
  */
@@ -108,7 +108,8 @@ export interface TrapFacts {
   readonly modal: "native" | "aria" | null;
   readonly nested: string | null;
   readonly frame: boolean;
-  readonly radio: boolean;
+  /** What makes the dialog's Tab order something youiyoux doesn't model yet, if anything. */
+  readonly unmodelled: "positive tabindex" | "a shadow root" | "radio buttons" | null;
   readonly tabbables: ReadonlyArray<{ readonly role: string; readonly name: string }>;
   readonly at: TrapAt;
   readonly stale: boolean;
@@ -324,33 +325,31 @@ export function isolatedLibrary(): void {
   /** Tab can reach it: connected, rendered and visible, not inert. (aria-hidden doesn't take an element out of Tab order.) */
   const reachable = (element: Element): boolean => element.isConnected && (element as HTMLElement).checkVisibility?.({ visibilityProperty: true }) !== false && ![element, ...ancestors(element)].some((e) => e.hasAttribute("inert"));
   /**
-   * The elements inside `root` (shadow roots included) Tab moves through, in Tab order (positive
-   * tabindex first, then document order); a frame inside, or a named radio group with nothing
-   * chosen (whose Tab stop depends on the direction), is reported instead of guessed.
+   * The elements inside `root` Tab moves through, in document order. What would make that order a
+   * guess is reported instead of modelled (`unmodelled`): a positive tabindex anywhere inside (it
+   * reorders Tab across the page), a shadow root holding something focusable (slots and
+   * delegatesFocus change the order), radio buttons (a group is one Tab stop, chosen by state and
+   * direction). A frame inside is reported too.
    */
-  const tabbablesIn = (root: Element): { list: Element[]; frame: boolean; radio: boolean } => {
-    const found: Element[] = [];
-    const collect = (node: Element | ShadowRoot): void => {
+  const tabbablesIn = (root: Element): { list: Element[]; frame: boolean; unmodelled: "positive tabindex" | "a shadow root" | "radio buttons" | null } => {
+    const list: Element[] = [];
+    let positive = false;
+    let shadow = false;
+    let radio = false;
+    const collect = (node: Element | ShadowRoot, inShadow: boolean): void => {
       for (const element of node.querySelectorAll("*")) {
-        if (element.matches(TABBABLE) && !element.matches(":disabled") && !(element.localName === "input" && (element as HTMLInputElement).type === "hidden") && (element as HTMLElement).tabIndex >= 0 && reachable(element)) found.push(element);
-        if (element.shadowRoot) collect(element.shadowRoot);
+        if (element.hasAttribute("tabindex") && (element as HTMLElement).tabIndex > 0) positive = true;
+        if (element.matches(TABBABLE) && !element.matches(":disabled") && !(element.localName === "input" && (element as HTMLInputElement).type === "hidden") && (element as HTMLElement).tabIndex >= 0 && reachable(element)) {
+          list.push(element);
+          if (inShadow) shadow = true;
+          if (element.localName === "input" && (element as HTMLInputElement).type === "radio") radio = true;
+        }
+        if (element.shadowRoot) collect(element.shadowRoot, true);
       }
     };
-    collect(root);
-    if (root.shadowRoot) collect(root.shadowRoot);
-    let radio = false;
-    const groups = new Map<string, HTMLInputElement[]>();
-    for (const element of found) if (element.localName === "input" && (element as HTMLInputElement).type === "radio" && (element as HTMLInputElement).name) groups.set((element as HTMLInputElement).name, [...(groups.get((element as HTMLInputElement).name) ?? []), element as HTMLInputElement]);
-    const dropped = new Set<Element>();
-    for (const group of groups.values()) {
-      if (group.length < 2) continue;
-      const checked = group.find((r) => r.checked);
-      if (!checked) radio = true;
-      for (const r of group) if (r !== checked) dropped.add(r);
-    }
-    const list = found.filter((element) => !dropped.has(element));
-    const positive = list.filter((element) => (element as HTMLElement).tabIndex > 0).sort((a, b) => (a as HTMLElement).tabIndex - (b as HTMLElement).tabIndex);
-    return { list: [...positive, ...list.filter((element) => (element as HTMLElement).tabIndex === 0)], frame: list.some((element) => element.localName === "iframe"), radio };
+    collect(root, false);
+    if (root.shadowRoot) collect(root.shadowRoot, true);
+    return { list, frame: list.some((element) => element.localName === "iframe"), unmodelled: positive ? "positive tabindex" : shadow ? "a shadow root" : radio ? "radio buttons" : null };
   };
   /** The popup identified: the element itself, its id and its role, to judge it (and anything replacing it) later. */
   const remember = (popup: Element): void => {
@@ -529,12 +528,12 @@ export function isolatedLibrary(): void {
      */
     trap(wanted: { readonly first: boolean }): TrapFacts {
       const popup = state.popup;
-      const none: TrapFacts = { open: false, modal: null, nested: null, frame: false, radio: false, tabbables: [], at: { kind: "outside", role: "none", name: "" }, stale: false };
+      const none: TrapFacts = { open: false, modal: null, nested: null, frame: false, unmodelled: null, tabbables: [], at: { kind: "outside", role: "none", name: "" }, stale: false };
       if (!popup) return none;
       const open = popup.isConnected && shown(popup);
       const modal = popup.localName === "dialog" ? (popup.matches(":modal") ? "native" : null) : (popup.getAttribute("role") === "dialog" || popup.getAttribute("role") === "alertdialog") && popup.getAttribute("aria-modal") === "true" ? "aria" : null;
       const nestedEl = [...popup.querySelectorAll(POPUP)].find((element) => element.getAttribute("role") !== "tooltip" && shown(element));
-      const { list, frame, radio } = tabbablesIn(popup);
+      const { list, frame, unmodelled } = tabbablesIn(popup);
       if (wanted.first) state.tabbables = list;
       const stale = list.length !== state.tabbables.length || list.some((element, i) => element !== state.tabbables[i]);
       const of = (element: Element | null): { role: string; name: string } => ({ role: element ? (element.getAttribute("role") ?? element.localName) : "none", name: element ? accessibleName(element) : "" });
@@ -547,7 +546,7 @@ export function isolatedLibrary(): void {
       else if (focused === popup) at = { kind: "popup", ...of(focused) };
       else if (focused && ancestors(focused).includes(popup)) at = { kind: "inside", ...of(focused) };
       else at = { kind: "outside", ...of(focused) };
-      return { open, modal, nested: nestedEl ? (nestedEl.getAttribute("role") ?? nestedEl.localName) : null, frame, radio, tabbables: state.tabbables.map((element) => of(element)), at, stale };
+      return { open, modal, nested: nestedEl ? (nestedEl.getAttribute("role") ?? nestedEl.localName) : null, frame, unmodelled, tabbables: state.tabbables.map((element) => of(element)), at, stale };
     },
     /**
      * Focus on one of the dialog's tabbable elements before Tab is pressed: where the app put it is
