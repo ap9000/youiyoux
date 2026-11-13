@@ -403,7 +403,11 @@ the probe can't tell is *incomplete*, never a pass.
 - `focus-return` (menu, modal dialog, popover): after Esc closes it, focus is back on its button (or
   the contract's `returnFocusTo` part); a button gone with nothing declared is incomplete.
 - `focus-trap` (modal dialog): Tab and Shift+Tab visit each focusable element in order and wrap (up
-  to 20); a native `showModal()` dialog keeps focus in by itself, its order still checked.
+  to 20); a native `showModal()` dialog keeps focus in by itself, its order still checked. Where
+  focus is, is the element that has it (Tab moves it), whatever `aria-activedescendant` names. A
+  popup showing inside the dialog at any moment of the check makes it incomplete, and so does a
+  listbox always showing inside it (a command palette's list): youiyoux can't tell that from a
+  popup opened inside, so check Tab in such a dialog by hand.
 - `arrow-keys` (vertical menu, combobox): every move of the list, both ways and at both ends, is
   pressed and seen: ArrowDown and ArrowUp move to the next and previous item (aria-activedescendant,
   on a combobox or a menu, must name one); disabled items may take focus or be skipped, and wrapping

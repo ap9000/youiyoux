@@ -121,6 +121,19 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
   const FOCUS1 = (id: string) => `document.getElementById('${id}').querySelector('button').focus()`;
   /** A hand-made trap: Tab from the last button to the first, Shift+Tab from the first to the last. */
   const TRAP = "if (event.key === 'Tab') { const t = [...this.querySelectorAll('button')]; const i = t.indexOf(document.activeElement); if (!event.shiftKey && i === t.length - 1) { event.preventDefault(); t[0].focus(); } else if (event.shiftKey && i === 0) { event.preventDefault(); t[t.length - 1].focus(); } }";
+  /** The same trap over text fields and buttons. */
+  const TRAP_FIELDS = TRAP.replace("querySelectorAll('button')", "querySelectorAll('input,button')");
+  /** On the dialog's first Tab only, runs `js` (`this` is the dialog). */
+  const FIRST_TAB = (js: string) => `if (event.key === 'Tab' && !this.dataset.tabbed) { this.dataset.tabbed = '1'; ${js} }`;
+  /**
+   * A command palette (as cmdk renders one): a combobox that is always expanded, naming the active
+   * option with aria-activedescendant, over a listbox always showing inside the dialog, and a Close button.
+   */
+  const PALETTE = (id: string) =>
+    `<input id="${id}-cb" role="combobox" aria-label="Command palette" aria-controls="${id}-list" aria-expanded="true" aria-activedescendant="${id}-o1"><ul role="listbox" id="${id}-list" tabindex="-1"><li role="option" id="${id}-o1">Button</li><li role="option" id="${id}-o2">Card</li></ul><button>Close</button>`;
+  /** A combobox inside a dialog whose listbox opens when it gets focus and closes when it loses it. */
+  const ON_FOCUS = (id: string) =>
+    `<button>One</button><input id="${id}-cb" role="combobox" aria-label="Fruit" aria-expanded="false" aria-controls="${id}-list" onfocus="${attr(`document.getElementById('${id}-list').hidden=false;this.setAttribute('aria-expanded','true')`)}" onblur="${attr(`document.getElementById('${id}-list').hidden=true;this.setAttribute('aria-expanded','false')`)}"><ul role="listbox" id="${id}-list" hidden><li role="option">Apple</li></ul>`;
   /** Roving focus in a menu: arrows move focus among its items; `o` makes it stay at the ends, land on disabled items, or jump by two. */
   const ROVE = `window.rove = (id, o = {}) => document.getElementById(id).addEventListener("keydown", (e) => {
       const items = [...document.getElementById(id).querySelectorAll("[role^=menuitem]")].filter((el) => o.disabledToo || el.getAttribute("aria-disabled") !== "true");
@@ -223,6 +236,27 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
     "/ft-one": () => page(modal({ id: "t7", open: FOCUS1("t7"), body: "<button>OK</button>", onKey: TRAP })),
     "/ft-not-modal": () => page(`<button data-log="trigger-n5" aria-haspopup="dialog" aria-controls="n5" onclick="document.getElementById('n5').show()">Notes</button><dialog id="n5"><button>One</button><button>Two</button></dialog>`),
     "/ft-nested": () => page(modal({ id: "t8", open: FOCUS1("t8"), body: '<button>One</button><ul role="menu"><li role="menuitem" tabindex="-1">Open inside</li></ul>', onKey: TRAP })),
+    // A listbox showing inside the dialog as it opens: a command palette's own list (with a good trap), one its combobox's focus opened, one the click opened, a native popover.
+    "/ft-palette": () => page(modal({ id: "t12", open: "document.getElementById('t12-cb').focus()", body: PALETTE("t12"), onKey: TRAP_FIELDS })),
+    "/ft-focus-opens-listbox": () => page(modal({ id: "t16", open: "document.getElementById('t16-cb').focus()", body: ON_FOCUS("t16"), onKey: TRAP_FIELDS })),
+    "/ft-click-opens-listbox": () =>
+      page(modal({ id: "t18", open: "const cb = document.getElementById('t18-cb'); document.getElementById('t18-list').hidden = false; cb.setAttribute('aria-expanded', 'true'); cb.focus()", body: `<input id="t18-cb" role="combobox" aria-label="Fruit" aria-expanded="false" aria-controls="t18-list" onkeydown="${attr("if (event.key === 'Tab' && this.getAttribute('aria-expanded') === 'true') event.preventDefault()")}"><ul role="listbox" id="t18-list" hidden><li role="option">Apple</li></ul>` })),
+    "/ft-popover-listbox": () => page(modal({ id: "t17", open: `${FOCUS1("t17")};document.getElementById('t17-pl').showPopover()`, body: '<button>One</button><button>Two</button><ul role="listbox" popover="manual" id="t17-pl"><li role="option">Apple</li></ul>', onKey: TRAP })),
+    // Popups opened inside the dialog while Tab moves: a listbox (or a menu) that opens when Tab reaches its combobox (or button), and a menu the first Tab shows for 55 ms.
+    "/ft-tab-opens-listbox": () => page(modal({ id: "t14", open: FOCUS1("t14"), body: ON_FOCUS("t14"), onKey: TRAP_FIELDS })),
+    "/ft-tab-opens-menu": () =>
+      page(modal({ id: "t15", open: FOCUS1("t15"), body: `<button>One</button><button aria-haspopup="menu" aria-controls="t15-m" onfocus="${attr("document.getElementById('t15-m').hidden=false")}">More</button><ul role="menu" id="t15-m" hidden><li role="menuitem" tabindex="-1">Rename</li></ul>`, onKey: TRAP })),
+    "/ft-flash-menu": () =>
+      page(modal({ id: "t21", open: FOCUS1("t21"), body: '<button>One</button><button>Two</button><ul role="menu" id="t21-m" hidden><li role="menuitem" tabindex="-1">Rename</li></ul>', onKey: `${FIRST_TAB("const m = document.getElementById('t21-m'); m.hidden = false; setTimeout(() => (m.hidden = true), 55);")} ${TRAP}` })),
+    // A combobox inside the dialog that swallows Tab and instead flips aria-activedescendant between nothing and the dialog's button: DOM focus never moves.
+    "/ft-activedescendant-swallows": () =>
+      page(modal({ id: "t19", open: "document.getElementById('t19-cb').focus()", body: `<input id="t19-cb" role="combobox" aria-label="Find" aria-expanded="false" aria-controls="t19" aria-activedescendant="t19-b" onkeydown="${attr("if (event.key === 'Tab') { event.preventDefault(); if (this.hasAttribute('aria-activedescendant')) this.removeAttribute('aria-activedescendant'); else this.setAttribute('aria-activedescendant', 't19-b'); }")}"><button id="t19-b">Done</button>` })),
+    // Something outside the dialog names the dialog's buttons with aria-activedescendant (aria-controls naming the dialog) and swaps them on Tab: DOM focus never enters the dialog.
+    "/ft-outside-names-inside": () =>
+      page(
+        `<div role="listbox" tabindex="0" aria-label="Outside" aria-controls="t20" aria-activedescendant="t20-a" onkeydown="${attr("if (event.key === 'Tab') { event.preventDefault(); this.setAttribute('aria-activedescendant', this.getAttribute('aria-activedescendant') === 't20-a' ? 't20-b' : 't20-a'); }")}"></div>` +
+          modal({ id: "t20", open: "document.querySelector('[aria-label=Outside]').focus()", body: '<button id="t20-a">A</button><button id="t20-b">B</button>' }),
+      ),
     // arrow-keys
     "/ak-menu": () => arrowMenu("a1", 'rove("a1")'),
     // A good roving menu whose Home (information only, pressed last) also sends a POST.
@@ -442,6 +476,26 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
       expect(await one("/ft-not-modal", "focus-trap")).toMatchObject({ state: "incomplete", why: expect.stringMatching(/^the dialog it opened isn't modal/), keys: [] });
       expect(await one("/ft-nested", "focus-trap")).toMatchObject({ state: "incomplete", why: "a menu is open inside the dialog, so the focus trap can't be judged", keys: [] });
       for (const path of ["/ts-menu", "/ts-combobox", "/ts-popover"]) expect(await one(path, "focus-trap"), path).toMatchObject({ state: "not-applicable" });
+    }, 60_000);
+
+    test("a listbox showing inside the dialog as it opens is incomplete, a command palette's own list included (it can't be told from a popup), and no key is sent", async () => {
+      const LISTBOX = "a listbox is showing inside the dialog, so the focus trap can't be judged: youiyoux can't tell a list that is part of the dialog (a command palette's, say) from a popup opened inside it";
+      for (const path of ["/ft-palette", "/ft-focus-opens-listbox", "/ft-click-opens-listbox", "/ft-popover-listbox"])
+        expect.soft(await one(path, "focus-trap"), path).toMatchObject({ state: "incomplete", why: LISTBOX, fix: "Next: check Tab and Shift+Tab in this dialog by hand: focus should stay inside it, moving through its focusable elements in order and wrapping round.", keys: [] });
+    }, 90_000);
+
+    test("a popup that opens inside the dialog while Tab moves is incomplete, even one that shows only for a moment before focus settles", async () => {
+      expect.soft(await one("/ft-tab-opens-listbox", "focus-trap")).toMatchObject({ state: "incomplete", why: "after Tab, a listbox was open inside the dialog, so the focus trap can't be judged", keys: ["Tab"] });
+      expect.soft(await one("/ft-tab-opens-menu", "focus-trap")).toMatchObject({ state: "incomplete", why: "after Tab, a menu was open inside the dialog, so the focus trap can't be judged", keys: ["Tab"] });
+      expect.soft(await one("/ft-flash-menu", "focus-trap")).toMatchObject({ state: "incomplete", why: "after Tab, a menu was open inside the dialog, so the focus trap can't be judged", keys: ["Tab"] });
+    }, 90_000);
+
+    test("where focus is, is DOM focus: aria-activedescendant, on an element outside the dialog or a combobox inside it, never stands for where focus is", async () => {
+      const outside = await one("/ft-outside-names-inside", "focus-trap");
+      expect(outside).toMatchObject({ state: "failed", why: "Tab from the button 'B' moved focus out of the dialog (to a button 'After' outside the dialog)" });
+      expect(outside.info).toContain("focus wasn't on a focusable element of the dialog after it opened; the probe moved it to the first before pressing Tab");
+      // Inside too: Tab that never moves DOM focus fails, whatever aria-activedescendant names after it.
+      expect(await one("/ft-activedescendant-swallows", "focus-trap")).toMatchObject({ state: "failed", why: "Tab didn't move focus: it stayed on the combobox 'Find'", keys: ["Tab"] });
     }, 60_000);
 
     test("consent is read again before every key: switched off after the first Tab, no further key is sent", async () => {

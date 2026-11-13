@@ -104,7 +104,7 @@ export interface ReturnFacts {
   readonly name: string;
 }
 
-/** Where effective focus is against a dialog's tabbable elements (focus-trap). */
+/** Where DOM focus is against a dialog's tabbable elements (focus-trap: Tab moves DOM focus, whatever aria-activedescendant names). */
 export type TrapAt = { readonly kind: "tabbable"; readonly i: number } | { readonly kind: "popup" | "inside" | "body" | "away" | "outside"; readonly role: string; readonly name: string };
 
 /**
@@ -639,14 +639,14 @@ export function isolatedLibrary(): void {
       const stale = list.length !== state.tabbables.length || list.some((element, i) => element !== state.tabbables[i]);
       const of = (element: Element | null): { role: string; name: string } => ({ role: element ? (element.getAttribute("role") ?? element.localName) : "none", name: element ? accessibleName(element) : "" });
       let at: TrapAt;
+      // DOM focus only: Tab moves it, and what aria-activedescendant or aria-controls say never puts it inside the dialog.
       const active = deepActive();
-      const focused = effectiveFocus() ?? active;
       if (!document.hasFocus()) at = { kind: "away", ...of(null) };
       else if (!active || active === document.body || active === document.documentElement) at = { kind: "body", ...of(active) };
-      else if (focused && state.tabbables.includes(focused)) at = { kind: "tabbable", i: state.tabbables.indexOf(focused) };
-      else if (focused === popup) at = { kind: "popup", ...of(focused) };
-      else if (focused && ancestors(focused).includes(popup)) at = { kind: "inside", ...of(focused) };
-      else at = { kind: "outside", ...of(focused) };
+      else if (state.tabbables.includes(active)) at = { kind: "tabbable", i: state.tabbables.indexOf(active) };
+      else if (active === popup) at = { kind: "popup", ...of(active) };
+      else if (ancestors(active).includes(popup)) at = { kind: "inside", ...of(active) };
+      else at = { kind: "outside", ...of(active) };
       return { open, modal, nested: nestedEl ? (nestedEl.getAttribute("role") ?? nestedEl.localName) : null, frame, unmodelled, tabbables: state.tabbables.map((element) => of(element)), at, stale };
     },
     /**
@@ -656,8 +656,9 @@ export function isolatedLibrary(): void {
     trapPlace(): FocusPlaced {
       const popup = state.popup;
       if (!popup || !popup.isConnected) return { ok: false };
+      // As trap() reads it: DOM focus only, whatever aria-activedescendant names.
       const placed = (): boolean => {
-        const at = effectiveFocus();
+        const at = deepActive();
         return state.tabbables.length > 0 ? !!at && state.tabbables.includes(at) : !!at && (at === popup || ancestors(at).includes(popup));
       };
       if (placed()) return { ok: true, moved: false };
@@ -720,11 +721,16 @@ export function isolatedLibrary(): void {
      * Immediately before a key: the very popup identified (the same element, never one found again)
      * is still connected and showing, and effective focus is still inside it (or on the combobox).
      */
-    ready(wanted: { readonly index: number; readonly pattern: Pattern; readonly away?: boolean }): boolean {
+    ready(wanted: { readonly index: number; readonly pattern: Pattern; readonly away?: boolean; readonly dom?: boolean }): boolean {
       const trigger = state.elements[wanted.index];
       const popup = state.popup;
+      // dom (focus-trap): DOM focus itself inside the popup, whatever aria-activedescendant names.
+      const domInside = (): boolean => {
+        const at = deepActive();
+        return !!at && !!popup && (at === popup || ancestors(at).includes(popup));
+      };
       // away: the key goes while focus is in the browser's own toolbar (a native modal's Tab wraps through it).
-      const ok = !!trigger && !!popup && popup.isConnected && shown(popup) && (focusPlaced(trigger, popup, wanted.pattern) || (wanted.away === true && !document.hasFocus()));
+      const ok = !!trigger && !!popup && popup.isConnected && shown(popup) && ((wanted.dom === true ? domInside() : focusPlaced(trigger, popup, wanted.pattern)) || (wanted.away === true && !document.hasFocus()));
       // What of its kind shows at the moment the key goes (or would go): anything showing later is new.
       if (ok) state.atKey = all().filter((element) => ofKind(element, wanted.pattern) && shown(element));
       return ok;

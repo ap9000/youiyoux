@@ -45,9 +45,10 @@ export interface ProbePage {
   placeFocus(index: number, pattern: BehaviourPattern): Promise<FocusPlaced>;
   /**
    * The very popup identified is still connected and showing, with effective focus inside it (or on
-   * the combobox); with `away`, focus may instead be in the browser's own toolbar (a native modal's Tab wraps through it).
+   * the combobox; with `dom`, DOM focus itself, whatever aria-activedescendant names); with `away`,
+   * focus may instead be in the browser's own toolbar (a native modal's Tab wraps through it).
    */
-  ready(index: number, pattern: BehaviourPattern, away?: boolean): Promise<boolean>;
+  ready(index: number, pattern: BehaviourPattern, away?: boolean, dom?: boolean): Promise<boolean>;
   /** The identified dialog's focus-trap facts; `first` fixes the tabbable list later looks are held to. */
   trap(first: boolean): Promise<TrapFacts>;
   /** The identified menu's or listbox's items and where effective focus is among them; `first` fixes the items later looks are held to. */

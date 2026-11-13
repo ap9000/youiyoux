@@ -512,8 +512,8 @@ class PlaywrightProbePage implements ProbePage {
     return this.bound((await this.worlds()).call<FocusPlaced>("placeFocus", { index, pattern }));
   }
 
-  async ready(index: number, pattern: BehaviourPattern, away = false): Promise<boolean> {
-    return this.bound((await this.worlds()).call<boolean>("ready", { index, pattern, away }));
+  async ready(index: number, pattern: BehaviourPattern, away = false, dom = false): Promise<boolean> {
+    return this.bound((await this.worlds()).call<boolean>("ready", { index, pattern, away, dom }));
   }
 
   async trap(first: boolean): Promise<TrapFacts> {
