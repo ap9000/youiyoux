@@ -377,3 +377,33 @@ Accepted residuals:
 5. Component names and source frames are read from the page's main world and can be forged: identity and display
    only, never what may be clicked.
 6. https dev servers are refused (the fence can't see inside a tunnel).
+
+## Slice 2 review record (2026-11-12)
+
+Codex code review: round 1 NO-GO (7 findings), round 2 NO-GO (5 closed: losing a relationship read as closed,
+stored completeness trusted, contract bindings outside the key, consent read before focus, an empty denominator
+passing; 2 partial; 3 new). All fixed with regression tests, each shown to fail without its fix (file reverts or
+one-line mutations):
+
+- Focus can close the popup: a pre-key recheck of the very popup and focus, plus a **control** scenario (the same
+  steps, no key, the popup watched for the close budget); a dismiss-escape pass stands only when the control kept it
+  open. A passing dismiss-escape costs two scenarios, so the route budget went from 90 s to 150 s.
+- Closed is judged on the identified element; a hidden or removed popup is reconciled by identity (id and role, or
+  the contract part) and by anything new of its kind since the key; never closed by default.
+- Integrity: each run stores its targets; a rule counts on a route only with one result per target and
+  `not-applicable` only where the pattern table says so; failures that stand on their own still count.
+- Freshness: the contract-bindings digest; the app fingerprint over the project's files (git, or a bounded walk),
+  every lockfile and install-state file up to the repository's top, installed direct dependencies and
+  `behaviour.inputs`; an enumeration that can't be the whole app makes it incomplete, so nothing is fresh.
+- Consent is read after focus is placed, immediately before the key; behave refuses with no screens; the no-consent
+  words name the screens.json edit (the hub's switch arrives with slice 4).
+- The screens.json lock race test covers an empty and a dead holder on every runner (a start barrier), not by timing.
+
+Accepted residuals:
+
+1. Environment variables set outside files aren't part of the fingerprint.
+2. Hand edits inside node_modules aren't tracked (installed versions and the install state are).
+3. One CDP round trip between the last pre-key check (popup, focus, consent) and the Escape press; a page timer
+   could change things in it (as for the click, slice 1 residual 1).
+4. A deliberate forgery of `.youi/` by a process on the same account is out of scope: freshness proves inputs,
+   integrity proves completeness, neither proves authenticity.
