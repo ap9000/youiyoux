@@ -289,6 +289,9 @@ export async function focusTrap(page: ProbePage, opened: Opened, args: CheckArgs
       const refused = await press(key, away);
       if (refused) return ctx.incomplete(refused);
       const now = await look((f) => f.at.kind === "popup" || f.at.kind === "inside");
+      // After every key, before anything is decided from it: what the guards refused, and where the page is.
+      const stop = await ctx.stopped();
+      if (stop) return ctx.incomplete(stop);
       if (!now.open) return ctx.incomplete(closedStop);
       if (now.at.kind === "popup" || now.at.kind === "inside") continue;
       if (native && now.at.kind === "away") {
@@ -299,7 +302,7 @@ export async function focusTrap(page: ProbePage, opened: Opened, args: CheckArgs
       return ctx.decided("failed", { why: `${key} moved focus out of the dialog (to ${focusWords({ at: now.at.kind, role: now.at.role, name: now.at.name }, "dialog")}); with nothing focusable inside, the dialog itself should keep focus`, fix: TRAP_FIX });
     }
     if (native) ctx.extra.push("a native <dialog> shown with showModal(): the browser keeps focus inside it (Tab passes through its own toolbar)");
-    return ctx.decided("passed", { why: "with nothing focusable inside, the dialog kept focus on Tab and Shift+Tab", fix: "Nothing to do: focus stays inside the dialog." });
+    return ctx.pass({ why: "with nothing focusable inside, the dialog kept focus on Tab and Shift+Tab", fix: "Nothing to do: focus stays inside the dialog." });
   }
   if (start.at.kind !== "tabbable") return ctx.incomplete(changed);
   let k = start.at.i;
@@ -318,6 +321,9 @@ export async function focusTrap(page: ProbePage, opened: Opened, args: CheckArgs
         if (refused) return ctx.incomplete(refused);
         now = await look(arrived);
       }
+      // After every key, before anything is decided from it: what the guards refused, and where the page is.
+      const stop = await ctx.stopped();
+      if (stop) return ctx.incomplete(stop);
       if (!now.open) return ctx.incomplete(closedStop);
       if (now.stale) return ctx.incomplete(staleStop);
       if (arrived(now)) {
@@ -333,7 +339,7 @@ export async function focusTrap(page: ProbePage, opened: Opened, args: CheckArgs
     }
   }
   if (native) ctx.extra.push("a native <dialog> shown with showModal(): the browser keeps focus inside it (at the ends Tab passes through its own toolbar); the order was checked");
-  return ctx.decided("passed", { why: n === 1 ? "Tab and Shift+Tab kept focus on the dialog's only focusable element" : `Tab and Shift+Tab stayed inside the dialog, visiting its ${n} focusable elements in order and wrapping round`, fix: "Nothing to do: focus stays inside the dialog." });
+  return ctx.pass({ why: n === 1 ? "Tab and Shift+Tab kept focus on the dialog's only focusable element" : `Tab and Shift+Tab stayed inside the dialog, visiting its ${n} focusable elements in order and wrapping round`, fix: "Nothing to do: focus stays inside the dialog." });
 }
 
 /** arrow-keys presses each arrow at most this many times (a longer list has its first moves each way checked, its ends not reached). */
@@ -421,6 +427,9 @@ export async function arrowKeys(page: ProbePage, opened: Opened, args: CheckArgs
     const refused = await press(key);
     if (refused) return { outcome: ctx.incomplete(refused) };
     const now = await look((f) => f.at.kind === "item" && (expected === null ? f.at.i === round || f.at.i === from : f.at.i === expected));
+    // After every key, before anything is decided from it: what the guards refused, and where the page is.
+    const stop = await ctx.stopped();
+    if (stop) return { outcome: ctx.incomplete(stop) };
     if (!now.open) return { outcome: ctx.incomplete(closedStop) };
     if (now.stale) return { outcome: ctx.incomplete(staleStop) };
     if (now.at.kind === "item" && expected !== null && now.at.i === expected) return { to: expected, end: null };
@@ -459,9 +468,11 @@ export async function arrowKeys(page: ProbePage, opened: Opened, args: CheckArgs
       }
       if (refused) return ctx.incomplete(refused);
       const now = await look((f) => f.at.kind === "item" && (wanted as readonly number[]).includes(f.at.i));
+      const stop = await ctx.stopped();
+      if (stop) return ctx.incomplete(stop);
       const yes = now.open && now.at.kind === "item" && (wanted as readonly number[]).includes(now.at.i);
       ctx.extra.push(`${key} moves to the ${key === "End" ? "last" : "first"} ${itemNoun}: ${yes ? "yes" : "no"}`);
     }
   }
-  return ctx.decided("passed", { why: `ArrowDown and ArrowUp moved through the ${noun}'s ${n} enabled ${itemNoun}${n === 1 ? "" : "s"} in order${enabledAt.length < first.items.length ? ", skipping the disabled ones" : ""}`, fix: "Nothing to do: arrow keys move through it." });
+  return ctx.pass({ why: `ArrowDown and ArrowUp moved through the ${noun}'s ${n} enabled ${itemNoun}${n === 1 ? "" : "s"} in order${enabledAt.length < first.items.length ? ", skipping the disabled ones" : ""}`, fix: "Nothing to do: arrow keys move through it." });
 }

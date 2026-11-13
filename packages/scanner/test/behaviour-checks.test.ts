@@ -190,6 +190,8 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
     "/ft-no-trap": () => page(modal({ id: "t2", open: FOCUS1("t2") })),
     // Last on the page, no trap: Tab from its last button leaves the page for the browser's toolbar (accepted only for a native modal).
     "/ft-leaves-page": () => `<!doctype html><meta charset="utf-8"><title>fixture</title><body>${LOGGER}${modal({ id: "t9", open: FOCUS1("t9") })}</body>`,
+    // A good trap whose last move (Shift+Tab from its second button) also changes the address.
+    "/ft-last-moves": () => page(modal({ id: "t10", open: FOCUS1("t10"), body: "<button>One</button><button>Two</button><button>Three</button>", onKey: `${TRAP} if (event.key === 'Tab' && event.shiftKey && document.activeElement === this.querySelectorAll('button')[1]) history.pushState({}, '', '/ft-moved');` })),
     "/ft-swallows": () => page(modal({ id: "t3", open: FOCUS1("t3"), onKey: "if (event.key === 'Tab') event.preventDefault()" })),
     "/ft-wrong-wrap": () => page(modal({ id: "t4", open: FOCUS1("t4"), body: "<button>One</button><button>Two</button><button>Three</button>", onKey: TRAP.replace("t[0].focus()", "t[1].focus()") })),
     "/ft-zero": () => page(modal({ id: "t5", attrs: 'tabindex="-1"', body: "<p>Saved.</p>", open: "document.getElementById('t5').focus()", onKey: "if (event.key === 'Tab') event.preventDefault()" })),
@@ -199,6 +201,8 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
     "/ft-nested": () => page(modal({ id: "t8", open: FOCUS1("t8"), body: '<button>One</button><ul role="menu"><li role="menuitem" tabindex="-1">Open inside</li></ul>', onKey: TRAP })),
     // arrow-keys
     "/ak-menu": () => arrowMenu("a1", 'rove("a1")'),
+    // A good roving menu whose Home (information only, pressed last) also sends a POST.
+    "/ak-home-posts": () => arrowMenu("a7", `rove("a7"); document.getElementById("a7").addEventListener("keydown", (e) => { if (e.key === "Home") fetch("/api/home", { method: "POST", body: "x" }).catch(() => {}); });`),
     "/ak-menu-stays": () => arrowMenu("a2", 'rove("a2", { stay: true })'),
     "/ak-menu-to-disabled": () => arrowMenu("a3", 'rove("a3", { disabledToo: true })'),
     "/ak-menu-skips": () => arrowMenu("a4", 'rove("a4", { step: 2 })'),
@@ -294,6 +298,15 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
       await page.wait(300);
     });
     expect(logged("key").slice(keys)).toEqual(["Escape"]);
+  }, 60_000);
+
+  test("after every key, what the guards saw decides first: a last Shift+Tab that changes the address is incomplete, never passed", async () => {
+    expect(await one("/ft-last-moves", "focus-trap")).toMatchObject({ state: "incomplete", why: expect.stringMatching(/^the page's address changed to \/ft-moved/) });
+  }, 60_000);
+
+  test("after every key, what the guards saw decides first: a Home (information only, last) that sends a POST is incomplete, never passed", async () => {
+    expect(await one("/ak-home-posts", "arrow-keys")).toMatchObject({ state: "incomplete", why: "the page tried to send a POST to /api/home; nothing was sent" });
+    expect(requests.filter((r) => r.path === "/api/home")).toEqual([]);
   }, 60_000);
 
   describe("arrow-keys", () => {

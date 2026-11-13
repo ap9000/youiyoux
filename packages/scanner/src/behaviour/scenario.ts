@@ -332,6 +332,15 @@ export function checkContext(page: ProbePage, opened: Extract<ScenarioOutcome, {
     stopped,
     incomplete: (stop: Stop): ScenarioOutcome => ({ state: "incomplete", ...stop, info: info(), dataBlocked: dataBlocked() }),
     decided: (state: "passed" | "failed", stop: Stop): ScenarioOutcome => ({ state, popup: opened.popup, ...stop, info: info(), dataBlocked: dataBlocked() }),
+    /**
+     * A pass, but only once the page has been watched for the grace moment after the last key and
+     * nothing was refused and the address didn't change: otherwise incomplete.
+     */
+    async pass(stop: Stop): Promise<ScenarioOutcome> {
+      await page.wait(Math.max(0, Math.min(args.budgets.graceMs, args.deadline() - Date.now())));
+      const after = await stopped();
+      return after ? { state: "incomplete", ...after, info: info(), dataBlocked: dataBlocked() } : { state: "passed", popup: opened.popup, ...stop, info: info(), dataBlocked: dataBlocked() };
+    },
     /** Wait `ms`, never past the scenario's deadline. */
     settle: (ms: number): Promise<void> => page.wait(Math.max(0, Math.min(ms, args.deadline() - Date.now()))),
     /**
