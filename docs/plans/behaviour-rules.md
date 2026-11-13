@@ -501,7 +501,7 @@ Residuals:
 6. `youiyoux behave` still computes the fingerprint once up front (one refusal before any browser
    opens when it can't be whole), then again per route.
 
-## Slice 5 review record (2026-11-12)
+## Slice 5 review record (2026-11-12, residuals accepted by Alex)
 
 Built: `youiyoux rules add` offers starter rules and `rules add behaviour` adds the six as warnings
 (never automatically); the hub's own System adopts them; docs (commands.md "Behaviour checks",
