@@ -380,9 +380,10 @@ From a small React app with an account menu that loses focus on Esc (abridged):
 ```text
 /invoices
   2 popup triggers found by ARIA markers. Popups without these markers were not assessed; opening is by mouse click only (keyboard opening isn't verified yet).
-  ✓ passed  dialog 'Invite people' (src/components/ui/button.tsx:29)  focus-trap (behaviour.focus-trap)  Tab and Shift+Tab stayed inside the dialog, visiting its 3 focusable elements in order and wrapping round
-  ✓ passed  menu 'Account' (src/components/ui/button.tsx:29)  dismiss-escape (behaviour.dismiss-escape)  Esc closed the menu
-  ✖ failed (warning)  menu 'Account' (src/components/ui/button.tsx:29)  focus-return (behaviour.focus-return)  when Esc closed the menu, focus went to the page's body (nothing), not to the button that opened it
+  Note: while the screen loaded, the page tried to open a WebSocket or tunnel to 127.0.0.1:5292; it was blocked (a dev server's reload socket, often); every popup here was tested without it
+  ✓ passed  dialog 'Invite people' (src/InviteDialog.tsx:9)  focus-trap (behaviour.focus-trap)  Tab and Shift+Tab stayed inside the dialog, visiting its 3 focusable elements in order and wrapping round
+  ✓ passed  menu 'Account' (src/AccountMenu.tsx:23)  dismiss-escape (behaviour.dismiss-escape)  Esc closed the menu
+  ✖ failed (warning)  menu 'Account' (src/AccountMenu.tsx:23)  focus-return (behaviour.focus-return)  when Esc closed the menu, focus went to the page's body (nothing), not to the button that opened it
       → When the menu closes with Esc, move focus back to the button that opened it.
 
 ✓ 0 errors · 1 warning

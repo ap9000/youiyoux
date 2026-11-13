@@ -500,3 +500,58 @@ Residuals:
    (slice 2 residual 4).
 6. `youiyoux behave` still computes the fingerprint once up front (one refusal before any browser
    opens when it can't be whole), then again per route.
+
+## Slice 5 review record (2026-11-12)
+
+Built: `youiyoux rules add` offers starter rules and `rules add behaviour` adds the six as warnings
+(never automatically); the hub's own System adopts them; docs (commands.md "Behaviour checks",
+agents.md "Checking popups: ui_behave", the README use case with a real run); behaviour-processes
+tests made independent.
+
+Codex code review round 1: NO-GO, 6 findings, all fixed with regression tests, each shown to fail
+with its fix mutated or reverted:
+
+1. (HIGH) `rules add` could replace a rule made between its check and its write: writers now take
+   turns under `<rules>/.youi-rules.lock` (core's file lock), ids are read again from disk inside
+   it, and each file is published by link (never renamed over a name); a name taken meanwhile is
+   kept and said so.
+2. (HIGH) A git source was resolved (fetched, cached) before being refused: the source is now told
+   from the config, `--design` and the link before anything resolves; package and git sources are
+   refused with nothing fetched or written, `--dry-run` too.
+3. (MEDIUM) commands.md promised late focus is incomplete: it now says focus that never settles is
+   can't tell, and focus that moves later than the probe waits may be missed.
+4. (MEDIUM) trigger-state's words overstated the check: they now say, per pattern, what
+   `judgeTriggerState` decides (a test holds them to it); the hub's copies regenerated.
+5. (MEDIUM) dismiss-escape's words now say only an auto popover closes on Esc by itself.
+6. (LOW) llms.txt names the MCP tools that write.
+
+The dogfood run's findings, fixed in the probe and the hub:
+
+- D1: the hub's Radix dialogs get `aria-modal="true"` and the rail buttons that open them
+  `aria-haspopup="dialog"`, so the probe finds them.
+- D2: a button's file:line is the first frame outside the product's componentsDir (React's owner
+  chain), not the component's own line; that line only when nothing else maps, stored as
+  `target.lineIs: "component"` and said so.
+- D3: names are joined as a browser joins them (block parts stay apart, aria-hidden left out).
+- D4: Home/End info is "couldn't tell" when focus was already where the key would take it.
+- D5: a socket refused while the screen loaded is one route note (`notes` on the run), not an info
+  line on every result; a socket the click opens stays on its result.
+- D7: a button with `aria-expanded` and `aria-controls` is a popover only when it controls a native
+  popover, a menu, a listbox or a dialog; a disclosure is not a target.
+
+Dogfood results after the fixes (hub dev server, demo snapshot): the "More for Button" menu passes
+all five menu checks (at `src/screens/element/ComponentPage.tsx:136`); each rail dialog (Connect your
+agent, Search, Keyboard shortcuts) passes dismiss-escape and focus-into; Connect your agent and
+Keyboard shortcuts pass focus-trap; Search's focus-trap is incomplete (cmdk's always-visible listbox
+reads as a nested popup); **all three fail focus-return** (focus goes to the body after Esc, also by
+keyboard in a hand check): a real hub bug, not fixed in this slice.
+
+Follow-ups (not in this slice):
+
+1. The hub's rail dialogs don't return focus to their button on close (focus-return fails).
+2. A listbox that is part of a dialog (cmdk's command list) reads as a nested popup, so focus-trap
+   can't be judged for the command palette.
+3. The scanner can't fully parse `apps/web/src/screens/element/ComponentPage.tsx` and
+   `apps/web/src/screens/screens/Offers.tsx`, so `youiyoux check` on the hub's own source is partial.
+4. A trigger rendered by an app-level wrapper outside componentsDir (the hub's RailButton) points at
+   that wrapper's line, not where the wrapper is used.
