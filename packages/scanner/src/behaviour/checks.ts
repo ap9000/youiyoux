@@ -7,7 +7,7 @@
  * passes without positive evidence: anything that can't be told is incomplete, with why.
  */
 import { ariaToken, pageText, roleWord, type BehaviourPattern, type PartRef } from "@youiyoux/core";
-import type { FocusFacts, TrapFacts, TriggerFacts } from "./in-page.ts";
+import type { FocusFacts, ItemFacts, TrapFacts, TriggerFacts } from "./in-page.ts";
 import { checkContext, escapeUntilClosed, POPUP_NOUN, type CheckArgs, type ProbePage, type ScenarioOutcome, type Stop } from "./scenario.ts";
 
 type Opened = Extract<ScenarioOutcome, { state: "opened" }>;
@@ -326,4 +326,134 @@ export async function focusTrap(page: ProbePage, opened: Opened, args: CheckArgs
   }
   if (native) ctx.extra.push("a native <dialog> shown with showModal(): the browser keeps focus inside it (at the ends Tab passes through its own toolbar); the order was checked");
   return ctx.decided("passed", { why: n === 1 ? "Tab and Shift+Tab kept focus on the dialog's only focusable element" : `Tab and Shift+Tab stayed inside the dialog, visiting its ${n} focusable elements in order and wrapping round`, fix: "Nothing to do: focus stays inside the dialog." });
+}
+
+/** arrow-keys presses each arrow at most this many times (a longer list has its first moves each way checked, its ends not reached). */
+export const MAX_ARROW_PRESSES = 20;
+
+const ARROW_FIX: Partial<Record<BehaviourPattern, string>> = {
+  "menu-button": 'Move focus with ArrowDown and ArrowUp to the next and previous enabled menu item (tabindex="-1" on each item, focus() the next), skipping disabled items; at the ends, wrap round or stay.',
+  "combobox-listbox": "On ArrowDown and ArrowUp, set aria-activedescendant on the combobox to the id of the next or previous enabled option inside its listbox, skipping options marked aria-disabled; at the ends, wrap round or stay.",
+};
+
+/**
+ * arrow-keys (a vertical menu, a combobox's listbox): effective focus (aria-activedescendant
+ * resolved: it must name an element that exists and belongs to the widget) on an item; ArrowDown
+ * pressed until the last enabled item and once more, then ArrowUp back to the first and once more:
+ * each press must move to the next (previous) enabled item in document order; at the ends both
+ * wrapping round and staying are accepted, and info says which. Not moving, moving to a disabled
+ * item, to the wrong item, to nothing (a dangling aria-activedescendant) or out of the widget fails.
+ * Home and End are then tried for information only. Horizontal (aria-orientation): incomplete,
+ * "not checked yet". Presses are bounded (MAX_ARROW_PRESSES each way). Each key goes only after
+ * consent is read again and the very popup (still showing, focus on it or on the combobox) is
+ * checked again.
+ */
+export async function arrowKeys(page: ProbePage, opened: Opened, args: CheckArgs): Promise<ScenarioOutcome> {
+  const { pattern } = args;
+  const noun = POPUP_NOUN[pattern];
+  const menu = pattern === "menu-button";
+  const itemNoun = menu ? "menu item" : "option";
+  const ctx = checkContext(page, opened, args);
+  const first = await page.items(opened.index, pattern, true);
+  if (!first.open) return ctx.incomplete({ why: `the ${noun} closed before arrow keys could be pressed`, fix: `Next: keep the ${noun} open until it is dismissed, then run youiyoux behave again.` });
+  if (first.orientation === "horizontal") return ctx.incomplete({ why: menu ? "horizontal menus not checked yet" : "horizontal listboxes not checked yet", fix: "Next: check ArrowLeft and ArrowRight in it by hand; youiyoux checks vertical ones." });
+  const enabledAt = first.items.flatMap((item, i) => (item.enabled ? [i] : []));
+  if (enabledAt.length === 0) return ctx.incomplete({ why: `the ${noun} has no enabled ${itemNoun}s to move through`, fix: `Next: probe it with at least one enabled ${itemNoun}.` });
+  const placed = menu ? await page.itemPlace() : await page.placeFocus(opened.index, pattern);
+  if (!placed.ok) return ctx.incomplete({ why: menu ? "focus couldn't be placed on a menu item, so no arrow key was pressed" : "focus couldn't be kept on the combobox, so no arrow key was pressed", fix: menu ? 'Next: make the menu items focusable (tabindex="-1" on each), then run youiyoux behave again.' : "Next: keep focus on the combobox while its listbox is open, then run youiyoux behave again." });
+  if (placed.moved) ctx.extra.push(menu ? "focus wasn't on a menu item after the menu opened; the probe moved it to the first enabled item before pressing arrow keys" : "focus had left the combobox when the listbox opened; the probe put it back before pressing arrow keys");
+  await ctx.settle(PLACE_SETTLE_MS);
+  const name = (i: number): string => (i < 0 ? "the combobox (no option active)" : `the ${itemNoun} ${pageText(first.items[i]?.name)}`);
+  const changed = { why: `focus left the ${noun}, or it closed or was replaced, before the next arrow key; not tested`, fix: `Next: keep the ${noun} open, with focus in it, while arrow keys move through it, then run youiyoux behave again.` };
+  const press = async (key: "ArrowDown" | "ArrowUp" | "Home" | "End") => {
+    const refused = await ctx.beforeKey(() => page.ready(opened.index, pattern), changed);
+    if (refused) return refused;
+    await page.press(key);
+    return null;
+  };
+  const look = async (want: (facts: ItemFacts) => boolean): Promise<ItemFacts> => {
+    const pressed = Date.now();
+    await ctx.settle(KEY_FIRST_LOOK_MS);
+    for (;;) {
+      const facts = await page.items(opened.index, pattern, false);
+      if (want(facts) || Date.now() - pressed >= KEY_LAND_MS || args.deadline() <= Date.now()) return facts;
+      await ctx.settle(25);
+    }
+  };
+  const start = await page.items(opened.index, pattern, false);
+  if (start.stale) return ctx.incomplete({ why: `the ${noun}'s ${itemNoun}s changed before arrow keys were pressed`, fix: `Next: keep the ${noun}'s contents steady while it is open, then run youiyoux behave again.` });
+  let a: number;
+  if (start.at.kind === "item") a = start.at.i;
+  else if (start.at.kind === "combobox") a = -1;
+  else return ctx.incomplete(changed);
+  const nextOf = (from: number): number | null => enabledAt.find((e) => e > from) ?? null;
+  const prevOf = (from: number): number | null => [...enabledAt].reverse().find((e) => e < from) ?? null;
+  const firstEnabled = enabledAt[0]!;
+  const lastEnabled = enabledAt[enabledAt.length - 1]!;
+  /** Why a key that should have gone to `expected` (or, at an end, wrapped or stayed) didn't: a failure, or incomplete when it can't be told. */
+  const wrong = (key: string, from: number, expected: number | null, now: ItemFacts): ScenarioOutcome => {
+    const at = now.at;
+    const target = expected === null ? `round to ${name(key === "ArrowDown" ? firstEnabled : lastEnabled)} or staying on ${name(from)}` : `to ${name(expected)} (the ${key === "ArrowDown" ? "next" : "previous"} enabled ${itemNoun})`;
+    if (at.kind === "inside") return ctx.incomplete({ why: `${key} moved focus to something inside the ${noun} that isn't one of its ${itemNoun}s, so it can't be judged`, fix: `Next: check ${key} in this ${noun} by hand.` });
+    const fix = ARROW_FIX[pattern] ?? "";
+    if (at.kind === "item" && at.i === from) return ctx.decided("failed", { why: `${key} didn't move from ${name(from)}`, fix });
+    if (at.kind === "item" && !first.items[at.i]?.enabled) return ctx.decided("failed", { why: `${key} moved to ${name(at.i)}, which is disabled; disabled ${itemNoun}s are skipped`, fix });
+    if (at.kind === "item") return ctx.decided("failed", { why: `${key} from ${name(from)} went to ${name(at.i)}, not ${target}`, fix });
+    if (at.kind === "combobox") return ctx.decided("failed", { why: from < 0 ? `${key} didn't make any option active` : `${key} left no option active (aria-activedescendant was cleared)`, fix });
+    if (at.kind === "dangling") return ctx.decided("failed", { why: at.why === "missing" ? `${key} set aria-activedescendant to an id that isn't on the page` : `${key} set aria-activedescendant to an element outside the ${noun}`, fix });
+    if (at.kind === "popup") return ctx.decided("failed", { why: `${key} moved focus off the ${itemNoun}s, to the ${noun} itself`, fix });
+    return ctx.decided("failed", { why: `${key} moved focus out of the ${noun} (to ${focusWords({ at: at.kind, role: at.role, name: at.name }, noun)})`, fix });
+  };
+  const closedStop = { why: `the ${noun} closed when an arrow key was pressed, so arrow keys can't be judged`, fix: `Next: keep the ${noun} open while arrow keys move through it, then run youiyoux behave again.` };
+  const staleStop = { why: `the ${noun}'s ${itemNoun}s changed while arrow keys were pressed, so the order can't be judged`, fix: `Next: keep the ${noun}'s contents steady while arrow keys move through it, then run youiyoux behave again.` };
+  /** One arrow, judged: the new position, or a result that ends the check. */
+  const step = async (key: "ArrowDown" | "ArrowUp", from: number): Promise<{ readonly to: number; readonly end: "wraps" | "stays" | null } | { readonly outcome: ScenarioOutcome }> => {
+    const expected = key === "ArrowDown" ? nextOf(from) : prevOf(from);
+    const round = key === "ArrowDown" ? firstEnabled : lastEnabled;
+    const refused = await press(key);
+    if (refused) return { outcome: ctx.incomplete(refused) };
+    const now = await look((f) => f.at.kind === "item" && (expected === null ? f.at.i === round || f.at.i === from : f.at.i === expected));
+    if (!now.open) return { outcome: ctx.incomplete(closedStop) };
+    if (now.stale) return { outcome: ctx.incomplete(staleStop) };
+    if (now.at.kind === "item" && expected !== null && now.at.i === expected) return { to: expected, end: null };
+    if (now.at.kind === "item" && expected === null && now.at.i === round && round !== from) return { to: round, end: "wraps" };
+    if (now.at.kind === "item" && expected === null && now.at.i === from) return { to: from, end: "stays" };
+    return { outcome: wrong(key, from, expected, now) };
+  };
+  const n = enabledAt.length;
+  let bottom: "wraps" | "stays" | null = null;
+  for (let presses = 0; presses < MAX_ARROW_PRESSES && bottom === null; presses++) {
+    const moved = await step("ArrowDown", a);
+    if ("outcome" in moved) return moved.outcome;
+    a = moved.to;
+    bottom = moved.end;
+  }
+  let top: "wraps" | "stays" | null = null;
+  for (let presses = 0; presses < MAX_ARROW_PRESSES; presses++) {
+    const moved = await step("ArrowUp", a);
+    if ("outcome" in moved) return moved.outcome;
+    a = moved.to;
+    top ??= moved.end;
+    if (top !== null && (moved.end === "stays" || presses + 1 >= n)) break;
+  }
+  if (n === 1) ctx.extra.push(`with one enabled ${itemNoun}, ArrowDown and ArrowUp keep focus on it`);
+  else {
+    ctx.extra.push(bottom === null ? `the ${noun} has more ${itemNoun}s than the ${MAX_ARROW_PRESSES} arrow presses each way checked, so what happens at its ends wasn't seen` : `at the last enabled ${itemNoun}, ArrowDown ${bottom === "wraps" ? "wraps round to the first" : "stays on it"}`);
+    if (top !== null) ctx.extra.push(`at the first enabled ${itemNoun}, ArrowUp ${top === "wraps" ? "wraps round to the last" : "stays on it"}`);
+  }
+  // Home and End: information only (APG makes them optional for a listbox), never a failure.
+  if (n >= 2) {
+    for (const [key, wanted] of [["End", [first.items.length - 1, lastEnabled]], ["Home", [0, firstEnabled]]] as const) {
+      const refused = await press(key);
+      if (refused === changed) {
+        ctx.extra.push(`${key} wasn't tried: the ${noun} closed or focus left it`);
+        break;
+      }
+      if (refused) return ctx.incomplete(refused);
+      const now = await look((f) => f.at.kind === "item" && (wanted as readonly number[]).includes(f.at.i));
+      const yes = now.open && now.at.kind === "item" && (wanted as readonly number[]).includes(now.at.i);
+      ctx.extra.push(`${key} moves to the ${key === "End" ? "last" : "first"} ${itemNoun}: ${yes ? "yes" : "no"}`);
+    }
+  }
+  return ctx.decided("passed", { why: `ArrowDown and ArrowUp moved through the ${noun}'s ${n} enabled ${itemNoun}${n === 1 ? "" : "s"} in order${enabledAt.length < first.items.length ? ", skipping the disabled ones" : ""}`, fix: "Nothing to do: arrow keys move through it." });
 }

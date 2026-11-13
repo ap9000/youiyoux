@@ -7,7 +7,7 @@
 import { cleanText, pageText, type BehaviourCheckId, type BehaviourPattern, type PartRef } from "@youiyoux/core";
 import { describeUrl, SIGN_IN_FIX, SIGN_IN_PATH, SIGN_IN_WORDS } from "./guards.ts";
 import { ambiguousWords, matchTarget, type TargetKey } from "./identity.ts";
-import type { FocusFacts, FocusPlaced, FoundTarget, PopupFound, ReturnFacts, TrapFacts, TriggerFacts } from "./in-page.ts";
+import type { FocusFacts, FocusPlaced, FoundTarget, ItemFacts, PopupFound, ReturnFacts, TrapFacts, TriggerFacts } from "./in-page.ts";
 
 /** What the guards refused (or, for sockets, blocked) while a page was open, and when. */
 export interface GuardEvent {
@@ -50,6 +50,10 @@ export interface ProbePage {
   ready(index: number, pattern: BehaviourPattern, away?: boolean): Promise<boolean>;
   /** The identified dialog's focus-trap facts; `first` fixes the tabbable list later looks are held to. */
   trap(first: boolean): Promise<TrapFacts>;
+  /** The identified menu's or listbox's items and where effective focus is among them; `first` fixes the items later looks are held to. */
+  items(index: number, pattern: BehaviourPattern, first: boolean): Promise<ItemFacts>;
+  /** A menu's effective focus on one of its items (kept where the app put it, else focus() on the first enabled one). */
+  itemPlace(): Promise<FocusPlaced>;
   /** Focus on one of the dialog's tabbable elements (kept where the app put it, else focus() on the first; with none, the dialog itself). */
   trapPlace(): Promise<FocusPlaced>;
   /** The identified popup's state, judged on that element (a removed one reconciled by identity); unknown is never closed. */
@@ -66,11 +70,11 @@ export interface ProbePage {
 }
 
 /**
- * The only keys a probe may send, in this youiyoux: Escape (dismiss-escape, focus-return), Tab and
- * Shift+Tab (focus-trap). The plan's other safe keys (arrows, Home, End) are added with the check
- * that needs them; Enter, Space and typing never are.
+ * The only keys a probe may send (the plan's safe keys): Escape (dismiss-escape, focus-return), Tab
+ * and Shift+Tab (focus-trap), ArrowDown, ArrowUp, Home and End (arrow-keys). Enter, Space and
+ * typing never are.
  */
-export const SAFE_KEYS = ["Escape", "Tab", "Shift+Tab"] as const;
+export const SAFE_KEYS = ["Escape", "Tab", "Shift+Tab", "ArrowDown", "ArrowUp", "Home", "End"] as const;
 export type SafeKey = (typeof SAFE_KEYS)[number];
 
 /**
@@ -84,7 +88,7 @@ export const CHECK_KEYS: Readonly<Record<BehaviourCheckId, readonly SafeKey[]>> 
   "focus-into": [],
   "focus-return": ["Escape"],
   "focus-trap": ["Tab", "Shift+Tab"],
-  "arrow-keys": [],
+  "arrow-keys": ["ArrowDown", "ArrowUp", "Home", "End"],
 };
 
 /** Refuses any key that isn't a safe key, or (with `allowed`) one the page's check doesn't send, before anything is sent. */

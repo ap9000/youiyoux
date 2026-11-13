@@ -114,6 +114,29 @@ export interface TrapFacts {
   readonly stale: boolean;
 }
 
+/** Where effective focus is against a menu's or listbox's items (arrow-keys). */
+export type ItemAt =
+  | { readonly kind: "item"; readonly i: number }
+  /** DOM focus on the combobox with no active option. */
+  | { readonly kind: "combobox" }
+  /** aria-activedescendant names an id that isn't on the page, or an element outside the widget. */
+  | { readonly kind: "dangling"; readonly why: "missing" | "outside" }
+  | { readonly kind: "popup" | "inside" | "body" | "away" | "outside"; readonly role: string; readonly name: string };
+
+/**
+ * A menu's or listbox's arrow-key facts: its orientation, its top-level items in document order
+ * (menu items for a menu, options for a listbox; each enabled or not, with its name for the words),
+ * where effective focus is (aria-activedescendant resolved), and whether the items changed since
+ * the first look.
+ */
+export interface ItemFacts {
+  readonly open: boolean;
+  readonly orientation: "vertical" | "horizontal";
+  readonly items: ReadonlyArray<{ readonly enabled: boolean; readonly name: string }>;
+  readonly at: ItemAt;
+  readonly stale: boolean;
+}
+
 /** Whether effective focus is where a key is sent from: already there, moved there by the probe (focus(), never a click or a key), or not placeable. */
 export type FocusPlaced = { readonly ok: true; readonly moved: boolean } | { readonly ok: false };
 
@@ -132,7 +155,7 @@ export function isolatedLibrary(): void {
   type Pattern = "menu-button" | "combobox-listbox" | "modal-dialog" | "popover";
   const ROLE: Record<Pattern, string> = { "menu-button": '[role="menu"]', "combobox-listbox": '[role="listbox"]', "modal-dialog": 'dialog,[role="dialog"],[role="alertdialog"]', popover: "[popover]" };
   const POPUP = '[role="menu"],[role="listbox"],[role="dialog"],[role="alertdialog"],[role="tooltip"],dialog,[popover]';
-  const state = { tabbables: [] as Element[], elements: [] as Element[], before: [] as Element[], clicked: null as EventTarget | null, watching: false, popup: null as Element | null, popupId: null as string | null, popupRole: null as string | null, atKey: [] as Element[] };
+  const state = { items: [] as Element[], tabbables: [] as Element[], elements: [] as Element[], before: [] as Element[], clicked: null as EventTarget | null, watching: false, popup: null as Element | null, popupId: null as string | null, popupRole: null as string | null, atKey: [] as Element[] };
   const all = (): Element[] => {
     const out: Element[] = [];
     const collect = (root: Document | ShadowRoot): void => {
@@ -540,6 +563,54 @@ export function isolatedLibrary(): void {
       if (placed()) return { ok: true, moved: false };
       ((state.tabbables[0] ?? popup) as HTMLElement).focus?.({ preventScroll: true });
       return placed() ? { ok: true, moved: true } : { ok: false };
+    },
+    /**
+     * The identified menu's or listbox's arrow-key facts (ItemFacts). `first`: this look's items are
+     * the ones later looks are held to (any change since is `stale`).
+     */
+    items(wanted: { readonly index: number; readonly pattern: Pattern; readonly first: boolean }): ItemFacts {
+      const trigger = state.elements[wanted.index];
+      const popup = state.popup;
+      const none: ItemFacts = { open: false, orientation: "vertical", items: [], at: { kind: "outside", role: "none", name: "" }, stale: false };
+      if (!popup || !trigger) return none;
+      const open = popup.isConnected && shown(popup);
+      const menu = wanted.pattern === "menu-button";
+      const roles = menu ? ["menuitem", "menuitemradio", "menuitemcheckbox"] : ["option"];
+      const owners = menu ? ["menu", "menubar"] : ["listbox"];
+      // Top-level only: an item whose nearest menu (or listbox) is this popup, not a submenu inside it.
+      const list = [...popup.querySelectorAll("[role]")].filter((element) => roles.includes(element.getAttribute("role") ?? "") && shown(element) && ancestors(element).find((a) => owners.includes(a.getAttribute("role") ?? "")) === popup);
+      if (wanted.first) state.items = list;
+      const stale = list.length !== state.items.length || list.some((element, i) => element !== state.items[i]);
+      const of = (element: Element | null): { role: string; name: string } => ({ role: element ? (element.getAttribute("role") ?? element.localName) : "none", name: element ? accessibleName(element) : "" });
+      const where = (element: Element): ItemAt => {
+        if (state.items.includes(element)) return { kind: "item", i: state.items.indexOf(element) };
+        if (element === popup) return { kind: "popup", ...of(element) };
+        if (ancestors(element).includes(popup)) return { kind: "inside", ...of(element) };
+        return { kind: "outside", ...of(element) };
+      };
+      let at: ItemAt;
+      const active = deepActive();
+      const id = active?.getAttribute("aria-activedescendant") ?? "";
+      if (!document.hasFocus()) at = { kind: "away", ...of(null) };
+      else if (!active || active === document.body || active === document.documentElement) at = { kind: "body", ...of(active) };
+      else if ((active.getAttribute("role") === "combobox" || active.getAttribute("role") === "listbox") && id.trim()) {
+        const named = byId(active, id.trim());
+        const controls = active.getAttribute("aria-controls");
+        const owned = controls ? byId(active, controls.split(/\s+/)[0]!) : null;
+        const belongs = !!named && (named === active || ancestors(named).includes(active) || (!!owned && (named === owned || ancestors(named).includes(owned))));
+        at = !named ? { kind: "dangling", why: "missing" } : !belongs ? { kind: "dangling", why: "outside" } : where(named);
+      } else if (active === trigger && !menu) at = { kind: "combobox" };
+      else at = where(active);
+      return { open, orientation: popup.getAttribute("aria-orientation") === "horizontal" ? "horizontal" : "vertical", items: state.items.map((element) => ({ enabled: enabled(element), name: accessibleName(element) })), at, stale };
+    },
+    /** A menu's effective focus on one of its items before arrow keys: kept where the app put it, else focus() on the first enabled item. */
+    itemPlace(): FocusPlaced {
+      const at = effectiveFocus();
+      if (at && state.items.includes(at)) return { ok: true, moved: false };
+      const first = state.items.find((element) => enabled(element));
+      (first as HTMLElement | undefined)?.focus?.({ preventScroll: true });
+      const now = effectiveFocus();
+      return now && state.items.includes(now) ? { ok: true, moved: true } : { ok: false };
     },
     /** Where effective focus is now, against the trigger and the popup identified last; nothing is moved. */
     focus(wanted: { readonly index: number }): FocusFacts {

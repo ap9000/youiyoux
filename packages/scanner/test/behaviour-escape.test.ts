@@ -27,8 +27,8 @@ test.runIf(GATE && !HAVE_CHROMIUM)("security gate: dismiss-escape's browser test
 
 describe("safe keys", () => {
   test("only the safe keys a check needs may be sent: Enter, Space, typing and anything else are refused before anything is sent", () => {
-    for (const key of ["Escape", "Tab", "Shift+Tab"]) expect(() => assertSafeKey(key), key).not.toThrow();
-    for (const key of ["Enter", " ", "Space", "ArrowDown", "a", "escape", "Shift+Enter"]) expect(() => assertSafeKey(key), key).toThrow(/sends only Escape, Tab, Shift\+Tab/);
+    for (const key of ["Escape", "Tab", "Shift+Tab", "ArrowDown", "ArrowUp", "Home", "End"]) expect(() => assertSafeKey(key), key).not.toThrow();
+    for (const key of ["Enter", " ", "Space", "ArrowLeft", "a", "escape", "Shift+Enter", "PageDown"]) expect(() => assertSafeKey(key), key).toThrow(/sends only Escape, Tab, Shift\+Tab, ArrowDown, ArrowUp, Home, End;/);
   });
 });
 
@@ -190,22 +190,22 @@ describe.skipIf(!HAVE_CHROMIUM)("dismiss-escape in a real browser", () => {
     expect(seen("/api/closed")).toEqual([]);
   }, 60_000);
 
-  test("the only key ever sent is one Escape per decided scenario, and only triggers are clicked", async () => {
+  test("each check's scenario sends only its own keys (one Escape for dismiss-escape and focus-return), and only triggers are clicked", async () => {
     const keys = logged("key").length;
     const clicks = logged("click").length;
     const result = await probe("/menu-ignores", { checks: ["dismiss-escape", "focus-return", "focus-into", "arrow-keys", "trigger-state"] });
-    // dismiss-escape, focus-return (one Escape each), trigger-state and focus-into (no key) are decided; the others open the menu and stop there.
+    // Every check is decided: one Escape each for dismiss-escape and focus-return, none for focus-into and trigger-state, arrows for arrow-keys (this menu ignores them).
     expect(result.targets[0]!.scenarios.map((s) => [s.check, s.state, s.keys])).toEqual([
       ["dismiss-escape", "failed", ["Escape"]],
       ["focus-return", "incomplete", ["Escape"]],
       ["focus-into", "passed", []],
-      ["arrow-keys", "opened", []],
+      ["arrow-keys", "failed", ["ArrowDown"]],
       ["trigger-state", "passed", []],
     ]);
-    expect(logged("key").slice(keys)).toEqual(["Escape", "Escape"]);
+    expect(logged("key").slice(keys)).toEqual(["Escape", "Escape", "ArrowDown"]);
     expect(logged("click").slice(clicks)).toEqual(Array(5).fill("trigger-m2"));
-    // Across every fixture so far: Escape is the only key the pages ever saw, and no item was clicked.
-    expect(new Set(logged("key"))).toEqual(new Set(["Escape"]));
+    // Across every fixture so far: no key but these the pages ever saw (never Enter, Space or typing), and no item was clicked.
+    expect(new Set(logged("key"))).toEqual(new Set(["Escape", "ArrowDown"]));
     expect(logged("click").filter((c) => !c.startsWith("trigger-"))).toEqual([]);
   }, 60_000);
 
