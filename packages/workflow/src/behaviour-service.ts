@@ -280,7 +280,7 @@ export type BehaviourRef = z.infer<typeof BehaviourRef>;
 export interface BehaviourEvidence {
   /** The stored result `ref` names, when it exists, failed, is fresh and stands on its own; refused with why otherwise. */
   failure(ref: BehaviourRef): Promise<{ readonly result: BehaviourResult; readonly link: RequestBehaviour; readonly target: RequestTarget }>;
-  /** Null when a stored, fresh, passed result for the link's rule, check and target comes from a run newer than `since`; else why not, in words. */
+  /** Null when a stored, fresh, passed result for the link's rule, check and target comes from a run started after `since`; else why not, in words. */
   passedSince(link: RequestBehaviour, since: string): Promise<string | null>;
 }
 
@@ -333,7 +333,8 @@ export function behaviourEvidence(project: BehaviourProject, tool: string): Beha
         return `${verify(route)}; the stored runs couldn't be read (${cleanText(error instanceof Error ? error.message : String(error), 300)})`;
       }
       if (view.problem) return `${verify(route)}; the last run couldn't be read (${view.problem})`;
-      if (!view.run || !(Date.parse(view.run.at) > Date.parse(since))) return `${verify(route)}; this request has no newer run`;
+      // Newer means started after the request was filed or reopened: a run already going then can't speak for what came after.
+      if (!view.run?.startedAt || !(Date.parse(view.run.startedAt) > Date.parse(since))) return `${verify(route)}; this request has no newer run`;
       const key = targetIdentityKey(link.target);
       const mine = view.results.filter((r) => r.rule === link.rule && r.check === link.check && targetIdentityKey(r.target) === key);
       if (mine.length === 0) return `${verify(route)}; the last run didn't test ${popupWords(link.target)} for ${link.check}`;

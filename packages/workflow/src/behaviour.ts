@@ -276,6 +276,9 @@ const notRunYet = (check: BehaviourCheckId, how: string): { why: string; fix: st
  * before every scenario), and keep the run. Refused, with the plan's words, when there is no consent.
  */
 export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<ProbeBehaviourResult> {
+  const now = options.now ?? (() => new Date());
+  // Before anything is read: a request filed or reopened after this moment is newer than this run.
+  const startedAt = now().toISOString();
   const spec = readSpec(options.root);
   const consent = behaviourConsent(spec);
   if (!consent.ok) throw new WorkflowError("forbidden", `${consent.why} ${consent.fix}`);
@@ -317,7 +320,7 @@ export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<Pr
     .resolve(probe.targets.map((t) => ({ name: t.key.component ?? t.found.domPath, owner: null, frames: t.found.frames, box: t.found.box, depth: 0 })), { origin: consent.origin })
     .catch(() => probe.targets.map(() => ({ file: null, line: null })));
   const runId = randomBytes(8).toString("hex");
-  const at = (options.now ?? (() => new Date()))().toISOString();
+  const at = now().toISOString();
   const results: BehaviourResult[] = [];
   // The bindings this probe actually located targets by.
   const bindings = bindingsDigest(options.bindings ?? []);
@@ -368,7 +371,7 @@ export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<Pr
   // Belt and braces: only a decided check is ever stored passed or failed.
   if (results.some((r) => (r.state === "passed" || r.state === "failed") && !decidesBehaviour(r.check))) throw new WorkflowError("internal", "the probe made a result it can't make yet; nothing was stored");
   const rules = [...new Map(options.checks.map((c) => [c.rule, { rule: c.rule, check: c.check, freshness: freshness(c) }])).values()];
-  const run = cleanBehaviourRun(BehaviourRouteRun.parse({ schema: BEHAVIOUR_ROUTE_SCHEMA, route: options.route, runId, at, origin: consent.origin, viewport: spec.viewport, state: probe.state, why: probe.why === null ? null : cleanText(probe.why, 1000) || "it couldn't be probed", fix: probe.fix === null ? null : cleanText(probe.fix, 1000) || "Next: run youiyoux behave again.", coverage: probe.coverage, rules, targets: probe.targets.map((t) => ({ route: options.route, pattern: t.key.pattern, component: t.key.component, accessibleName: t.key.accessibleName, ...(t.key.ordinal !== undefined ? { ordinal: t.key.ordinal } : {}) })), results }));
+  const run = cleanBehaviourRun(BehaviourRouteRun.parse({ schema: BEHAVIOUR_ROUTE_SCHEMA, route: options.route, runId, at, startedAt, origin: consent.origin, viewport: spec.viewport, state: probe.state, why: probe.why === null ? null : cleanText(probe.why, 1000) || "it couldn't be probed", fix: probe.fix === null ? null : cleanText(probe.fix, 1000) || "Next: run youiyoux behave again.", coverage: probe.coverage, rules, targets: probe.targets.map((t) => ({ route: options.route, pattern: t.key.pattern, component: t.key.component, accessibleName: t.key.accessibleName, ...(t.key.ordinal !== undefined ? { ordinal: t.key.ordinal } : {}) })), results }));
   const file = await writeYouiFile(options.root, behaviourFile(options.route), `${JSON.stringify(run, null, 2)}\n`);
   return { run, file, probe };
 }

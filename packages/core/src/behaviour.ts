@@ -215,7 +215,14 @@ export const BehaviourRouteRun = z
     schema: z.literal(BEHAVIOUR_ROUTE_SCHEMA),
     route: RoutePath,
     runId: RunId,
+    /** When the run finished (its results' time). */
     at: z.iso.datetime({ offset: true }),
+    /**
+     * When the run started, before it read consent or opened anything: what "a run newer than this
+     * request" is held to, since a run started before a request was filed or reopened can't speak
+     * for the code after it. Absent in runs kept by an older youiyoux (then no run is newer).
+     */
+    startedAt: z.iso.datetime({ offset: true }).optional(),
     /** The exact origin probed. */
     origin: z.url(),
     viewport: Viewport,
@@ -246,5 +253,6 @@ export const BehaviourRouteRun = z
     (r) => r.results.every((x) => r.rules.some((c) => c.rule === x.rule && c.check === x.check && JSON.stringify(c.freshness) === JSON.stringify(x.freshness))),
     "every result is for a rule the run lists, with that rule's check and freshness",
   )
-  .refine((r) => (r.state === "incomplete") === (r.why !== null) && (r.why === null) === (r.fix === null), "an incomplete run says why and what to do; a probed one doesn't");
+  .refine((r) => (r.state === "incomplete") === (r.why !== null) && (r.why === null) === (r.fix === null), "an incomplete run says why and what to do; a probed one doesn't")
+  .refine((r) => r.startedAt === undefined || Date.parse(r.startedAt) <= Date.parse(r.at), "a run starts before it finishes");
 export type BehaviourRouteRun = z.infer<typeof BehaviourRouteRun>;

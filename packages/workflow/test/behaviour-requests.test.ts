@@ -121,6 +121,36 @@ describe("addressed", () => {
     expect(ok.isError, JSON.stringify(ok.data)).toBe(false);
   });
 
+  test("a run that started before the request was reopened doesn't address it, though it finished after", async () => {
+    const project = await loadProject(s.box.project, { designRoot: s.box.design });
+    const { runId, index } = await failing();
+    const store = new RequestStore(s.box.project, "expo-fixture", { behaviour: behaviourEvidence(project, TOOL) });
+    const person = { kind: "person", name: "p" } as const;
+    const request = await store.createFromBehaviour(person, { route: "/x", runId, index });
+    await store.setStatus(person, request.id, "closed", "fine for now");
+    let release!: () => void;
+    control.gate = new Promise((done) => (release = done));
+    control.probes = 0;
+    control.verdict = "passed";
+    try {
+      await tick();
+      const run = runBehaviour(project, setup, { route: "/x", by: "agent" }).done;
+      for (let i = 0; i < 100 && control.probes === 0; i++) await tick();
+      // The run has started; now the person reopens it.
+      await tick();
+      await store.setStatus(person, request.id, "open", "still broken");
+      await tick();
+      release();
+      const { run: finished } = await run;
+      expect(finished.results.some((r) => r.state === "passed")).toBe(true);
+      expect(Date.parse(finished.at)).toBeGreaterThan(Date.parse((await store.get(request.id)).updatedAt));
+    } finally {
+      release();
+      control.gate = null;
+    }
+    await expect(store.setStatus({ kind: "agent", name: "a" }, request.id, "addressed", "done")).rejects.toThrow(/this request has no newer run$/);
+  });
+
   test("the store holds every caller to it, with results read as this youiyoux makes them", async () => {
     const project = await loadProject(s.box.project, { designRoot: s.box.design });
     const { runId, index } = await failing();
