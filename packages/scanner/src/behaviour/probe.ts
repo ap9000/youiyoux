@@ -21,9 +21,9 @@ import { startFence, type Fence, type FenceRefusal } from "./fence.ts";
 import { dataWords, describeUrl, requestVerdict, screenUrl, STATIC_RESOURCE_TYPES } from "./guards.ts";
 import { ambiguousWords, withOrdinals, type TargetKey } from "./identity.ts";
 import type { Frame } from "../screens/locate.ts";
-import { contractPopupsInPage, isolatedLibrary, labelsInPage, nominateContractTriggersInPage, PROBE_INIT_SCRIPT, type ClickPoint, type ContractBinding, type FocusPlaced, type FoundTarget, type IsolatedTarget, type PopupFound, type TriggerFacts } from "./in-page.ts";
+import { contractPopupsInPage, isolatedLibrary, labelsInPage, nominateContractTriggersInPage, PROBE_INIT_SCRIPT, type ClickPoint, type ContractBinding, type FocusPlaced, type FocusFacts, type FoundTarget, type IsolatedTarget, type PopupFound, type TriggerFacts } from "./in-page.ts";
 import { assertSafeKey, CHECK_KEYS, dataBlockedIn, dismissEscape, infoFromEvents, openAndIdentify, openScreen, POPUP_NOUN, staysOpenWithoutKey, SWITCHED_OFF, type CheckArgs, type GuardEvent, type ProbePage, type SafeKey, type ScenarioOutcome, type Stop } from "./scenario.ts";
-import { triggerState } from "./checks.ts";
+import { focusInto, triggerState } from "./checks.ts";
 
 export interface ProbeBudgets {
   /** Targets tested per route; the rest are named as untested. */
@@ -274,7 +274,7 @@ class Worlds {
   }
 
   /** `__youiyoux[method](arg, elements)` in the isolated world; `elements` are isolated-world object ids. */
-  async call<T>(method: "discover" | "markShowing" | "triggerFacts" | "prepareClick" | "confirmAt" | "clicked" | "identify" | "placeFocus" | "ready" | "popupState" | "reconcile" | "signInForm", arg: unknown, elements: readonly string[] = []): Promise<T> {
+  async call<T>(method: "discover" | "markShowing" | "triggerFacts" | "focus" | "prepareClick" | "confirmAt" | "clicked" | "identify" | "placeFocus" | "ready" | "popupState" | "reconcile" | "signInForm", arg: unknown, elements: readonly string[] = []): Promise<T> {
     const answer = this.check((await this.cdp.send("Runtime.callFunctionOn", { functionDeclaration: `function (arg, ...elements) { return globalThis.__youiyoux.${method}(arg, elements); }`, executionContextId: this.isolated, arguments: [{ value: arg }, ...elements.map((objectId) => ({ objectId }))], returnByValue: true })) as CallResult);
     return answer.result.value as T;
   }
@@ -463,6 +463,10 @@ class PlaywrightProbePage implements ProbePage {
     return this.bound(worlds.call<PopupFound>("identify", { index, pattern, contract: false }));
   }
 
+  async focus(index: number): Promise<FocusFacts> {
+    return this.bound((await this.worlds()).call<FocusFacts>("focus", { index }));
+  }
+
   async placeFocus(index: number, pattern: BehaviourPattern): Promise<FocusPlaced> {
     return this.bound((await this.worlds()).call<FocusPlaced>("placeFocus", { index, pattern }));
   }
@@ -595,6 +599,7 @@ type Outcome = ScenarioOutcome & { readonly keys: readonly string[] };
 const ACTS: Partial<Record<BehaviourCheckId, (page: ProbePage, opened: Opened, args: CheckArgs) => Promise<ScenarioOutcome>>> = {
   "trigger-state": triggerState,
   "dismiss-escape": dismissEscape,
+  "focus-into": focusInto,
 };
 
 /**

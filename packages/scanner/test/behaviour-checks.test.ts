@@ -82,6 +82,10 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
     `<label for="${o.id}-cb">Fruit</label><input id="${o.id}-cb" data-log="trigger-${o.id}" ${o.input ?? `role="combobox" aria-expanded="false" aria-controls="${o.id}"`} onclick="${attr(`document.getElementById('${o.id}').hidden=false;this.setAttribute('aria-expanded','true');${o.open ?? ""}`)}" onkeydown="${attr(o.onKey ?? "")}">` +
     `<ul role="listbox" id="${o.id}" hidden>${o.options ?? `<li role="option" id="${o.id}-1">Apple</li><li role="option" id="${o.id}-2">Pear</li>`}</ul>`;
 
+  const FIRST = (id: string) => `document.getElementById('${id}').querySelector('[role^=menuitem]').focus()`;
+  const modal = (o: { id: string; open?: string; body?: string; attrs?: string; onKey?: string }) =>
+    `<button data-log="trigger-${o.id}" aria-haspopup="dialog" aria-controls="${o.id}" onclick="${attr(`document.getElementById('${o.id}').hidden=false;${o.open ?? ""}`)}">Delete project</button>` +
+    `<div role="dialog" aria-modal="true" aria-label="Delete project" id="${o.id}" hidden ${o.attrs ?? ""} onkeydown="${attr(o.onKey ?? "")}">${o.body ?? `<button>Cancel</button><button>Delete</button>`}</div>`;
   const pages: Record<string, () => string> = {
     // trigger-state
     "/ts-menu": () => page(menu({ id: "t1" })),
@@ -99,6 +103,15 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
     "/ts-disclosure": () => page(`<button data-log="trigger-p3" aria-expanded="false" aria-controls="p3" onclick="document.getElementById('p3').hidden=false;this.setAttribute('aria-expanded','true')">Filters</button><div id="p3" hidden><button>Apply</button></div>`),
     "/ts-dialog": () => page(`<button data-log="trigger-d1" aria-haspopup="dialog" onclick="document.getElementById('d1').showModal()">Settings</button><dialog id="d1"><button>Close</button></dialog>`),
     "/ts-repeated": () => page(menu({ name: "More", id: "r1" }) + menu({ name: "More", id: "r2" })),
+    // focus-into
+    "/fi-menu": () => page(menu({ id: "f1", open: FIRST("f1") })),
+    "/fi-menu-late": () => page(menu({ id: "f2", open: `setTimeout(() => ${FIRST("f2")}, 300)` })),
+    "/fi-menu-container": () => page(menu({ id: "f3", open: "document.getElementById('f3').focus()" }).replace('<ul role="menu" id="f3"', '<ul role="menu" tabindex="-1" id="f3"')),
+    "/fi-menu-none": () => page(menu({ id: "f4" })),
+    "/fi-native-dialog": () => page(`<button data-log="trigger-n1" aria-haspopup="dialog" onclick="document.getElementById('n1').showModal()">Settings</button><dialog id="n1"><p>Settings</p><button>Close</button></dialog>`),
+    "/fi-dialog-self": () => page(modal({ id: "m1", attrs: 'tabindex="-1"', open: "document.getElementById('m1').focus()" })),
+    "/fi-dialog-none": () => page(modal({ id: "m2" })),
+    "/fi-dialog-outside": () => page(modal({ id: "m3", open: "document.querySelector('[data-log=after]').focus()" })),
     "/ts-repeated-named": () => page(menu({ name: "More", id: "r3", trigger: 'aria-label="More for Alpha" aria-haspopup="menu" aria-expanded="false" aria-controls="r3"' }) + menu({ name: "More", id: "r4", trigger: 'aria-label="More for Beta" aria-haspopup="menu" aria-expanded="false" aria-controls="r4"' })),
   };
 
@@ -131,6 +144,31 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
     return result.targets[0]!.scenarios[0]!;
   };
   const logged = (key: string) => requests.filter((r) => r.path === "/log" && r.query.startsWith(`?${key}=`)).map((r) => decodeURIComponent(r.query.slice(key.length + 2)));
+
+  describe("focus-into", () => {
+    test("a menu passes when the app moves focus to an item (at once or 300 ms later); container focus, or focus left on the button, fails, and the probe never places focus itself", async () => {
+      expect(await one("/fi-menu", "focus-into")).toMatchObject({ state: "passed", why: "focus moved to the menu item 'Rename' inside the menu when it opened", keys: [] });
+      expect(await one("/fi-menu-late", "focus-into")).toMatchObject({ state: "passed" });
+      expect(await one("/fi-menu-container", "focus-into")).toMatchObject({ state: "failed", why: "focus went to the menu itself, not to one of its items (1 s after it opened)", fix: expect.stringMatching(/^When the menu opens, move focus to its first item/) });
+      // Its items take focus (tabindex=-1): a probe that placed focus would have passed it.
+      expect(await one("/fi-menu-none", "focus-into")).toMatchObject({ state: "failed", why: "focus stayed on the button that opened the menu (1 s after it opened)" });
+    }, 60_000);
+
+    test("a modal dialog passes with focus inside, the dialog itself included (a native showModal() does it by itself); focus left on the button or moved outside fails", async () => {
+      expect(await one("/fi-native-dialog", "focus-into")).toMatchObject({ state: "passed", why: "focus moved to a button 'Close' inside the dialog when it opened" });
+      expect(await one("/fi-dialog-self", "focus-into")).toMatchObject({ state: "passed", why: "focus moved to the dialog itself when it opened" });
+      expect(await one("/fi-dialog-none", "focus-into")).toMatchObject({ state: "failed", why: "focus stayed on the button that opened the dialog (1 s after it opened)", fix: expect.stringMatching(/^When the dialog opens, move focus inside it/) });
+      expect(await one("/fi-dialog-outside", "focus-into")).toMatchObject({ state: "failed", why: "focus went to a button 'After' outside the dialog, not inside the dialog (1 s after it opened)" });
+    }, 60_000);
+
+    test("a combobox and a popover aren't checked (not-applicable); no key is ever sent", async () => {
+      const keys = logged("key").length;
+      expect(await one("/ts-combobox", "focus-into")).toMatchObject({ state: "not-applicable" });
+      expect(await one("/ts-popover", "focus-into")).toMatchObject({ state: "not-applicable" });
+      await probe("/fi-menu", ["focus-into"]);
+      expect(logged("key").slice(keys)).toEqual([]);
+    }, 60_000);
+  });
 
   describe("trigger-state", () => {
     test("a menu button passes with aria-expanded false → true and aria-controls on the menu, or APG's way (left off while closed, no aria-controls), saying so", async () => {

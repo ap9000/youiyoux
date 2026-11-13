@@ -7,7 +7,7 @@
  * passes without positive evidence: anything that can't be told is incomplete, with why.
  */
 import type { BehaviourPattern } from "@youiyoux/core";
-import type { TriggerFacts } from "./in-page.ts";
+import type { FocusFacts, TriggerFacts } from "./in-page.ts";
 import { checkContext, POPUP_NOUN, type CheckArgs, type ProbePage, type ScenarioOutcome } from "./scenario.ts";
 
 type Opened = Extract<ScenarioOutcome, { state: "opened" }>;
@@ -90,6 +90,66 @@ export async function triggerState(page: ProbePage, opened: Opened, args: CheckA
     }
     if (asked >= until) return ctx.decided("failed", { why: verdict.why, fix: TRIGGER_FIX[pattern] });
     if (deadline() <= asked) return ctx.incomplete({ why: "ran out of time before the button's state could be read", fix: "Next: make sure the dev server is idle, then run youiyoux behave again." });
+    await page.wait(Math.max(1, Math.min(budgets.pollMs, until - asked, deadline() - asked)));
+  }
+}
+
+/** How long the app has to move focus into its popup, once the popup is identified (a focus() in a timer or the next frame). */
+const FOCUS_INTO_MS = 1_000;
+
+const FOCUS_INTO_FIX: Partial<Record<BehaviourPattern, string>> = {
+  "menu-button": 'When the menu opens, move focus to its first item (tabindex="-1" on each menuitem, then focus() the first); focus on the menu container alone doesn\'t put arrow keys or a screen reader on an item.',
+  "modal-dialog": 'When the dialog opens, move focus inside it: to its first focusable element, or to the dialog itself with tabindex="-1" (a native <dialog> opened with showModal() does this by itself).',
+};
+
+/** Words for where focus is, in a sentence: "the menu item 'Rename'", "the page's body". */
+export function focusWords(facts: Pick<FocusFacts, "at" | "role" | "name">, noun: string): string {
+  const named = facts.name ? ` '${facts.name}'` : "";
+  const role = facts.role;
+  switch (facts.at) {
+    case "trigger":
+      return `the button that opened the ${noun}`;
+    case "popup":
+      return `the ${noun} itself`;
+    case "item":
+    case "inside":
+      return `${facts.role === "menuitem" || facts.role === "menuitemradio" || facts.role === "menuitemcheckbox" ? "the menu item" : facts.role === "option" ? "the option" : `a ${role}`}${named} inside the ${noun}`;
+    case "body":
+      return "the page's body (nothing)";
+    case "away":
+      return "outside the page (the browser's own toolbar)";
+    case "outside":
+      return `a ${role}${named} outside the ${noun}`;
+  }
+}
+
+/**
+ * focus-into: no key, and the probe places no focus: judged on where the app itself puts focus once
+ * the popup is identified, polled for FOCUS_INTO_MS. A menu passes only with effective focus on one
+ * of its menu items (the menu container alone fails); a modal dialog passes with focus anywhere
+ * inside it, the dialog itself included (APG allows both). Focus left on the button, on the body or
+ * elsewhere fails once the whole budget has passed; a popup that closes first is incomplete.
+ */
+export async function focusInto(page: ProbePage, opened: Opened, args: CheckArgs): Promise<ScenarioOutcome> {
+  const { pattern, deadline, budgets } = args;
+  const noun = POPUP_NOUN[pattern];
+  const ctx = checkContext(page, opened, args);
+  const fix = FOCUS_INTO_FIX[pattern] ?? "";
+  const until = Date.now() + FOCUS_INTO_MS;
+  for (;;) {
+    const stop = await ctx.stopped();
+    if (stop) return ctx.incomplete(stop);
+    const asked = Date.now();
+    const now = await page.focus(opened.index);
+    if (!now.open) return ctx.incomplete({ why: `the ${noun} closed before where focus went could be judged`, fix: `Next: keep the ${noun} open until it is dismissed, then run youiyoux behave again.` });
+    const inside = pattern === "menu-button" ? now.at === "item" && now.role !== "option" : now.at === "item" || now.at === "inside" || now.at === "popup";
+    if (inside) return ctx.decided("passed", { why: `focus moved to ${focusWords(now, noun)} when it opened`, fix: "Nothing to do: opening moves focus in." });
+    if (now.at === "away") return ctx.incomplete({ why: "the page lost focus to the browser itself, so where the app put it can't be judged", fix: "Next: run youiyoux behave again." });
+    if (asked >= until) {
+      const where = now.at === "trigger" ? `focus stayed on the button that opened the ${noun}` : now.at === "popup" ? `focus went to the ${noun} itself, not to one of its items` : `focus went to ${focusWords(now, noun)}, not ${pattern === "menu-button" ? "to one of the menu's items" : "inside the dialog"}`;
+      return ctx.decided("failed", { why: `${where} (${FOCUS_INTO_MS / 1000} s after it opened)`, fix });
+    }
+    if (deadline() <= asked) return ctx.incomplete({ why: "ran out of time before where focus went could be judged", fix: "Next: make sure the dev server is idle, then run youiyoux behave again." });
     await page.wait(Math.max(1, Math.min(budgets.pollMs, until - asked, deadline() - asked)));
   }
 }

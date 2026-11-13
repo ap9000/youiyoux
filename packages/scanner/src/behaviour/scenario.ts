@@ -7,7 +7,7 @@
 import type { BehaviourCheckId, BehaviourPattern, PartRef } from "@youiyoux/core";
 import { describeUrl, SIGN_IN_FIX, SIGN_IN_PATH, SIGN_IN_WORDS } from "./guards.ts";
 import { ambiguousWords, matchTarget, type TargetKey } from "./identity.ts";
-import type { FocusPlaced, FoundTarget, PopupFound, TriggerFacts } from "./in-page.ts";
+import type { FocusFacts, FocusPlaced, FoundTarget, PopupFound, TriggerFacts } from "./in-page.ts";
 
 /** What the guards refused (or, for sockets, blocked) while a page was open, and when. */
 export interface GuardEvent {
@@ -35,6 +35,8 @@ export interface ProbePage {
   /** Click the trigger `findTargets()` returned at `index`: a real mouse click, on it only. */
   click(index: number, timeoutMs: number): Promise<void>;
   identify(index: number, pattern: BehaviourPattern, popup: PartRef | null): Promise<PopupFound>;
+  /** Where effective focus is now, against the trigger and the popup `identify` found last; nothing is moved. */
+  focus(index: number): Promise<FocusFacts>;
   /** Effective focus inside the popup `identify` found last (or on the combobox), moved there with focus() if it isn't. */
   placeFocus(index: number, pattern: BehaviourPattern): Promise<FocusPlaced>;
   /** The very popup identified is still connected and showing, with effective focus inside it (or on the combobox). */

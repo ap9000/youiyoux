@@ -68,6 +68,20 @@ export interface TriggerFacts {
   readonly popupRole: string | null;
 }
 
+/**
+ * Where effective focus is, against the trigger and the popup identified last: on the trigger, the
+ * popup itself, an item of it (a menu item for a menu, an option for a listbox), something else
+ * inside it, the page's body, outside the page altogether (the browser's own toolbar), or
+ * elsewhere on the page. `open`: that popup is still connected and showing.
+ */
+export interface FocusFacts {
+  readonly open: boolean;
+  readonly at: "trigger" | "popup" | "item" | "inside" | "body" | "away" | "outside";
+  /** The focused element's role (its role attribute, else its tag) and accessible name, for the words. */
+  readonly role: string;
+  readonly name: string;
+}
+
 /** Whether effective focus is where a key is sent from: already there, moved there by the probe (focus(), never a click or a key), or not placeable. */
 export type FocusPlaced = { readonly ok: true; readonly moved: boolean } | { readonly ok: false };
 
@@ -236,6 +250,20 @@ export function isolatedLibrary(): void {
     if (root.shadowRoot) collect(root.shadowRoot);
     return out;
   };
+  const ITEM_ROLES = ["menuitem", "menuitemradio", "menuitemcheckbox", "option"];
+  /** Where effective focus is, against `trigger` and `popup` (FocusFacts). */
+  const focusFacts = (trigger: Element | undefined, popup: Element | null): FocusFacts => {
+    const open = !!popup && popup.isConnected && shown(popup);
+    const active = deepActive();
+    const at = effectiveFocus();
+    const of = (element: Element | null): { role: string; name: string } => ({ role: element ? (element.getAttribute("role") ?? element.localName) : "none", name: element ? accessibleName(element).slice(0, 60) : "" });
+    if (!document.hasFocus()) return { open, at: "away", ...of(null) };
+    if (!active || active === document.body || active === document.documentElement) return { open, at: "body", ...of(active) };
+    if (at && trigger && at === trigger) return { open, at: "trigger", ...of(at) };
+    if (at && popup && at === popup) return { open, at: "popup", ...of(at) };
+    if (at && popup && ancestors(at).includes(popup)) return { open, at: ITEM_ROLES.includes(at.getAttribute("role") ?? "") ? "item" : "inside", ...of(at) };
+    return { open, at: "outside", ...of(at ?? active) };
+  };
   /** The popup identified: the element itself, its id and its role, to judge it (and anything replacing it) later. */
   const remember = (popup: Element): void => {
     state.popup = popup;
@@ -391,6 +419,10 @@ export function isolatedLibrary(): void {
         if (focusPlaced(trigger, popup, wanted.pattern)) return { ok: true, moved: true };
       }
       return { ok: false };
+    },
+    /** Where effective focus is now, against the trigger and the popup identified last; nothing is moved. */
+    focus(wanted: { readonly index: number }): FocusFacts {
+      return focusFacts(state.elements[wanted.index], state.popup);
     },
     /**
      * Immediately before a key: the very popup identified (the same element, never one found again)
