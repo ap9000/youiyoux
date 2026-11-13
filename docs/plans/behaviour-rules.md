@@ -59,19 +59,20 @@ of that target is `incomplete` ("clicking the button didn't open anything we cou
 "Closed" means the popup is removed, `display:none`/`visibility:hidden`, `hidden`, `inert`, `aria-hidden=true`, a
 closed native popover, or a closed `<dialog>` — polled within the close budget (1.5 s, allowing exit animations).
 
-**Effective focus** = `document.activeElement` (through shadow roots), except that when it is a `combobox` or
-`listbox` with `aria-activedescendant`, it is the referenced element — which must exist, belong to the widget
-(inside it or in the element its `aria-controls` names) and not be `aria-disabled`.
+**Effective focus** = `document.activeElement` (through shadow roots), except that when it is a `combobox`,
+`listbox` or `menu` with `aria-activedescendant`, it is the referenced element — which must exist and belong to the
+widget (inside it or in the element its `aria-controls` names). A disabled item may hold it (APG lets disabled menu
+items and options take focus). (Slice 3 review: a menu that manages its own focus, and disabled items, per APG.)
 
 | id | Patterns | Passes when | Fails when | Can't tell (incomplete) |
 | --- | --- | --- | --- | --- |
 | `trigger-state` | menu-button, combobox-listbox, popover | the pattern's required attributes are present and correct closed and open (`aria-expanded` false→true; `aria-haspopup` value; `aria-controls` resolves to the identified popup) | a required attribute is missing, wrong, or doesn't change | popup never identified |
 | `dismiss-escape` | all four | after Esc (sent with effective focus inside the popup, or on the combobox) the popup is closed | still open after the close budget | focus couldn't be placed inside |
-| `focus-into` | menu-button, modal-dialog | menu: effective focus is a `menuitem*` in the menu (container focus alone fails). dialog: effective focus is inside the dialog (a tabbable inside, or the dialog itself with `tabindex=-1`, both allowed by APG) | focus stayed on the trigger or left the popup | — |
+| `focus-into` | menu-button, modal-dialog | menu: effective focus is a `menuitem*` in the menu (container focus alone fails; a menu whose `aria-activedescendant` names an item passes). dialog: effective focus is inside the dialog (a tabbable inside, or the dialog itself with `tabindex=-1`, both allowed by APG) | focus stayed on the trigger or left the popup | — |
 | `focus-into` | combobox-listbox | not applicable (DOM focus stays on the combobox by design) | — | — |
 | `focus-return` | menu-button, modal-dialog, popover | after Esc closes it, effective focus is the trigger, or the contract's `returnFocusTo` part | focus is on `body` or elsewhere while the trigger still exists | the trigger was removed and no `returnFocusTo` is declared ("the button that opened it is gone; declare where focus should go") |
 | `focus-trap` | modal-dialog | with N = tabbables inside: N Tabs visit each once in order then wrap to the first; N Shift+Tabs the reverse; N=0: the dialog itself keeps focus; N=1: it keeps focus. Native `showModal()` passes the containment part by definition but still checks order | focus leaves, or Tab doesn't move between tabbables (a dialog that swallows every Tab fails) | nested popup open inside it |
-| `arrow-keys` | menu-button (vertical), combobox-listbox | ArrowDown/Up move effective focus to the next/previous **enabled** item in document order; at the ends both wrapping and staying are accepted (reported as which) | focus doesn't move, moves to a disabled item, or to something outside the widget | orientation is horizontal (`aria-orientation`): v1 says "horizontal menus not checked yet" |
+| `arrow-keys` | menu-button (vertical), combobox-listbox | every move both ways, and both ends, is observed: ArrowDown/Up move effective focus to the next/previous item in document order, where a disabled item may take focus or be skipped (both APG; reported as which); at the ends both wrapping and staying are accepted (reported as which) | focus doesn't move, goes to any other item, to nothing (a dangling `aria-activedescendant`), or to something outside the widget | orientation is horizontal (`aria-orientation`): v1 says "horizontal menus not checked yet"; a list of more than 50 items |
 
 Home/End are reported as information only ("Home moves to the first item: yes/no"), never a failure: APG makes them
 optional for listboxes. Submenus: v1 tests the top-level menu only and says so.

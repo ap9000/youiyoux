@@ -65,7 +65,7 @@ export const BEHAVIOUR_CHECKS: Readonly<Record<BehaviourCheck, { readonly descri
     patterns: ["modal-dialog"],
   },
   "arrow-keys": {
-    description: "ArrowDown and ArrowUp move to the next and previous enabled item of a vertical menu or listbox (APG Menu Button, Combobox).",
+    description: "ArrowDown and ArrowUp move to the next and previous item of a vertical menu or listbox, disabled items taking focus or skipped, every move checked both ways (APG Menu Button, Combobox).",
     patterns: ["menu-button", "combobox-listbox"],
   },
 };

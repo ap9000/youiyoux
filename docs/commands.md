@@ -344,9 +344,11 @@ see them; `youiyoux behave [--route /x]` checks them in the running dev app, in 
     (or the contract's `returnFocusTo` part); a button gone with nothing declared is incomplete.
   - `focus-trap` (modal dialog): Tab and Shift+Tab visit each focusable element in order and wrap
     (up to 20); a native `showModal()` dialog keeps focus in by itself, its order still checked.
-  - `arrow-keys` (vertical menu, combobox): ArrowDown and ArrowUp move to the next and previous
-    enabled item (aria-activedescendant must name one); wrapping or stopping at the ends are both
-    fine; Home and End are reported, not required. Horizontal menus aren't checked yet.
+  - `arrow-keys` (vertical menu, combobox): every move of the list, both ways and at both ends, is
+    pressed and seen: ArrowDown and ArrowUp move to the next and previous item (aria-activedescendant,
+    on a combobox or a menu, must name one); disabled items may take focus or be skipped, and
+    wrapping or stopping at the ends are both fine (results say which); Home and End are reported,
+    not required. Horizontal menus, and lists over 50 items, aren't checked yet.
 
   Keys sent are only the check's own (Esc; Tab and Shift+Tab; arrows, Home and End), each after
   consent is read again; never Enter, Space or typing. Opening is by mouse click only, so keyboard

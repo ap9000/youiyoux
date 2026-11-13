@@ -125,13 +125,14 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
   const ROVE = `window.rove = (id, o = {}) => document.getElementById(id).addEventListener("keydown", (e) => {
       const items = [...document.getElementById(id).querySelectorAll("[role^=menuitem]")].filter((el) => o.disabledToo || el.getAttribute("aria-disabled") !== "true");
       const i = items.indexOf(document.activeElement); const step = o.step || 1; let j = null;
+      if (e.key === "ArrowDown" && i === o.breakAt) { e.preventDefault(); return; }
       if (e.key === "ArrowDown") j = i + step >= items.length ? (o.stay ? i : 0) : i + step;
       else if (e.key === "ArrowUp") j = i - step < 0 ? (o.stay ? i : items.length - 1) : i - step;
       else if (e.key === "Home") j = 0; else if (e.key === "End") j = items.length - 1;
       if (j === null) return; e.preventDefault(); items[j].focus(); });`;
   /** aria-activedescendant on a combobox; `o` makes it name a missing id or an element outside the listbox. */
   const ACTIVE = `window.active = (cbId, lbId, o = {}) => document.getElementById(cbId).addEventListener("keydown", (e) => {
-      const cb = document.getElementById(cbId); const items = [...document.getElementById(lbId).querySelectorAll("[role=option]")].filter((el) => el.getAttribute("aria-disabled") !== "true");
+      const cb = document.getElementById(cbId); const items = [...document.getElementById(lbId).querySelectorAll("[role=option]")].filter((el) => o.disabledToo || el.getAttribute("aria-disabled") !== "true");
       const i = items.indexOf(document.getElementById(cb.getAttribute("aria-activedescendant") || "")); let j = null;
       if (e.key === "ArrowDown") j = i + 1 >= items.length ? 0 : i + 1; else if (e.key === "ArrowUp") j = i - 1 < 0 ? items.length - 1 : i - 1;
       if (j === null) return; e.preventDefault(); cb.setAttribute("aria-activedescendant", o.dangling ? "nope" : o.outside ? "elsewhere" : items[j].id); });`;
@@ -143,6 +144,14 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
       `<label for="${id}-cb">Fruit</label><input id="${id}-cb" data-log="trigger-${id}" role="combobox" aria-expanded="false" aria-controls="${id}" onclick="document.getElementById('${id}').hidden=false;this.setAttribute('aria-expanded','true')"><p id="elsewhere">Elsewhere</p>`,
       `const portal = document.createElement("div"); portal.innerHTML = '<ul role="listbox" id="${id}" hidden><li role="option" id="${id}-1">Apple</li><li role="option" id="${id}-2" aria-disabled="true">Banana</li><li role="option" id="${id}-3">Pear</li></ul>'; document.body.append(portal); ${ACTIVE} active("${id}-cb", "${id}", ${o});`,
     );
+  /** A menu of `n` roving items. */
+  const bigMenu = (id: string, n: number, rove: string) => page(menu({ id, open: FIRST(id), items: Array.from({ length: n }, (_, k) => `<li role="menuitem" tabindex="-1">Item ${k + 1}</li>`).join("") }), `${ROVE} ${rove}`);
+  /** A menu that manages its own focus: the menu holds DOM focus, aria-activedescendant names the active item. */
+  const ACTIVE_MENU = `document.getElementById("av").addEventListener("keydown", (e) => {
+      const m = document.getElementById("av"); const items = [...m.querySelectorAll("[role=menuitem]")];
+      const i = items.indexOf(document.getElementById(m.getAttribute("aria-activedescendant") || "")); let j = null;
+      if (e.key === "ArrowDown") j = (i + 1) % items.length; else if (e.key === "ArrowUp") j = (i - 1 + items.length) % items.length;
+      if (j === null) return; e.preventDefault(); m.setAttribute("aria-activedescendant", items[j].id); });`;
   const pages: Record<string, () => string> = {
     // trigger-state
     "/ts-menu": () => page(menu({ id: "t1" })),
@@ -213,6 +222,17 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
     "/ak-menu-static": () => arrowMenu("a5", ""),
     "/ak-menu-horizontal": () => arrowMenu("a6", 'rove("a6")', 'aria-orientation="horizontal"'),
     "/ak-combobox": () => arrowCombo("k1"),
+    "/ak-combobox-takes-disabled": () => arrowCombo("k4", "{ disabledToo: true }"),
+    "/ak-activedescendant-menu": () =>
+      page(
+        `<button data-log="trigger-av" aria-haspopup="menu" aria-expanded="false" aria-controls="av" onclick="${attr("const m=document.getElementById('av');m.hidden=false;this.setAttribute('aria-expanded','true');m.setAttribute('aria-activedescendant','av-1');m.focus()")}">Actions</button>` +
+          `<ul role="menu" id="av" tabindex="-1" hidden><li role="menuitem" id="av-1">Rename</li><li role="menuitem" id="av-2">Delete</li><li role="menuitem" id="av-3">Copy</li></ul>`,
+        ACTIVE_MENU,
+      ),
+    // Coverage: 50 good items pass; 100 are incomplete; 30 that break after item 21 fail (a 20-press sample passed them).
+    "/ak-fifty": () => bigMenu("b1", 50, 'rove("b1")'),
+    "/ak-hundred": () => bigMenu("b2", 100, 'rove("b2")'),
+    "/ak-breaks-late": () => bigMenu("b3", 30, 'rove("b3", { breakAt: 21 })'),
     "/ak-combobox-dangling": () => arrowCombo("k2", "{ dangling: true }"),
     "/ak-combobox-outside": () => arrowCombo("k3", "{ outside: true }"),
     // focus-into
@@ -314,24 +334,39 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
   }, 60_000);
 
   describe("arrow-keys", () => {
-    test("a roving menu that skips its disabled item passes, saying it wraps (or stays) at the ends, with Home and End as information; only arrows, Home and End are pressed", async () => {
+    test("a roving menu passes, saying it skips its disabled item and wraps (or stays) at the ends, with Home and End as information; only arrows, Home and End are pressed", async () => {
       const keys = logged("key").length;
       const wraps = await one("/ak-menu", "arrow-keys");
-      expect(wraps).toMatchObject({ state: "passed", why: "ArrowDown and ArrowUp moved through the menu's 3 enabled menu items in order, skipping the disabled ones", info: expect.arrayContaining(["at the last enabled menu item, ArrowDown wraps round to the first", "at the first enabled menu item, ArrowUp wraps round to the last", "End moves to the last menu item: yes", "Home moves to the first menu item: yes"]) });
+      expect(wraps).toMatchObject({ state: "passed", why: "ArrowDown and ArrowUp moved through the menu's 4 menu items in order, every move both ways and at both ends", info: expect.arrayContaining(["disabled menu items are skipped", "at the last menu item, ArrowDown wraps round to the first", "at the first menu item, ArrowUp wraps round to the last", "End moves to the last menu item: yes", "Home moves to the first menu item: yes"]) });
       expect(new Set(wraps.keys)).toEqual(new Set(["ArrowDown", "ArrowUp", "End", "Home"]));
-      expect(await one("/ak-menu-stays", "arrow-keys")).toMatchObject({ state: "passed", info: expect.arrayContaining(["at the last enabled menu item, ArrowDown stays on it", "at the first enabled menu item, ArrowUp stays on it"]) });
+      expect(await one("/ak-menu-stays", "arrow-keys")).toMatchObject({ state: "passed", info: expect.arrayContaining(["at the last menu item, ArrowDown stays on it", "at the first menu item, ArrowUp stays on it"]) });
       expect(new Set(logged("key").slice(keys))).toEqual(new Set(["ArrowDown", "ArrowUp", "End", "Home"]));
     }, 60_000);
 
-    test("a menu whose arrows land on a disabled item, jump over an enabled one, or do nothing fails; a horizontal menu is incomplete with no key sent", async () => {
-      expect(await one("/ak-menu-to-disabled", "arrow-keys")).toMatchObject({ state: "failed", why: "ArrowDown moved to the menu item 'Archive', which is disabled; disabled menu items are skipped", fix: expect.stringMatching(/^Move focus with ArrowDown and ArrowUp/) });
-      expect(await one("/ak-menu-skips", "arrow-keys")).toMatchObject({ state: "failed", why: "ArrowDown from the menu item 'Rename' went to the menu item 'Copy', not to the menu item 'Delete' (the next enabled menu item)" });
+    test("APG lets disabled items take focus: a menu (and a combobox) whose arrows land on them passes, saying so", async () => {
+      expect(await one("/ak-menu-to-disabled", "arrow-keys")).toMatchObject({ state: "passed", info: expect.arrayContaining(["disabled menu items take focus"]) });
+      expect(await one("/ak-combobox-takes-disabled", "arrow-keys")).toMatchObject({ state: "passed", info: expect.arrayContaining(["disabled options take focus"]) });
+    }, 60_000);
+
+    test("a menu that manages its own focus with aria-activedescendant passes focus-into and arrow-keys", async () => {
+      expect(await one("/ak-activedescendant-menu", "focus-into")).toMatchObject({ state: "passed", why: "focus moved to the menu item 'Rename' inside the menu when it opened" });
+      expect(await one("/ak-activedescendant-menu", "arrow-keys")).toMatchObject({ state: "passed", why: "ArrowDown and ArrowUp moved through the menu's 3 menu items in order, every move both ways and at both ends" });
+    }, 60_000);
+
+    test("a menu whose arrows jump over an item or do nothing fails; a horizontal menu is incomplete with no key sent", async () => {
+      expect(await one("/ak-menu-skips", "arrow-keys")).toMatchObject({ state: "failed", why: "ArrowDown from the menu item 'Rename' went to the menu item 'Copy', not to the menu item 'Delete' (the next menu item)", fix: expect.stringMatching(/^Move focus with ArrowDown and ArrowUp/) });
       expect(await one("/ak-menu-static", "arrow-keys")).toMatchObject({ state: "failed", why: "ArrowDown didn't move from the menu item 'Rename'", keys: ["ArrowDown"] });
       expect(await one("/ak-menu-horizontal", "arrow-keys")).toMatchObject({ state: "incomplete", why: "horizontal menus not checked yet", keys: [] });
     }, 60_000);
 
+    test("every move of the whole list is seen before a pass: 50 good items pass, 30 that break after item 21 fail, 100 are incomplete", async () => {
+      expect(await one("/ak-fifty", "arrow-keys")).toMatchObject({ state: "passed", why: "ArrowDown and ArrowUp moved through the menu's 50 menu items in order, every move both ways and at both ends" });
+      expect(await one("/ak-breaks-late", "arrow-keys")).toMatchObject({ state: "failed", why: "ArrowDown didn't move from the menu item 'Item 22'" });
+      expect(await one("/ak-hundred", "arrow-keys")).toMatchObject({ state: "incomplete", why: "this list has 100 items; only lists up to 50 are checked", keys: [] });
+    }, 90_000);
+
     test("a combobox with a portalled listbox passes through aria-activedescendant; one that names a missing id or an element outside the listbox fails", async () => {
-      expect(await one("/ak-combobox", "arrow-keys")).toMatchObject({ state: "passed", why: "ArrowDown and ArrowUp moved through the listbox's 2 enabled options in order, skipping the disabled ones" });
+      expect(await one("/ak-combobox", "arrow-keys")).toMatchObject({ state: "passed", why: "ArrowDown and ArrowUp moved through the listbox's 3 options in order, every move both ways and at both ends", info: expect.arrayContaining(["disabled options are skipped"]) });
       expect(await one("/ak-combobox-dangling", "arrow-keys")).toMatchObject({ state: "failed", why: "ArrowDown set aria-activedescendant to an id that isn't on the page", fix: expect.stringMatching(/^On ArrowDown and ArrowUp, set aria-activedescendant/) });
       expect(await one("/ak-combobox-outside", "arrow-keys")).toMatchObject({ state: "failed", why: "ArrowDown set aria-activedescendant to an element outside the listbox" });
     }, 60_000);

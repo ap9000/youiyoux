@@ -281,22 +281,24 @@ export function isolatedLibrary(): void {
     while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
     return active;
   };
+  /** Roles whose aria-activedescendant moves effective focus (APG: a combobox, a listbox, a menu that manages its own focus). */
+  const ACTIVE_DESCENDANT_ROLES = ["combobox", "listbox", "menu"];
   /**
-   * Effective focus (docs/plans/behaviour-rules.md): the focused element, except that a combobox or
-   * listbox with aria-activedescendant means the element it names, which must exist, belong to the
-   * widget (inside it, or inside what its aria-controls names) and not be aria-disabled; else none.
+   * Effective focus (docs/plans/behaviour-rules.md): the focused element, except that a combobox,
+   * listbox or menu with aria-activedescendant means the element it names, which must exist and
+   * belong to the widget (inside it, or inside what its aria-controls names); else none. A disabled
+   * item may hold it (APG lets disabled menu items and options take focus).
    */
   const effectiveFocus = (): Element | null => {
     const active = deepActive();
     if (!active) return null;
-    const role = active.getAttribute("role");
-    const id = active.getAttribute("aria-activedescendant");
-    if ((role !== "combobox" && role !== "listbox") || !id) return active;
+    const id = (active.getAttribute("aria-activedescendant") ?? "").trim();
+    if (!ACTIVE_DESCENDANT_ROLES.includes(active.getAttribute("role") ?? "") || !id) return active;
     const named = byId(active, id);
     const controls = active.getAttribute("aria-controls");
     const owned = controls ? byId(active, controls.split(/\s+/)[0]!) : null;
     const belongs = !!named && (named === active || ancestors(named).includes(active) || (!!owned && (named === owned || ancestors(named).includes(owned))));
-    return belongs && named!.getAttribute("aria-disabled") !== "true" ? named : null;
+    return belongs ? named : null;
   };
   /** Elements inside `root` (shadow roots included) that focus() can move focus to, in document order. */
   const focusablesIn = (root: Element): Element[] => {
@@ -625,7 +627,7 @@ export function isolatedLibrary(): void {
       const id = active?.getAttribute("aria-activedescendant") ?? "";
       if (!document.hasFocus()) at = { kind: "away", ...of(null) };
       else if (!active || active === document.body || active === document.documentElement) at = { kind: "body", ...of(active) };
-      else if ((active.getAttribute("role") === "combobox" || active.getAttribute("role") === "listbox") && id.trim()) {
+      else if (ACTIVE_DESCENDANT_ROLES.includes(active.getAttribute("role") ?? "") && id.trim()) {
         const named = byId(active, id.trim());
         const controls = active.getAttribute("aria-controls");
         const owned = controls ? byId(active, controls.split(/\s+/)[0]!) : null;
