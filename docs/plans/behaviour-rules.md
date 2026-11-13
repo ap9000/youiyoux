@@ -378,7 +378,7 @@ Accepted residuals:
    only, never what may be clicked.
 6. https dev servers are refused (the fence can't see inside a tunnel).
 
-## Slice 2 review record (2026-11-12)
+## Slice 2 review record (2026-11-12) (accepted by Alex, 2026-11-12)
 
 Codex code review: round 1 NO-GO (7 findings), round 2 NO-GO (5 closed: losing a relationship read as closed,
 stored completeness trusted, contract bindings outside the key, consent read before focus, an empty denominator
