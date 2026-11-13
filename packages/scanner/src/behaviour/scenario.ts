@@ -152,7 +152,11 @@ export function stopFromEvents(events: readonly GuardEvent[]): Stop | null {
 
 /** Facts worth saying that don't stop anything: blocked sockets, other addresses refused while loading, data blocked after the click. */
 export function infoFromEvents(events: readonly GuardEvent[]): string[] {
-  return [...new Set(events.filter((e) => e.kind === "socket" || e.kind === "data" || (e.kind === "origin" && e.phase === "load")).map((e) => e.words))];
+  // A socket refused while the screen loaded (a dev server's reload socket, say) is the screen's,
+  // said once for the route (RouteProbe.notes), and so are its retries after the click; a socket
+  // first opened after the click stays with that result.
+  const loading = new Set(events.filter((e) => e.kind === "socket" && e.phase === "load").map((e) => e.words));
+  return [...new Set(events.filter((e) => (e.kind === "socket" && !loading.has(e.words)) || e.kind === "data" || (e.kind === "origin" && e.phase === "load")).map((e) => e.words))];
 }
 
 /** Whether the scenario ran with its data blocked (a data request after the click was refused). */

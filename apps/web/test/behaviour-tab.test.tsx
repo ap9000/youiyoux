@@ -61,7 +61,7 @@ function view(over: Partial<BehaviourView> = {}): BehaviourView {
   return {
     route: "/flows",
     rules: [{ id: RULE, title: "Esc closes popups", severity: "error", check: "dismiss-escape" }],
-    run: { schema: "youiyoux.behaviour/v1", route: "/flows", runId: "run1", at: AT, origin: "http://127.0.0.1:5173", viewport: { width: 1280, height: 800 }, state: "probed", why: null, fix: null, coverage: "2 popup triggers found by ARIA markers.", rules: [], targets: [] },
+    run: { schema: "youiyoux.behaviour/v1", route: "/flows", runId: "run1", at: AT, origin: "http://127.0.0.1:5173", viewport: { width: 1280, height: 800 }, state: "probed", why: null, fix: null, coverage: "2 popup triggers found by ARIA markers.", notes: [], rules: [], targets: [] },
     results: RESULTS,
     problem: null,
     consent: { screens: true, on: true, origin: "http://127.0.0.1:5173", allowedOrigin: "http://127.0.0.1:5173", matches: true, why: null, words: "Probes click buttons that open menus and dialogs in your running app. Use a dev app with test data." },
@@ -206,6 +206,16 @@ describe("a component's popups", () => {
   test("a component with no probed popups says how popups are matched", async () => {
     render(<BehaviourPanel route="/flows" component={{ name: "Card" }} />);
     expect((await screen.findByText(/^No popups of Card/)).textContent).toBe("No popups of Card were found in the last run. A popup belongs to the component that renders its button: pick that one, or run the whole screen from its page.");
+  });
+});
+
+describe("route notes", () => {
+  test("a socket the screen opened while it loaded is said once, as a note, not on each row", async () => {
+    const note = "while the screen loaded, the page tried to open a WebSocket or tunnel to 127.0.0.1:5173; it was blocked (a dev server's reload socket, often); every popup here was tested without it";
+    answer.view = view({ run: { ...view().run!, notes: [note] } });
+    const { container } = render(<BehaviourPanel route="/flows" component={{ name: "UserMenu" }} />);
+    expect((await screen.findByText(/^Note: while the screen loaded/)).textContent).toBe(`Note: ${note}`);
+    expect(container.querySelectorAll("[data-behaviour-note]")).toHaveLength(1);
   });
 });
 

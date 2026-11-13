@@ -71,6 +71,8 @@ export interface Place {
   readonly depth: number;
   /** Plain HTML that React did not create: its tag; the line is the component that placed it. */
   readonly html?: string;
+  /** The line is inside a skipped file (a component of the System's own): no frame where the app rendered it mapped. */
+  readonly own?: true;
 }
 
 /** Components recorded per page, at most. */
@@ -353,7 +355,7 @@ export type SourceMapCache = Map<string, Promise<SourceMap | null>>;
  * `cache`, a module served with the same text as before keeps its decoded map: an edited file is
  * served differently, so it is never answered from an old one.
  */
-export async function resolvePlaces(raw: readonly RawPlace[], fetchText: (url: string) => Promise<string | null>, root: string | null = null, notes: MapNotes = mapNotes(), cache?: SourceMapCache): Promise<Place[]> {
+export async function resolvePlaces(raw: readonly RawPlace[], fetchText: (url: string) => Promise<string | null>, root: string | null = null, notes: MapNotes = mapNotes(), cache?: SourceMapCache, skip?: (file: string) => boolean): Promise<Place[]> {
   const maps = new Map<string, Promise<SourceMap | null>>();
   const mapFor = (url: string): Promise<SourceMap | null> => {
     const module = url.replace(/[?#].*$/, "");
@@ -383,15 +385,23 @@ export async function resolvePlaces(raw: readonly RawPlace[], fetchText: (url: s
   return Promise.all(
     raw.map(async (place): Promise<Place> => {
       const base = { name: place.name, owner: place.owner, box: place.box, depth: place.depth, ...(place.html ? { html: place.html } : {}) };
+      // With `skip`, a frame in a skipped file (a component of the System's own) is passed over for
+      // the next, where the app rendered it; only when nothing else maps is it used, marked `own`.
+      let own: Place | null = null;
       for (const frame of place.frames) {
         const map = await mapFor(frame.url);
         const original = map ? originalPosition(map, frame.line, frame.column) : null;
         if (!original) continue;
         if (/(?:^|\/)node_modules\/|^webpack\/|^\(webpack\)/.test(original.source)) continue;
         const file = projectPath(original.source, frame.url, root);
+        if (file && skip?.(file)) {
+          own ??= { ...base, file, line: original.line, column: original.column, own: true };
+          continue;
+        }
         if (file) return { ...base, file, line: original.line, column: original.column };
         notes.outside.add(original.source);
       }
+      if (own) return own;
       // No map: the served module's own path names the file, but not the line.
       const unmapped = place.frames[0];
       return { ...base, file: unmapped ? projectPath(unmapped.url.replace(/[?#].*$/, ""), unmapped.url, null) : null, line: null, column: null };

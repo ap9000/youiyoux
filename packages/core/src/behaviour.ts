@@ -91,6 +91,12 @@ export const BehaviourTarget = z
     ordinal: z.number().int().nonnegative().optional(),
     file: z.string().min(1).optional(),
     line: z.number().int().positive().optional(),
+    /**
+     * Where file:line points: absent, where the app renders the button (the first frame outside the
+     * product's own components folder); `component`, inside that component itself, because nothing
+     * of the app's own mapped.
+     */
+    lineIs: z.literal("component").optional(),
     domPath: z.string().min(1).optional(),
     box: Box.optional(),
   })
@@ -232,6 +238,8 @@ export const BehaviourRouteRun = z
     fix: z.string().min(1).nullable(),
     /** What was looked at, in a sentence (no popups found is said, never left as a zero). */
     coverage: z.string().min(1),
+    /** Facts about the route as a whole, said once rather than on every result (a socket the screen opened while it loaded, refused). */
+    notes: z.array(z.string().min(1).max(1000)).max(20).default([]),
     /**
      * The rules this run probed, each with what it was made against: a route with no popups has no
      * results, and this still says which rules it was probed for, and when that goes stale.

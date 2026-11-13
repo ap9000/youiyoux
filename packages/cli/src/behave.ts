@@ -99,7 +99,7 @@ export const behaveExitCode = (result: BehaveResult): number => (result.errors >
 const MARK: Record<BehaviourResult["state"], string> = { passed: "✓ passed", failed: "✖ failed", "not-applicable": "- n/a", incomplete: "! incomplete", error: "! error" };
 
 /** Which popup: its pattern's noun, its name, and file:line when locating found it. */
-const popupOf = (r: BehaviourResult): string => `${POPUP_NOUN[r.pattern]} ${pageText(r.target.accessibleName)}${r.target.ordinal !== undefined ? ` #${r.target.ordinal + 1}` : ""}${r.target.file && r.target.line ? ` (${r.target.file}:${r.target.line})` : ""}`;
+const popupOf = (r: BehaviourResult): string => `${POPUP_NOUN[r.pattern]} ${pageText(r.target.accessibleName)}${r.target.ordinal !== undefined ? ` #${r.target.ordinal + 1}` : ""}${r.target.file && r.target.line ? ` (${r.target.file}:${r.target.line}${r.target.lineIs === "component" ? ", the component's own line" : ""})` : ""}`;
 
 function mark(r: BehaviourResult, severity: string | undefined): string {
   const text = MARK[r.state];
@@ -111,7 +111,7 @@ function mark(r: BehaviourResult, severity: string | undefined): string {
 
 /** `youiyoux behave` in a terminal: each route's coverage, each result with why and what to do, then the verdict. */
 export function behaveText(result: BehaveResult): string {
-  if (result.rules.length === 0) return style.dim("No behaviour rules are on in this System, so there is nothing to probe. Add a rule with check: { engine: behaviour, id: dismiss-escape } to probe popups.");
+  if (result.rules.length === 0) return style.dim("No behaviour rules are on in this System, so there is nothing to probe. youiyoux rules add behaviour adds six, as warnings.");
   const severity = new Map(result.rules.map((r) => [r.id, r.severity]));
   const lines: string[] = [];
   for (const r of result.routes) {
@@ -121,6 +121,7 @@ export function behaveText(result: BehaveResult): string {
       continue;
     }
     lines.push(style.dim(`  ${r.run.coverage}`));
+    for (const note of r.run.notes) lines.push(style.dim(`  Note: ${note}`));
     if (r.run.why) lines.push(`  ${style.warn("! incomplete")}  ${r.run.why}`, `      ${style.ok("→")} ${r.run.fix}`);
     for (const x of r.run.results) {
       if (x.state === "not-applicable") continue;

@@ -145,6 +145,7 @@ export async function runBehaviour(project: BehaviourProject, setup: BehaviourSe
         browser,
         checks: rules.map((r) => ({ rule: r.id, check: (r.check as { id: BehaviourCheckId }).id, digest: ruleDigest(r) })),
         bindings: contractBindings(project.system),
+        componentsDir: project.config.componentsDir,
         fingerprint: { app: app.digest, tool: setup.tool },
         ...(setup.budgets ? { budgets: setup.budgets } : {}),
         ...(setup.probe ? { probe: setup.probe } : {}),

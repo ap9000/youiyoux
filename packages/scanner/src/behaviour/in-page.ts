@@ -779,7 +779,7 @@ export function nominateContractTriggersInPage(this: Document, bindings: Readonl
  * given) and the JSX frames for its file and line. Labels for display and identity only.
  */
 export function labelsInPage(this: Element, args: { readonly component: string | null; readonly maxFrames: number }): { component: string | null; frames: Frame[] } {
-  type Fiber = { tag: number; type: unknown; return: Fiber | null; _debugStack?: { stack?: string } | Error | null };
+  type Fiber = { tag: number; type: unknown; return: Fiber | null; _debugStack?: { stack?: string } | Error | null; _debugOwner?: Fiber | null };
   const COMPONENT = new Set([0, 1, 11, 14, 15]);
   const nameOf = (type: unknown): string | null => {
     const t = type as { displayName?: string; name?: string; render?: { displayName?: string; name?: string }; type?: { displayName?: string; name?: string } } | null;
@@ -806,7 +806,15 @@ export function labelsInPage(this: Element, args: { readonly component: string |
     }
     return frames;
   };
-  const frames = framesOf(own);
+  // The element's own JSX call (inside the component that rendered it, often a design-system
+  // Button), then each owner's (where that component was rendered, up to the app's own code), so
+  // the caller can choose the first that isn't a component of the System's own.
+  const frames: Frame[] = [];
+  const seen = new Set<Fiber>();
+  for (let node: Fiber | null = own; node && !seen.has(node) && frames.length < args.maxFrames; node = node._debugOwner && typeof node._debugOwner === "object" && "tag" in node._debugOwner ? node._debugOwner : null) {
+    seen.add(node);
+    for (const frame of framesOf(node)) if (frames.length < args.maxFrames && !frames.some((f) => f.url === frame.url && f.line === frame.line && f.column === frame.column)) frames.push(frame);
+  }
   return { component: args.component ?? (owner ? nameOf(owner.type) : null), frames: frames.length ? frames : framesOf(owner) };
 }
 

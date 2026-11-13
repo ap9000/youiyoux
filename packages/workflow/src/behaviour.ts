@@ -14,7 +14,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath, rename, unlink, type FileHandle } from "node:fs/promises";
-import { dirname, isAbsolute, join, relative, sep } from "node:path";
+import { dirname, isAbsolute, join, posix, relative, sep } from "node:path";
 import { acquireFileLock, BEHAVIOUR_ROUTE_SCHEMA, BehaviourRouteRun, cleanText, FileLockBusy, type HeldLock, decidesBehaviour, EVIDENCE_PATH, type BehaviourCheckId, type BehaviourResult, type BehaviourTarget, type Freshness } from "@youiyoux/core";
 import { behaviourConfigDigest, behaviourConsent, bindingsDigest, CHECK_KEYS, probeOrigin, probeRoute, readScreensSpec, screenUrl, switchedConsent, SWITCHED_OFF, updateScreensSpec, type ContractBinding, type ProbeBudgets, type ProbeRouteOptions, type RouteProbe, type ScreensSpec } from "@youiyoux/scanner";
 import { LiveApp } from "./live.ts";
@@ -39,6 +39,11 @@ export interface ProbeBehaviourOptions {
   readonly budgets?: Partial<ProbeBudgets>;
   /** Test only these targets (one component's); the rest are listed, not tested (probeRoute's `only`). */
   readonly only?: ProbeRouteOptions["only"];
+  /**
+   * The product's own components folder (youi.project.json's componentsDir): a button's file:line is
+   * where the app renders it, the first frame outside this folder, not the component's own line.
+   */
+  readonly componentsDir?: string;
   /** Told how many popups this run tests, once they are found. */
   readonly onFound?: (count: number) => void;
   readonly now?: () => Date;
@@ -197,7 +202,7 @@ export async function readEvidence(root: string, path: string): Promise<Buffer> 
 /**
  * Every string of a run that is shown to people or agents, made safe (cleanText: no control,
  * format or default-ignorable character, whitespace collapsed, capped): the run's why, fix and
- * coverage, each result's why, fix and info, and every target's name, component, file and DOM path.
+ * coverage and notes, each result's why, fix and info, and every target's name, component, file and DOM path.
  * Applied when a run is written and again whenever one is read, so a run kept by an older youiyoux
  * (or edited by hand) never reaches standing, behave or check with raw page text. Idempotent.
  */
@@ -209,6 +214,7 @@ export function cleanBehaviourRun(run: BehaviourRouteRun): BehaviourRouteRun {
     why: run.why === null ? null : words(run.why, "it couldn't be probed"),
     fix: run.fix === null ? null : words(run.fix, "Next: run youiyoux behave again."),
     coverage: words(run.coverage, "Coverage wasn't recorded."),
+    notes: run.notes.map((line) => cleanText(line, 1000)).filter(Boolean),
     targets: run.targets.map(identity),
     results: run.results.map((r) => ({
       ...r,
@@ -378,10 +384,12 @@ async function probeUnderClaim(options: ProbeBehaviourOptions, claim: RouteClaim
     running.get(key)?.delete(controller);
     if (running.get(key)?.size === 0) running.delete(key);
   }
+  const folder = options.componentsDir ? posix.normalize(options.componentsDir.replace(/\\/g, "/")).replace(/\/+$/, "") : null;
+  const ownComponents = folder && folder !== "." && !folder.startsWith("..") ? (file: string): boolean => file === folder || file.startsWith(`${folder}/`) : null;
   // File and line, for display: fetched only from the consented origin (never a base that moved
   // since, never another origin a frame names), no redirects, bounded in size and time.
   const lines = await new LiveApp(options.root, spec.project)
-    .resolve(probe.targets.map((t) => ({ name: t.key.component ?? t.found.domPath, owner: null, frames: t.found.frames, box: t.found.box, depth: 0 })), { origin: consent.origin })
+    .resolve(probe.targets.map((t) => ({ name: t.key.component ?? t.found.domPath, owner: null, frames: t.found.frames, box: t.found.box, depth: 0 })), { origin: consent.origin, ...(ownComponents ? { skip: ownComponents } : {}) })
     .catch(() => probe.targets.map(() => ({ file: null, line: null })));
   const runId = randomBytes(8).toString("hex");
   const at = now().toISOString();
@@ -397,7 +405,7 @@ async function probeUnderClaim(options: ProbeBehaviourOptions, claim: RouteClaim
       component: t.key.component,
       accessibleName: t.key.accessibleName,
       ...(t.key.ordinal !== undefined ? { ordinal: t.key.ordinal } : {}),
-      ...(place?.file && place.line ? { file: place.file, line: place.line } : {}),
+      ...(place?.file && place.line ? { file: place.file, line: place.line, ...(place.own ? { lineIs: "component" as const } : {}) } : {}),
       domPath: t.found.domPath || "body",
       box: { x: t.found.box.x, y: t.found.box.y, width: Math.max(0, t.found.box.width), height: Math.max(0, t.found.box.height) },
     };
@@ -435,7 +443,7 @@ async function probeUnderClaim(options: ProbeBehaviourOptions, claim: RouteClaim
   // Belt and braces: only a decided check is ever stored passed or failed.
   if (results.some((r) => (r.state === "passed" || r.state === "failed") && !decidesBehaviour(r.check))) throw new WorkflowError("internal", "the probe made a result it can't make yet; nothing was stored");
   const rules = [...new Map(options.checks.map((c) => [c.rule, { rule: c.rule, check: c.check, freshness: freshness(c) }])).values()];
-  const run = cleanBehaviourRun(BehaviourRouteRun.parse({ schema: BEHAVIOUR_ROUTE_SCHEMA, route: options.route, runId, at, startedAt, origin: consent.origin, viewport: spec.viewport, state: probe.state, why: probe.why === null ? null : cleanText(probe.why, 1000) || "it couldn't be probed", fix: probe.fix === null ? null : cleanText(probe.fix, 1000) || "Next: run youiyoux behave again.", coverage: probe.coverage, rules, targets: probe.targets.map((t) => ({ route: options.route, pattern: t.key.pattern, component: t.key.component, accessibleName: t.key.accessibleName, ...(t.key.ordinal !== undefined ? { ordinal: t.key.ordinal } : {}) })), results }));
+  const run = cleanBehaviourRun(BehaviourRouteRun.parse({ schema: BEHAVIOUR_ROUTE_SCHEMA, route: options.route, runId, at, startedAt, origin: consent.origin, viewport: spec.viewport, state: probe.state, why: probe.why === null ? null : cleanText(probe.why, 1000) || "it couldn't be probed", fix: probe.fix === null ? null : cleanText(probe.fix, 1000) || "Next: run youiyoux behave again.", coverage: probe.coverage, notes: (probe.notes ?? []).slice(0, 20), rules, targets: probe.targets.map((t) => ({ route: options.route, pattern: t.key.pattern, component: t.key.component, accessibleName: t.key.accessibleName, ...(t.key.ordinal !== undefined ? { ordinal: t.key.ordinal } : {}) })), results }));
   // A run started later than this one is already kept (another process published first): this
   // one is obsolete, and never replaces newer evidence with older.
   // Published only while the claim is still ours (checked, then written, under it).

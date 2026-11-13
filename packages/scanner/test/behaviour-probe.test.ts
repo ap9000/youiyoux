@@ -431,6 +431,8 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
            hmr.addEventListener("close", ({ wasClean }) => { if (wasClean) return; if (!opened) { report("hmr=gave-up"); return; } location.reload(); });
            ${worker(`new WebSocket("${OTHER.replace("http:", "ws:")}/worker-socket"); fetch("${OTHER}/worker-get").catch(() => {});`)}`,
         ),
+      // A socket opened by the click itself: that popup's own, said on its result.
+      "/ws-click": () => page(menu("Chat", "m6c", "new WebSocket('ws://' + location.host + '/chat-socket')")),
       // The worker starts on the click, and posts from there.
       "/worker": () => page(menu("Worker", "m6w", worker(`fetch(${JSON.stringify(app.origin)} + "/worker-post", { method: "POST", body: "x" }).catch(() => {});`))),
       "/navigate": () => page(menu("Go", "m7", "location.href = '/elsewhere?x=1'")),
@@ -597,14 +599,24 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
   }, 60_000);
 
   test("every WebSocket is blocked (the app's, a Vite-like hot-reload socket, a worker's to another port), and a dev page still probes", async () => {
-    const result = only(await probe("/ws"));
+    const routed = await probe("/ws");
+    const result = only(routed);
     // The hot-reload client saw a socket that never opened, gave up, and didn't reload the page.
     expect(result).toMatchObject({ state: DECIDED });
-    expect(result.info.join(" ")).toMatch(/WebSocket or tunnel to 127\.0\.0\.1:\d+; it was blocked/);
+    // Refused while the screen loaded: said once for the route, not on the result (nor its retries).
+    expect((routed.notes ?? []).join(" ")).toMatch(/^while the screen loaded, the page tried to open a WebSocket or tunnel to 127\.0\.0\.1:\d+; it was blocked/);
+    expect(result.info.join(" ")).not.toMatch(/WebSocket/);
     expect(app.upgrades).toEqual([]);
     expect(other.upgrades).toEqual([]);
     expect(other.requests).toEqual([]);
     expect(logged("hmr")).toContain("gave-up");
+  }, 60_000);
+
+  test("a socket the click itself opens stays on that popup's result, and the route has no load note", async () => {
+    const routed = await probe("/ws-click");
+    expect(routed.notes).toEqual([]);
+    expect(only(routed).info.join(" ")).toMatch(/WebSocket or tunnel to 127\.0\.0\.1:\d+; it was blocked/);
+    expect(app.upgrades).toEqual([]);
   }, 60_000);
 
   test("a worker's POST is stopped like the page's own", async () => {

@@ -61,7 +61,7 @@ export class LiveApp {
    * may be fetched from (a behaviour probe passes the origin it was consented for, so a base that
    * moves mid-run is never followed); without it, the origin of screens.json's base now.
    */
-  async resolve(places: readonly RawPlace[], options: { readonly origin?: string } = {}): Promise<Place[]> {
+  async resolve(places: readonly RawPlace[], options: { readonly origin?: string; readonly skip?: (file: string) => boolean } = {}): Promise<Place[]> {
     let origin: string;
     if (options.origin) origin = new URL(options.origin).origin;
     else {
@@ -83,7 +83,7 @@ export class LiveApp {
       return text !== null && text.length <= MAX_TEXT ? text : null;
     };
     if (this.maps.size > MAX_KEPT) this.maps.clear();
-    return resolvePlaces(places, fetchText, this.root, undefined, this.maps);
+    return resolvePlaces(places, fetchText, this.root, undefined, this.maps, options.skip);
   }
 
   /**

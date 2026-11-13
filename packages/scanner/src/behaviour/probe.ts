@@ -101,6 +101,8 @@ export interface RouteProbe {
   readonly why: string | null;
   readonly fix: string | null;
   readonly coverage: string;
+  /** Said once for the route, not on each result: sockets the screen tried to open while it loaded (a dev server's reload socket), refused. */
+  readonly notes?: readonly string[];
   readonly targets: readonly ProbedTarget[];
 }
 
@@ -135,6 +137,9 @@ class GuardedContext {
    * probe's own (a worker's, one still in flight from a page closing) get after-click rules.
    */
   private afterClick = false;
+
+  /** Sockets refused while a screen loaded, in any of this route's pages: the route's notes. */
+  readonly loadSockets = new Set<string>();
 
   private readonly context: BrowserContext;
   private readonly origin: string;
@@ -180,6 +185,7 @@ class GuardedContext {
   private record(log: PageLog | null, event: Omit<GuardEvent, "phase">): void {
     const to = log ?? this.current;
     to?.events.push({ ...event, phase: to.phase });
+    if (to?.phase === "load" && event.kind === "socket") this.loadSockets.add(event.words);
   }
 
   private async guard(route: Route, request: Request): Promise<void> {
@@ -605,10 +611,11 @@ export async function probeRoute(options: ProbeRouteOptions): Promise<RouteProbe
   const routeDeadline = Date.now() + budgets.routeMs;
   const bindings = options.bindings ?? [];
   const { guarded, close } = await GuardedContext.open(options.browser, options.origin, options.viewport);
+  const notes = (): string[] => [...guarded.loadSockets].map((words) => `while the screen loaded, ${words} (a dev server's reload socket, often); every popup here was tested without it`);
   try {
     // Discovery: what the screen claims, from its own fresh load.
     let found: readonly FoundTarget[];
-    const switchedOff = (): RouteProbe => ({ url: start, state: "incomplete", ...SWITCHED_OFF, coverage: "Nothing on this screen was probed.", targets: [] });
+    const switchedOff = (): RouteProbe => ({ url: start, state: "incomplete", ...SWITCHED_OFF, coverage: "Nothing on this screen was probed.", notes: notes(), targets: [] });
     if (options.signal?.aborted) return switchedOff();
     const discovery = await guarded.page(start, { bindings, budgets, deadline: () => routeDeadline, keys: [] });
     // Switched off while discovering: the page is closed at once, and nothing more happens.
@@ -617,13 +624,13 @@ export async function probeRoute(options: ProbeRouteOptions): Promise<RouteProbe
     try {
       const stop = await openScreen(discovery, start, options.origin);
       if (options.signal?.aborted) return switchedOff();
-      if (stop) return { url: start, state: "incomplete", why: stop.why, fix: stop.fix, coverage: "Nothing on this screen was probed.", targets: [] };
+      if (stop) return { url: start, state: "incomplete", why: stop.why, fix: stop.fix, coverage: "Nothing on this screen was probed.", notes: notes(), targets: [] };
       found = await discovery.findTargets();
       if (options.signal?.aborted) return switchedOff();
     } catch (error: unknown) {
       if (options.signal?.aborted) return switchedOff();
       const stop = error instanceof TimeUp ? { why: "the screen took longer to load than the probe's time budget", fix: "Next: make sure the dev server is idle, then run the probe again." } : { why: `the probe couldn't open the screen: ${errorWords(error)}`, fix: "Next: check the dev server is running, and run the probe again." };
-      return { url: start, state: "incomplete", ...stop, coverage: "Nothing on this screen was probed.", targets: [] };
+      return { url: start, state: "incomplete", ...stop, coverage: "Nothing on this screen was probed.", notes: notes(), targets: [] };
     } finally {
       options.signal?.removeEventListener("abort", cancel);
       await discovery.close();
@@ -662,7 +669,7 @@ export async function probeRoute(options: ProbeRouteOptions): Promise<RouteProbe
     const coverage = found.length === 0
       ? "No declared popups found; popups without these markers were not assessed."
       : `${named} popup trigger${found.length === 1 ? "" : "s"} found by ARIA markers${bindings.length ? " and contract bindings" : ""}${options.only ? `; this run tested only ${options.only.words} (${chosen.filter(Boolean).length})` : found.length > budgets.targets ? `; the first ${budgets.targets} were tested` : ""}. Popups without these markers were not assessed; opening is by mouse click only (keyboard opening isn't verified yet).`;
-    return { url: start, state: "probed", why: null, fix: null, coverage, targets };
+    return { url: start, state: "probed", why: null, fix: null, coverage, notes: notes(), targets };
   } finally {
     await close();
   }

@@ -139,7 +139,12 @@ function Popup({ results, onFiled }: { results: readonly BehaviourResultView[]; 
           {NOUN[t.pattern]} &lsquo;{t.accessibleName || "no name"}&rsquo;{t.ordinal !== undefined ? ` #${t.ordinal + 1}` : ""}
         </span>
         {t.component && <code className="font-mono text-mono-sm text-muted">{t.component}</code>}
-        {t.file && t.line && <code className="ml-auto truncate font-mono text-mono-sm text-faint">{t.file}:{t.line}</code>}
+        {t.file && t.line && (
+          <code className="ml-auto truncate font-mono text-mono-sm text-faint" {...(t.lineIs === "component" ? { title: "The component's own line: where the app renders it wasn't found" } : {})}>
+            {t.file}:{t.line}
+            {t.lineIs === "component" && " (its own line)"}
+          </code>
+        )}
       </div>
       <ul className="divide-y divide-line">
         {results.map((r) => (
@@ -216,6 +221,11 @@ export function BehaviourPanel({ route, component = null, onFiled }: PanelProps)
           {failedNow > 0 && ` ${plural(failedNow, "check")} failed.`}
         </p>
       )}
+      {view.run && (view.run.notes ?? []).map((note) => (
+        <p key={note} className="text-small text-muted" data-behaviour-note>
+          Note: {note}
+        </p>
+      ))}
       {!view.run && !view.problem && !running && <p className="text-small text-muted">Nothing has been probed on {route} yet.</p>}
       {view.run && groups.length === 0 && component && !view.run.why && (
         <p className="text-small text-muted">No popups of {component.name} were found in the last run. A popup belongs to the component that renders its button: pick that one, or run the whole screen from its page.</p>

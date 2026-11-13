@@ -304,6 +304,14 @@ describe.skipIf(!HAVE_CHROMIUM)("probing a running app", () => {
       }
       // /hostile: a page whose React-looking fiber names a module on another server (B), as a hostile or confused page can.
       const hostile = `${MENU("Actions", "h1")}<script>const b = document.querySelector("button"); b["__reactFiber$x"] = { tag: 5, type: "button", _debugStack: { stack: "Error\\n    at Menu (${elsewhere?.origin}/src/menu.js:1:1)" }, return: { tag: 0, type: function Menu() {}, return: null } };</script>`;
+      // Modules the /owned pages' fibers name, each with a map: the System's Button (line 1), and the app's AccountMenu (line 11).
+      const mapped = (source: string, mappings: string) => `x\n//# sourceMappingURL=data:application/json;base64,${Buffer.from(JSON.stringify({ version: 3, sources: [source], mappings })).toString("base64")}`;
+      if (req.url === "/src/components/ui/button.js") return void res.writeHead(200, { "content-type": "text/javascript" }).end(mapped("/src/components/ui/button.tsx", "AAAA"));
+      if (req.url === "/src/AccountMenu.js") return void res.writeHead(200, { "content-type": "text/javascript" }).end(mapped("/src/AccountMenu.tsx", "AAUA"));
+      // A React-like button: its own JSX call inside the System's Button, its owner (Button) rendered by AccountMenu; /owned-alone has no owner.
+      const fiber = (owner: boolean) =>
+        `<script>const b = document.querySelector("button"); const at = (name, file) => ({ stack: "Error\\n    at " + name + " (" + location.origin + file + ":1:1)" }); b["__reactFiber$x"] = { tag: 5, type: "button", _debugStack: at("Button", "/src/components/ui/button.js"), _debugOwner: ${owner ? `{ tag: 0, type: function Button() {}, _debugStack: at("AccountMenu", "/src/AccountMenu.js"), _debugOwner: null, return: null }` : "null"}, return: { tag: 0, type: function Button() {}, return: null } };</script>`;
+      if (req.url === "/owned" || req.url === "/owned-alone") return void res.writeHead(200, { "content-type": "text/html" }).end(`<!doctype html><meta charset="utf-8"><body>${MENU("Account", "o1")}${fiber(req.url === "/owned")}</body>`);
       if (req.url === "/revoke-on-second-load" && ++loads === 2) onSecondLoad?.();
       const body = req.url === "/revoke-on-second-load" ? MENU("Again", "r1") : req.url === "/never" ? `<button aria-haspopup="menu" aria-controls="nope" onclick="new Image().src='/opened'">Never</button>` : req.url === "/slow-discovery" ? `${MENU("Slow", "s1")}<img src="/slow-asset">` : req.url === "/menu" ? MENU("Actions", "m1") : req.url === "/fetches" ? MENU("Unread", "f1").replace("new Image().src='/opened';", "fetch('/api/read?id=7').catch(() => {});") : req.url === "/two" ? MENU("First", "a") + MENU("Second", "b") : req.url === "/hostile" ? hostile : req.url === "/esc" ? ESC_MENU("Actions", "e1", true) : req.url === "/esc-ignored" ? ESC_MENU("More", "e2", false) : req.url === "/" ? "<p>home</p>" : null;
       if (body === null) return void res.writeHead(404).end();
@@ -444,6 +452,15 @@ describe.skipIf(!HAVE_CHROMIUM)("probing a running app", () => {
     // Without a pin it follows base (now B): what the pin is for.
     await live.resolve([frame(`${elsewhere!.origin}/src/menu.js`)]);
     expect(elsewhere!.requests).toEqual(["GET /src/menu.js"]);
+  }, 60_000);
+
+  test("a button's file:line is where the app renders it, not the System component's own line; that line only when nothing else maps, and said so", async () => {
+    const root = product("owned", { base, behaviour: { allowedOrigin: base } }, [{ route: "/owned", path: "/owned" }, { route: "/owned-alone", path: "/owned-alone" }]);
+    const at = async (route: string) => (await probeBehaviour({ root, route, browser, checks: CHECKS, fingerprint: FINGERPRINT, componentsDir: "src/components/ui" })).run.results[0]!.target;
+    const rendered = await at("/owned");
+    expect([rendered.file, rendered.line, rendered.lineIs]).toEqual(["src/AccountMenu.tsx", 11, undefined]);
+    const alone = await at("/owned-alone");
+    expect([alone.file, alone.line, alone.lineIs]).toEqual(["src/components/ui/button.tsx", 1, "component"]);
   }, 60_000);
 
   test("a capture that moves base to another origin leaves no consent to probe with", async () => {

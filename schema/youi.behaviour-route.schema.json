@@ -82,6 +82,16 @@
       "type": "string",
       "minLength": 1
     },
+    "notes": {
+      "default": [],
+      "maxItems": 20,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 1000
+      }
+    },
     "rules": {
       "default": [],
       "type": "array",
@@ -282,6 +292,10 @@
                 "type": "integer",
                 "exclusiveMinimum": 0,
                 "maximum": 9007199254740991
+              },
+              "lineIs": {
+                "type": "string",
+                "const": "component"
               },
               "domPath": {
                 "type": "string",

@@ -417,7 +417,10 @@ Runs are kept in `.youi/behaviour/<route-hash>.json`. `youiyoux check` reads the
 has run only when every route has a fresh, complete result, and a fresh failure counts as an error
 (or warning) like any violation, filtered by `--rule` and `--quiet`. A baseline never accepts a
 behaviour failure. `check --diff` lists fresh failures as `behaviour` findings, by popup (route,
-pattern, component, name), not by line. In the hub, results show when they were made; an open
+pattern, component, name), not by line. A popup's file:line is where your app renders its button,
+the first line outside the product's components folder; only when none maps is it the component's
+own line, and it says so. A screen that opened a socket as it loaded (a dev server's reload socket)
+has that said once, as a note on the route, not on every result. In the hub, results show when they were made; an open
 Behaviour tab reads them again on focus and every 30 s.
 
 **Stale.** A result is stale, and not counted, once any of these changes: a file of the project
@@ -462,7 +465,9 @@ filed or last reopened, under the rules as they are then. A person still closes 
 - **Late focus moves.** Focus that keeps moving and never settles is reported as can't tell; focus
   that moves only later than the probe waits (about 400 ms after a key, plus a 250 ms grace moment)
   may be missed.
-- **Horizontal menus, submenus and lists over 50 items** aren't checked yet.
+- **Horizontal menus, submenus and lists over 50 items** aren't checked yet; nor are disclosures (a
+  button with `aria-expanded` and `aria-controls` that folds a section of the page open): only a
+  button whose `aria-controls` names a native popover, a menu, a listbox or a dialog is a popover.
 - **One run per screen at a time:** a second run of the same route is refused while one holds it;
   different routes may run at once.
 - A forged `.youi/` written by another process on your account is out of scope: freshness proves
