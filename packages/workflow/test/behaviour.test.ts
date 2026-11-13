@@ -129,6 +129,22 @@ describe("the storage guards", () => {
     expect(existsSync(join(root, behaviourFile("/x")))).toBe(false);
     expect((await probeBehaviour({ root, route: "/x", browser: NO_BROWSER, checks: ESC, fingerprint: FINGERPRINT, probe: saying("dismiss-escape", "passed", ["Escape"]) })).run.results.map((r) => r.state)).toEqual(["passed"]);
   });
+
+  test("the probe gets the dialogs screens.json declares a listbox part of, as written there, and none when it declares none; each result's config digest covers them", async () => {
+    const entry = { route: "/x", name: "Search", includes: "listbox" };
+    const seen: unknown[] = [];
+    const recording = (async (options: { dialogContent?: unknown }) => {
+      seen.push(options.dialogContent);
+      return (saying("dismiss-escape", "passed", ["Escape"]) as unknown as (o: unknown) => Promise<unknown>)(options);
+    }) as unknown as NonNullable<Parameters<typeof probeBehaviour>[0]["probe"]>;
+    const ESC = [{ rule: "youi:demo/rule/menus-close", check: "dismiss-escape" as const, digest: "0123456789ab" }];
+    const declared = product("declared", { base: "http://127.0.0.1:9", behaviour: { allowedOrigin: "http://127.0.0.1:9", dialogContent: [entry] } }, [{ route: "/x", path: "/x" }]);
+    const plain = product("undeclared", { base: "http://127.0.0.1:9", behaviour: { allowedOrigin: "http://127.0.0.1:9" } }, [{ route: "/x", path: "/x" }]);
+    const a = await probeBehaviour({ root: declared, route: "/x", browser: NO_BROWSER, checks: ESC, fingerprint: FINGERPRINT, probe: recording });
+    const b = await probeBehaviour({ root: plain, route: "/x", browser: NO_BROWSER, checks: ESC, fingerprint: FINGERPRINT, probe: recording });
+    expect(seen).toEqual([[entry], undefined]);
+    expect(a.run.results[0]!.freshness.config).not.toBe(b.run.results[0]!.freshness.config);
+  });
 });
 
 describe("the service write", () => {

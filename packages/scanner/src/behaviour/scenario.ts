@@ -47,9 +47,12 @@ export interface ProbePage {
    * The very popup identified is still connected and showing, with effective focus inside it (or on
    * the combobox); with `away`, focus may instead be in the browser's own toolbar (a native modal's Tab wraps through it).
    */
-  ready(index: number, pattern: BehaviourPattern, away?: boolean): Promise<boolean>;
-  /** The identified dialog's focus-trap facts; `first` fixes the tabbable list later looks are held to. */
-  trap(first: boolean): Promise<TrapFacts>;
+  ready(index: number, pattern: BehaviourPattern, away?: boolean, dom?: boolean): Promise<boolean>;
+  /**
+   * The identified dialog's focus-trap facts; `first` fixes the tabbable list later looks are held
+   * to and, with `content` (what the person declared the dialog's own content includes), the listbox held as part of it.
+   */
+  trap(first: boolean, content?: "listbox" | null): Promise<TrapFacts>;
   /** The identified menu's or listbox's items and where effective focus is among them; `first` fixes the items later looks are held to. */
   items(index: number, pattern: BehaviourPattern, first: boolean): Promise<ItemFacts>;
   /** A menu's effective focus on one of its items (kept where the app put it, else focus() on the first enabled one). */
@@ -320,6 +323,11 @@ export interface CheckArgs {
   /** Asked immediately before every key: null while probing is still allowed, else why not (nothing is sent). */
   readonly beforeInput?: () => Promise<Stop | null>;
   readonly signal?: AbortSignal;
+  /**
+   * focus-trap: what screens.json's behaviour.dialogContent declares this dialog's own content
+   * includes (`declared`), and the entry that would declare it (`declare`, for the words).
+   */
+  readonly dialogContent?: { readonly declared: "listbox" | null; readonly declare: string };
 }
 
 /** What every check needs around its popup: its info and data-blocked flag, its stops, and its results. */

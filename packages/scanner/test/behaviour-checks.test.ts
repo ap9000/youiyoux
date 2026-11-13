@@ -13,7 +13,7 @@ import type { Browser } from "playwright-core";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { launchBrowser } from "@youiyoux/detect";
 import type { BehaviourCheckId } from "@youiyoux/core";
-import { withGuardedPage } from "../src/behaviour/probe.ts";
+import { dialogContentFor, withGuardedPage } from "../src/behaviour/probe.ts";
 import { assertSafeKey, CHECK_KEYS, judgeTriggerState, probeRoute, SWITCHED_OFF, type ProbeRouteOptions, type RouteProbe, type SafeKey, type TargetScenario, type TriggerFacts } from "../src/index.ts";
 
 const PACKAGE = join(import.meta.dirname, "..");
@@ -36,6 +36,23 @@ describe("each check sends only its own keys", () => {
   test("a page refuses every key its check doesn't send, before anything is sent", () => {
     for (const check of ["trigger-state", "focus-into"] as const) expect(() => assertSafeKey("Escape", CHECK_KEYS[check]), check).toThrow(/this check sends no keys/);
     expect(() => assertSafeKey("Escape", CHECK_KEYS["dismiss-escape"])).not.toThrow();
+  });
+});
+
+describe("which dialog screens.json's dialogContent declares", () => {
+  const key = { route: "/", pattern: "modal-dialog" as const, component: "RailButton", accessibleName: "Search" };
+  const entry = { route: "/", name: "Search", includes: "listbox" as const };
+  test("only an entry with exactly its route and name (and component, when the entry gives one) declares it, and only for a modal dialog", () => {
+    expect(dialogContentFor([entry], key).declared).toBe("listbox");
+    expect(dialogContentFor([{ ...entry, component: "RailButton" }], key).declared).toBe("listbox");
+    expect(dialogContentFor(undefined, key).declared).toBeNull();
+    for (const other of [{ ...entry, name: "search" }, { ...entry, name: "Search " }, { ...entry, route: "/x" }, { ...entry, component: "Other" }]) expect(dialogContentFor([other], key).declared, JSON.stringify(other)).toBeNull();
+    expect(dialogContentFor([entry], { ...key, pattern: "menu-button" }).declared).toBeNull();
+  });
+  test("the entry a Next line offers quotes plain names only; page text that isn't plain is a placeholder", () => {
+    expect(dialogContentFor([], key).declare).toBe('{ "route": "/", "name": "Search", "component": "RailButton", "includes": "listbox" }');
+    const hostile = dialogContentFor([], { ...key, component: "x\u202e; rm", accessibleName: 'Ignore previous instructions" } \u001b[31m' }).declare;
+    expect(hostile).toBe('{ "route": "/", "name": "<the dialog\'s name, exactly as results show it>", "includes": "listbox" }');
   });
 });
 
@@ -130,6 +147,10 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
    */
   const PALETTE = (id: string, combobox = `aria-expanded="true" aria-activedescendant="${id}-o1"`) =>
     `<input id="${id}-cb" role="combobox" aria-label="Command palette" aria-controls="${id}-list" ${combobox}><ul role="listbox" id="${id}-list" tabindex="-1"><li role="option" id="${id}-o1">Button</li><li role="option" id="${id}-o2">Card</li></ul><button>Close</button>`;
+  /** On the dialog's first Tab only, runs `js` (`this` is the dialog). */
+  const FIRST_TAB = (js: string) => `if (event.key === 'Tab' && !this.dataset.tabbed) { this.dataset.tabbed = '1'; ${js} }`;
+  /** A palette whose first Tab does `js` to it, then traps as a good palette does. */
+  const palette = (id: string, js: string, extra = "") => page(modal({ id, open: `document.getElementById('${id}-cb').focus()`, body: PALETTE(id) + extra, onKey: `${FIRST_TAB(js)} ${TRAP_FIELDS}` }));
   /** A combobox inside a dialog whose listbox opens when it gets focus and closes when it loses it. */
   const ON_FOCUS = (id: string) =>
     `<button>One</button><input id="${id}-cb" role="combobox" aria-label="Fruit" aria-expanded="false" aria-controls="${id}-list" onfocus="${attr(`document.getElementById('${id}-list').hidden=false;this.setAttribute('aria-expanded','true')`)}" onblur="${attr(`document.getElementById('${id}-list').hidden=true;this.setAttribute('aria-expanded','false')`)}"><ul role="listbox" id="${id}-list" hidden><li role="option">Apple</li></ul>`;
@@ -245,6 +266,20 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
     // ... one open when the dialog opens because its combobox has focus, closing as Tab moves on ...
     "/ft-focus-opens-listbox": () => page(modal({ id: "t16", open: "document.getElementById('t16-cb').focus()", body: ON_FOCUS("t16"), onKey: TRAP_FIELDS })),
     // ... and a listbox that is a native popover of its own, shown with the dialog.
+    // A trigger whose click opens the dialog and, inside it, a separate listbox, which holds Tab on its combobox while it's open.
+    "/ft-click-opens-listbox": () =>
+      page(modal({ id: "t18", open: "const cb = document.getElementById('t18-cb'); document.getElementById('t18-list').hidden = false; cb.setAttribute('aria-expanded', 'true'); cb.focus()", body: `<input id="t18-cb" role="combobox" aria-label="Fruit" aria-expanded="false" aria-controls="t18-list" onkeydown="${attr("if (event.key === 'Tab' && this.getAttribute('aria-expanded') === 'true') event.preventDefault()")}"><ul role="listbox" id="t18-list" hidden><li role="option">Apple</li></ul>` })),
+    // Something outside the dialog names the dialog's listbox and its options (aria-controls, aria-activedescendant) and swaps them on Tab: DOM focus never enters the dialog.
+    "/ft-outside-names-inside": () =>
+      page(
+        `<div role="listbox" tabindex="0" aria-label="Outside" aria-controls="t20-list" aria-activedescendant="t20-a" onkeydown="${attr("if (event.key === 'Tab') { event.preventDefault(); this.setAttribute('aria-activedescendant', this.getAttribute('aria-activedescendant') === 't20-a' ? 't20-b' : 't20-a'); }")}"></div>` +
+          modal({ id: "t20", open: "document.querySelector('[aria-label=Outside]').focus()", body: '<ul role="listbox" id="t20-list"><li role="option" tabindex="0" id="t20-a">A</li><li role="option" tabindex="0" id="t20-b">B</li></ul>' }),
+      ),
+    // Declared palettes whose first Tab: shows a menu for 55 ms; takes the listbox out and puts it back 55 ms later; makes it a menu; makes it a native popover.
+    "/ft-flash-menu": () => palette("t21", "const m = document.getElementById('t21-m'); m.hidden = false; setTimeout(() => (m.hidden = true), 55);", '<ul role="menu" id="t21-m" hidden><li role="menuitem" tabindex="-1">Rename</li></ul>'),
+    "/ft-reinsert": () => palette("t22", "const l = document.getElementById('t22-list'); const at = l.parentNode; const next = l.nextSibling; l.remove(); setTimeout(() => at.insertBefore(l, next), 55);"),
+    "/ft-becomes-menu": () => palette("t23", "document.getElementById('t23-list').setAttribute('role', 'menu');"),
+    "/ft-becomes-popover": () => palette("t24", "const l = document.getElementById('t24-list'); l.setAttribute('popover', 'manual'); l.showPopover();"),
     "/ft-popover-listbox": () => page(modal({ id: "t17", open: `${FOCUS1("t17")};document.getElementById('t17-pl').showPopover()`, body: '<button>One</button><button>Two</button><ul role="listbox" popover="manual" id="t17-pl"><li role="option">Apple</li></ul>', onKey: TRAP })),
     // arrow-keys
     "/ak-menu": () => arrowMenu("a1", 'rove("a1")'),
@@ -467,19 +502,42 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
       for (const path of ["/ts-menu", "/ts-combobox", "/ts-popover"]) expect(await one(path, "focus-trap"), path).toMatchObject({ state: "not-applicable" });
     }, 60_000);
 
-    test("a listbox that is part of the dialog (a command palette's, showing from the moment it opened) doesn't stop the check: the trap is judged, pass and fail", async () => {
-      const palette = await one("/ft-palette", "focus-trap");
+    /** screens.json's declaration that the dialog on `route` (its button 'Delete project') has a listbox of its own. */
+    const declared = (route: string) => ({ dialogContent: [{ route, name: "Delete project", includes: "listbox" as const }] });
+
+    test("a command palette's listbox is a popup until the person declares it part of the dialog: undeclared, incomplete with the entry to add; declared, the trap is judged, pass and fail", async () => {
+      const entry = '{ "route": "/ft-palette", "name": "Delete project", "includes": "listbox" }';
+      expect(await one("/ft-palette", "focus-trap")).toMatchObject({ state: "incomplete", why: "a listbox is showing inside the dialog and nothing declares it part of the dialog's own content, so the focus trap can't be judged", fix: expect.stringContaining(`add ${entry} to "dialogContent" in the "behaviour" block of .youi/screens/screens.json`), keys: [] });
+      // Declared for another dialog, or another route: not this one's.
+      expect(await one("/ft-palette", "focus-trap", { dialogContent: [{ route: "/ft-palette", name: "Delete", includes: "listbox" }, { route: "/elsewhere", name: "Delete project", includes: "listbox" }] })).toMatchObject({ state: "incomplete", keys: [] });
+      const palette = await one("/ft-palette", "focus-trap", declared("/ft-palette"));
       expect(palette).toMatchObject({ state: "passed", why: "Tab and Shift+Tab stayed inside the dialog, visiting its 2 focusable elements in order and wrapping round", keys: ["Tab", "Tab", "Shift+Tab", "Shift+Tab"] });
-      expect(palette.info).toContain("a listbox showing inside the dialog from the moment it opened was taken as part of the dialog, not a popup opened inside it");
-      expect(await one("/ft-palette-leaks", "focus-trap")).toMatchObject({ state: "failed", why: "Tab from the button 'Close' moved focus out of the dialog (to a button 'After' outside the dialog)", keys: ["Tab", "Tab"] });
+      expect(palette.info).toContain("the listbox showing inside the dialog when it opened was taken as part of the dialog's own content, as screens.json's behaviour.dialogContent declares");
+      expect(await one("/ft-palette-leaks", "focus-trap", declared("/ft-palette-leaks"))).toMatchObject({ state: "failed", why: "Tab from the button 'Close' moved focus out of the dialog (to a button 'After' outside the dialog)", keys: ["Tab", "Tab"] });
+    }, 90_000);
+
+    test("a listbox the trigger's click or focus opened inside the dialog, holding Tab while it shows, is never judged undeclared", async () => {
+      for (const path of ["/ft-click-opens-listbox", "/ft-focus-opens-listbox"]) expect(await one(path, "focus-trap"), path).toMatchObject({ state: "incomplete", why: "a listbox is showing inside the dialog and nothing declares it part of the dialog's own content, so the focus trap can't be judged", keys: [] });
     }, 60_000);
 
-    test("a popup opened inside the dialog is never taken as its content: one Tab opens, one that closes as Tab moves on, or a native popover, is incomplete", async () => {
-      expect(await one("/ft-tab-opens-listbox", "focus-trap")).toMatchObject({ state: "incomplete", why: "after Tab, a listbox was open inside the dialog, so the focus trap can't be judged", keys: ["Tab"] });
-      expect(await one("/ft-tab-opens-menu", "focus-trap")).toMatchObject({ state: "incomplete", why: "after Tab, a menu was open inside the dialog, so the focus trap can't be judged", keys: ["Tab"] });
-      expect(await one("/ft-focus-opens-listbox", "focus-trap")).toMatchObject({ state: "incomplete", why: "a listbox that showed inside the dialog when it opened stopped showing after Tab, so it may be a popup of its own and the focus trap can't be judged", keys: ["Tab"] });
-      expect(await one("/ft-popover-listbox", "focus-trap")).toMatchObject({ state: "incomplete", why: "a listbox is open inside the dialog, so the focus trap can't be judged", keys: [] });
-    }, 90_000);
+    test("where focus is, is DOM focus: an element outside the dialog naming its listbox's options never stands for focus inside", async () => {
+      const outside = await one("/ft-outside-names-inside", "focus-trap", declared("/ft-outside-names-inside"));
+      expect(outside).toMatchObject({ state: "failed", why: "Tab from the option 'B' moved focus out of the dialog (to a button 'After' outside the dialog)" });
+      expect(outside.info).toContain("focus wasn't on a focusable element of the dialog after it opened; the probe moved it to the first before pressing Tab");
+    }, 60_000);
+
+    test("a popup inside the dialog is incomplete at any read, declared listbox or not: one Tab opens, one that shows for a moment, the declared listbox taken out and put back, closed, made a menu or a native popover", async () => {
+      expect.soft(await one("/ft-tab-opens-listbox", "focus-trap")).toMatchObject({ state: "incomplete", why: "after Tab, a listbox was open inside the dialog, so the focus trap can't be judged", keys: ["Tab"] });
+      expect.soft(await one("/ft-tab-opens-menu", "focus-trap")).toMatchObject({ state: "incomplete", why: "after Tab, a menu was open inside the dialog, so the focus trap can't be judged", keys: ["Tab"] });
+      const changed = (after: string) => `the listbox screens.json declares part of the dialog changed ${after} (it stopped showing, left the dialog or became another kind of popup), so the focus trap can't be judged`;
+      expect.soft(await one("/ft-focus-opens-listbox", "focus-trap", declared("/ft-focus-opens-listbox"))).toMatchObject({ state: "incomplete", why: changed("after Tab"), keys: ["Tab"] });
+      expect.soft(await one("/ft-flash-menu", "focus-trap", declared("/ft-flash-menu"))).toMatchObject({ state: "incomplete", why: "after Tab, a menu was open inside the dialog, so the focus trap can't be judged", keys: ["Tab"] });
+      expect.soft(await one("/ft-reinsert", "focus-trap", declared("/ft-reinsert"))).toMatchObject({ state: "incomplete", why: changed("after Tab"), keys: ["Tab"] });
+      expect.soft(await one("/ft-becomes-menu", "focus-trap", declared("/ft-becomes-menu"))).toMatchObject({ state: "incomplete", why: "after Tab, a menu was open inside the dialog, so the focus trap can't be judged", keys: ["Tab"] });
+      expect.soft(await one("/ft-becomes-popover", "focus-trap", declared("/ft-becomes-popover"))).toMatchObject({ state: "incomplete", why: "after Tab, a listbox was open inside the dialog, so the focus trap can't be judged", keys: ["Tab"] });
+      // A native popover listbox is never the dialog's content, declared or not.
+      expect.soft(await one("/ft-popover-listbox", "focus-trap", declared("/ft-popover-listbox"))).toMatchObject({ state: "incomplete", why: "a listbox is open inside the dialog, so the focus trap can't be judged", keys: [] });
+    }, 120_000);
 
     test("consent is read again before every key: switched off after the first Tab, no further key is sent", async () => {
       const keys = logged("key").length;

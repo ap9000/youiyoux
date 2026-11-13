@@ -3,7 +3,7 @@
  * "Probe safety"). Pure: consent from `screens.json`, the one origin every request must be on, the
  * methods that may leave, and how a refused request is described (its path, never its query string).
  */
-import { BehaviourConsent, cleanText, LOOPBACK_HOSTNAMES } from "@youiyoux/core";
+import { BehaviourConsent, cleanText, LOOPBACK_HOSTNAMES, type DialogContent } from "@youiyoux/core";
 
 /** What the hub says before probing is switched on, and `behave` says when it isn't. */
 export const CONSENT_WORDS = "Probes click buttons that open menus and dialogs in your running app. Use a dev app with test data.";
@@ -61,11 +61,11 @@ export function behaviourConsent(spec: { readonly base?: unknown; readonly behav
   return { ok: true, origin: at.origin, generation: consent.data.generation };
 }
 
-/** The consent block after a switch: on for `origin`, or off (null); either way one generation on, its `routes` and `inputs` kept. */
-export function switchedConsent(behaviour: unknown, origin: string | null): { allowedOrigin?: string; generation: number; routes?: string[]; inputs?: string[] } {
+/** The consent block after a switch: on for `origin`, or off (null); either way one generation on, its `routes`, `inputs` and `dialogContent` kept. */
+export function switchedConsent(behaviour: unknown, origin: string | null): { allowedOrigin?: string; generation: number; routes?: string[]; inputs?: string[]; dialogContent?: DialogContent[] } {
   const was = BehaviourConsent.safeParse(behaviour);
   const generation = (was.success ? was.data.generation : 0) + 1;
-  const kept = { ...(was.success && was.data.routes ? { routes: was.data.routes } : {}), ...(was.success && was.data.inputs ? { inputs: was.data.inputs } : {}) };
+  const kept = { ...(was.success && was.data.routes ? { routes: was.data.routes } : {}), ...(was.success && was.data.inputs ? { inputs: was.data.inputs } : {}), ...(was.success && was.data.dialogContent ? { dialogContent: was.data.dialogContent } : {}) };
   return origin === null ? { generation, ...kept } : { allowedOrigin: origin, generation, ...kept };
 }
 

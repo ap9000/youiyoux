@@ -16,7 +16,7 @@
  */
 import { randomBytes } from "node:crypto";
 import type { Browser, BrowserContext, CDPSession, Page, Request, Route } from "playwright-core";
-import { BEHAVIOUR_CHECKS, cleanText, decidesBehaviour, type BehaviourCheckId, type BehaviourPattern, type PartRef } from "@youiyoux/core";
+import { BEHAVIOUR_CHECKS, cleanText, decidesBehaviour, type BehaviourCheckId, type BehaviourPattern, type DialogContent, type PartRef } from "@youiyoux/core";
 import { startFence, type Fence, type FenceRefusal } from "./fence.ts";
 import { dataWords, describeUrl, requestVerdict, screenUrl, STATIC_RESOURCE_TYPES } from "./guards.ts";
 import { ambiguousWords, withOrdinals, type TargetKey } from "./identity.ts";
@@ -83,6 +83,23 @@ export interface ProbeRouteOptions {
   readonly only?: { readonly test: (key: TargetKey & { readonly ordinal?: number }) => boolean; readonly words: string };
   /** Told once the screen's targets are found: how many this run will test. */
   readonly onFound?: (count: number) => void;
+  /** screens.json's behaviour.dialogContent, as the person wrote it: dialogs whose own content includes a listbox (focus-trap). */
+  readonly dialogContent?: readonly DialogContent[];
+}
+
+/** A name or component as it may be written back into a Next line: plain words only, else a placeholder (page text never reaches it raw). */
+const PLAIN_NAME = /^[\p{L}\p{N}][\p{L}\p{N} .,'&()+:/-]{0,59}$/u;
+const PLAIN_COMPONENT = /^[A-Za-z_$][\w$.]{0,63}$/;
+
+/**
+ * What screens.json declares this dialog's own content includes (exactly its route and name, and
+ * its component when the entry gives one), and the entry that would declare it, for the words.
+ */
+export function dialogContentFor(declared: readonly DialogContent[] | undefined, key: TargetKey): { readonly declared: "listbox" | null; readonly declare: string } {
+  const entry = (declared ?? []).find((d) => d.route === key.route && d.name === key.accessibleName && (d.component === undefined || d.component === key.component));
+  const name = PLAIN_NAME.test(key.accessibleName) ? JSON.stringify(key.accessibleName) : '"<the dialog\'s name, exactly as results show it>"';
+  const component = key.component !== null && PLAIN_COMPONENT.test(key.component) ? `, "component": ${JSON.stringify(key.component)}` : "";
+  return { declared: entry && key.pattern === "modal-dialog" ? entry.includes : null, declare: `{ "route": ${JSON.stringify(key.route)}, "name": ${name}${component}, "includes": "listbox" }` };
 }
 
 export type TargetScenario = { readonly check: BehaviourCheckId; readonly keys?: readonly string[] } & (ScenarioOutcome | { readonly state: "not-applicable"; readonly why: string; readonly fix: string; readonly info: readonly string[] });
@@ -512,12 +529,12 @@ class PlaywrightProbePage implements ProbePage {
     return this.bound((await this.worlds()).call<FocusPlaced>("placeFocus", { index, pattern }));
   }
 
-  async ready(index: number, pattern: BehaviourPattern, away = false): Promise<boolean> {
-    return this.bound((await this.worlds()).call<boolean>("ready", { index, pattern, away }));
+  async ready(index: number, pattern: BehaviourPattern, away = false, dom = false): Promise<boolean> {
+    return this.bound((await this.worlds()).call<boolean>("ready", { index, pattern, away, dom }));
   }
 
-  async trap(first: boolean): Promise<TrapFacts> {
-    return this.bound((await this.worlds()).call<TrapFacts>("trap", { first }));
+  async trap(first: boolean, content: "listbox" | null = null): Promise<TrapFacts> {
+    return this.bound((await this.worlds()).call<TrapFacts>("trap", { first, content }));
   }
 
   async items(index: number, pattern: BehaviourPattern, first: boolean): Promise<ItemFacts> {
@@ -723,7 +740,7 @@ async function scenario(guarded: GuardedContext, start: string, options: ProbeRo
   const returnFocusTo = typeof found.via === "object" ? (bindings[found.via.contract]?.binding.returnFocusTo ?? null) : null;
   const scenarioMs = check === "focus-trap" || check === "arrow-keys" ? budgets.keyedScenarioMs : budgets.scenarioMs;
   const tested = await onFreshPage(guarded, start, options, key, found, bindings, { ...budgets, scenarioMs }, routeDeadline, CHECK_KEYS[check], (page, opened, deadline, popup) =>
-    act ? act(page, opened, { start, origin: options.origin, pattern: key.pattern, popup, returnFocusTo, deadline, budgets: close, ...(options.stillAllowed ? { beforeInput: options.stillAllowed } : {}), ...(options.signal ? { signal: options.signal } : {}) }) : Promise.resolve(opened),
+    act ? act(page, opened, { start, origin: options.origin, pattern: key.pattern, popup, returnFocusTo, deadline, budgets: close, dialogContent: dialogContentFor(options.dialogContent, key), ...(options.stillAllowed ? { beforeInput: options.stillAllowed } : {}), ...(options.signal ? { signal: options.signal } : {}) }) : Promise.resolve(opened),
   );
   if (!(CONTROLLED[check] ?? []).includes(tested.state) || (tested.state !== "passed" && tested.state !== "failed")) return tested;
   const ctl = await control();

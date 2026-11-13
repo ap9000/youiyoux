@@ -185,8 +185,29 @@ export const LOOPBACK_HOSTNAMES: readonly string[] = ["127.0.0.1", "localhost", 
  * enough (a capture can move `base`). Switched off, the block keeps only its `generation`, which
  * every switch (on, off, or consent dropped by a move) raises by one, so a running probe can tell
  * that consent changed under it, even if it was switched back on. `routes`, when set, narrows the
- * routes behaviour rules are held to.
+ * routes behaviour rules are held to; `dialogContent`, the dialogs whose own content includes a listbox.
  */
+/**
+ * A person's declaration, in screens.json's `behaviour.dialogContent`, that one modal dialog's own
+ * content includes a listbox (a command palette's list, always showing), so focus-trap doesn't take
+ * it for a popup opened inside the dialog. Narrow on purpose: one route, the dialog as results name
+ * it (its button's accessible name, exactly; and its component, when given), one listbox. The page
+ * can never declare it; the probe still requires the listbox to look like part of the dialog
+ * (inside it, showing when it opens, not a native popover or <dialog>, no other popup between).
+ */
+export const DialogContent = z
+  .object({
+    route: RoutePath.max(500),
+    /** The dialog's name as results show it: the accessible name of the button that opens it. */
+    name: z.string().min(1).max(200),
+    /** The component rendering that button, when results name one; absent, any (or none). */
+    component: z.string().min(1).max(200).optional(),
+    /** What the dialog's own content includes. */
+    includes: z.literal("listbox"),
+  })
+  .strict();
+export type DialogContent = z.infer<typeof DialogContent>;
+
 export const BehaviourConsent = z
   .object({
     allowedOrigin: z.string().min(1).max(200).optional(),
@@ -205,6 +226,8 @@ export const BehaviourConsent = z
       .min(1)
       .max(50)
       .optional(),
+    /** Dialogs whose own content includes a listbox (DialogContent); written by hand only, kept when probing is switched on or off. */
+    dialogContent: z.array(DialogContent).min(1).max(50).optional(),
   })
   .strict();
 export type BehaviourConsent = z.infer<typeof BehaviourConsent>;
