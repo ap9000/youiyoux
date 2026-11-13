@@ -10,6 +10,7 @@ import { elementHref } from "../data/ids.ts";
 import type { ElementSummary } from "../data/model.ts";
 import { useModelState } from "../data/store.ts";
 import { markNavigation } from "../lib/perf.ts";
+import { useReturnFocus } from "../lib/returnFocus.ts";
 import { useSearch } from "../search/client.ts";
 import { Keys, Kbd } from "../ui/Kbd.tsx";
 import { setOverlay } from "./keyboard.ts";
@@ -30,7 +31,8 @@ const LIST =
 
 const matches = (label: string, query: string): boolean => label.toLowerCase().includes(query.trim().toLowerCase());
 
-export function CommandPalette({ onClose }: { onClose: () => void }) {
+export function CommandPalette({ onClose, returnFocusTo }: { onClose: () => void; returnFocusTo?: HTMLElement | null }) {
+  const returnFocus = useReturnFocus(true, returnFocusTo);
   const [query, setQuery] = useState("");
   const [, navigate] = useLocation();
   const { scheme } = useTheme();
@@ -62,7 +64,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-scrim animate-fade" />
-        <Dialog.Content aria-modal="true" aria-describedby={undefined} className="fixed inset-x-0 top-[12vh] z-50 mx-auto w-[min(640px,calc(100vw-24px))] overflow-hidden rounded-xl border border-line bg-surface shadow-popover outline-none animate-pop">
+        <Dialog.Content aria-modal="true" onCloseAutoFocus={returnFocus} aria-describedby={undefined} className="fixed inset-x-0 top-[12vh] z-50 mx-auto w-[min(640px,calc(100vw-24px))] overflow-hidden rounded-xl border border-line bg-surface shadow-popover outline-none animate-pop">
           <Dialog.Title className="sr-only">Command palette</Dialog.Title>
           <Command shouldFilter={false} loop label="Command palette" value={selected} onValueChange={setSelected}>
             <div className="flex items-center gap-2.5 border-b border-line px-4">

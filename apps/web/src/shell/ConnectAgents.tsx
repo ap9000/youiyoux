@@ -24,7 +24,7 @@ const FIRST_START: Record<AgentKind, string> = {
 /** At first, every agent here that is not connected yet; one not on this machine can still be picked. */
 const firstPicks = (view: AgentsView): Set<AgentKind> => new Set(view.agents.filter((a) => a.found && !a.connected).map((a) => a.kind));
 
-export function ConnectAgents({ onClose }: { onClose: () => void }) {
+export function ConnectAgents({ onClose, returnFocusTo }: { onClose: () => void; returnFocusTo?: HTMLElement | null }) {
   const [view, setView] = useState<AgentsView | null>(null);
   const [failed, setFailed] = useState<WorkflowRequestError | null>(null);
   const [picked, setPicked] = useState<Set<AgentKind>>(new Set());
@@ -68,6 +68,7 @@ export function ConnectAgents({ onClose }: { onClose: () => void }) {
       icon={Plug}
       description="Your coding agent gets YouIyouX's tools: it finds your components before making new ones, reads requests from the Screens, and answers them."
       onClose={onClose}
+      returnFocusTo={returnFocusTo}
       footer={
         done || offline ? (
           <Button variant="primary" onClick={onClose}>
