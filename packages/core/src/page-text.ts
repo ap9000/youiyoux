@@ -23,8 +23,8 @@ const KNOWN_ROLES: ReadonlySet<string> = new Set([
   "a", "aside", "body", "div", "footer", "header", "input", "label", "li", "nav", "ol", "p", "section", "select", "span", "summary", "details", "textarea", "ul", "iframe", "img", "svg", "video", "audio", "form", "html",
 ]);
 
-/** Control, format and direction characters (C0, DEL, C1, zero-width, bidi embeddings and isolates, line and paragraph separators). */
-const UNSAFE = /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/g;
+/** Every Unicode control (Cc), format (Cf: direction marks and overrides, zero-width, soft hyphen, Arabic letter mark), line and paragraph separator (Zl, Zp) and default-ignorable character (combining grapheme joiner, Hangul fillers, variation selectors). */
+const UNSAFE = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/gu;
 /** `value` with control and direction characters dropped, whitespace collapsed, and at most `max` characters (an ellipsis past it). Unquoted. */
 export function cleanText(value: unknown, max = 200): string {
   const text = String(value ?? "").replace(UNSAFE, " ").replace(/\s+/g, " ").trim();

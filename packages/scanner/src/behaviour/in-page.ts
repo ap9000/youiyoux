@@ -203,7 +203,7 @@ export function isolatedLibrary(): void {
   };
   const usable = (element: Element): boolean => launcher(element) && shown(element) && enabled(element) && !insideOpenPopup(element);
   // A name as the probe keeps it: control, format and direction characters dropped, whitespace collapsed (the same rule as core's cleanText).
-  const text = (value: string | null | undefined): string => (value ?? "").replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2060-\u206f\ufeff]/g, " ").replace(/\s+/g, " ").trim();
+  const text = (value: string | null | undefined): string => (value ?? "").replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/gu, " ").replace(/\s+/g, " ").trim();
   const byId = (element: Element, id: string): Element | null => ((element.getRootNode() as Document | ShadowRoot).getElementById?.(id) as Element | null) ?? document.getElementById(id);
   const accessibleName = (element: Element): string => {
     const labelledby = element.getAttribute("aria-labelledby");

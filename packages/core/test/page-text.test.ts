@@ -24,4 +24,12 @@ describe("page-supplied text in what youiyoux says", () => {
     expect(cleanText("a\u2028b\r\nc", 10)).toBe("a b c");
     expect(cleanText("x".repeat(300), 100)).toHaveLength(100);
   });
+  test("every Unicode control, format, separator and default-ignorable character goes, not just the usual ones", () => {
+    // Arabic letter mark, soft hyphen, combining grapheme joiner, zero-width space, BOM, the four isolates, Mongolian vowel separator, a Hangul filler, a variation selector.
+    for (const code of [0x061c, 0x00ad, 0x034f, 0x200b, 0xfeff, 0x2066, 0x2067, 0x2068, 0x2069, 0x180e, 0x3164, 0xfe0f]) {
+      const said = pageText(`Re${String.fromCodePoint(code)}name`);
+      expect([...said].some((c) => c.codePointAt(0) === code), code.toString(16)).toBe(false);
+      expect(said).toBe("'Re name'");
+    }
+  });
 });
