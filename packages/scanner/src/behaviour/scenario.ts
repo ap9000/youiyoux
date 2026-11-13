@@ -35,6 +35,10 @@ export interface ProbePage {
   identify(index: number, pattern: BehaviourPattern, popup: PartRef | null): Promise<PopupFound>;
   /** Effective focus inside the popup `identify` found last (or on the combobox), moved there with focus() if it isn't. */
   placeFocus(index: number, pattern: BehaviourPattern): Promise<FocusPlaced>;
+  /** The very popup identified is still connected and showing, with effective focus inside it (or on the combobox). */
+  ready(index: number, pattern: BehaviourPattern): Promise<boolean>;
+  /** The identified popup's state, judged on that element (a removed one reconciled by identity); unknown is never closed. */
+  popupState(index: number, pattern: BehaviourPattern, popup: PartRef | null): Promise<"open" | "closed" | "unknown">;
   /** One safe key (SAFE_KEYS), as real keyboard input; any other key is refused before anything is sent. */
   press(key: SafeKey): Promise<void>;
   /** Every key sent to this page, in order. */
@@ -73,6 +77,8 @@ export type ScenarioOutcome =
 const NOTHING_SENT = "Nothing was sent, and nothing was decided.";
 /** How long a refusal the page set off is waited for, when the page stopped answering. */
 const LATE_MS = 150;
+/** After focus is placed, how long the page's focus handlers get before the popup is checked again. */
+const FOCUS_SETTLE_MS = 100;
 
 /** Why a probe stops when its consent goes away (or changes) during the run. */
 export const SWITCHED_OFF: Stop = { why: "probing was switched off, or the app moved, during the run, so probing stopped", fix: "Next: switch probing on again if you meant to, and run the probe again." };
@@ -245,9 +251,11 @@ export interface CloseBudgets {
 
 /**
  * dismiss-escape, on a popup `openAndIdentify` opened: effective focus placed inside it (or on the
- * combobox), consent read again, Escape pressed once by real keyboard input, then the popup polled
- * until it is closed (removed, hidden, inert, aria-hidden, a closed popover or dialog) within the
- * close budget. passed: closed in time. failed: still open after the whole budget. Anything else
+ * combobox); once the page's focus handlers have run, consent read again and the very popup checked
+ * again (still showing, focus still inside) immediately before Escape is pressed once by real
+ * keyboard input; then that popup element polled until it is closed (removed, hidden, inert,
+ * aria-hidden, a closed popover or dialog) within the close budget. A removed popup is reconciled
+ * by identity; losing a relationship never makes it closed. passed: closed in time. failed: still open after the whole budget. Anything else
  * (focus couldn't be placed, the page left or sent something, the scenario's own time ran out
  * first, couldn't tell which popup) is incomplete, never a pass or a fail.
  */
@@ -273,30 +281,34 @@ export async function dismissEscape(
   const incomplete = (stop: Stop): ScenarioOutcome => ({ state: "incomplete", ...stop, info: info(), dataBlocked: opened.dataBlocked === true || dataBlockedIn(page.events()) });
   const cancelled = (): Stop | null => (args.signal?.aborted ? SWITCHED_OFF : null);
   const stopped = async (): Promise<Stop | null> => cancelled() ?? stopFromEvents(page.events()) ?? moved(start, await page.location(), origin);
-  // Consent, read again at the last moment before any input.
-  const refused = cancelled() ?? (await args.beforeInput?.()) ?? cancelled();
-  if (refused) return incomplete(refused);
+  if (cancelled()) return incomplete(SWITCHED_OFF);
   const focus = await page.placeFocus(opened.index, pattern);
   if (!focus.ok) return incomplete({ why: pattern === "combobox-listbox" ? "focus couldn't be kept on the combobox, so Esc wasn't pressed" : `focus couldn't be placed inside the ${noun}, so Esc wasn't pressed`, fix: FOCUS_FIX[pattern] });
   if (focus.moved) extra.push(pattern === "combobox-listbox" ? "focus had left the combobox when the listbox opened; the probe put it back before pressing Esc" : `focus wasn't inside the ${noun} after it opened; the probe moved it there before pressing Esc`);
+  // The page's focus handlers run, then: consent read again, and the very popup checked again
+  // (still showing, focus still inside), immediately before the key. Anything changed: not tested.
+  await page.wait(Math.max(0, Math.min(FOCUS_SETTLE_MS, deadline() - Date.now())));
+  const refused = cancelled() ?? (await args.beforeInput?.()) ?? cancelled();
+  if (refused) return incomplete(refused);
   const before = await stopped();
   if (before) return incomplete(before);
+  if (!(await page.ready(opened.index, pattern))) return incomplete({ why: `placing focus changed the ${noun} (it closed, was replaced, or focus left it), so Esc wasn't pressed; not tested`, fix: `Next: keep the ${noun} open while focus moves inside it, then run youiyoux behave again.` });
   await page.press("Escape");
   const pressed = Date.now();
   const until = pressed + budgets.closeMs;
   for (;;) {
     const stop = await stopped();
     if (stop) return incomplete(stop);
-    let now: PopupFound;
+    let now: "open" | "closed" | "unknown";
     // When this look began: a fail needs one that began after the whole close budget.
     const asked = Date.now();
     try {
-      now = await page.identify(opened.index, pattern, args.popup);
+      now = await page.popupState(opened.index, pattern, args.popup);
     } catch (error: unknown) {
       await page.wait(LATE_MS);
       return incomplete((await stopped().catch(() => null)) ?? { why: `the page changed under the probe after Esc: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}`, fix: "Next: run youiyoux behave again; a popup whose closing replaces the page can't be probed." });
     }
-    if (now.state === "none") {
+    if (now === "closed") {
       // Watch a moment longer: Esc that leaves the page or sends something is stopped, not passed.
       await page.wait(Math.max(0, Math.min(budgets.graceMs, deadline() - Date.now())));
       const after = await stopped();
@@ -305,8 +317,8 @@ export async function dismissEscape(
     }
     const at = Date.now();
     if (asked >= until) {
-      if (now.state === "open") return { state: "failed", popup: opened.popup, why: `Esc did nothing: the ${noun} was still open after ${budgets.closeMs / 1000} s`, fix: ESCAPE_FIX[pattern], info: info(), dataBlocked: opened.dataBlocked === true || dataBlockedIn(page.events()) };
-      return incomplete({ why: `after Esc, couldn't tell whether the ${noun} closed (${now.state === "several" ? `${now.count} of them show` : "it was already showing before"})`, fix: "Next: point the button at its popup with aria-controls (or popovertarget), or declare the contract's popup part." });
+      if (now === "open") return { state: "failed", popup: opened.popup, why: `Esc did nothing: the ${noun} was still open after ${budgets.closeMs / 1000} s`, fix: ESCAPE_FIX[pattern], info: info(), dataBlocked: opened.dataBlocked === true || dataBlockedIn(page.events()) };
+      return incomplete({ why: `after Esc, couldn't tell whether the ${noun} closed: it was removed, and something like it shows that can't be told apart from it`, fix: "Next: keep the popup's id when it re-renders (or declare the contract's popup part), then run youiyoux behave again." });
     }
     // The scenario's own time runs out before the close budget: that is no fail.
     if (deadline() <= at) return incomplete({ why: `ran out of time before the ${budgets.closeMs / 1000} s after Esc were up`, fix: "Next: make sure the dev server is idle, then run youiyoux behave again." });

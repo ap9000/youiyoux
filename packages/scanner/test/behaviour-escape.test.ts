@@ -83,6 +83,22 @@ describe.skipIf(!HAVE_CHROMIUM)("dismiss-escape in a real browser", () => {
     "/menu-nofocus": () => page(menu("Actions", "m6", CLOSE("m6"), "", false).replace(";m.querySelector('[role=menuitem]').focus()", "")),
     // Esc closes it, and also tries to leave the page.
     "/esc-leaves": () => page(menu("Actions", "m7", `${CLOSE("m7")}location.href='/elsewhere?x=1';`)),
+    // The app doesn't move focus on open; the first item's focus handler closes the menu.
+    "/focus-closes": () => page(menu("Actions", "m9", CLOSE("m9")).replace(";m.querySelector('[role=menuitem]').focus()", "").replace('data-log="item-m9"', `data-log="item-m9" onfocus="setTimeout(() => { ${CLOSE("m9").replace(/'/g, "&#39;")} }, 10)"`)),
+    // The app doesn't move focus on open; focusing an item reports it to the server.
+    "/focus-reports": () => page(menu("Actions", "m10", CLOSE("m10")).replace(";m.querySelector('[role=menuitem]').focus()", "").replace('data-log="item-m10"', `data-log="item-m10" onfocus="report('focus=m10')"`)),
+    // A custom popover whose Esc handler drops the trigger's aria-controls, and stays open.
+    "/drops-relationship": () =>
+      page(
+        `<button data-log="trigger-cp" aria-expanded="false" aria-controls="cp" onclick="const p=document.getElementById('cp');p.hidden=false;this.setAttribute('aria-expanded','true');p.querySelector('button').focus()">Filters</button>` +
+          `<div id="cp" hidden onkeydown="if (event.key === 'Escape') document.querySelector('[data-log=trigger-cp]').removeAttribute('aria-controls')"><button data-log="inside-cp">Apply</button></div>`,
+      ),
+    // A menu whose Esc handler renames it, and leaves it open.
+    "/renames-popup": () => page(menu("Actions", "m11", "this.id = 'renamed'")),
+    // A menu replaced on Esc by an identical one, still open.
+    "/replaced-open": () => page(menu("Actions", "m12", "const c = this.cloneNode(true); this.replaceWith(c); c.querySelector('[role=menuitem]').focus();")),
+    // A menu removed from the page on Esc: closed.
+    "/removed": () => page(menu("Actions", "m13", "document.querySelector('[aria-controls=m13]').focus(); this.remove();")),
     // Esc closes it, and also tries to send a POST.
     "/esc-posts": () => page(menu("Actions", "m8", `${CLOSE("m8")}fetch('/api/closed', { method: 'POST', body: 'x' }).catch(() => {});`)),
   };
@@ -186,6 +202,36 @@ describe.skipIf(!HAVE_CHROMIUM)("dismiss-escape in a real browser", () => {
     // Across every fixture so far: Escape is the only key the pages ever saw, and no item was clicked.
     expect(new Set(logged("key"))).toEqual(new Set(["Escape"]));
     expect(logged("click").filter((c) => !c.startsWith("trigger-"))).toEqual([]);
+  }, 60_000);
+
+  test("a popup that placing focus closes isn't tested: no key is sent, never passed", async () => {
+    const keys = logged("key").length;
+    expect(only(await probe("/focus-closes"))).toMatchObject({ state: "incomplete", why: "placing focus changed the menu (it closed, was replaced, or focus left it), so Esc wasn't pressed; not tested", keys: [] });
+    expect(logged("key").slice(keys)).toEqual([]);
+  }, 60_000);
+
+  test("closed is judged on the popup itself: dropping the trigger's aria-controls or renaming the popup while it stays open fails; a replacement with its identity is still it; removed is closed", async () => {
+    expect(only(await probe("/drops-relationship"))).toMatchObject({ state: "failed", why: "Esc did nothing: the popover was still open after 1.5 s" });
+    expect(only(await probe("/renames-popup"))).toMatchObject({ state: "failed", why: "Esc did nothing: the menu was still open after 1.5 s" });
+    expect(only(await probe("/replaced-open"))).toMatchObject({ state: "failed" });
+    expect(only(await probe("/removed"))).toMatchObject({ state: "passed", why: "Esc closed the menu" });
+  }, 60_000);
+
+  test("consent is read after focus is placed, immediately before Esc: revoked while focus moved in, no key is sent", async () => {
+    const keys = logged("key").length;
+    let asked = 0;
+    // Asked before the scenario (1), before the click (2) and before the key (3). At 3 it is
+    // revoked once the page has seen focus move inside (it waits for that, up to 1.5 s): read
+    // before focus, it would still be on and Esc would be sent.
+    const stillAllowed = async () => {
+      if (++asked !== 3) return null;
+      for (const until = Date.now() + 1_500; Date.now() < until; await new Promise((resolve) => setTimeout(resolve, 20))) if (logged("focus").includes("m10")) return SWITCHED_OFF;
+      return null;
+    };
+    const result = only(await probe("/focus-reports", { stillAllowed }));
+    expect(logged("focus")).toContain("m10");
+    expect(result).toMatchObject({ state: "incomplete", why: SWITCHED_OFF.why, keys: [] });
+    expect(logged("key").slice(keys)).toEqual([]);
   }, 60_000);
 
   test("consent is read again immediately before Esc: switched off there, no key is sent", async () => {

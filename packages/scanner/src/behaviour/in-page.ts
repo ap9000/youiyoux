@@ -66,7 +66,7 @@ export function isolatedLibrary(): void {
   type Pattern = "menu-button" | "combobox-listbox" | "modal-dialog" | "popover";
   const ROLE: Record<Pattern, string> = { "menu-button": '[role="menu"]', "combobox-listbox": '[role="listbox"]', "modal-dialog": 'dialog,[role="dialog"],[role="alertdialog"]', popover: "[popover]" };
   const POPUP = '[role="menu"],[role="listbox"],[role="dialog"],[role="alertdialog"],[role="tooltip"],dialog,[popover]';
-  const state = { elements: [] as Element[], before: [] as Element[], clicked: null as EventTarget | null, watching: false, popup: null as Element | null };
+  const state = { elements: [] as Element[], before: [] as Element[], clicked: null as EventTarget | null, watching: false, popup: null as Element | null, popupId: null as string | null, popupRole: null as string | null };
   const all = (): Element[] => {
     const out: Element[] = [];
     const collect = (root: Document | ShadowRoot): void => {
@@ -216,6 +216,18 @@ export function isolatedLibrary(): void {
     if (root.shadowRoot) collect(root.shadowRoot);
     return out;
   };
+  /** The popup identified: the element itself, its id and its role, to judge it (and anything replacing it) later. */
+  const remember = (popup: Element): void => {
+    state.popup = popup;
+    state.popupId = popup.id || null;
+    state.popupRole = roleOf(popup);
+  };
+  /** Effective focus inside `popup`, or (combobox) DOM focus on the combobox. */
+  const focusPlaced = (trigger: Element, popup: Element, pattern: Pattern): boolean => {
+    if (pattern === "combobox-listbox" && deepActive() === trigger) return true;
+    const at = effectiveFocus();
+    return !!at && (at === popup || ancestors(at).includes(popup));
+  };
   const library = {
     /**
      * Every usable trigger: those contract bindings nominated (each checked here; `nominated[i]`
@@ -304,7 +316,7 @@ export function isolatedLibrary(): void {
         if (open.length === 0) return { state: "none" };
         if (open.length > 1) return { state: "several", count: open.length };
         if (state.before.includes(open[0]!)) return { state: "was-open", how };
-        state.popup = open[0]!;
+        remember(open[0]!);
         return { state: "open", how, role: roleOf(open[0]!), domPath: domPath(open[0]!) };
       };
       if (wanted.contract) return settle(parts, "contract");
@@ -318,7 +330,7 @@ export function isolatedLibrary(): void {
       const fresh = all().filter((element) => element.matches(ROLE[wanted.pattern]) && shown(element) && !state.before.includes(element));
       if (fresh.length === 0) return { state: "none" };
       if (fresh.length > 1) return { state: "several", count: fresh.length };
-      state.popup = fresh[0]!;
+      remember(fresh[0]!);
       return { state: "open", how: "role", role: roleOf(fresh[0]!), domPath: domPath(fresh[0]!) };
     },
     /**
@@ -331,18 +343,51 @@ export function isolatedLibrary(): void {
       const trigger = state.elements[wanted.index];
       const popup = state.popup;
       if (!trigger || !popup || !popup.isConnected) return { ok: false };
-      const placed = (): boolean => {
-        if (wanted.pattern === "combobox-listbox" && deepActive() === trigger) return true;
-        const at = effectiveFocus();
-        return !!at && (at === popup || ancestors(at).includes(popup));
-      };
-      if (placed()) return { ok: true, moved: false };
+      if (focusPlaced(trigger, popup, wanted.pattern)) return { ok: true, moved: false };
       const candidates = wanted.pattern === "combobox-listbox" ? [trigger] : [...focusablesIn(popup).slice(0, 50), popup];
       for (const candidate of candidates) {
         (candidate as HTMLElement).focus?.({ preventScroll: true });
-        if (placed()) return { ok: true, moved: true };
+        if (focusPlaced(trigger, popup, wanted.pattern)) return { ok: true, moved: true };
       }
       return { ok: false };
+    },
+    /**
+     * Immediately before a key: the very popup identified (the same element, never one found again)
+     * is still connected and showing, and effective focus is still inside it (or on the combobox).
+     */
+    ready(wanted: { readonly index: number; readonly pattern: Pattern }): boolean {
+      const trigger = state.elements[wanted.index];
+      const popup = state.popup;
+      return !!trigger && !!popup && popup.isConnected && shown(popup) && focusPlaced(trigger, popup, wanted.pattern);
+    },
+    /**
+     * Whether the popup identified is closed now, judged on that element itself: never by the
+     * trigger's relationship, which an app can drop while the popup stays open. Connected: open
+     * while it shows. Detached: "detached" (the caller reconciles).
+     */
+    popupState(): "open" | "closed" | "detached" | "unknown" {
+      const popup = state.popup;
+      if (!popup) return "unknown";
+      if (popup.isConnected) return shown(popup) ? "open" : "closed";
+      return "detached";
+    },
+    /**
+     * The popup identified was removed: did something with its identity replace it? Its id (the
+     * relationship's target), or the contract's popup part (`parts`, nominated again), with the same
+     * role. One: that is the popup now (open while it shows). Several: can't tell. None: closed, but
+     * only if nothing new of its kind shows; otherwise can't tell. Never closed by default.
+     */
+    reconcile(wanted: { readonly pattern: Pattern }, parts: Element[]): "open" | "closed" | "unknown" {
+      const sameRole = (element: Element): boolean => roleOf(element) === state.popupRole;
+      const byIdNow = state.popupId ? all().filter((element) => element.id === state.popupId && sameRole(element)) : [];
+      const same = [...new Set([...byIdNow, ...parts.filter((element) => element.isConnected && sameRole(element))])];
+      if (same.length > 1) return "unknown";
+      if (same.length === 1) {
+        remember(same[0]!);
+        return shown(same[0]!) ? "open" : "closed";
+      }
+      const fresh = all().filter((element) => (element.matches(ROLE[wanted.pattern]) || (element.getAttribute("role") !== null && sameRole(element))) && shown(element) && !state.before.includes(element));
+      return fresh.length === 0 ? "closed" : "unknown";
     },
     /** A sign-in form shows: a visible password field. */
     signInForm(): boolean {

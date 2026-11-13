@@ -271,7 +271,7 @@ class Worlds {
   }
 
   /** `__youiyoux[method](arg, elements)` in the isolated world; `elements` are isolated-world object ids. */
-  async call<T>(method: "discover" | "markShowing" | "prepareClick" | "confirmAt" | "clicked" | "identify" | "placeFocus" | "signInForm", arg: unknown, elements: readonly string[] = []): Promise<T> {
+  async call<T>(method: "discover" | "markShowing" | "prepareClick" | "confirmAt" | "clicked" | "identify" | "placeFocus" | "ready" | "popupState" | "reconcile" | "signInForm", arg: unknown, elements: readonly string[] = []): Promise<T> {
     const answer = this.check((await this.cdp.send("Runtime.callFunctionOn", { functionDeclaration: `function (arg, ...elements) { return globalThis.__youiyoux.${method}(arg, elements); }`, executionContextId: this.isolated, arguments: [{ value: arg }, ...elements.map((objectId) => ({ objectId }))], returnByValue: true })) as CallResult);
     return answer.result.value as T;
   }
@@ -458,6 +458,27 @@ class PlaywrightProbePage implements ProbePage {
 
   async placeFocus(index: number, pattern: BehaviourPattern): Promise<FocusPlaced> {
     return this.bound((await this.worlds()).call<FocusPlaced>("placeFocus", { index, pattern }));
+  }
+
+  async ready(index: number, pattern: BehaviourPattern): Promise<boolean> {
+    return this.bound((await this.worlds()).call<boolean>("ready", { index, pattern }));
+  }
+
+  async popupState(index: number, pattern: BehaviourPattern, popup: PartRef | null): Promise<"open" | "closed" | "unknown"> {
+    const worlds = await this.worlds();
+    const now = await this.bound(worlds.call<"open" | "closed" | "detached" | "unknown">("popupState", null));
+    if (now !== "detached") return now;
+    // Removed: reconciled by identity (its id, or the contract's popup part nominated again), never assumed closed.
+    const target = this.found[index];
+    const contract = target && typeof target.via === "object" ? (this.options.bindings[target.via.contract] ?? null) : null;
+    let parts: string[] = [];
+    if (contract && popup) {
+      const element = await this.bound(worlds.element(index));
+      const [main] = element ? await this.bound(worlds.into("main", [element])) : [];
+      const nominated = main ? await this.bound(worlds.mainList(main, contractPopupsInPage, { component: contract.component, part: popup })) : [];
+      parts = await this.bound(worlds.into("isolated", nominated.filter(Boolean)));
+    }
+    return this.bound(worlds.call<"open" | "closed" | "unknown">("reconcile", { pattern }, parts));
   }
 
   /** A safe key only (anything else is refused before it is logged or sent), as real keyboard input to the focused element. */
