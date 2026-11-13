@@ -48,6 +48,9 @@ export type PopupFound =
 
 export type ClickPoint = { readonly ok: true; readonly x: number; readonly y: number } | { readonly ok: false; readonly why: string };
 
+/** Whether effective focus is where a key is sent from: already there, moved there by the probe (focus(), never a click or a key), or not placeable. */
+export type FocusPlaced = { readonly ok: true; readonly moved: boolean } | { readonly ok: false };
+
 /**
  * The probe's library, installed in its isolated world as `globalThis.__youiyoux`. Only DOM
  * standard APIs, in that world's own copies.
@@ -63,7 +66,7 @@ export function isolatedLibrary(): void {
   type Pattern = "menu-button" | "combobox-listbox" | "modal-dialog" | "popover";
   const ROLE: Record<Pattern, string> = { "menu-button": '[role="menu"]', "combobox-listbox": '[role="listbox"]', "modal-dialog": 'dialog,[role="dialog"],[role="alertdialog"]', popover: "[popover]" };
   const POPUP = '[role="menu"],[role="listbox"],[role="dialog"],[role="alertdialog"],[role="tooltip"],dialog,[popover]';
-  const state = { elements: [] as Element[], before: [] as Element[], clicked: null as EventTarget | null, watching: false };
+  const state = { elements: [] as Element[], before: [] as Element[], clicked: null as EventTarget | null, watching: false, popup: null as Element | null };
   const all = (): Element[] => {
     const out: Element[] = [];
     const collect = (root: Document | ShadowRoot): void => {
@@ -176,6 +179,43 @@ export function isolatedLibrary(): void {
     }
     return !!hit && (hit === element || element.contains(hit) || !!element.shadowRoot?.contains(hit));
   };
+  /** document.activeElement, through open shadow roots. */
+  const deepActive = (): Element | null => {
+    let active: Element | null = document.activeElement;
+    while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+    return active;
+  };
+  /**
+   * Effective focus (docs/plans/behaviour-rules.md): the focused element, except that a combobox or
+   * listbox with aria-activedescendant means the element it names, which must exist, belong to the
+   * widget (inside it, or inside what its aria-controls names) and not be aria-disabled; else none.
+   */
+  const effectiveFocus = (): Element | null => {
+    const active = deepActive();
+    if (!active) return null;
+    const role = active.getAttribute("role");
+    const id = active.getAttribute("aria-activedescendant");
+    if ((role !== "combobox" && role !== "listbox") || !id) return active;
+    const named = byId(active, id);
+    const controls = active.getAttribute("aria-controls");
+    const owned = controls ? byId(active, controls.split(/\s+/)[0]!) : null;
+    const belongs = !!named && (named === active || ancestors(named).includes(active) || (!!owned && (named === owned || ancestors(named).includes(owned))));
+    return belongs && named!.getAttribute("aria-disabled") !== "true" ? named : null;
+  };
+  /** Elements inside `root` (shadow roots included) that focus() can move focus to, in document order. */
+  const focusablesIn = (root: Element): Element[] => {
+    const FOCUSABLE = "a[href],area[href],button,input,select,textarea,summary,iframe,[tabindex],[contenteditable]:not([contenteditable=false])";
+    const out: Element[] = [];
+    const collect = (node: Element | ShadowRoot): void => {
+      for (const element of node.querySelectorAll("*")) {
+        if (element.matches(FOCUSABLE) && !(element as HTMLButtonElement).disabled && !(element.localName === "input" && (element as HTMLInputElement).type === "hidden") && shown(element)) out.push(element);
+        if (element.shadowRoot) collect(element.shadowRoot);
+      }
+    };
+    collect(root);
+    if (root.shadowRoot) collect(root.shadowRoot);
+    return out;
+  };
   const library = {
     /**
      * Every usable trigger: those contract bindings nominated (each checked here; `nominated[i]`
@@ -264,6 +304,7 @@ export function isolatedLibrary(): void {
         if (open.length === 0) return { state: "none" };
         if (open.length > 1) return { state: "several", count: open.length };
         if (state.before.includes(open[0]!)) return { state: "was-open", how };
+        state.popup = open[0]!;
         return { state: "open", how, role: roleOf(open[0]!), domPath: domPath(open[0]!) };
       };
       if (wanted.contract) return settle(parts, "contract");
@@ -277,7 +318,31 @@ export function isolatedLibrary(): void {
       const fresh = all().filter((element) => element.matches(ROLE[wanted.pattern]) && shown(element) && !state.before.includes(element));
       if (fresh.length === 0) return { state: "none" };
       if (fresh.length > 1) return { state: "several", count: fresh.length };
+      state.popup = fresh[0]!;
       return { state: "open", how: "role", role: roleOf(fresh[0]!), domPath: domPath(fresh[0]!) };
+    },
+    /**
+     * Effective focus inside the popup identified last (or, for a combobox, on the combobox), so a
+     * key can be sent from there. Where the app put it is kept; else the probe calls focus() on the
+     * combobox, or on the first focusable element inside the popup, then on the popup itself, and
+     * checks again after each. Nothing is clicked and no key is sent here.
+     */
+    placeFocus(wanted: { readonly index: number; readonly pattern: Pattern }): FocusPlaced {
+      const trigger = state.elements[wanted.index];
+      const popup = state.popup;
+      if (!trigger || !popup || !popup.isConnected) return { ok: false };
+      const placed = (): boolean => {
+        if (wanted.pattern === "combobox-listbox" && deepActive() === trigger) return true;
+        const at = effectiveFocus();
+        return !!at && (at === popup || ancestors(at).includes(popup));
+      };
+      if (placed()) return { ok: true, moved: false };
+      const candidates = wanted.pattern === "combobox-listbox" ? [trigger] : [...focusablesIn(popup).slice(0, 50), popup];
+      for (const candidate of candidates) {
+        (candidate as HTMLElement).focus?.({ preventScroll: true });
+        if (placed()) return { ok: true, moved: true };
+      }
+      return { ok: false };
     },
     /** A sign-in form shows: a visible password field. */
     signInForm(): boolean {

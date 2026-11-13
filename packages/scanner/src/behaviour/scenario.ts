@@ -7,7 +7,7 @@
 import type { BehaviourPattern, PartRef } from "@youiyoux/core";
 import { describeUrl, SIGN_IN_FIX, SIGN_IN_PATH, SIGN_IN_WORDS } from "./guards.ts";
 import { ambiguousWords, matchTarget, type TargetKey } from "./identity.ts";
-import type { FoundTarget, PopupFound } from "./in-page.ts";
+import type { FocusPlaced, FoundTarget, PopupFound } from "./in-page.ts";
 
 /** What the guards refused (or, for sockets, blocked) while a page was open, and when. */
 export interface GuardEvent {
@@ -33,8 +33,27 @@ export interface ProbePage {
   /** Click the trigger `findTargets()` returned at `index`: a real mouse click, on it only. */
   click(index: number, timeoutMs: number): Promise<void>;
   identify(index: number, pattern: BehaviourPattern, popup: PartRef | null): Promise<PopupFound>;
+  /** Effective focus inside the popup `identify` found last (or on the combobox), moved there with focus() if it isn't. */
+  placeFocus(index: number, pattern: BehaviourPattern): Promise<FocusPlaced>;
+  /** One safe key (SAFE_KEYS), as real keyboard input; any other key is refused before anything is sent. */
+  press(key: SafeKey): Promise<void>;
+  /** Every key sent to this page, in order. */
+  keys(): readonly string[];
   events(): readonly GuardEvent[];
   wait(ms: number): Promise<void>;
+}
+
+/**
+ * The only keys a probe may send, in this youiyoux: Escape (dismiss-escape). The plan's other safe
+ * keys (Tab, Shift+Tab, arrows, Home, End) are added with the checks that need them; Enter, Space
+ * and typing never are.
+ */
+export const SAFE_KEYS = ["Escape"] as const;
+export type SafeKey = (typeof SAFE_KEYS)[number];
+
+/** Refuses any key that isn't a safe key, before anything is sent. */
+export function assertSafeKey(key: string): asserts key is SafeKey {
+  if (!(SAFE_KEYS as readonly string[]).includes(key)) throw new Error(`the probe sends only ${SAFE_KEYS.join(", ")}; ${JSON.stringify(key)} was refused and nothing was sent`);
 }
 
 export interface Stop {
@@ -44,7 +63,9 @@ export interface Stop {
 
 export type ScenarioOutcome =
   /** Internal only: the popup opened and was identified. Never a pass by itself. */
-  | { readonly state: "opened"; readonly popup: Extract<PopupFound, { state: "open" }>; readonly info: readonly string[]; readonly dataBlocked?: boolean }
+  | { readonly state: "opened"; readonly popup: Extract<PopupFound, { state: "open" }>; readonly info: readonly string[]; readonly dataBlocked?: boolean; /** The trigger's index on this page (findTargets). */ readonly index: number }
+  /** A decided check (DECIDED_BEHAVIOUR_CHECKS only): it ran and passed or failed. */
+  | ({ readonly state: "passed" | "failed"; readonly popup: Extract<PopupFound, { state: "open" }>; readonly info: readonly string[]; readonly dataBlocked?: boolean } & Stop)
   | ({ readonly state: "incomplete"; readonly info: readonly string[]; readonly dataBlocked?: boolean } & Stop)
   /** The probe itself failed (not the app). */
   | ({ readonly state: "error"; readonly info: readonly string[]; readonly dataBlocked?: boolean } & Stop);
@@ -183,7 +204,7 @@ export async function openAndIdentify(
       // Watch a moment longer: a page that leaves, sends or opens a window just after opening is still stopped.
       await page.wait(Math.max(0, Math.min(budgets.graceMs, deadline() - Date.now())));
       const after = stopFromEvents(page.events()) ?? moved(start, await page.location(), origin);
-      return after ? incomplete(after) : { state: "opened", popup, info: infoFromEvents(page.events()), dataBlocked: dataBlockedIn(page.events()) };
+      return after ? incomplete(after) : { state: "opened", popup, info: infoFromEvents(page.events()), dataBlocked: dataBlockedIn(page.events()), index: match.index };
     }
     if (popup.state === "several") return incomplete({ why: `couldn't tell which of ${popup.count} ${wanted.pattern === "modal-dialog" ? "dialogs" : "popups"} this button opened`, fix: "Next: point the button at its popup with aria-controls (or popovertarget), or declare the contract's popup part." });
     if (popup.state === "was-open") return incomplete({ why: `the popup the button names (${popup.how}) was already showing before the click, so we couldn't tell the click opened it`, fix: "Next: keep the popup closed until its button is clicked, then run the probe again." });
@@ -193,5 +214,102 @@ export async function openAndIdentify(
       return incomplete(late ? { why: "ran out of time before the popup could be identified", fix: "Next: make sure the dev server is idle, then run the probe again." } : { why: `clicking the button didn't open anything we could identify${blocked.length ? ` (its data was blocked: ${[...new Set(blocked)].join(", ")})` : ""}`, fix: "Next: give the button aria-controls naming its popup (or popovertarget), or declare the contract's popup part; a popup must show (not hidden, inert or aria-hidden) within 2 s." });
     }
     await page.wait(budgets.pollMs);
+  }
+}
+
+/** What a pattern's popup is called in a sentence. */
+export const POPUP_NOUN: Record<BehaviourPattern, string> = { "menu-button": "menu", "combobox-listbox": "listbox", "modal-dialog": "dialog", popover: "popover" };
+
+/** The pattern-aware fix for a popup Esc doesn't close. */
+const ESCAPE_FIX: Record<BehaviourPattern, string> = {
+  "menu-button": "Close the menu when Esc is pressed while focus is in it (a keydown handler on the menu), then move focus back to the button that opened it.",
+  "combobox-listbox": "Close the listbox when Esc is pressed in the combobox (a keydown handler on the combobox), keeping focus on the combobox.",
+  "modal-dialog": "Close the dialog when Esc is pressed (a keydown handler on the dialog, or a native <dialog> opened with showModal(), which closes on Esc by itself), then move focus back to the button that opened it.",
+  popover: "Close the popover when Esc is pressed (a native popover=\"auto\" does this by itself, else a keydown handler), then move focus back to its button.",
+};
+
+const FOCUS_FIX: Record<BehaviourPattern, string> = {
+  "menu-button": "Next: make the menu's items focusable (tabindex=\"-1\" on each menuitem) and move focus to the first when the menu opens, then run youiyoux behave again.",
+  "combobox-listbox": "Next: keep focus on the combobox while its listbox is open (don't move it, or blur it, on open), then run youiyoux behave again.",
+  "modal-dialog": "Next: give the dialog something focusable (a button, or tabindex=\"-1\" on the dialog) and move focus into it when it opens, then run youiyoux behave again.",
+  popover: "Next: give the popover something focusable (or tabindex=\"-1\" on it), then run youiyoux behave again.",
+};
+
+export interface CloseBudgets {
+  /** After Esc, how long the popup has to close (exit animations included): the plan's close budget. */
+  readonly closeMs: number;
+  readonly pollMs: number;
+  /** Once closed, how long the page is watched for anything else Esc set off (leaving, a request). */
+  readonly graceMs: number;
+}
+
+/**
+ * dismiss-escape, on a popup `openAndIdentify` opened: effective focus placed inside it (or on the
+ * combobox), consent read again, Escape pressed once by real keyboard input, then the popup polled
+ * until it is closed (removed, hidden, inert, aria-hidden, a closed popover or dialog) within the
+ * close budget. passed: closed in time. failed: still open after the whole budget. Anything else
+ * (focus couldn't be placed, the page left or sent something, the scenario's own time ran out
+ * first, couldn't tell which popup) is incomplete, never a pass or a fail.
+ */
+export async function dismissEscape(
+  page: ProbePage,
+  opened: Extract<ScenarioOutcome, { state: "opened" }>,
+  args: {
+    readonly start: string;
+    readonly origin: string;
+    readonly pattern: BehaviourPattern;
+    readonly popup: PartRef | null;
+    readonly deadline: () => number;
+    readonly budgets: CloseBudgets;
+    /** Asked immediately before the key is sent: null while probing is still allowed, else why not (nothing is sent). */
+    readonly beforeInput?: () => Promise<Stop | null>;
+    readonly signal?: AbortSignal;
+  },
+): Promise<ScenarioOutcome> {
+  const { start, origin, deadline, budgets, pattern } = args;
+  const noun = POPUP_NOUN[pattern];
+  const extra: string[] = [];
+  const info = (): string[] => [...new Set([...opened.info, ...infoFromEvents(page.events()), ...extra])];
+  const incomplete = (stop: Stop): ScenarioOutcome => ({ state: "incomplete", ...stop, info: info(), dataBlocked: opened.dataBlocked === true || dataBlockedIn(page.events()) });
+  const cancelled = (): Stop | null => (args.signal?.aborted ? SWITCHED_OFF : null);
+  const stopped = async (): Promise<Stop | null> => cancelled() ?? stopFromEvents(page.events()) ?? moved(start, await page.location(), origin);
+  // Consent, read again at the last moment before any input.
+  const refused = cancelled() ?? (await args.beforeInput?.()) ?? cancelled();
+  if (refused) return incomplete(refused);
+  const focus = await page.placeFocus(opened.index, pattern);
+  if (!focus.ok) return incomplete({ why: pattern === "combobox-listbox" ? "focus couldn't be kept on the combobox, so Esc wasn't pressed" : `focus couldn't be placed inside the ${noun}, so Esc wasn't pressed`, fix: FOCUS_FIX[pattern] });
+  if (focus.moved) extra.push(pattern === "combobox-listbox" ? "focus had left the combobox when the listbox opened; the probe put it back before pressing Esc" : `focus wasn't inside the ${noun} after it opened; the probe moved it there before pressing Esc`);
+  const before = await stopped();
+  if (before) return incomplete(before);
+  await page.press("Escape");
+  const pressed = Date.now();
+  const until = pressed + budgets.closeMs;
+  for (;;) {
+    const stop = await stopped();
+    if (stop) return incomplete(stop);
+    let now: PopupFound;
+    // When this look began: a fail needs one that began after the whole close budget.
+    const asked = Date.now();
+    try {
+      now = await page.identify(opened.index, pattern, args.popup);
+    } catch (error: unknown) {
+      await page.wait(LATE_MS);
+      return incomplete((await stopped().catch(() => null)) ?? { why: `the page changed under the probe after Esc: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}`, fix: "Next: run youiyoux behave again; a popup whose closing replaces the page can't be probed." });
+    }
+    if (now.state === "none") {
+      // Watch a moment longer: Esc that leaves the page or sends something is stopped, not passed.
+      await page.wait(Math.max(0, Math.min(budgets.graceMs, deadline() - Date.now())));
+      const after = await stopped();
+      if (after) return incomplete(after);
+      return { state: "passed", popup: opened.popup, why: `Esc closed the ${noun}`, fix: "Nothing to do: Esc closes it.", info: info(), dataBlocked: opened.dataBlocked === true || dataBlockedIn(page.events()) };
+    }
+    const at = Date.now();
+    if (asked >= until) {
+      if (now.state === "open") return { state: "failed", popup: opened.popup, why: `Esc did nothing: the ${noun} was still open after ${budgets.closeMs / 1000} s`, fix: ESCAPE_FIX[pattern], info: info(), dataBlocked: opened.dataBlocked === true || dataBlockedIn(page.events()) };
+      return incomplete({ why: `after Esc, couldn't tell whether the ${noun} closed (${now.state === "several" ? `${now.count} of them show` : "it was already showing before"})`, fix: "Next: point the button at its popup with aria-controls (or popovertarget), or declare the contract's popup part." });
+    }
+    // The scenario's own time runs out before the close budget: that is no fail.
+    if (deadline() <= at) return incomplete({ why: `ran out of time before the ${budgets.closeMs / 1000} s after Esc were up`, fix: "Next: make sure the dev server is idle, then run youiyoux behave again." });
+    await page.wait(Math.max(1, Math.min(budgets.pollMs, until - at, deadline() - at)));
   }
 }

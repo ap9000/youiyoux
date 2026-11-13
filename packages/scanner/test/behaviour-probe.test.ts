@@ -528,8 +528,11 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
     rmSync(scratch, { recursive: true, force: true });
   });
 
+  // focus-return applies to menus, dialogs and popovers and isn't decided yet: these scenarios
+  // stop once the popup is opened and identified, which is what the guards here are about.
+  // dismiss-escape, which goes on to press Esc, has its own tests below.
   const probe = (path: string, extra: Partial<ProbeRouteOptions> = {}): Promise<RouteProbe> =>
-    probeRoute({ browser, origin: app.origin, route: path, path, viewport: { width: 800, height: 600 }, checks: ["dismiss-escape"], ...extra });
+    probeRoute({ browser, origin: app.origin, route: path, path, viewport: { width: 800, height: 600 }, checks: ["focus-return"], ...extra });
   const only = (result: RouteProbe): TargetScenario => {
     expect(result.state).toBe("probed");
     expect(result.targets).toHaveLength(1);
@@ -542,7 +545,7 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
     const result = await probe("/menu");
     expect(result.coverage).toMatch(/^1 popup trigger found by ARIA markers\. Popups without these markers were not assessed/);
     expect(result.targets[0]!.key).toEqual({ route: "/menu", pattern: "menu-button", component: null, accessibleName: "Actions" });
-    expect(only(result)).toMatchObject({ check: "dismiss-escape", state: "opened", popup: { how: "aria-controls", role: "menu" } });
+    expect(only(result)).toMatchObject({ check: "focus-return", state: "opened", popup: { how: "aria-controls", role: "menu" } });
     // Discovery and the scenario each loaded the screen fresh.
     expect(seen(app, "/menu").length).toBe(2);
   }, 60_000);
@@ -667,12 +670,12 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
   }, 90_000);
 
   test("data blocking lasts until the page and its workers are gone: a worker polling for data past the scenario's end reaches nothing", async () => {
-    const result = only(await probe("/worker-loop", { checks: ["dismiss-escape", "focus-into"] }));
+    const result = only(await probe("/worker-loop", { checks: ["focus-return", "focus-into"] }));
     expect(result).toMatchObject({ state: "opened", dataBlocked: true });
     // During the scenario, while its page closes, after it closed, and into the next scenario's load.
     await new Promise((resolve) => setTimeout(resolve, 500));
     expect(seen(app, "/api/poll")).toEqual([]);
-    const shared = only(await probe("/shared-loop", { checks: ["dismiss-escape", "focus-into"] }));
+    const shared = only(await probe("/shared-loop", { checks: ["focus-return", "focus-into"] }));
     expect(shared).toMatchObject({ state: "opened" });
     await new Promise((resolve) => setTimeout(resolve, 500));
     expect(seen(app, "/api/shared-poll")).toEqual([]);
@@ -694,7 +697,7 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
 
   test("only triggers are clicked: never an item inside an opened menu; no key is ever sent", async () => {
     const before = logged("click").length;
-    await probe("/menu", { checks: ["dismiss-escape", "focus-into", "arrow-keys"] });
+    await probe("/menu", { checks: ["focus-return", "focus-into", "arrow-keys"] });
     const clicks = logged("click").slice(before);
     expect(clicks).toEqual(["trigger-m1", "trigger-m1", "trigger-m1"]);
     expect(logged("item")).toEqual([]);
@@ -741,7 +744,7 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
   }, 60_000);
 
   test("checks that don't apply to a pattern are not-applicable, never run", async () => {
-    const result = await probe("/popover", { checks: ["focus-trap", "dismiss-escape"] });
+    const result = await probe("/popover", { checks: ["focus-trap", "focus-return"] });
     expect(result.targets[0]!.scenarios.map((s) => s.state)).toEqual(["not-applicable", "opened"]);
   }, 60_000);
 

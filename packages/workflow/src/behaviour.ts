@@ -6,14 +6,15 @@
  *
  * Writes are files, never folders: the route's run file, evidence under the real `.youi/` (each
  * path resolved, links refused), and screens.json's `behaviour` block only through
- * `setBehaviourConsent` (the service's authenticated write). Nothing here is ever a pass yet: the
- * popup opening and being identified is reported as `incomplete` until the checks themselves run.
+ * `setBehaviourConsent` (the service's authenticated write). Only a check this youiyoux decides
+ * (DECIDED_BEHAVIOUR_CHECKS: dismiss-escape) is ever stored passed or failed; for every other check
+ * the popup opening and being identified is stored `incomplete`.
  */
 import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath, rename, unlink, type FileHandle } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
-import { BEHAVIOUR_ROUTE_SCHEMA, BehaviourRouteRun, EVIDENCE_PATH, type BehaviourCheckId, type BehaviourResult, type BehaviourTarget } from "@youiyoux/core";
+import { BEHAVIOUR_ROUTE_SCHEMA, BehaviourRouteRun, decidesBehaviour, EVIDENCE_PATH, type BehaviourCheckId, type BehaviourResult, type BehaviourTarget } from "@youiyoux/core";
 import { behaviourConsent, probeOrigin, probeRoute, readScreensSpec, screenUrl, switchedConsent, SWITCHED_OFF, updateScreensSpec, type ContractBinding, type ProbeBudgets, type ProbeRouteOptions, type RouteProbe, type ScreensSpec } from "@youiyoux/scanner";
 import { LiveApp } from "./live.ts";
 import { WorkflowError } from "./policy.ts";
@@ -36,6 +37,8 @@ export interface ProbeBehaviourOptions {
   readonly fingerprint: { readonly app: string; readonly tool: string };
   readonly budgets?: Partial<ProbeBudgets>;
   readonly now?: () => Date;
+  /** Tests only: the probe to run instead of probeRoute (to show the storage guards are active). */
+  readonly probe?: typeof probeRoute;
 }
 
 export interface ProbeBehaviourResult {
@@ -271,7 +274,7 @@ export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<Pr
   const checks = [...new Set(options.checks.map((c) => c.check))];
   let probe: RouteProbe;
   try {
-    probe = await probeRoute({ browser: options.browser, origin: consent.origin, route: options.route, path: screen.path, viewport: spec.viewport, checks, ...(options.bindings ? { bindings: options.bindings } : {}), ...(options.budgets ? { budgets: options.budgets } : {}), stillAllowed, signal: controller.signal });
+    probe = await (options.probe ?? probeRoute)({ browser: options.browser, origin: consent.origin, route: options.route, path: screen.path, viewport: spec.viewport, checks, ...(options.bindings ? { bindings: options.bindings } : {}), ...(options.budgets ? { budgets: options.budgets } : {}), stillAllowed, signal: controller.signal });
   } finally {
     running.get(key)?.delete(controller);
     if (running.get(key)?.size === 0) running.delete(key);
@@ -299,6 +302,8 @@ export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<Pr
     for (const request of options.checks) {
       const scenario = t.scenarios.find((s) => s.check === request.check)!;
       const words = scenario.state === "opened" ? notRunYet(request.check, scenario.popup.how) : { why: scenario.why, fix: scenario.fix };
+      // Decided only for a check this youiyoux decides; anything else that came back decided is a bug, and nothing is stored.
+      if ((scenario.state === "passed" || scenario.state === "failed") && !decidesBehaviour(request.check)) throw new WorkflowError("internal", `the probe decided ${request.check}, which this youiyoux doesn't decide; nothing was stored`);
       results.push({
         runId,
         at,
@@ -308,7 +313,7 @@ export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<Pr
         target,
         pattern: t.key.pattern,
         check: request.check,
-        // The only states this probe ever stores: never passed, never failed.
+        // Opened and identified, but not decided: never a pass.
         state: scenario.state === "opened" ? "incomplete" : scenario.state,
         why: words.why,
         fix: words.fix,
@@ -320,8 +325,8 @@ export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<Pr
       });
     }
   }
-  // This probe decides nothing: a passed or failed result here would be a bug, never stored.
-  if (results.some((r) => r.state === "passed" || r.state === "failed")) throw new WorkflowError("internal", "the probe made a result it can't make yet; nothing was stored");
+  // Belt and braces: only a decided check is ever stored passed or failed.
+  if (results.some((r) => (r.state === "passed" || r.state === "failed") && !decidesBehaviour(r.check))) throw new WorkflowError("internal", "the probe made a result it can't make yet; nothing was stored");
   const run = BehaviourRouteRun.parse({ schema: BEHAVIOUR_ROUTE_SCHEMA, route: options.route, runId, at, origin: consent.origin, viewport: spec.viewport, state: probe.state, why: probe.why, fix: probe.fix, coverage: probe.coverage, results });
   const file = await writeYouiFile(options.root, behaviourFile(options.route), `${JSON.stringify(run, null, 2)}\n`);
   return { run, file, probe };

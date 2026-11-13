@@ -16,13 +16,13 @@
  */
 import { randomBytes } from "node:crypto";
 import type { Browser, BrowserContext, CDPSession, Page, Request, Route } from "playwright-core";
-import { BEHAVIOUR_CHECKS, type BehaviourCheckId, type BehaviourPattern, type PartRef } from "@youiyoux/core";
+import { BEHAVIOUR_CHECKS, decidesBehaviour, type BehaviourCheckId, type BehaviourPattern, type PartRef } from "@youiyoux/core";
 import { startFence, type Fence, type FenceRefusal } from "./fence.ts";
 import { dataWords, describeUrl, requestVerdict, screenUrl, STATIC_RESOURCE_TYPES } from "./guards.ts";
 import { ambiguousWords, withOrdinals, type TargetKey } from "./identity.ts";
 import type { Frame } from "../screens/locate.ts";
-import { contractPopupsInPage, isolatedLibrary, labelsInPage, nominateContractTriggersInPage, PROBE_INIT_SCRIPT, type ClickPoint, type ContractBinding, type FoundTarget, type IsolatedTarget, type PopupFound } from "./in-page.ts";
-import { dataBlockedIn, infoFromEvents, openAndIdentify, openScreen, SWITCHED_OFF, type GuardEvent, type ProbePage, type ScenarioOutcome, type Stop } from "./scenario.ts";
+import { contractPopupsInPage, isolatedLibrary, labelsInPage, nominateContractTriggersInPage, PROBE_INIT_SCRIPT, type ClickPoint, type ContractBinding, type FocusPlaced, type FoundTarget, type IsolatedTarget, type PopupFound } from "./in-page.ts";
+import { assertSafeKey, dataBlockedIn, dismissEscape, infoFromEvents, openAndIdentify, openScreen, SWITCHED_OFF, type GuardEvent, type ProbePage, type SafeKey, type ScenarioOutcome, type Stop } from "./scenario.ts";
 
 export interface ProbeBudgets {
   /** Targets tested per route; the rest are named as untested. */
@@ -33,13 +33,15 @@ export interface ProbeBudgets {
   readonly routeMs: number;
   /** Waiting for the popup after the click. */
   readonly openMs: number;
+  /** Waiting for the popup to close after Esc (exit animations included). */
+  readonly closeMs: number;
   /** A screen's load. */
   readonly loadMs: number;
   /** After load, waiting for the network to go quiet. */
   readonly settleMs: number;
 }
 
-export const PROBE_BUDGETS: ProbeBudgets = { targets: 20, scenarioMs: 5_000, routeMs: 90_000, openMs: 2_000, loadMs: 15_000, settleMs: 2_000 };
+export const PROBE_BUDGETS: ProbeBudgets = { targets: 20, scenarioMs: 5_000, routeMs: 90_000, openMs: 2_000, closeMs: 1_500, loadMs: 15_000, settleMs: 2_000 };
 /** Triggers looked for per route: past the budget, only to name them as untested. */
 const MAX_FOUND = 200;
 const POLL_MS = 50;
@@ -64,7 +66,7 @@ export interface ProbeRouteOptions {
   readonly signal?: AbortSignal;
 }
 
-export type TargetScenario = { readonly check: BehaviourCheckId } & (ScenarioOutcome | { readonly state: "not-applicable"; readonly why: string; readonly fix: string; readonly info: readonly string[] });
+export type TargetScenario = { readonly check: BehaviourCheckId; readonly keys?: readonly string[] } & (ScenarioOutcome | { readonly state: "not-applicable"; readonly why: string; readonly fix: string; readonly info: readonly string[] });
 
 export interface ProbedTarget {
   readonly key: TargetKey & { readonly ordinal?: number };
@@ -269,7 +271,7 @@ class Worlds {
   }
 
   /** `__youiyoux[method](arg, elements)` in the isolated world; `elements` are isolated-world object ids. */
-  async call<T>(method: "discover" | "markShowing" | "prepareClick" | "confirmAt" | "clicked" | "identify" | "signInForm", arg: unknown, elements: readonly string[] = []): Promise<T> {
+  async call<T>(method: "discover" | "markShowing" | "prepareClick" | "confirmAt" | "clicked" | "identify" | "placeFocus" | "signInForm", arg: unknown, elements: readonly string[] = []): Promise<T> {
     const answer = this.check((await this.cdp.send("Runtime.callFunctionOn", { functionDeclaration: `function (arg, ...elements) { return globalThis.__youiyoux.${method}(arg, elements); }`, executionContextId: this.isolated, arguments: [{ value: arg }, ...elements.map((objectId) => ({ objectId }))], returnByValue: true })) as CallResult);
     return answer.result.value as T;
   }
@@ -328,6 +330,7 @@ class Worlds {
 class PlaywrightProbePage implements ProbePage {
   private worldsOpened: Worlds | null = null;
   private found: readonly FoundTarget[] = [];
+  private readonly sent: string[] = [];
 
   private readonly page: Page;
   private readonly log: PageLog;
@@ -453,6 +456,21 @@ class PlaywrightProbePage implements ProbePage {
     return this.bound(worlds.call<PopupFound>("identify", { index, pattern, contract: false }));
   }
 
+  async placeFocus(index: number, pattern: BehaviourPattern): Promise<FocusPlaced> {
+    return this.bound((await this.worlds()).call<FocusPlaced>("placeFocus", { index, pattern }));
+  }
+
+  /** A safe key only (anything else is refused before it is logged or sent), as real keyboard input to the focused element. */
+  async press(key: SafeKey): Promise<void> {
+    assertSafeKey(key);
+    this.sent.push(key);
+    await this.bound(this.page.keyboard.press(key));
+  }
+
+  keys(): readonly string[] {
+    return this.sent;
+  }
+
   events(): readonly GuardEvent[] {
     return this.log.events;
   }
@@ -525,7 +543,7 @@ export async function probeRoute(options: ProbeRouteOptions): Promise<RouteProbe
         else if (refusedFrom) skip(refusedFrom);
         else if (Date.now() >= routeDeadline) skip(untestedWords("time", budgets));
         else if ((refusedFrom = (await options.stillAllowed?.()) ?? null)) skip(refusedFrom);
-        else scenarios.push({ check, ...(await scenario(guarded, start, options, key, f, bindings, budgets, routeDeadline)) });
+        else scenarios.push({ check, ...(await scenario(guarded, start, options, key, f, bindings, budgets, routeDeadline, check)) });
       }
       targets.push({ key, found: f, scenarios });
     }
@@ -539,7 +557,7 @@ export async function probeRoute(options: ProbeRouteOptions): Promise<RouteProbe
   }
 }
 
-async function scenario(guarded: GuardedContext, start: string, options: ProbeRouteOptions, key: TargetKey, found: FoundTarget, bindings: readonly ContractBinding[], budgets: ProbeBudgets, routeDeadline: number): Promise<ScenarioOutcome> {
+async function scenario(guarded: GuardedContext, start: string, options: ProbeRouteOptions, key: TargetKey, found: FoundTarget, bindings: readonly ContractBinding[], budgets: ProbeBudgets, routeDeadline: number, check: BehaviourCheckId): Promise<ScenarioOutcome & { readonly keys: readonly string[] }> {
   // Loading has its own bound; the scenario's own budget starts once the screen is open.
   const clock = { deadline: Math.min(routeDeadline, Date.now() + budgets.loadMs + budgets.settleMs) };
   const deadline = (): number => clock.deadline;
@@ -548,14 +566,19 @@ async function scenario(guarded: GuardedContext, start: string, options: ProbeRo
   // Switched off while it runs: the page is closed at once, whatever it was doing.
   const cancel = (): void => void page.close();
   options.signal?.addEventListener("abort", cancel, { once: true });
+  const keys = (): readonly string[] => [...page.keys()];
   try {
-    return await openAndIdentify(page, { start, origin: options.origin, wanted: key, popup, deadline, budgets: { openMs: budgets.openMs, pollMs: POLL_MS, graceMs: GRACE_MS }, ...(options.stillAllowed ? { beforeClick: options.stillAllowed } : {}), ...(options.signal ? { signal: options.signal } : {}) });
+    const opened = await openAndIdentify(page, { start, origin: options.origin, wanted: key, popup, deadline, budgets: { openMs: budgets.openMs, pollMs: POLL_MS, graceMs: GRACE_MS }, ...(options.stillAllowed ? { beforeClick: options.stillAllowed } : {}), ...(options.signal ? { signal: options.signal } : {}) });
+    // Only a check this youiyoux decides goes on past the opening; the rest stay undecided.
+    if (opened.state !== "opened" || !decidesBehaviour(check)) return { ...opened, keys: keys() };
+    const decided = await dismissEscape(page, opened, { start, origin: options.origin, pattern: key.pattern, popup, deadline, budgets: { closeMs: budgets.closeMs, pollMs: POLL_MS, graceMs: GRACE_MS }, ...(options.stillAllowed ? { beforeInput: options.stillAllowed } : {}), ...(options.signal ? { signal: options.signal } : {}) });
+    return { ...decided, keys: keys() };
   } catch (error: unknown) {
     const info = infoFromEvents(page.events());
     const dataBlocked = dataBlockedIn(page.events());
-    if (options.signal?.aborted) return { state: "incomplete", ...SWITCHED_OFF, info, dataBlocked };
-    if (error instanceof TimeUp) return { state: "incomplete", why: Date.now() >= routeDeadline ? untestedWords("time", budgets).why.replace("not tested: ", "stopped: ") : `ran out of time: a scenario has ${Math.round(budgets.scenarioMs / 1000)} s once the screen is open`, fix: "Next: make sure the dev server is idle, then run the probe again.", info, dataBlocked };
-    return { state: "error", why: `the probe failed: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}`, fix: "Next: run the probe again; if it fails again, report it with the screen's route.", info, dataBlocked };
+    if (options.signal?.aborted) return { state: "incomplete", ...SWITCHED_OFF, info, dataBlocked, keys: keys() };
+    if (error instanceof TimeUp) return { state: "incomplete", why: Date.now() >= routeDeadline ? untestedWords("time", budgets).why.replace("not tested: ", "stopped: ") : `ran out of time: a scenario has ${Math.round(budgets.scenarioMs / 1000)} s once the screen is open`, fix: "Next: make sure the dev server is idle, then run the probe again.", info, dataBlocked, keys: keys() };
+    return { state: "error", why: `the probe failed: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}`, fix: "Next: run the probe again; if it fails again, report it with the screen's route.", info, dataBlocked, keys: keys() };
   } finally {
     options.signal?.removeEventListener("abort", cancel);
     await page.close();

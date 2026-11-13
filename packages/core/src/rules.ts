@@ -71,6 +71,14 @@ export const BEHAVIOUR_CHECKS: Readonly<Record<BehaviourCheck, { readonly descri
 };
 
 /**
+ * The behaviour checks this youiyoux decides: only these may ever be `passed` or `failed`. Every
+ * other check's popup is opened and identified, and the result is `incomplete` ("this youiyoux
+ * doesn't decide <check> yet"). A stored pass or fail for any other check is not counted.
+ */
+export const DECIDED_BEHAVIOUR_CHECKS: readonly BehaviourCheck[] = ["dismiss-escape"];
+export const decidesBehaviour = (check: string): boolean => (DECIDED_BEHAVIOUR_CHECKS as readonly string[]).includes(check);
+
+/**
  * A rule run that should have checked and did not: unsupported, errored, or a behaviour rule with
  * no probe results (`incomplete`). Its zero findings are unknown, never clean. One answer for the
  * CLI, the MCP server and the hub.

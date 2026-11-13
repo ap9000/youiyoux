@@ -38,7 +38,8 @@ test.runIf(GATE && !HAVE_CHROMIUM)("security gate: probing's browser tests need 
   throw new Error(`YOUI_SECURITY_GATE is set and Chromium couldn't be launched (${MISSING}): nothing was tested`);
 });
 
-const CHECKS = [{ rule: "youi:demo/rule/menus-close", check: "dismiss-escape" as const, digest: "0123456789ab" }];
+// focus-return isn't decided yet: these runs stop once the popup is opened and identified (dismiss-escape, which decides, is tested below).
+const CHECKS = [{ rule: "youi:demo/rule/menus-return", check: "focus-return" as const, digest: "0123456789ab" }];
 const FINGERPRINT = { app: "abcdef012345", tool: "youiyoux@test" };
 const scratch = mkdtempSync(join(tmpdir(), "youi-behaviour-"));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
@@ -103,6 +104,29 @@ describe("consent", () => {
     expect(await refusal(probe(product("remote-base", { base: "http://10.1.2.3:5173", behaviour: { allowedOrigin: "http://10.1.2.3:5173" } })))).toMatch(/on this machine only/);
     expect(await refusal(probe(product("off-path", { base: "http://127.0.0.1:5173", behaviour: { allowedOrigin: "http://127.0.0.1:5173" } }, [{ route: "/menu", path: "//evil.example/menu" }])))).toMatch(/must start with a single \//);
     expect(existsSync(join(scratch, "none/.youi/behaviour"))).toBe(false);
+  });
+});
+
+describe("only a decided check is stored passed or failed", () => {
+  /** A probe that says it decided `check` (no browser): what the storage guards must refuse unless the check is decided. */
+  const saying = (check: "dismiss-escape" | "focus-return", state: "passed" | "failed") =>
+    (async ({ route }: { route: string }) => ({
+      url: "http://127.0.0.1:9/x",
+      state: "probed" as const,
+      why: null,
+      fix: null,
+      coverage: "1 popup trigger found by ARIA markers.",
+      targets: [{ key: { route, pattern: "menu-button" as const, component: null, accessibleName: "More" }, found: { pattern: "menu-button" as const, component: null, accessibleName: "More", via: "dom" as const, frames: [], domPath: "button", box: { x: 0, y: 0, width: 10, height: 10 } }, scenarios: [{ check, state, popup: { state: "open" as const, how: "aria-controls" as const, role: "menu", domPath: "ul" }, why: "decided", fix: "fix it", info: [], index: 0 }] }],
+    })) as unknown as NonNullable<Parameters<typeof probeBehaviour>[0]["probe"]>;
+
+  test("a pass or fail for a check this youiyoux doesn't decide is refused, and nothing is stored; dismiss-escape's is kept", async () => {
+    const root = product("decided-guard", { base: "http://127.0.0.1:9", behaviour: { allowedOrigin: "http://127.0.0.1:9" } }, [{ route: "/x", path: "/x" }]);
+    for (const state of ["passed", "failed"] as const) {
+      expect(await refusal(probeBehaviour({ root, route: "/x", browser: NO_BROWSER, checks: CHECKS, fingerprint: FINGERPRINT, probe: saying("focus-return", state) }))).toMatch(/doesn't decide/);
+      expect(existsSync(join(root, behaviourFile("/x")))).toBe(false);
+    }
+    const kept = await probeBehaviour({ root, route: "/x", browser: NO_BROWSER, checks: [{ rule: "youi:demo/rule/menus-close", check: "dismiss-escape", digest: "0123456789ab" }], fingerprint: FINGERPRINT, probe: saying("dismiss-escape", "failed") });
+    expect(kept.run.results.map((r) => r.state)).toEqual(["failed"]);
   });
 });
 
@@ -256,6 +280,9 @@ describe.skipIf(!HAVE_CHROMIUM)("probing a running app", () => {
   let onSecondLoad: (() => void) | null = null;
   /** Another server on this machine (B): nothing a probe does may reach it. */
   let elsewhere: { origin: string; requests: string[]; server: Server } | null = null;
+  /** An APG menu button: focusable items, focus to the first on open; `closes`: Esc closes it. */
+  const ESC_MENU = (name: string, id: string, closes: boolean) =>
+    `<button aria-haspopup="menu" aria-expanded="false" aria-controls="${id}" onclick="const m=document.getElementById('${id}');m.hidden=false;m.querySelector('li').focus()">${name}</button><ul role="menu" id="${id}" hidden onkeydown="${closes ? `if (event.key === 'Escape') this.hidden = true` : ""}"><li role="menuitem" tabindex="-1">Item</li></ul>`;
   const MENU = (name: string, id: string) =>
     `<button aria-haspopup="menu" aria-expanded="false" aria-controls="${id}" onclick="new Image().src='/opened';document.getElementById('${id}').hidden=false">${name}</button><ul role="menu" id="${id}" hidden><li role="menuitem">Item</li></ul>`;
 
@@ -274,7 +301,7 @@ describe.skipIf(!HAVE_CHROMIUM)("probing a running app", () => {
       // /hostile: a page whose React-looking fiber names a module on another server (B), as a hostile or confused page can.
       const hostile = `${MENU("Actions", "h1")}<script>const b = document.querySelector("button"); b["__reactFiber$x"] = { tag: 5, type: "button", _debugStack: { stack: "Error\\n    at Menu (${elsewhere?.origin}/src/menu.js:1:1)" }, return: { tag: 0, type: function Menu() {}, return: null } };</script>`;
       if (req.url === "/revoke-on-second-load" && ++loads === 2) onSecondLoad?.();
-      const body = req.url === "/revoke-on-second-load" ? MENU("Again", "r1") : req.url === "/never" ? `<button aria-haspopup="menu" aria-controls="nope" onclick="new Image().src='/opened'">Never</button>` : req.url === "/slow-discovery" ? `${MENU("Slow", "s1")}<img src="/slow-asset">` : req.url === "/menu" ? MENU("Actions", "m1") : req.url === "/fetches" ? MENU("Unread", "f1").replace("new Image().src='/opened';", "fetch('/api/read?id=7').catch(() => {});") : req.url === "/two" ? MENU("First", "a") + MENU("Second", "b") : req.url === "/hostile" ? hostile : req.url === "/" ? "<p>home</p>" : null;
+      const body = req.url === "/revoke-on-second-load" ? MENU("Again", "r1") : req.url === "/never" ? `<button aria-haspopup="menu" aria-controls="nope" onclick="new Image().src='/opened'">Never</button>` : req.url === "/slow-discovery" ? `${MENU("Slow", "s1")}<img src="/slow-asset">` : req.url === "/menu" ? MENU("Actions", "m1") : req.url === "/fetches" ? MENU("Unread", "f1").replace("new Image().src='/opened';", "fetch('/api/read?id=7').catch(() => {});") : req.url === "/two" ? MENU("First", "a") + MENU("Second", "b") : req.url === "/hostile" ? hostile : req.url === "/esc" ? ESC_MENU("Actions", "e1", true) : req.url === "/esc-ignored" ? ESC_MENU("More", "e2", false) : req.url === "/" ? "<p>home</p>" : null;
       if (body === null) return void res.writeHead(404).end();
       res.writeHead(200, { "content-type": "text/html" }).end(`<!doctype html><meta charset="utf-8"><body>${body}</body>`);
     });
@@ -295,15 +322,15 @@ describe.skipIf(!HAVE_CHROMIUM)("probing a running app", () => {
     elsewhere?.server.close();
   });
 
-  test("with consent, a route is probed and kept as .youi/behaviour/<route-hash>.json: incomplete or not-applicable, never passed, no invented line", async () => {
+  test("with consent, a route is probed and kept as .youi/behaviour/<route-hash>.json: an undecided check is incomplete or not-applicable, never passed, no invented line", async () => {
     const root = product("probed", { base, behaviour: { allowedOrigin: base } });
     const { run, file, probe } = await probeBehaviour({ root, route: "/menu", browser, checks: [...CHECKS, { rule: "youi:demo/rule/dialogs-trap", check: "focus-trap", digest: "0123456789ab" }], fingerprint: FINGERPRINT });
     expect(file).toBe(join(realpathSync(root), behaviourFile("/menu")));
     expect(behaviourFile("/menu")).toMatch(/^\.youi\/behaviour\/[0-9a-f]{16}\.json$/);
     expect(BehaviourRouteRun.parse(JSON.parse(readFileSync(file, "utf8")))).toEqual(run);
     expect(run).toMatchObject({ route: "/menu", origin: base, state: "probed" });
-    expect(run.results.map((r) => [r.check, r.state])).toEqual([["dismiss-escape", "incomplete"], ["focus-trap", "not-applicable"]]);
-    expect(run.results[0]).toMatchObject({ target: { route: "/menu", pattern: "menu-button", component: null, accessibleName: "Actions" }, why: expect.stringMatching(/opened and was identified \(by aria-controls\), but this youiyoux doesn't decide dismiss-escape yet/), freshness: { origin: base, app: FINGERPRINT.app, tool: FINGERPRINT.tool } });
+    expect(run.results.map((r) => [r.check, r.state])).toEqual([["focus-return", "incomplete"], ["focus-trap", "not-applicable"]]);
+    expect(run.results[0]).toMatchObject({ target: { route: "/menu", pattern: "menu-button", component: null, accessibleName: "Actions" }, why: expect.stringMatching(/opened and was identified \(by aria-controls\), but this youiyoux doesn't decide focus-return yet/), freshness: { origin: base, app: FINGERPRINT.app, tool: FINGERPRINT.tool } });
     expect(run.results[0]!.target).not.toHaveProperty("file");
     // Its click only loads an image (a static file): nothing was blocked.
     expect(run.results.map((r) => r.dataBlocked)).toEqual([false, false]);
@@ -421,5 +448,18 @@ describe.skipIf(!HAVE_CHROMIUM)("probing a running app", () => {
     expect(screensOf(root).base).toBe(base);
     expect(screensOf(root).behaviour).toEqual({ generation: 1 });
     expect(await refusal(probeBehaviour({ root, route: "/", browser: NO_BROWSER, checks: CHECKS, fingerprint: FINGERPRINT }))).toMatch(/Probing isn't switched on/);
+  }, 60_000);
+
+  test("dismiss-escape is decided and stored: passed when Esc closes the menu, failed when it doesn't; the other checks stay incomplete", async () => {
+    const root = product("decided", { base, behaviour: { allowedOrigin: base } }, [{ route: "/esc", path: "/esc" }, { route: "/esc-ignored", path: "/esc-ignored" }]);
+    const checks = [{ rule: "youi:demo/rule/menus-close", check: "dismiss-escape" as const, digest: "0123456789ab" }, ...CHECKS];
+    const passed = await probeBehaviour({ root, route: "/esc", browser, checks, fingerprint: FINGERPRINT });
+    expect(passed.run.results.map((r) => [r.check, r.state, r.why])).toEqual([
+      ["dismiss-escape", "passed", "Esc closed the menu"],
+      ["focus-return", "incomplete", expect.stringMatching(/doesn't decide focus-return yet/)],
+    ]);
+    const failed = await probeBehaviour({ root, route: "/esc-ignored", browser, checks, fingerprint: FINGERPRINT });
+    expect(failed.run.results[0]).toMatchObject({ check: "dismiss-escape", state: "failed", why: "Esc did nothing: the menu was still open after 1.5 s", fix: expect.stringMatching(/^Close the menu when Esc is pressed/) });
+    expect(await readBehaviourRun(root, "/esc-ignored")).toEqual(failed.run);
   }, 60_000);
 });
