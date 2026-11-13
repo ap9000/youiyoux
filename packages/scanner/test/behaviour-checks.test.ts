@@ -177,6 +177,8 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
     "/fr-ignores": () => page(menu({ id: "r3", open: FIRST("r3") })),
     "/fr-late": () => page(menu({ id: "r4", open: FIRST("r4"), onKey: `if (event.key === 'Escape') { ${CLOSE("r4")} setTimeout(() => { ${BACK("r4")} }, 300); }` })),
     "/fr-too-late": () => page(menu({ id: "r5", open: FIRST("r5"), onKey: `if (event.key === 'Escape') { ${CLOSE("r5")} setTimeout(() => { ${BACK("r5")} }, 2500); }` })),
+    // Focus goes back to the button, then leaves it 100 ms later.
+    "/fr-moves-away": () => page(menu({ id: "r7", open: FIRST("r7"), onKey: `if (event.key === 'Escape') { ${CLOSE("r7")}${BACK("r7")} setTimeout(() => document.activeElement.blur(), 100); }` })),
     "/fr-removed": () => page(menu({ id: "r6", open: FIRST("r6"), onKey: `if (event.key === 'Escape') { ${CLOSE("r6")} document.querySelector('[data-log=trigger-r6]').remove(); }` })),
     "/fr-native-dialog": () => page(`<button data-log="trigger-n2" aria-haspopup="dialog" onclick="document.getElementById('n2').showModal()">Settings</button><dialog id="n2"><p>Settings</p><button>Close</button></dialog>`),
     "/fr-native-popover": () => page(`<button data-log="trigger-p4" popovertarget="p4">Info</button><div popover id="p4"><button>Got it</button></div>`),
@@ -373,6 +375,8 @@ describe.skipIf(!HAVE_CHROMIUM)("the behaviour checks in a real browser", () => 
       expect(await one("/fr-late", "focus-return")).toMatchObject({ state: "passed" });
       expect(await one("/fr-lost", "focus-return")).toMatchObject({ state: "failed", why: "when Esc closed the menu, focus went to the page's body (nothing), not to the button that opened it", fix: "When the menu closes with Esc, move focus back to the button that opened it." });
       expect(await one("/fr-too-late", "focus-return")).toMatchObject({ state: "failed" });
+      // Back on the button for a moment, then gone: judged where focus ends up, not where it passed through.
+      expect(await one("/fr-moves-away", "focus-return")).toMatchObject({ state: "failed", why: "when Esc closed the menu, focus went to the page's body (nothing), not to the button that opened it" });
       expect(await one("/fr-ignores", "focus-return")).toMatchObject({ state: "incomplete", why: "Esc didn't close the menu, so where focus returns can't be judged", keys: ["Escape"] });
     }, 90_000);
 

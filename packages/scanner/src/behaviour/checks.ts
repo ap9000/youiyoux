@@ -194,11 +194,17 @@ export async function focusReturn(page: ProbePage, opened: Opened, args: CheckAr
     const asked = Date.now();
     const now = await page.returnFocus(opened.index, part);
     if (now.at === "trigger" || now.at === "part") {
-      // Watch a moment longer: a page that leaves or sends something now is stopped, not passed.
+      // Watch a moment longer: a page that leaves or sends something now is stopped, not passed;
+      // and focus must still be there (and the popup still closed) at the end of that moment.
       await ctx.settle(budgets.graceMs);
       const after = await ctx.stopped();
       if (after) return ctx.incomplete(after);
-      return ctx.decided("passed", { why: now.at === "trigger" ? `when Esc closed the ${noun}, focus went back to the button that opened it` : `when Esc closed the ${noun}, focus went to ${partWords(part!)} the component contract names (returnFocusTo)`, fix: "Nothing to do: closing returns focus." });
+      const again = await page.returnFocus(opened.index, part);
+      const reopened = (await page.popupState(opened.index, pattern, args.popup)) === "open";
+      if ((again.at === "trigger" || again.at === "part") && !reopened) return ctx.decided("passed", { why: again.at === "trigger" ? `when Esc closed the ${noun}, focus went back to the button that opened it` : `when Esc closed the ${noun}, focus went to ${partWords(part!)} the component contract names (returnFocusTo)`, fix: "Nothing to do: closing returns focus." });
+      // It moved on (or the popup opened again): keep watching until the budget, and judge where it ends.
+      if (deadline() <= Date.now()) return ctx.incomplete({ why: "ran out of time before where focus returned could be judged", fix: "Next: make sure the dev server is idle, then run youiyoux behave again." });
+      continue;
     }
     if (asked >= until) {
       if (now.trigger === "gone" && !part) return ctx.incomplete({ why: "the button that opened it is gone; declare where focus should go", fix: "Next: declare where focus goes in the component's contract (a11y.behaviour.returnFocusTo), or keep the button on the screen, then run youiyoux behave again." });
