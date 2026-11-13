@@ -37,6 +37,7 @@ import { PlacesLayer } from "./PlacesOverlay.tsx";
 import { RequestComposer, RequestThread } from "./Requests.tsx";
 import { LiveScreen, SELECTED } from "./LiveScreen.tsx";
 import { LiveEditor } from "./LiveEditor.tsx";
+import { BehaviourPanel } from "./Behaviour.tsx";
 import { OfferPanel, OfferPin } from "./Offers.tsx";
 import type { LiveHandle } from "../../data/live.ts";
 import { Segmented } from "../../ui/Segmented.tsx";
@@ -327,8 +328,8 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
   selectedRef.current = selected;
   const openScreen = (screen: Screen): void => navigate(screenHref(screen.project, screen.route));
   const [draft, setDraft] = useState<Draft | null>(null);
-  /** On a live pick, edit it in place or comment on it. */
-  const [mode, setMode] = useState<"edit" | "comment">("comment");
+  /** On a pick: edit it in place (live screens), check how its popups behave (the served product's screens), or comment on it. */
+  const [mode, setMode] = useState<"edit" | "behaviour" | "comment">("comment");
   const [thread, setThread] = useState<{ id: string; at: Point } | null>(null);
   /** An agent's options open in a bubble, with the component in the page when its screen runs live. */
   const [offer, setOffer] = useState<{ id: string; at: Point; live: LiveHandle | null } | null>(null);
@@ -339,6 +340,8 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
     const path = live.screens.find((s) => s.route === screen.route)?.path;
     return path ? { url: `${live.base}${path}`, viewport: live.viewport, screens: live.screens } : null;
   };
+  /** Behaviour runs on the product the local service serves: its screens only. */
+  const behaviourHere = (screen: Screen): boolean => live !== null && live.project === screen.project;
   const toggleLive = (key: string): void => setRunning((now) => (now.includes(key) ? now.filter((k) => k !== key) : [...now, key].slice(-LIVE_AT_ONCE)));
 
   // A place names its own file and line, so it is matched against every site of its project, as on a screen's page.
@@ -602,10 +605,18 @@ export function ScreensCanvas({ screens, scheme, requests, onRequest = () => und
             </>
           }
         >
-          {draft.live && (
-            <Segmented<"edit" | "comment"> label="Edit or comment" value={mode} onChange={setMode} options={[{ value: "edit", label: "Edit" }, { value: "comment", label: "Comment" }]} className="mb-3" />
+          {(draft.live || behaviourHere(draft.screen)) && (
+            <Segmented<"edit" | "behaviour" | "comment">
+              label="Edit, behaviour or comment"
+              value={mode}
+              onChange={setMode}
+              options={[...(draft.live ? [{ value: "edit" as const, label: "Edit" }] : []), ...(behaviourHere(draft.screen) ? [{ value: "behaviour" as const, label: "Behaviour" }] : []), { value: "comment", label: "Comment" }]}
+              className="mb-3"
+            />
           )}
-          {draft.live && mode === "edit" ? (
+          {mode === "behaviour" && behaviourHere(draft.screen) ? (
+            <BehaviourPanel key={`${draft.screen.project}:${draft.screen.route}:${draft.target.name}`} route={draft.screen.route} component={{ name: draft.target.name }} onFiled={onRequest} />
+          ) : draft.live && mode === "edit" ? (
             <LiveEditor
               key={`${draft.screen.project}:${draft.screen.route}:${draft.select}:${draft.at.x}:${draft.at.y}`}
               live={draft.live.handle}

@@ -31,6 +31,7 @@ import { Capped, choiceProps, SiteLocation, SiteRow } from "../element/sites.tsx
 import { IssueBadge, issueBreakdown } from "./IssueCounts.tsx";
 import { type Outline, type Pin, PlacesOverlay } from "./PlacesOverlay.tsx";
 import { RequestComposer, RequestThread } from "./Requests.tsx";
+import { BehaviourPanel } from "./Behaviour.tsx";
 
 /** A collapsible group: native details/summary, so it is keyboard- and reader-friendly for free. */
 function Group({ summary, children, onPoint }: { summary: ReactNode; children: ReactNode; onPoint?: (pointed: boolean) => void }) {
@@ -134,11 +135,12 @@ function ViolationRow({ violation }: { violation: ProjectViolation }) {
   );
 }
 
-export function IssueGroups({ model, screen }: { model: Model; screen: Screen }) {
+/** `served`: this screen's product is the one the local service serves, so its Behaviour section reads the stored probe runs. */
+export function IssueGroups({ model, screen, served = false }: { model: Model; screen: Screen; served?: boolean }) {
   const byRule = new Map<string, ProjectViolation[]>();
   for (const v of screen.violations) byRule.set(v.rule, [...(byRule.get(v.rule) ?? []), v]);
   const rules = [...byRule].sort(([, a], [, b]) => b.length - a.length);
-  const notRun = <NotRunRules model={model} screen={screen} />;
+  const notRun = <NotRunRules model={model} screen={screen} served={served} />;
   if (rules.length === 0) {
     // "No rule is broken" only when every rule ran: a rule that did not run leaves this screen unknown.
     if (screen.notRun.length > 0) return notRun;
@@ -178,8 +180,8 @@ export function IssueGroups({ model, screen }: { model: Model; screen: Screen })
   );
 }
 
-/** Rules the scan did not run: behaviour rules wait for a probe run, so this screen is not known to follow them. */
-function NotRunRules({ model, screen }: { model: Model; screen: Screen }) {
+/** Rules the scan did not run: behaviour rules are checked by a probe run, never by the scan, so the scan can't say this screen follows them. */
+function NotRunRules({ model, screen, served }: { model: Model; screen: Screen; served: boolean }) {
   const behaviour = screen.notRun.filter((r) => r.state === "incomplete");
   const other = screen.notRun.filter((r) => r.state !== "incomplete");
   const title = (id: string): string => model.rules.get(id)?.title ?? id;
@@ -187,7 +189,8 @@ function NotRunRules({ model, screen }: { model: Model; screen: Screen }) {
     <div className="space-y-1.5 rounded-md border border-line px-3 py-3 text-small text-ink-2">
       {behaviour.length > 0 && (
         <p>
-          <span className="font-medium text-ink">Behaviour not checked</span>: {behaviour.map((r) => title(r.rule)).join(", ")}. A probe run in the running app checks these, and none has run. Until then, check this screen's menus, dialogs and popovers yourself with the keyboard (Esc, Tab, arrow keys).
+          <span className="font-medium text-ink">Behaviour not checked by the scan</span>: {behaviour.map((r) => title(r.rule)).join(", ")}. A probe run in the running app checks these:{" "}
+          {served ? "the last run's results are under Behaviour on this page." : "youiyoux behave, or Run on this screen in the hub youiyoux ui starts; this page can't read its results."} Until a fresh run passes, check this screen's menus, dialogs and popovers yourself with the keyboard (Esc, Tab, arrow keys).
         </p>
       )}
       {other.length > 0 && (
@@ -301,6 +304,9 @@ export function ScreenDetail({ model, screens, screen }: { model: Model; screens
   const setSelect = (value: string | null): void => go({ select: value, request: null });
   const [composing, setComposing] = useState(false);
   const requests = useRemote(workflowApi.requests, "requests");
+  const live = useRemote(workflowApi.live, "live");
+  // Behaviour probes run on the product the local service serves: its screens only.
+  const served = live.state.status === "ready" && live.state.value.project === screen.project;
   const placesState = usePlaces(screen.shot?.places);
   const places = placesState?.status === "ready" ? placesState.value : null;
   // A place names its own file and line, so it is matched against every site of the project, not
@@ -474,8 +480,13 @@ export function ScreenDetail({ model, screens, screen }: { model: Model; screens
               </div>
             </Section>
           )}
+          {served && (
+            <Section title="Behaviour">
+              <BehaviourPanel key={`${screen.project}:${screen.route}`} route={screen.route} onFiled={replace} />
+            </Section>
+          )}
           <Section title="Rule issues" count={screen.violations.length}>
-            <IssueGroups model={model} screen={screen} />
+            <IssueGroups model={model} screen={screen} served={served} />
           </Section>
         </aside>
       </div>

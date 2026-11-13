@@ -157,7 +157,7 @@ describe("a screen whose project has an unprobed behaviour rule", () => {
   test("its Rule issues say which behaviour rule was not checked and what to do, never 'No rule is broken'", () => {
     const { container } = render(<IssueGroups model={model} screen={flows()} />);
     expect(container.textContent).not.toContain("No rule is broken");
-    expect(container.textContent).toContain("Behaviour not checked: Esc closes popups.");
+    expect(container.textContent).toContain("Behaviour not checked by the scan: Esc closes popups.");
     expect(container.textContent).toContain("check this screen's menus, dialogs and popovers yourself with the keyboard");
   });
 
