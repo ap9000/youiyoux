@@ -336,7 +336,9 @@ see them; `youiyoux behave [--route /x]` checks them in the running dev app, in 
   counted. A failed result is filed as a change request whose acceptance youiyoux builds: the same
   check passing for the same popup in a run newer than the request, which `requests addressed`,
   MCP `request_addressed` and the hub all require. Agents run the same probe with MCP `ui_behave`.
-  One run at a time per hub or MCP server.
+  One run of a route at a time, across the hub, MCP and `behave` (a claim file beside the route's
+  run); a run started earlier never replaces one started later. A request is addressed only by a
+  run started after it was filed or last reopened, under the rules as they are then.
 - **What it does.** On every route screens.json lists (or those in `behaviour.routes`), or the one
   given, it finds popup triggers by their ARIA markers (and contract bindings), and for each check a
   fresh page: it clicks the trigger only, identifies the popup, and runs the check. It sends no
