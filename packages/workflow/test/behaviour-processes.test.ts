@@ -6,7 +6,7 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { afterAll, describe, expect, test } from "vitest";
+import { afterAll, beforeEach, describe, expect, test } from "vitest";
 import * as index from "../src/index.ts";
 import { behaviourFile, probeBehaviour, WorkflowError } from "../src/index.ts";
 import { behaviourSandbox, control, NO_BROWSER, RULE_ID, standIn, tick, TOOL } from "./behaviour-sandbox.ts";
@@ -15,6 +15,10 @@ const s = behaviourSandbox();
 const children: ChildProcess[] = [];
 afterAll(() => {
   for (const child of children) if (child.exitCode === null) child.kill();
+});
+// Each test starts with no stored run and no claim, whatever ran before it (or with -t, alone).
+beforeEach(() => {
+  rmSync(join(s.box.project, ".youi/behaviour"), { recursive: true, force: true });
 });
 
 describe("another process", () => {
@@ -102,6 +106,8 @@ describe("publication only under the route's claim", () => {
   });
 
   test("a run whose claim was lost meanwhile writes nothing", async () => {
+    // The run kept before this one: what must still be there afterwards.
+    await direct("failed", null);
     const before = readFileSync(join(s.box.project, behaviourFile("/x")), "utf8");
     let release!: () => void;
     const gate = new Promise<void>((done) => (release = done));
