@@ -59,6 +59,9 @@ describe("valid TypeScript the parser cannot read is named, with its line and th
     // Beside an unrelated error, or as a broken `await using`, the Next stays generic.
     expect(await problemOf("src/res.ts", "export function read() {\n  using handle = open();\n  return 1 +* 2;\n}\n")).toBe(`the parser could not read line 3, so UI elements there were not read. ${GENERIC}`);
     expect(await problemOf("src/res.ts", "export async function read() {\n  await using = foo();\n}\n")).toMatch(new RegExp(`${escapeRegExp(GENERIC)}$`));
+    // Comments between the words don't make a declaration look like a name.
+    expect(await problemOf("src/res.ts", "export async function read() {\n  await /* comment */ using = foo();\n}\n")).toMatch(new RegExp(`${escapeRegExp(GENERIC)}$`));
+    expect(await problemOf("src/res.ts", "export function read() {\n  using /* comment */ resource;\n}\n")).toMatch(new RegExp(`${escapeRegExp(GENERIC)}$`));
   });
 
   test("an unrelated syntax error gets the generic Next with its line; &&, &amp; and a stray & outside JSX are not a bare & in JSX text", async () => {
@@ -96,5 +99,17 @@ describe("the inventory", () => {
     const dir = await project({ "src/Note.tsx": `export function Note() {\n  return <button className="px-3">The app&rsquo;s &#8220;dev&#x201D; server</button>;\n}\n` });
     const report = await buildInventory([dir], { cwd: dir });
     expect(report.looks.find((l) => l.tag === "button")?.recipe?.label).toBe("The app’s “dev” server");
+  });
+
+  test("a label decodes every reference JSX accepts, and leaves any other as written", async () => {
+    const button = (name: string, text: string) => `export function ${name}() {\n  return <button className="px-3">${text}</button>;\n}\n`;
+    const dir = await project({ "src/A.tsx": button("A", "&copy; 2026"), "src/B.tsx": button("B", "© 2026"), "src/C.tsx": button("C", "&constructor; &toString; &nosuch;") });
+    const report = await buildInventory([dir], { cwd: dir });
+    const label = (file: string) => report.looks.find((l) => l.file === file)?.recipe?.label;
+    // Encoded and literal text read the same, as JSX renders them.
+    expect(label("src/A.tsx")).toBe("© 2026");
+    expect(label("src/B.tsx")).toBe("© 2026");
+    // Names that aren't references (an object's inherited keys among them) stay literal.
+    expect(label("src/C.tsx")).toBe("&constructor; &toString; &nosuch;");
   });
 });

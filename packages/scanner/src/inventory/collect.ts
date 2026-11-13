@@ -22,6 +22,7 @@ import { findStoryFiles, readCsf, storyConfig, type CsfFile, type CsfStory } fro
 import { ClassRules, resolveClasses, SHAPE_PROPERTIES } from "./style.ts";
 import type { InventoryTarget } from "./target.ts";
 import { buildTheme, readStylesheet, type Stylesheet, type Theme } from "./theme.ts";
+import { JSX_ENTITIES } from "./entities.ts";
 
 /** Packages that are the framework itself, not a UI library. */
 const FRAMEWORK = new Set(["react", "react-dom", "astro", "preact", "solid-js", "vue"]);
@@ -165,8 +166,6 @@ function recipeDynamic(props: Readonly<Record<string, PropValue>>): { dynamic?: 
   return dynamic.length ? { dynamic } : {};
 }
 
-/** Named character references common in JSX text; any other stays as written. */
-const ENTITIES: Readonly<Record<string, string>> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0", rsquo: "\u2019", lsquo: "\u2018", rdquo: "\u201d", ldquo: "\u201c", hellip: "\u2026", mdash: "\u2014", ndash: "\u2013", middot: "\u00b7", times: "\u00d7" };
 
 /** `&amp;` → `&`, `&#8217;` / `&#x2019;` → `’`, as JSX renders them. */
 function decodeReference(text: string): string {
@@ -175,7 +174,8 @@ function decodeReference(text: string): string {
     const code = numeric[1]![0]!.toLowerCase() === "x" ? parseInt(numeric[1]!.slice(1), 16) : parseInt(numeric[1]!, 10);
     return code <= 0x10ffff ? String.fromCodePoint(code) : text;
   }
-  return ENTITIES[text.slice(1, -1)] ?? text;
+  // Own entries only: `&constructor;` is not a reference, so it stays as written.
+  return JSX_ENTITIES.get(text.slice(1, -1)) ?? text;
 }
 
 /**

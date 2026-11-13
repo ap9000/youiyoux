@@ -248,6 +248,16 @@ function inJsxError(node: SgNode): boolean {
 const USING_DECLARATION = /^[ \t]+(?!(?:in|of|instanceof|as|satisfies)\b)[\p{ID_Start}$_\\]/u;
 
 /**
+ * `text` with comments blanked as the scanner sees them: a block comment becomes a space, or a line
+ * break when it spans lines; a line comment is dropped up to its line break. Strings are not
+ * tracked, so a `/*` inside one can blank too much; that can only change the Next's wording, never
+ * what was read.
+ */
+function withoutComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?(?:\*\/|$)|\/\/[^\n]*/g, (comment) => (comment.startsWith("//") ? "" : comment.includes("\n") ? "\n" : " "));
+}
+
+/**
  * Valid TypeScript the bundled tree-sitter grammar cannot read, found in the file's first unread
  * region, as a Next step with its line: a bare `&` in JSX text, or `using` as an ordinary name
  * (the grammar takes it for a `using` declaration). Read-only: the file stays partly read.
@@ -260,8 +270,9 @@ function knownGap(module: ModuleInfo): string | null {
     const line = start.line + 1;
     if (token.kind() === "&" && inJsxError(token)) return `line ${line}: the parser youiyoux uses can't read a bare & in JSX text; write &amp; or {"&"} there`;
     if (token.kind() !== "using") continue;
-    const before = module.source.slice(0, start.index);
-    const after = module.source.slice(end.index);
+    // Comments don't count: a block comment is a space, or a line break when it spans lines.
+    const before = withoutComments(module.source.slice(0, start.index));
+    const after = withoutComments(module.source.slice(end.index));
     // `await using …` is a declaration, broken or not; never call it a name.
     if (/\bawait\s*$/.test(before) || USING_DECLARATION.test(after)) continue;
     return `line ${line}: the parser youiyoux uses can't read \`using\` as a variable name; rename it`;
