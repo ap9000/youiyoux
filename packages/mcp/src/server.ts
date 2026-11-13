@@ -34,7 +34,7 @@ import { DISCOVER_RULE, DiscoverConstraints, discoverCacheDir, discoverIndexPath
 import { storeLocation, type Store } from "@youiyoux/store";
 import { adoptionRequest, captureScreens, chosenSession, readScreensSpec, screenSlug, collectComponents, findLibraryEntry, renderShots, type ShotsOptions, componentCard, describeIdentity, failedChecks, findContract, formatProps, loadProject, planChange, PROJECT_FILE, ruleRows, ScanCache, scanProject, screenBom, searchElements, searchLibrary, tokenRows, whereUsed, type PlanInput, type Project, type ProjectComponents, type ScanResult } from "@youiyoux/scanner";
 import { launchBrowser } from "@youiyoux/detect";
-import { decisionsKey, decisionsKeyFile, ProposalStore, proposalBrief, RequestStore, requestBrief, type ProposalCheck } from "@youiyoux/workflow";
+import { behaviourEvidence, decisionsKey, decisionsKeyFile, ProposalStore, proposalBrief, RequestStore, requestBrief, type ProposalCheck } from "@youiyoux/workflow";
 import { z } from "zod";
 import { findComponents, matchesText, noneFitsText } from "./find-component.ts";
 import { choicesText, renderText, ruleCoversText, swapImpactText, whereUsedText } from "./index-tools.ts";
@@ -55,6 +55,12 @@ interface ServerOptions {
   readonly decisionsKey?: string;
   /** ui_render: tests count renders, choose the cache and never download Chromium. */
   readonly render?: Pick<ShotsOptions, "stats" | "download" | "cache">;
+  /**
+   * What a behaviour result records as the youiyoux that made it (the CLI's behaviourTool()):
+   * requests filed from behaviour results are held to it. Without it, such a request can't be
+   * marked addressed here.
+   */
+  readonly behaviourTool?: string;
 }
 
 const VERSION = "0.1.0";
@@ -442,7 +448,8 @@ export function createServer(options: ServerOptions): McpServer {
   async function requests(): Promise<{ store: RequestStore; root: string }> {
     const project = await state.loadProject().catch(() => null);
     const root = project?.root ?? resolve(options.productRoot ?? options.projectRoot);
-    return { store: new RequestStore(root, project?.config.id ?? basename(root)), root };
+    const evidence = project && options.behaviourTool ? { behaviour: behaviourEvidence(project, options.behaviourTool) } : {};
+    return { store: new RequestStore(root, project?.config.id ?? basename(root), evidence), root };
   }
 
   server.registerTool(

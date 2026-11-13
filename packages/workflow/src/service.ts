@@ -28,7 +28,7 @@ import { authorize, WorkflowError, type Action } from "./policy.ts";
 import { comparePreview, notRunReason } from "./preview.ts";
 import { LiveApp } from "./live.ts";
 import { RequestStore } from "./requests.ts";
-import type { BehaviourSetup } from "./behaviour-service.ts";
+import { behaviourEvidence, type BehaviourSetup } from "./behaviour-service.ts";
 import { decisionsKey, decisionsKeyFile, ProposalStore, type ProposalCheck } from "./proposals.ts";
 import type { WorkflowStore } from "./store.ts";
 
@@ -63,8 +63,8 @@ interface WorkflowOptions extends LoadProjectOptions {
   readonly ingest?: (link: string) => Promise<IngestReading>;
   /**
    * Behaviour probes from the hub (behaviour-service.ts): this youiyoux's version as results record
-   * it, and how to open a browser. Without it, nothing is probed from here and stored results can't
-   * be held to now.
+   * it, and how to open a browser. Without it, nothing is probed from here, stored results can't be
+   * held to now, and a request filed from a behaviour result can't be filed or marked addressed.
    */
   readonly behaviour?: BehaviourSetup;
 }
@@ -129,7 +129,8 @@ export class RuleWorkflow {
   /** The product's comments and change requests on its captured screens (requests.ts), in its `.youi/requests`. */
   async requests(): Promise<RequestStore> {
     const project = await this.project();
-    return new RequestStore(project.root, project.config.id, this.options.now ? { now: this.options.now } : {});
+    const behaviour = this.options.behaviour;
+    return new RequestStore(project.root, project.config.id, { ...(this.options.now ? { now: this.options.now } : {}), ...(behaviour ? { behaviour: behaviourEvidence(project, behaviour.tool) } : {}) });
   }
 
   /** Behaviour probes for the product: its project, and how to run them (refused when this service wasn't given a browser). */

@@ -43,6 +43,7 @@ import { renderBom, renderMigration, renderPlan, renderRulePreview, renderRules,
 import { syncProject } from "./sync.ts";
 import { COMMAND } from "./command.ts";
 import { TOOL_ROOT } from "./tool.ts";
+import { behaviourTool } from "./version.ts";
 import { runReport, type ReportIo } from "./report/run.ts";
 import { ms, plural, style } from "./ui.ts";
 
@@ -1411,9 +1412,10 @@ async function cmdRequests(values: Values, positionals: string[]): Promise<numbe
   const usage = "youiyoux requests [--status open|addressed|closed|all] [--route r]   or   youiyoux requests show <id> | reply <id> --message <text> | addressed <id> --message <what you changed>";
   const [action, id, ...rest] = positionals;
   if (rest.length > 0) throw new UsageError(usage);
-  const { RequestStore, requestBrief } = await import("@youiyoux/workflow");
+  const { RequestStore, requestBrief, behaviourEvidence } = await import("@youiyoux/workflow");
   const { project, root } = await product(values);
-  const store = new RequestStore(root, project?.config.id ?? basename(root));
+  // A request filed from a behaviour result is marked addressed only once the check passes again, fresh (read as this youiyoux makes results).
+  const store = new RequestStore(root, project?.config.id ?? basename(root), project ? { behaviour: behaviourEvidence(project, behaviourTool()) } : {});
   const agent = { kind: "agent", name: "youiyoux CLI" } as const;
   const one = (request: Parameters<typeof requestBrief>[0]): number => {
     const brief = requestBrief(request, root);
@@ -1513,7 +1515,7 @@ async function cmdReport(values: Values, positionals: string[], io: CliIo): Prom
 
 async function cmdMcp(values: Values): Promise<number> {
   const { startStdioServer } = await import("@youiyoux/mcp");
-  await startStdioServer({ projectRoot: values.project ?? process.cwd(), ...loadOptions(values), ...(values.cache ? { discoverCache: values.cache } : {}) });
+  await startStdioServer({ projectRoot: values.project ?? process.cwd(), ...loadOptions(values), ...(values.cache ? { discoverCache: values.cache } : {}), behaviourTool: behaviourTool() });
   return -1;
 }
 

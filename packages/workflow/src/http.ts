@@ -17,7 +17,7 @@ import { COMPONENT_STATES, DefinitionError, ElementId, LibraryEntry, REQUEST_STA
 import { BRIDGE_PATH, liveBridge } from "@youiyoux/scanner";
 import type { Actor, AgentsSetup, ApiError } from "./api.ts";
 import { setBehaviourConsent } from "./behaviour.ts";
-import { BehaviourRoute, behaviourConsentView, behaviourRouteView, behaviourRunning, BehaviourTargetFilter, lastBehaviourRun, runBehaviour } from "./behaviour-service.ts";
+import { BehaviourRef, BehaviourRoute, behaviourConsentView, behaviourRouteView, behaviourRunning, BehaviourTargetFilter, lastBehaviourRun, runBehaviour } from "./behaviour-service.ts";
 import { proposalDigest } from "./proposals.ts";
 import { WorkflowError } from "./policy.ts";
 import type { RuleWorkflow } from "./service.ts";
@@ -55,8 +55,16 @@ const CreateInput = z.union([
 ]);
 const SaveInput = z.object({ revision: z.number().int().positive(), content: z.union([DraftContentInput, StyleContentInput, LibraryContentInput, IngestKeepInput]) });
 
-/** A comment or change request on a captured screen, and what moves it on (requests.ts). */
-const RequestInput = z.object({ kind: z.enum(["comment", "change", "options"]), body: z.string().min(1).max(4000), target: RequestTarget });
+/**
+ * A comment or change request on a captured screen, and what moves it on (requests.ts). Or a change
+ * request filed from a failed behaviour result, named by its route, run and place: its target,
+ * behaviour link and acceptance are the service's to build, so a body carrying any of them (or a
+ * task) is refused, never used.
+ */
+const RequestInput = z.union([
+  z.object({ kind: z.enum(["comment", "change", "options"]), body: z.string().min(1).max(4000), target: RequestTarget }).strict(),
+  z.object({ kind: z.literal("change"), body: z.string().max(4000).optional(), behaviour: BehaviourRef }).strict(),
+]);
 const ReplyInput = z.object({ body: z.string().min(1).max(4000) });
 const StatusInput = z.object({ status: z.enum(REQUEST_STATUSES), body: z.string().max(4000).optional() });
 /** The components under the pointer on a live screen, as the bridge saw them: their frames are mapped to lines. */
@@ -230,6 +238,7 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string, opti
   if (path === "/api/requests" && method === "GET") return send(res, 200, await (await workflow.requests()).list());
   if (path === "/api/requests" && method === "POST") {
     const input = parse(RequestInput, await readJson(req));
+    if ("behaviour" in input) return send(res, 201, await (await workflow.requests()).createFromBehaviour(actor, input.behaviour, input.body));
     // An options request's task names what its options may set: the component's contract.
     return send(res, 201, await (await workflow.requests()).create(actor, input, input.kind === "options" ? await workflow.contractOf(input.target.element) : null));
   }
