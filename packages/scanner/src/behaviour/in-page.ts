@@ -48,6 +48,26 @@ export type PopupFound =
 
 export type ClickPoint = { readonly ok: true; readonly x: number; readonly y: number } | { readonly ok: false; readonly why: string };
 
+/**
+ * A trigger's ARIA state as read in the probe's own world (trigger-state): its attributes as written,
+ * and whether its relationships name the popup identified last (null before one is, or when the
+ * relationship isn't there).
+ */
+export interface TriggerFacts {
+  readonly connected: boolean;
+  readonly expanded: string | null;
+  readonly haspopup: string | null;
+  /** aria-controls is there (and names at least one id). */
+  readonly controls: boolean;
+  /** One of the ids aria-controls names is the identified popup. */
+  readonly controlsPopup: boolean | null;
+  readonly popovertarget: boolean;
+  /** popovertarget names the identified popup. */
+  readonly popovertargetPopup: boolean | null;
+  /** The identified popup's role (its role attribute, else dialog, popover or its tag), or null. */
+  readonly popupRole: string | null;
+}
+
 /** Whether effective focus is where a key is sent from: already there, moved there by the probe (focus(), never a click or a key), or not placeable. */
 export type FocusPlaced = { readonly ok: true; readonly moved: boolean } | { readonly ok: false };
 
@@ -259,6 +279,24 @@ export function isolatedLibrary(): void {
     },
     element(index: number): Element | null {
       return state.elements[index] ?? null;
+    },
+    /** The trigger's ARIA state now, and whether its relationships name the popup identified last. */
+    triggerFacts(wanted: { readonly index: number }): TriggerFacts {
+      const trigger = state.elements[wanted.index];
+      const popup = state.popup;
+      if (!trigger) return { connected: false, expanded: null, haspopup: null, controls: false, controlsPopup: null, popovertarget: false, popovertargetPopup: null, popupRole: null };
+      const ids = (trigger.getAttribute("aria-controls") ?? "").split(/\s+/).filter(Boolean);
+      const target = trigger.hasAttribute("popovertarget") ? ((trigger as HTMLButtonElement).popoverTargetElement ?? byId(trigger, trigger.getAttribute("popovertarget") ?? "")) : null;
+      return {
+        connected: trigger.isConnected,
+        expanded: trigger.getAttribute("aria-expanded"),
+        haspopup: trigger.getAttribute("aria-haspopup"),
+        controls: ids.length > 0,
+        controlsPopup: ids.length > 0 && popup ? ids.some((id) => byId(trigger, id) === popup) : null,
+        popovertarget: trigger.hasAttribute("popovertarget"),
+        popovertargetPopup: trigger.hasAttribute("popovertarget") && popup ? target === popup : null,
+        popupRole: popup ? roleOf(popup) : null,
+      };
     },
     markShowing(pattern: Pattern): void {
       state.before = all().filter((element) => element.matches(ROLE[pattern]) && shown(element));

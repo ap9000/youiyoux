@@ -109,14 +109,14 @@ describe("consent", () => {
 
 describe("only a decided check is stored passed or failed", () => {
   /** A probe that says it decided `check` (no browser): what the storage guards must refuse unless the check is decided. */
-  const saying = (check: "dismiss-escape" | "focus-return", state: "passed" | "failed") =>
+  const saying = (check: "dismiss-escape" | "focus-return" | "trigger-state", state: "passed" | "failed", keys?: readonly string[]) =>
     (async ({ route }: { route: string }) => ({
       url: "http://127.0.0.1:9/x",
       state: "probed" as const,
       why: null,
       fix: null,
       coverage: "1 popup trigger found by ARIA markers.",
-      targets: [{ key: { route, pattern: "menu-button" as const, component: null, accessibleName: "More" }, found: { pattern: "menu-button" as const, component: null, accessibleName: "More", via: "dom" as const, frames: [], domPath: "button", box: { x: 0, y: 0, width: 10, height: 10 } }, scenarios: [{ check, state, popup: { state: "open" as const, how: "aria-controls" as const, role: "menu", domPath: "ul" }, why: "decided", fix: "fix it", info: [], index: 0 }] }],
+      targets: [{ key: { route, pattern: "menu-button" as const, component: null, accessibleName: "More" }, found: { pattern: "menu-button" as const, component: null, accessibleName: "More", via: "dom" as const, frames: [], domPath: "button", box: { x: 0, y: 0, width: 10, height: 10 } }, scenarios: [{ check, state, popup: { state: "open" as const, how: "aria-controls" as const, role: "menu", domPath: "ul" }, why: "decided", fix: "fix it", info: [], index: 0, ...(keys ? { keys } : {}) }] }],
     })) as unknown as NonNullable<Parameters<typeof probeBehaviour>[0]["probe"]>;
 
   test("a pass or fail for a check this youiyoux doesn't decide is refused, and nothing is stored; dismiss-escape's is kept", async () => {
@@ -127,6 +127,17 @@ describe("only a decided check is stored passed or failed", () => {
     }
     const kept = await probeBehaviour({ root, route: "/x", browser: NO_BROWSER, checks: [{ rule: "youi:demo/rule/menus-close", check: "dismiss-escape", digest: "0123456789ab" }], fingerprint: FINGERPRINT, probe: saying("dismiss-escape", "failed") });
     expect(kept.run.results.map((r) => r.state)).toEqual(["failed"]);
+  });
+
+  test("a scenario that sent a key its check doesn't send is refused, and nothing is stored; one that sent only its own is kept", async () => {
+    const root = product("keys-guard", { base: "http://127.0.0.1:9", behaviour: { allowedOrigin: "http://127.0.0.1:9" } }, [{ route: "/x", path: "/x" }]);
+    const TRIGGER = [{ rule: "youi:demo/rule/menus-say", check: "trigger-state" as const, digest: "0123456789ab" }];
+    expect(await refusal(probeBehaviour({ root, route: "/x", browser: NO_BROWSER, checks: TRIGGER, fingerprint: FINGERPRINT, probe: saying("trigger-state", "passed", ["Escape"]) }))).toMatch(/sent Escape for trigger-state, which sends no keys; nothing was stored/);
+    expect(existsSync(join(root, behaviourFile("/x")))).toBe(false);
+    const ESC = [{ rule: "youi:demo/rule/menus-close", check: "dismiss-escape" as const, digest: "0123456789ab" }];
+    expect(await refusal(probeBehaviour({ root, route: "/x", browser: NO_BROWSER, checks: ESC, fingerprint: FINGERPRINT, probe: saying("dismiss-escape", "passed", ["Escape", "Enter"]) }))).toMatch(/sent Enter for dismiss-escape, which sends only Escape/);
+    expect(existsSync(join(root, behaviourFile("/x")))).toBe(false);
+    expect((await probeBehaviour({ root, route: "/x", browser: NO_BROWSER, checks: ESC, fingerprint: FINGERPRINT, probe: saying("dismiss-escape", "passed", ["Escape"]) })).run.results.map((r) => r.state)).toEqual(["passed"]);
   });
 });
 

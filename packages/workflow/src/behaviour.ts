@@ -7,15 +7,16 @@
  * Writes are files, never folders: the route's run file, evidence under the real `.youi/` (each
  * path resolved, links refused), and screens.json's `behaviour` block only through
  * `setBehaviourConsent` (the service's authenticated write). Only a check this youiyoux decides
- * (DECIDED_BEHAVIOUR_CHECKS: dismiss-escape) is ever stored passed or failed; for every other check
- * the popup opening and being identified is stored `incomplete`.
+ * (DECIDED_BEHAVIOUR_CHECKS) is ever stored passed or failed; for any other check the popup opening
+ * and being identified is stored `incomplete`. A scenario that sent a key its check doesn't send
+ * (CHECK_KEYS) is a bug: nothing is stored.
  */
 import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath, rename, unlink, type FileHandle } from "node:fs/promises";
 import { dirname, isAbsolute, join, relative, sep } from "node:path";
 import { BEHAVIOUR_ROUTE_SCHEMA, BehaviourRouteRun, decidesBehaviour, EVIDENCE_PATH, type BehaviourCheckId, type BehaviourResult, type BehaviourTarget, type Freshness } from "@youiyoux/core";
-import { behaviourConfigDigest, behaviourConsent, bindingsDigest, probeOrigin, probeRoute, readScreensSpec, screenUrl, switchedConsent, SWITCHED_OFF, updateScreensSpec, type ContractBinding, type ProbeBudgets, type ProbeRouteOptions, type RouteProbe, type ScreensSpec } from "@youiyoux/scanner";
+import { behaviourConfigDigest, behaviourConsent, bindingsDigest, CHECK_KEYS, probeOrigin, probeRoute, readScreensSpec, screenUrl, switchedConsent, SWITCHED_OFF, updateScreensSpec, type ContractBinding, type ProbeBudgets, type ProbeRouteOptions, type RouteProbe, type ScreensSpec } from "@youiyoux/scanner";
 import { LiveApp } from "./live.ts";
 import { WorkflowError } from "./policy.ts";
 
@@ -307,6 +308,10 @@ export async function probeBehaviour(options: ProbeBehaviourOptions): Promise<Pr
       const words = scenario.state === "opened" ? notRunYet(request.check, scenario.popup.how) : { why: scenario.why, fix: scenario.fix };
       // Decided only for a check this youiyoux decides; anything else that came back decided is a bug, and nothing is stored.
       if ((scenario.state === "passed" || scenario.state === "failed") && !decidesBehaviour(request.check)) throw new WorkflowError("internal", `the probe decided ${request.check}, which this youiyoux doesn't decide; nothing was stored`);
+      // Only the check's own keys: a scenario that sent any other is a bug, and nothing is stored.
+      const allowed: readonly string[] = CHECK_KEYS[request.check];
+      const stray = (scenario.keys ?? []).filter((k) => !allowed.includes(k));
+      if (stray.length > 0) throw new WorkflowError("internal", `the probe sent ${stray.join(", ")} for ${request.check}, which sends ${allowed.length ? `only ${allowed.join(", ")}` : "no keys"}; nothing was stored`);
       results.push({
         runId,
         at,

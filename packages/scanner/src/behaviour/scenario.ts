@@ -4,10 +4,10 @@
  * Written against `ProbePage`, so the decisions here don't depend on how the page is driven
  * (probe.ts drives a real headless Chromium behind its guards).
  */
-import type { BehaviourPattern, PartRef } from "@youiyoux/core";
+import type { BehaviourCheckId, BehaviourPattern, PartRef } from "@youiyoux/core";
 import { describeUrl, SIGN_IN_FIX, SIGN_IN_PATH, SIGN_IN_WORDS } from "./guards.ts";
 import { ambiguousWords, matchTarget, type TargetKey } from "./identity.ts";
-import type { FocusPlaced, FoundTarget, PopupFound } from "./in-page.ts";
+import type { FocusPlaced, FoundTarget, PopupFound, TriggerFacts } from "./in-page.ts";
 
 /** What the guards refused (or, for sockets, blocked) while a page was open, and when. */
 export interface GuardEvent {
@@ -28,6 +28,8 @@ export interface ProbePage {
   findTargets(): Promise<readonly FoundTarget[]>;
   /** Remember which popups of the pattern show before the click. */
   markShowing(pattern: BehaviourPattern): Promise<void>;
+  /** The trigger's own ARIA state now (read in the probe's isolated world), against the popup identified last, if any. */
+  triggerFacts(index: number): Promise<TriggerFacts>;
   /** From now on, what the guards see happened because of the click. */
   acting(): void;
   /** Click the trigger `findTargets()` returned at `index`: a real mouse click, on it only. */
@@ -39,7 +41,10 @@ export interface ProbePage {
   ready(index: number, pattern: BehaviourPattern): Promise<boolean>;
   /** The identified popup's state, judged on that element (a removed one reconciled by identity); unknown is never closed. */
   popupState(index: number, pattern: BehaviourPattern, popup: PartRef | null): Promise<"open" | "closed" | "unknown">;
-  /** One safe key (SAFE_KEYS), as real keyboard input; any other key is refused before anything is sent. */
+  /**
+   * One safe key (SAFE_KEYS), as real keyboard input. Refused before anything is sent: any key that
+   * isn't a safe key, and any the page's check doesn't send (CHECK_KEYS; none for a control run).
+   */
   press(key: SafeKey): Promise<void>;
   /** Every key sent to this page, in order. */
   keys(): readonly string[];
@@ -55,9 +60,24 @@ export interface ProbePage {
 export const SAFE_KEYS = ["Escape"] as const;
 export type SafeKey = (typeof SAFE_KEYS)[number];
 
-/** Refuses any key that isn't a safe key, before anything is sent. */
-export function assertSafeKey(key: string): asserts key is SafeKey {
+/**
+ * The keys each check sends, and no others: a page opened for a check refuses every other key
+ * before anything is sent, so a check never widens what is pressed by accident. A control run
+ * sends none. A check that needs no key (trigger-state, focus-into) has none.
+ */
+export const CHECK_KEYS: Readonly<Record<BehaviourCheckId, readonly SafeKey[]>> = {
+  "trigger-state": [],
+  "dismiss-escape": ["Escape"],
+  "focus-into": [],
+  "focus-return": [],
+  "focus-trap": [],
+  "arrow-keys": [],
+};
+
+/** Refuses any key that isn't a safe key, or (with `allowed`) one the page's check doesn't send, before anything is sent. */
+export function assertSafeKey(key: string, allowed: readonly string[] = SAFE_KEYS): asserts key is SafeKey {
   if (!(SAFE_KEYS as readonly string[]).includes(key)) throw new Error(`the probe sends only ${SAFE_KEYS.join(", ")}; ${JSON.stringify(key)} was refused and nothing was sent`);
+  if (!allowed.includes(key)) throw new Error(`this check sends ${allowed.length ? `only ${allowed.join(", ")}` : "no keys"}; ${JSON.stringify(key)} was refused and nothing was sent`);
 }
 
 export interface Stop {
@@ -67,7 +87,16 @@ export interface Stop {
 
 export type ScenarioOutcome =
   /** Internal only: the popup opened and was identified. Never a pass by itself. */
-  | { readonly state: "opened"; readonly popup: Extract<PopupFound, { state: "open" }>; readonly info: readonly string[]; readonly dataBlocked?: boolean; /** The trigger's index on this page (findTargets). */ readonly index: number }
+  | {
+      readonly state: "opened";
+      readonly popup: Extract<PopupFound, { state: "open" }>;
+      readonly info: readonly string[];
+      readonly dataBlocked?: boolean;
+      /** The trigger's index on this page (findTargets). */
+      readonly index: number;
+      /** The trigger's ARIA state just before it was clicked (closed). */
+      readonly closed: TriggerFacts;
+    }
   /** A decided check (DECIDED_BEHAVIOUR_CHECKS only): it ran and passed or failed. */
   | ({ readonly state: "passed" | "failed"; readonly popup: Extract<PopupFound, { state: "open" }>; readonly info: readonly string[]; readonly dataBlocked?: boolean } & Stop)
   | ({ readonly state: "incomplete"; readonly info: readonly string[]; readonly dataBlocked?: boolean } & Stop)
@@ -177,6 +206,7 @@ export async function openAndIdentify(
   if (match.state === "ambiguous") return incomplete(ambiguousWords(wanted, match.count));
   if (match.state === "missing") return incomplete({ why: `the button '${wanted.accessibleName || "(no name)"}' wasn't on the screen when it was opened again`, fix: "Next: run the probe again; a button that shows only after something else happens isn't probed yet." });
   await page.markShowing(wanted.pattern);
+  const closed = await page.triggerFacts(match.index);
   // Consent is read again at the last moment: switched off, moved or switched again since the run
   // began (another generation), and nothing is clicked.
   const refused = cancelled() ?? (await args.beforeClick?.()) ?? cancelled();
@@ -210,7 +240,7 @@ export async function openAndIdentify(
       // Watch a moment longer: a page that leaves, sends or opens a window just after opening is still stopped.
       await page.wait(Math.max(0, Math.min(budgets.graceMs, deadline() - Date.now())));
       const after = stopFromEvents(page.events()) ?? moved(start, await page.location(), origin);
-      return after ? incomplete(after) : { state: "opened", popup, info: infoFromEvents(page.events()), dataBlocked: dataBlockedIn(page.events()), index: match.index };
+      return after ? incomplete(after) : { state: "opened", popup, info: infoFromEvents(page.events()), dataBlocked: dataBlockedIn(page.events()), index: match.index, closed };
     }
     if (popup.state === "several") return incomplete({ why: `couldn't tell which of ${popup.count} ${wanted.pattern === "modal-dialog" ? "dialogs" : "popups"} this button opened`, fix: "Next: point the button at its popup with aria-controls (or popovertarget), or declare the contract's popup part." });
     if (popup.state === "was-open") return incomplete({ why: `the popup the button names (${popup.how}) was already showing before the click, so we couldn't tell the click opened it`, fix: "Next: keep the popup closed until its button is clicked, then run the probe again." });
@@ -249,6 +279,56 @@ export interface CloseBudgets {
   readonly graceMs: number;
 }
 
+/** What a check gets, once its popup is open: where the scenario is, its budgets, and consent to ask before every key. */
+export interface CheckArgs {
+  readonly start: string;
+  readonly origin: string;
+  readonly pattern: BehaviourPattern;
+  /** The contract's popup part, when a binding located the target. */
+  readonly popup: PartRef | null;
+  /** The contract's returnFocusTo part, when its binding declares one. */
+  readonly returnFocusTo?: PartRef | null;
+  readonly deadline: () => number;
+  readonly budgets: CloseBudgets;
+  /** Asked immediately before every key: null while probing is still allowed, else why not (nothing is sent). */
+  readonly beforeInput?: () => Promise<Stop | null>;
+  readonly signal?: AbortSignal;
+}
+
+/** What every check needs around its popup: its info and data-blocked flag, its stops, and its results. */
+export function checkContext(page: ProbePage, opened: Extract<ScenarioOutcome, { state: "opened" }>, args: CheckArgs) {
+  const extra: string[] = [];
+  const info = (): string[] => [...new Set([...opened.info, ...infoFromEvents(page.events()), ...extra])];
+  const dataBlocked = (): boolean => opened.dataBlocked === true || dataBlockedIn(page.events());
+  const cancelled = (): Stop | null => (args.signal?.aborted ? SWITCHED_OFF : null);
+  const stopped = async (): Promise<Stop | null> => cancelled() ?? stopFromEvents(page.events()) ?? moved(args.start, await page.location(), args.origin);
+  return {
+    /** Info lines this check adds. */
+    extra,
+    info,
+    dataBlocked,
+    cancelled,
+    /** Probing switched off, the guards refused something, or the page moved: why, else null. */
+    stopped,
+    incomplete: (stop: Stop): ScenarioOutcome => ({ state: "incomplete", ...stop, info: info(), dataBlocked: dataBlocked() }),
+    decided: (state: "passed" | "failed", stop: Stop): ScenarioOutcome => ({ state, popup: opened.popup, ...stop, info: info(), dataBlocked: dataBlocked() }),
+    /** Wait `ms`, never past the scenario's deadline. */
+    settle: (ms: number): Promise<void> => page.wait(Math.max(0, Math.min(ms, args.deadline() - Date.now()))),
+    /**
+     * Immediately before a key: consent read again, the guards' stops, then `recheck` (the very
+     * popup still showing, focus where the key is sent from). Null when the key may go; else why
+     * not, and nothing is sent.
+     */
+    async beforeKey(recheck: () => Promise<boolean>, changed: Stop): Promise<Stop | null> {
+      const refused = cancelled() ?? (await args.beforeInput?.()) ?? cancelled();
+      if (refused) return refused;
+      const before = await stopped();
+      if (before) return before;
+      return (await recheck()) ? null : changed;
+    },
+  };
+}
+
 /**
  * dismiss-escape, on a popup `openAndIdentify` opened: effective focus placed inside it (or on the
  * combobox); once the page's focus handlers have run, consent read again and the very popup checked
@@ -259,21 +339,7 @@ export interface CloseBudgets {
  * (focus couldn't be placed, the page left or sent something, the scenario's own time ran out
  * first, couldn't tell which popup) is incomplete, never a pass or a fail.
  */
-export async function dismissEscape(
-  page: ProbePage,
-  opened: Extract<ScenarioOutcome, { state: "opened" }>,
-  args: {
-    readonly start: string;
-    readonly origin: string;
-    readonly pattern: BehaviourPattern;
-    readonly popup: PartRef | null;
-    readonly deadline: () => number;
-    readonly budgets: CloseBudgets;
-    /** Asked immediately before the key is sent: null while probing is still allowed, else why not (nothing is sent). */
-    readonly beforeInput?: () => Promise<Stop | null>;
-    readonly signal?: AbortSignal;
-  },
-): Promise<ScenarioOutcome> {
+export async function dismissEscape(page: ProbePage, opened: Extract<ScenarioOutcome, { state: "opened" }>, args: CheckArgs): Promise<ScenarioOutcome> {
   const { start, origin, deadline, budgets, pattern } = args;
   const noun = POPUP_NOUN[pattern];
   const extra: string[] = [];

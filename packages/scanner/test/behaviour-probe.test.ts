@@ -530,11 +530,14 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
     rmSync(scratch, { recursive: true, force: true });
   });
 
-  // focus-return applies to menus, dialogs and popovers and isn't decided yet: these scenarios
-  // stop once the popup is opened and identified, which is what the guards here are about.
-  // dismiss-escape, which goes on to press Esc, has its own tests below.
+  // trigger-state sends no key: once the popup is opened and identified (what the guards here are
+  // about) it only reads the button's state, so a decided result (passed or failed, either) means
+  // the popup opened and was identified. The checks that press keys have their own tests
+  // (behaviour-escape, behaviour-checks).
   const probe = (path: string, extra: Partial<ProbeRouteOptions> = {}): Promise<RouteProbe> =>
-    probeRoute({ browser, origin: app.origin, route: path, path, viewport: { width: 800, height: 600 }, checks: ["focus-return"], ...extra });
+    probeRoute({ browser, origin: app.origin, route: path, path, viewport: { width: 800, height: 600 }, checks: ["trigger-state"], ...extra });
+  /** Opened, identified and decided (trigger-state's verdict on the button doesn't matter here). */
+  const DECIDED = expect.stringMatching(/^(?:passed|failed)$/);
   const only = (result: RouteProbe): TargetScenario => {
     expect(result.state).toBe("probed");
     expect(result.targets).toHaveLength(1);
@@ -547,22 +550,22 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
     const result = await probe("/menu");
     expect(result.coverage).toMatch(/^1 popup trigger found by ARIA markers\. Popups without these markers were not assessed/);
     expect(result.targets[0]!.key).toEqual({ route: "/menu", pattern: "menu-button", component: null, accessibleName: "Actions" });
-    expect(only(result)).toMatchObject({ check: "focus-return", state: "opened", popup: { how: "aria-controls", role: "menu" } });
+    expect(only(result)).toMatchObject({ check: "trigger-state", state: DECIDED, popup: { how: "aria-controls", role: "menu" } });
     // Discovery and the scenario each loaded the screen fresh.
     expect(seen(app, "/menu").length).toBe(2);
   }, 60_000);
 
   test("without aria-controls, the popup is the single newly visible element of the pattern's role; two new dialogs are refused", async () => {
     // A menu that was already showing doesn't count; the new one does.
-    expect(only(await probe("/menu-noid"))).toMatchObject({ state: "opened", popup: { how: "role", role: "menu" } });
-    expect(only(await probe("/two-dialogs"))).toMatchObject({ state: "incomplete", why: "couldn't tell which of 2 dialogs this button opened" });
+    expect(only(await probe("/menu-noid"))).toMatchObject({ state: DECIDED, popup: { how: "role", role: "menu" } });
+    expect(only(await probe("/two-dialogs", { checks: ["focus-into"] }))).toMatchObject({ state: "incomplete", why: "couldn't tell which of 2 dialogs this button opened" });
   }, 60_000);
 
   test("a native popover opens through popovertarget; a menu that opens after 300 ms is waited for; one that never opens is incomplete", async () => {
     const popover = await probe("/popover");
     expect(popover.targets[0]!.key.pattern).toBe("popover");
-    expect(only(popover)).toMatchObject({ state: "opened", popup: { how: "popovertarget", role: "popover" } });
-    expect(only(await probe("/async"))).toMatchObject({ state: "opened", popup: { how: "aria-controls" } });
+    expect(only(popover)).toMatchObject({ state: DECIDED, popup: { how: "popovertarget", role: "popover" } });
+    expect(only(await probe("/async"))).toMatchObject({ state: DECIDED, popup: { how: "aria-controls" } });
     expect(only(await probe("/never"))).toMatchObject({ state: "incomplete", why: "clicking the button didn't open anything we could identify", fix: expect.stringMatching(/^Next: /) });
   }, 60_000);
 
@@ -588,7 +591,7 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
   }, 60_000);
 
   test("service workers are blocked: the worker script is never fetched, and the screen still probes", async () => {
-    expect(only(await probe("/sw"))).toMatchObject({ state: "opened" });
+    expect(only(await probe("/sw"))).toMatchObject({ state: DECIDED });
     await new Promise((resolve) => setTimeout(resolve, 300));
     expect(seen(app, "/sw.js")).toEqual([]);
   }, 60_000);
@@ -596,7 +599,7 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
   test("every WebSocket is blocked (the app's, a Vite-like hot-reload socket, a worker's to another port), and a dev page still probes", async () => {
     const result = only(await probe("/ws"));
     // The hot-reload client saw a socket that never opened, gave up, and didn't reload the page.
-    expect(result).toMatchObject({ state: "opened" });
+    expect(result).toMatchObject({ state: DECIDED });
     expect(result.info.join(" ")).toMatch(/WebSocket or tunnel to 127\.0\.0\.1:\d+; it was blocked/);
     expect(app.upgrades).toEqual([]);
     expect(other.upgrades).toEqual([]);
@@ -615,7 +618,7 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
     expect(only(await probe("/push"))).toMatchObject({ state: "incomplete", why: expect.stringMatching(/^the page's address changed to \/pushed; probes stay on the screen they opened$/) });
     expect(only(await probe("/hash"))).toMatchObject({ state: "incomplete", why: expect.stringMatching(/^the page's address changed to \/hash \(#open\)/) });
     // window.open is a no-op: no page (so no window was even tried), no request.
-    expect(only(await probe("/open"))).toMatchObject({ state: "opened" });
+    expect(only(await probe("/open"))).toMatchObject({ state: DECIDED });
     expect(seen(app, "/popup")).toEqual([]);
     // A link opening a new window: the window is closed and its request refused.
     expect(only(await probe("/blank"))).toMatchObject({ state: "incomplete", why: "the page tried to open a new window; none was opened" });
@@ -636,7 +639,7 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
 
   test("resource hints to another port (preconnect, dns-prefetch, prefetch, preload) open no connection there", async () => {
     const connections = other.connections.count;
-    expect(only(await probe("/hints"))).toMatchObject({ state: "opened" });
+    expect(only(await probe("/hints"))).toMatchObject({ state: DECIDED });
     await new Promise((resolve) => setTimeout(resolve, 500));
     expect(other.connections.count).toBe(connections);
     expect(other.requests).toEqual([]);
@@ -644,7 +647,7 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
 
   test("nothing leaves over UDP: WebTransport from a worker or the page, and peer connections from the page or a fresh iframe, send not one datagram", async () => {
     const result = only(await probe("/udp"));
-    expect(result).toMatchObject({ state: "opened" });
+    expect(result).toMatchObject({ state: DECIDED });
     await new Promise((resolve) => setTimeout(resolve, 1_000));
     expect(datagrams).toEqual([]);
     // What the page itself saw: no peer connection anywhere, WebTransport absent in the page and failing in the worker.
@@ -655,7 +658,7 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
 
   test("after the click, data requests are blocked and the popup is still tested, the result saying so; before it, the page's own load is untouched", async () => {
     const result = only(await probe("/mark-read"));
-    expect(result).toMatchObject({ state: "opened", dataBlocked: true });
+    expect(result).toMatchObject({ state: DECIDED, dataBlocked: true });
     expect(result.info).toContain("the popup asked for data when it opened (GET /api/mark-read); it was blocked, so this was tested with its data blocked");
     expect(JSON.stringify(result)).not.toContain("id=42");
     expect(seen(app, "/api/mark-read")).toEqual([]);
@@ -663,7 +666,7 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
     expect(seen(app, "/api/on-load")).toHaveLength(2);
     for (const [path, asked] of [["/xhr", "GET /api/xhr"], ["/eventsource", "GET /api/stream"], ["/worker-get", "GET /api/worker-get"]] as const) {
       const blocked = only(await probe(path));
-      expect(blocked, path).toMatchObject({ state: "opened", dataBlocked: true });
+      expect(blocked, path).toMatchObject({ state: DECIDED, dataBlocked: true });
       expect(blocked.info.join(" "), path).toContain(`(${asked})`);
       expect(seen(app, asked.slice(4)), path).toEqual([]);
     }
@@ -672,20 +675,20 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
   }, 90_000);
 
   test("data blocking lasts until the page and its workers are gone: a worker polling for data past the scenario's end reaches nothing", async () => {
-    const result = only(await probe("/worker-loop", { checks: ["focus-return", "focus-into"] }));
-    expect(result).toMatchObject({ state: "opened", dataBlocked: true });
+    const result = only(await probe("/worker-loop", { checks: ["trigger-state", "focus-into"] }));
+    expect(result).toMatchObject({ state: DECIDED, dataBlocked: true });
     // During the scenario, while its page closes, after it closed, and into the next scenario's load.
     await new Promise((resolve) => setTimeout(resolve, 500));
     expect(seen(app, "/api/poll")).toEqual([]);
-    const shared = only(await probe("/shared-loop", { checks: ["focus-return", "focus-into"] }));
-    expect(shared).toMatchObject({ state: "opened" });
+    const shared = only(await probe("/shared-loop", { checks: ["trigger-state", "focus-into"] }));
+    expect(shared).toMatchObject({ state: DECIDED });
     await new Promise((resolve) => setTimeout(resolve, 500));
     expect(seen(app, "/api/shared-poll")).toEqual([]);
   }, 60_000);
 
   test("after the click, the page's own static files still load: a script it adds runs, and an image loads (one that changes data on a GET is out of reach)", async () => {
     const result = only(await probe("/static-after"));
-    expect(result).toMatchObject({ state: "opened", dataBlocked: false });
+    expect(result).toMatchObject({ state: DECIDED, dataBlocked: false });
     expect(seen(app, "/late.js")).toHaveLength(1);
     expect(logged("late")).toContain("ran");
     // An image is a static file by type: it goes through, even to an /api path.
@@ -699,9 +702,9 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
 
   test("only triggers are clicked: never an item inside an opened menu; no key is ever sent", async () => {
     const before = logged("click").length;
-    await probe("/menu", { checks: ["focus-return", "focus-into", "arrow-keys"] });
+    await probe("/menu", { checks: ["trigger-state", "focus-into"] });
     const clicks = logged("click").slice(before);
-    expect(clicks).toEqual(["trigger-m1", "trigger-m1", "trigger-m1"]);
+    expect(clicks).toEqual(["trigger-m1", "trigger-m1"]);
     expect(logged("item")).toEqual([]);
     expect(logged("click").filter((c) => c.startsWith("item"))).toEqual([]);
     expect(logged("key")).toEqual([]);
@@ -717,20 +720,20 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
       { route: "/dupes", pattern: "menu-button", component: null, accessibleName: "Less" },
     ]);
     for (const t of result.targets.slice(0, 2)) expect(t.scenarios[0]).toMatchObject({ state: "incomplete", why: "several menus are called 'More' here (2); probes never pick one by its place on the page", fix: expect.stringMatching(/name them apart/) });
-    expect(result.targets[2]!.scenarios[0]).toMatchObject({ state: "opened" });
+    expect(result.targets[2]!.scenarios[0]).toMatchObject({ state: DECIDED });
     expect(logged("click").slice(before)).toEqual(["trigger-d3"]);
   }, 60_000);
 
   test("a target is found again by its identity on a fresh load, wherever it moved", async () => {
     const result = await probe("/shuffle");
     expect(result.targets.map((t) => t.key.accessibleName).sort()).toEqual(["Alpha", "Beta"]);
-    for (const t of result.targets) expect(t.scenarios[0]).toMatchObject({ state: "opened" });
+    for (const t of result.targets) expect(t.scenarios[0]).toMatchObject({ state: DECIDED });
   }, 60_000);
 
   test("over budget: targets past the limit, and scenarios past the route's time, are incomplete and named", async () => {
     const limited = await probe("/many", { budgets: { targets: 2 } });
     expect(limited.coverage).toMatch(/3 popup triggers found .*the first 2 were tested/);
-    expect(limited.targets.map((t) => [t.key.accessibleName, t.scenarios[0]!.state])).toEqual([["One", "opened"], ["Two", "opened"], ["Three", "incomplete"]]);
+    expect(limited.targets.map((t) => [t.key.accessibleName, t.scenarios[0]!.state])).toEqual([["One", DECIDED], ["Two", DECIDED], ["Three", "incomplete"]]);
     expect(limited.targets[2]!.scenarios[0]).toMatchObject({ why: "not tested: this screen has more than 2 popup triggers, and a probe tests the first 2" });
     // Three menus that never open, 2 s each, in a 3 s route: the last is never started.
     const timed = await probe("/slow-many", { budgets: { routeMs: 3_000 } });
@@ -746,8 +749,8 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
   }, 60_000);
 
   test("checks that don't apply to a pattern are not-applicable, never run", async () => {
-    const result = await probe("/popover", { checks: ["focus-trap", "focus-return"] });
-    expect(result.targets[0]!.scenarios.map((s) => s.state)).toEqual(["not-applicable", "opened"]);
+    const result = await probe("/popover", { checks: ["focus-trap", "trigger-state"] });
+    expect(result.targets[0]!.scenarios.map((s) => s.state)).toEqual(["not-applicable", "passed"]);
   }, 60_000);
 
   test("a contract binding places the trigger and popup parts of a React component; DOM claims name their component", async () => {
@@ -757,9 +760,9 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
     const byName = Object.fromEntries(result.targets.map((t) => [t.key.accessibleName, t]));
     expect(byName.Account!.key).toEqual({ route: "/react", pattern: "menu-button", component: "Menu", accessibleName: "Account" });
     expect(byName.Account!.found.frames.length).toBeGreaterThan(0);
-    expect(byName.Account!.scenarios[0]).toMatchObject({ state: "opened", popup: { how: "contract" } });
+    expect(byName.Account!.scenarios[0]).toMatchObject({ state: DECIDED, popup: { how: "contract" } });
     expect(byName.Tools!.key).toMatchObject({ component: "Toolbar", pattern: "menu-button" });
-    expect(byName.Tools!.scenarios[0]).toMatchObject({ state: "opened", popup: { how: "aria-controls" } });
+    expect(byName.Tools!.scenarios[0]).toMatchObject({ state: DECIDED, popup: { how: "aria-controls" } });
   }, 60_000);
 
   test("a binding can't make a menu item, a link or a submit button a trigger: refused, never clicked", async () => {
@@ -781,7 +784,7 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
     const before = logged("click").length;
     const result = await probe("/not-launchers");
     expect(result.targets.map((t) => t.key.accessibleName)).toEqual(["Real"]);
-    expect(result.targets[0]!.scenarios[0]).toMatchObject({ state: "opened" });
+    expect(result.targets[0]!.scenarios[0]).toMatchObject({ state: DECIDED });
     expect(logged("click").slice(before)).toEqual(["trigger-real"]);
     expect(seen(app, "/submit")).toEqual([]);
   }, 60_000);
@@ -820,7 +823,7 @@ describe.skipIf(!HAVE_CHROMIUM)("the guarded probe in a real browser", () => {
     const before = logged("click").length;
     const result = await probe("/forged");
     expect(result.targets.map((t) => t.key.accessibleName)).toEqual(["Real"]);
-    expect(result.targets[0]!.scenarios[0]).toMatchObject({ state: "opened", popup: { how: "aria-controls" } });
+    expect(result.targets[0]!.scenarios[0]).toMatchObject({ state: DECIDED, popup: { how: "aria-controls" } });
     // The page's own click logger uses its own patched closest(), so it names the clicked tag: the button, once, never the span.
     expect(logged("click").slice(before)).toEqual(["button"]);
   }, 60_000);

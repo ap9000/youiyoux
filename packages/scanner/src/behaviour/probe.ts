@@ -21,8 +21,9 @@ import { startFence, type Fence, type FenceRefusal } from "./fence.ts";
 import { dataWords, describeUrl, requestVerdict, screenUrl, STATIC_RESOURCE_TYPES } from "./guards.ts";
 import { ambiguousWords, withOrdinals, type TargetKey } from "./identity.ts";
 import type { Frame } from "../screens/locate.ts";
-import { contractPopupsInPage, isolatedLibrary, labelsInPage, nominateContractTriggersInPage, PROBE_INIT_SCRIPT, type ClickPoint, type ContractBinding, type FocusPlaced, type FoundTarget, type IsolatedTarget, type PopupFound } from "./in-page.ts";
-import { assertSafeKey, dataBlockedIn, dismissEscape, infoFromEvents, openAndIdentify, openScreen, POPUP_NOUN, staysOpenWithoutKey, SWITCHED_OFF, type GuardEvent, type ProbePage, type SafeKey, type ScenarioOutcome, type Stop } from "./scenario.ts";
+import { contractPopupsInPage, isolatedLibrary, labelsInPage, nominateContractTriggersInPage, PROBE_INIT_SCRIPT, type ClickPoint, type ContractBinding, type FocusPlaced, type FoundTarget, type IsolatedTarget, type PopupFound, type TriggerFacts } from "./in-page.ts";
+import { assertSafeKey, CHECK_KEYS, dataBlockedIn, dismissEscape, infoFromEvents, openAndIdentify, openScreen, POPUP_NOUN, staysOpenWithoutKey, SWITCHED_OFF, type CheckArgs, type GuardEvent, type ProbePage, type SafeKey, type ScenarioOutcome, type Stop } from "./scenario.ts";
+import { triggerState } from "./checks.ts";
 
 export interface ProbeBudgets {
   /** Targets tested per route; the rest are named as untested. */
@@ -238,6 +239,8 @@ interface PageOptions {
   readonly loaded?: () => void;
   /** Told when the trigger is about to be clicked (the fence turns to static files only). */
   readonly acting?: () => void;
+  /** The only keys this page may send (its check's CHECK_KEYS; none for discovery or a control run). */
+  readonly keys: readonly SafeKey[];
 }
 
 type CallResult = { result: { value?: unknown; objectId?: string }; exceptionDetails?: { text?: string; exception?: { description?: string } } };
@@ -271,7 +274,7 @@ class Worlds {
   }
 
   /** `__youiyoux[method](arg, elements)` in the isolated world; `elements` are isolated-world object ids. */
-  async call<T>(method: "discover" | "markShowing" | "prepareClick" | "confirmAt" | "clicked" | "identify" | "placeFocus" | "ready" | "popupState" | "reconcile" | "signInForm", arg: unknown, elements: readonly string[] = []): Promise<T> {
+  async call<T>(method: "discover" | "markShowing" | "triggerFacts" | "prepareClick" | "confirmAt" | "clicked" | "identify" | "placeFocus" | "ready" | "popupState" | "reconcile" | "signInForm", arg: unknown, elements: readonly string[] = []): Promise<T> {
     const answer = this.check((await this.cdp.send("Runtime.callFunctionOn", { functionDeclaration: `function (arg, ...elements) { return globalThis.__youiyoux.${method}(arg, elements); }`, executionContextId: this.isolated, arguments: [{ value: arg }, ...elements.map((objectId) => ({ objectId }))], returnByValue: true })) as CallResult);
     return answer.result.value as T;
   }
@@ -415,6 +418,10 @@ class PlaywrightProbePage implements ProbePage {
     await this.bound((await this.worlds()).call("markShowing", pattern));
   }
 
+  async triggerFacts(index: number): Promise<TriggerFacts> {
+    return this.bound((await this.worlds()).call<TriggerFacts>("triggerFacts", { index }));
+  }
+
   acting(): void {
     this.log.phase = "act";
     this.options.acting?.();
@@ -481,9 +488,9 @@ class PlaywrightProbePage implements ProbePage {
     return this.bound(worlds.call<"open" | "closed" | "unknown">("reconcile", { pattern }, parts));
   }
 
-  /** A safe key only (anything else is refused before it is logged or sent), as real keyboard input to the focused element. */
+  /** A safe key this page's check sends (anything else is refused before it is logged or sent), as real keyboard input to the focused element. */
   async press(key: SafeKey): Promise<void> {
-    assertSafeKey(key);
+    assertSafeKey(key, this.options.keys);
     this.sent.push(key);
     await this.bound(this.page.keyboard.press(key));
   }
@@ -529,7 +536,7 @@ export async function probeRoute(options: ProbeRouteOptions): Promise<RouteProbe
     let found: readonly FoundTarget[];
     const switchedOff = (): RouteProbe => ({ url: start, state: "incomplete", ...SWITCHED_OFF, coverage: "Nothing on this screen was probed.", targets: [] });
     if (options.signal?.aborted) return switchedOff();
-    const discovery = await guarded.page(start, { bindings, budgets, deadline: () => routeDeadline });
+    const discovery = await guarded.page(start, { bindings, budgets, deadline: () => routeDeadline, keys: [] });
     // Switched off while discovering: the page is closed at once, and nothing more happens.
     const cancel = (): void => void discovery.close();
     options.signal?.addEventListener("abort", cancel, { once: true });
@@ -552,6 +559,9 @@ export async function probeRoute(options: ProbeRouteOptions): Promise<RouteProbe
     let refusedFrom: Stop | null = null;
     for (const [n, { found: f, ambiguous, ...key }] of keyed.entries()) {
       const scenarios: TargetScenario[] = [];
+      // One control run per target, shared by the checks whose result needs it (it is the same steps for each).
+      let control: Promise<Outcome> | null = null;
+      const controlled = (): Promise<Outcome> => (control ??= controlRun(guarded, start, options, key, f, bindings, budgets, routeDeadline));
       for (const check of options.checks) {
         if (!BEHAVIOUR_CHECKS[check].patterns.includes(f.pattern)) {
           scenarios.push({ check, state: "not-applicable", why: `${check} doesn't apply to a ${f.pattern}`, fix: "Nothing to do: this check isn't part of this pattern.", info: [] });
@@ -564,7 +574,7 @@ export async function probeRoute(options: ProbeRouteOptions): Promise<RouteProbe
         else if (refusedFrom) skip(refusedFrom);
         else if (Date.now() >= routeDeadline) skip(untestedWords("time", budgets));
         else if ((refusedFrom = (await options.stillAllowed?.()) ?? null)) skip(refusedFrom);
-        else scenarios.push({ check, ...(await scenario(guarded, start, options, key, f, bindings, budgets, routeDeadline, check)) });
+        else scenarios.push({ check, ...(await scenario(guarded, start, options, key, f, bindings, budgets, routeDeadline, check, controlled)) });
       }
       targets.push({ key, found: f, scenarios });
     }
@@ -578,28 +588,52 @@ export async function probeRoute(options: ProbeRouteOptions): Promise<RouteProbe
   }
 }
 
+type Opened = Extract<ScenarioOutcome, { state: "opened" }>;
+type Outcome = ScenarioOutcome & { readonly keys: readonly string[] };
+
+/** What each check this youiyoux decides does once its popup is open (scenario.ts, checks.ts). */
+const ACTS: Partial<Record<BehaviourCheckId, (page: ProbePage, opened: Opened, args: CheckArgs) => Promise<ScenarioOutcome>>> = {
+  "trigger-state": triggerState,
+  "dismiss-escape": dismissEscape,
+};
+
 /**
- * One check on one target. dismiss-escape is decided in its own fresh scenario, and a pass only
- * stands when a second fresh scenario, the control (the same steps, no key), saw the popup stay
- * open for the whole close budget; otherwise it is incomplete.
+ * Checks whose decided result stands only when a control run (the same steps, no key, the popup
+ * watched for the close budget) saw the popup stay open: then a closing is the key's doing. Which
+ * results need it.
  */
-async function scenario(guarded: GuardedContext, start: string, options: ProbeRouteOptions, key: TargetKey, found: FoundTarget, bindings: readonly ContractBinding[], budgets: ProbeBudgets, routeDeadline: number, check: BehaviourCheckId): Promise<ScenarioOutcome & { readonly keys: readonly string[] }> {
+const CONTROLLED: Partial<Record<BehaviourCheckId, readonly ScenarioOutcome["state"][]>> = { "dismiss-escape": ["passed"] };
+
+/**
+ * One check on one target, in its own fresh scenario: the popup opened and identified, then the
+ * check (only a check this youiyoux decides goes on past the opening). The page refuses every key
+ * but the check's own. Where the check needs it, the result stands only when the control run
+ * (`control`: one per target, shared by the checks that need it) saw the popup stay open by itself;
+ * otherwise it is incomplete.
+ */
+async function scenario(guarded: GuardedContext, start: string, options: ProbeRouteOptions, key: TargetKey, found: FoundTarget, bindings: readonly ContractBinding[], budgets: ProbeBudgets, routeDeadline: number, check: BehaviourCheckId, control: () => Promise<Outcome>): Promise<Outcome> {
   const close = { closeMs: budgets.closeMs, pollMs: POLL_MS, graceMs: GRACE_MS };
-  const signal = options.signal ? { signal: options.signal } : {};
-  const tested = await onFreshPage(guarded, start, options, key, found, bindings, budgets, routeDeadline, (page, opened, deadline, popup) =>
-    // Only a check this youiyoux decides goes on past the opening; the rest stay undecided.
-    decidesBehaviour(check) ? dismissEscape(page, opened, { start, origin: options.origin, pattern: key.pattern, popup, deadline, budgets: close, ...(options.stillAllowed ? { beforeInput: options.stillAllowed } : {}), ...signal }) : Promise.resolve(opened),
+  const act = decidesBehaviour(check) ? ACTS[check] : undefined;
+  const returnFocusTo = typeof found.via === "object" ? (bindings[found.via.contract]?.binding.returnFocusTo ?? null) : null;
+  const tested = await onFreshPage(guarded, start, options, key, found, bindings, budgets, routeDeadline, CHECK_KEYS[check], (page, opened, deadline, popup) =>
+    act ? act(page, opened, { start, origin: options.origin, pattern: key.pattern, popup, returnFocusTo, deadline, budgets: close, ...(options.stillAllowed ? { beforeInput: options.stillAllowed } : {}), ...(options.signal ? { signal: options.signal } : {}) }) : Promise.resolve(opened),
   );
-  if (tested.state !== "passed") return tested;
-  const control = await onFreshPage(guarded, start, options, key, found, bindings, budgets, routeDeadline, (page, opened, deadline, popup) => staysOpenWithoutKey(page, opened, { start, origin: options.origin, pattern: key.pattern, popup, deadline, budgets: close, ...signal }));
-  const info = [...new Set([...tested.info, ...control.info])];
-  const dataBlocked = tested.dataBlocked === true || control.dataBlocked === true;
-  if (control.state === "passed") return { ...tested, info: [...info, `a control run without Esc saw the ${POPUP_NOUN[key.pattern]} stay open for ${budgets.closeMs / 1000} s`], dataBlocked };
-  if (control.state === "incomplete" || control.state === "error") {
-    const opening = control.why.startsWith("the control run") || control.why.includes("can't be judged") || control.why === SWITCHED_OFF.why;
-    return { state: "incomplete", why: opening ? control.why : `the control run (the same steps without Esc) couldn't be completed: ${control.why}`, fix: control.fix, info, dataBlocked, keys: tested.keys };
+  if (!(CONTROLLED[check] ?? []).includes(tested.state) || (tested.state !== "passed" && tested.state !== "failed")) return tested;
+  const ctl = await control();
+  const info = [...new Set([...tested.info, ...ctl.info])];
+  const dataBlocked = tested.dataBlocked === true || ctl.dataBlocked === true;
+  if (ctl.state === "passed") return { ...tested, info: [...info, `a control run without Esc saw the ${POPUP_NOUN[key.pattern]} stay open for ${budgets.closeMs / 1000} s`], dataBlocked };
+  if (ctl.state === "incomplete" || ctl.state === "error") {
+    const opening = ctl.why.startsWith("the control run") || ctl.why.includes("can't be judged") || ctl.why === SWITCHED_OFF.why;
+    return { state: "incomplete", why: opening ? ctl.why : `the control run (the same steps without Esc) couldn't be completed: ${ctl.why}`, fix: ctl.fix, info, dataBlocked, keys: tested.keys };
   }
   return { state: "incomplete", why: "the control run (the same steps without Esc) couldn't be completed", fix: "Next: run youiyoux behave again.", info, dataBlocked, keys: tested.keys };
+}
+
+/** The control for a target, in its own fresh scenario: the popup opened and focus placed as a test does, then no key at all. */
+function controlRun(guarded: GuardedContext, start: string, options: ProbeRouteOptions, key: TargetKey, found: FoundTarget, bindings: readonly ContractBinding[], budgets: ProbeBudgets, routeDeadline: number): Promise<Outcome> {
+  const close = { closeMs: budgets.closeMs, pollMs: POLL_MS, graceMs: GRACE_MS };
+  return onFreshPage(guarded, start, options, key, found, bindings, budgets, routeDeadline, [], (page, opened, deadline, popup) => staysOpenWithoutKey(page, opened, { start, origin: options.origin, pattern: key.pattern, popup, deadline, budgets: close, ...(options.signal ? { signal: options.signal } : {}) }));
 }
 
 /** A fresh page on the screen: the target found again, its trigger clicked, the popup identified; then `act`. */
@@ -612,27 +646,28 @@ async function onFreshPage(
   bindings: readonly ContractBinding[],
   budgets: ProbeBudgets,
   routeDeadline: number,
-  act: (page: PlaywrightProbePage, opened: Extract<ScenarioOutcome, { state: "opened" }>, deadline: () => number, popup: PartRef | null) => Promise<ScenarioOutcome>,
-): Promise<ScenarioOutcome & { readonly keys: readonly string[] }> {
+  keys: readonly SafeKey[],
+  act: (page: PlaywrightProbePage, opened: Opened, deadline: () => number, popup: PartRef | null) => Promise<ScenarioOutcome>,
+): Promise<Outcome> {
   // Loading has its own bound; the scenario's own budget starts once the screen is open.
   const clock = { deadline: Math.min(routeDeadline, Date.now() + budgets.loadMs + budgets.settleMs) };
   const deadline = (): number => clock.deadline;
-  const page = await guarded.page(start, { bindings, budgets, deadline, loaded: () => void (clock.deadline = Math.min(routeDeadline, Date.now() + budgets.scenarioMs)) });
+  const page = await guarded.page(start, { bindings, budgets, deadline, keys, loaded: () => void (clock.deadline = Math.min(routeDeadline, Date.now() + budgets.scenarioMs)) });
   const popup = typeof found.via === "object" ? (bindings[found.via.contract]?.binding.popup ?? null) : null;
   // Switched off while it runs: the page is closed at once, whatever it was doing.
   const cancel = (): void => void page.close();
   options.signal?.addEventListener("abort", cancel, { once: true });
-  const keys = (): readonly string[] => [...page.keys()];
+  const sent = (): readonly string[] => [...page.keys()];
   try {
     const opened = await openAndIdentify(page, { start, origin: options.origin, wanted: key, popup, deadline, budgets: { openMs: budgets.openMs, pollMs: POLL_MS, graceMs: GRACE_MS }, ...(options.stillAllowed ? { beforeClick: options.stillAllowed } : {}), ...(options.signal ? { signal: options.signal } : {}) });
-    if (opened.state !== "opened") return { ...opened, keys: keys() };
-    return { ...(await act(page, opened, deadline, popup)), keys: keys() };
+    if (opened.state !== "opened") return { ...opened, keys: sent() };
+    return { ...(await act(page, opened, deadline, popup)), keys: sent() };
   } catch (error: unknown) {
     const info = infoFromEvents(page.events());
     const dataBlocked = dataBlockedIn(page.events());
-    if (options.signal?.aborted) return { state: "incomplete", ...SWITCHED_OFF, info, dataBlocked, keys: keys() };
-    if (error instanceof TimeUp) return { state: "incomplete", why: Date.now() >= routeDeadline ? untestedWords("time", budgets).why.replace("not tested: ", "stopped: ") : `ran out of time: a scenario has ${Math.round(budgets.scenarioMs / 1000)} s once the screen is open`, fix: "Next: make sure the dev server is idle, then run the probe again.", info, dataBlocked, keys: keys() };
-    return { state: "error", why: `the probe failed: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}`, fix: "Next: run the probe again; if it fails again, report it with the screen's route.", info, dataBlocked, keys: keys() };
+    if (options.signal?.aborted) return { state: "incomplete", ...SWITCHED_OFF, info, dataBlocked, keys: sent() };
+    if (error instanceof TimeUp) return { state: "incomplete", why: Date.now() >= routeDeadline ? untestedWords("time", budgets).why.replace("not tested: ", "stopped: ") : `ran out of time: a scenario has ${Math.round(budgets.scenarioMs / 1000)} s once the screen is open`, fix: "Next: make sure the dev server is idle, then run the probe again.", info, dataBlocked, keys: sent() };
+    return { state: "error", why: `the probe failed: ${(error instanceof Error ? error.message : String(error)).split("\n")[0]}`, fix: "Next: run the probe again; if it fails again, report it with the screen's route.", info, dataBlocked, keys: sent() };
   } finally {
     options.signal?.removeEventListener("abort", cancel);
     await page.close();
