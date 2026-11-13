@@ -83,6 +83,8 @@ describe("reading results", () => {
     const app = join(s.box.project, "app/broken.tsx");
     const was = readFileSync(app, "utf8");
     writeFileSync(app, `${was}\n// changed\n`);
+    // The hub's reading reuses a fingerprint for up to 2 s (behaviour-fingerprint.test.ts).
+    await new Promise((done) => setTimeout(done, 2_100));
     try {
       const stale = (await s.call("GET", "/api/behaviour?route=/x")).json.results as Array<{ stale: string[]; counts: boolean }>;
       expect(stale.every((r) => r.stale.includes("the code changed") && r.counts === false)).toBe(true);

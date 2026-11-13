@@ -19,7 +19,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { z } from "zod";
 import { acquireFileLock, BEHAVIOUR_CHECKS, BehaviourConsent, FileLockBusy, type HeldLock, BehaviourPattern, cleanText, decidesBehaviour, pageText, targetIdentityKey, type BehaviourCheckId, type BehaviourResult, type BehaviourRouteRun, type BehaviourTargetIdentity, type RequestBehaviour, type RequestTarget, type RuleSpec } from "@youiyoux/core";
-import { appFingerprint, behaviourConfigDigest, behaviourConsent, bindingsDigest, contractBindings, CONSENT_WORDS, freshnessNow, POPUP_NOUN, probeOrigin, readScreensSpec, ruleDigest, screenSlug, staleParts, type FreshnessNow, type ProbeBudgets, type probeRoute, type Project, type ScreensSpec } from "@youiyoux/scanner";
+import { appFingerprint, behaviourConfigDigest, behaviourConsent, bindingsDigest, contractBindings, CONSENT_WORDS, freshnessNow, POPUP_NOUN, probeOrigin, readScreensSpec, ruleDigest, screenSlug, staleParts, type AppFingerprint, type FreshnessNow, type ProbeBudgets, type probeRoute, type Project, type ScreensSpec } from "@youiyoux/scanner";
 import { behaviourFile, probeBehaviour, readBehaviourRun, youiPath, type ProbeBehaviourOptions, type ProbeBehaviourResult } from "./behaviour.ts";
 import { WorkflowError } from "./policy.ts";
 
@@ -244,9 +244,35 @@ export interface BehaviourRouteView {
 /** What a result made now would carry, computed once per reading; why nothing can be fresh, if the fingerprint can't be whole. */
 type Now = FreshnessNow & { readonly appIncomplete: string | null };
 
-async function nowFor(project: BehaviourProject, tool: string, spec: ScreensSpec): Promise<Now> {
-  const inputs = BehaviourConsent.safeParse(spec.behaviour ?? {});
-  const app = await appFingerprint(project, { inputs: inputs.success ? (inputs.data.inputs ?? []) : [] });
+/** How long a fingerprint made for display is reused: reading every source file costs, and the hub asks often. */
+const DISPLAY_MS = 2_000;
+/** Fingerprints for display, by product and what it covers: one calculation at a time, reused for DISPLAY_MS after it ends. */
+const displayPrints = new Map<string, { done: number | null; value: Promise<AppFingerprint> }>();
+
+/**
+ * The app's fingerprint for showing results: calls at the same time share one calculation, and its
+ * answer is reused for DISPLAY_MS. Never used to accept anything (`fresh` readings compute anew).
+ */
+function displayFingerprint(project: BehaviourProject, inputs: readonly string[]): Promise<AppFingerprint> {
+  const key = JSON.stringify([resolve(project.root), project.config, inputs]);
+  const now = Date.now();
+  for (const [k, v] of displayPrints) if (v.done !== null && now - v.done >= DISPLAY_MS) displayPrints.delete(k);
+  const hit = displayPrints.get(key);
+  if (hit) return hit.value;
+  const entry: { done: number | null; value: Promise<AppFingerprint> } = { done: null, value: appFingerprint(project, { inputs }) };
+  entry.value.then(
+    () => void (entry.done = Date.now()),
+    () => void (displayPrints.get(key) === entry && displayPrints.delete(key)),
+  );
+  displayPrints.set(key, entry);
+  return entry.value;
+}
+
+/** `fresh`: computed now, for accepting something; otherwise the display reading (displayFingerprint). */
+async function nowFor(project: BehaviourProject, tool: string, spec: ScreensSpec, fresh: boolean): Promise<Now> {
+  const declared = BehaviourConsent.safeParse(spec.behaviour ?? {});
+  const inputs = declared.success ? (declared.data.inputs ?? []) : [];
+  const app = fresh ? await appFingerprint(project, { inputs }) : await displayFingerprint(project, inputs);
   return { ...freshnessNow(spec, app.digest, tool, bindingsDigest(contractBindings(project.system))), appIncomplete: app.incomplete };
 }
 
@@ -270,7 +296,11 @@ function standsAlone(result: BehaviourResult, run: BehaviourRouteRun): boolean {
 }
 
 /** One route's stored run and its results, each held to now. Probes nothing. */
-export async function behaviourRouteView(project: BehaviourProject, tool: string, route: string): Promise<BehaviourRouteView> {
+/**
+ * `fresh`: hold each result to a fingerprint computed now (what filing and addressed use); without
+ * it, to the display reading, which may be up to DISPLAY_MS old.
+ */
+export async function behaviourRouteView(project: BehaviourProject, tool: string, route: string, options: { readonly fresh?: boolean } = {}): Promise<BehaviourRouteView> {
   const rules = behaviourRulesOn(project);
   const ruleList = rules.map((r) => ({ id: r.id, title: r.title, severity: r.severity, check: (r.check as { id: BehaviourCheckId }).id }));
   const spec = readSpec(project.root);
@@ -282,7 +312,7 @@ export async function behaviourRouteView(project: BehaviourProject, tool: string
     return { route, rules: ruleList, run: null, results: [], problem: cleanText(error instanceof Error ? error.message : String(error), 500) || "the stored run couldn't be read" };
   }
   if (!run) return { route, rules: ruleList, run: null, results: [], problem: null };
-  const now = await nowFor(project, tool, spec);
+  const now = await nowFor(project, tool, spec, options.fresh === true);
   const { results, ...head } = run;
   return {
     route,
@@ -340,7 +370,7 @@ export function behaviourEvidence(load: () => Promise<BehaviourProject>, tool: s
   return {
     async failure(ref) {
       const project = await load();
-      const view = await behaviourRouteView(project, tool, ref.route);
+      const view = await behaviourRouteView(project, tool, ref.route, { fresh: true });
       if (view.problem) throw new WorkflowError("conflict", `${ref.route}'s stored run couldn't be read (${view.problem}): run it again, then file from the new result`);
       if (!view.run || view.run.runId !== ref.runId) throw new WorkflowError("conflict", `that result is gone: ${ref.route} was ${view.run ? "probed again since" : "never probed, or its run was removed"}; look again and file from the result shown now`);
       const result = view.results[ref.index];
@@ -358,7 +388,7 @@ export function behaviourEvidence(load: () => Promise<BehaviourProject>, tool: s
       const route = link.target.route;
       let view: BehaviourRouteView;
       try {
-        view = await behaviourRouteView(await load(), tool, route);
+        view = await behaviourRouteView(await load(), tool, route, { fresh: true });
       } catch (error: unknown) {
         return `${verify(route)}; the stored runs couldn't be read (${cleanText(error instanceof Error ? error.message : String(error), 300)})`;
       }
