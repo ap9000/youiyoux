@@ -16,6 +16,8 @@ import { z } from "zod";
 import { COMPONENT_STATES, DefinitionError, ElementId, LibraryEntry, REQUEST_STATUSES, RequestTarget, RuleCheck, RuleRollout } from "@youiyoux/core";
 import { BRIDGE_PATH, liveBridge } from "@youiyoux/scanner";
 import type { Actor, AgentsSetup, ApiError } from "./api.ts";
+import { setBehaviourConsent } from "./behaviour.ts";
+import { BehaviourRef, BehaviourRoute, behaviourConsentView, behaviourRouteView, behaviourRunning, BehaviourTargetFilter, lastBehaviourRun, runBehaviour } from "./behaviour-service.ts";
 import { proposalDigest } from "./proposals.ts";
 import { WorkflowError } from "./policy.ts";
 import type { RuleWorkflow } from "./service.ts";
@@ -53,8 +55,16 @@ const CreateInput = z.union([
 ]);
 const SaveInput = z.object({ revision: z.number().int().positive(), content: z.union([DraftContentInput, StyleContentInput, LibraryContentInput, IngestKeepInput]) });
 
-/** A comment or change request on a captured screen, and what moves it on (requests.ts). */
-const RequestInput = z.object({ kind: z.enum(["comment", "change", "options"]), body: z.string().min(1).max(4000), target: RequestTarget });
+/**
+ * A comment or change request on a captured screen, and what moves it on (requests.ts). Or a change
+ * request filed from a failed behaviour result, named by its route, run and place: its target,
+ * behaviour link and acceptance are the service's to build, so a body carrying any of them (or a
+ * task) is refused, never used.
+ */
+const RequestInput = z.union([
+  z.object({ kind: z.enum(["comment", "change", "options"]), body: z.string().min(1).max(4000), target: RequestTarget }).strict(),
+  z.object({ kind: z.literal("change"), body: z.string().max(4000).optional(), behaviour: BehaviourRef }).strict(),
+]);
 const ReplyInput = z.object({ body: z.string().min(1).max(4000) });
 const StatusInput = z.object({ status: z.enum(REQUEST_STATUSES), body: z.string().max(4000).optional() });
 /** The components under the pointer on a live screen, as the bridge saw them: their frames are mapped to lines. */
@@ -76,6 +86,13 @@ const LiveEditInput = z.object({
 /** A person's decision on an agent's options: one of them (and the request it became), or none. */
 const SEEN = z.string().regex(/^[0-9a-f]{64}$/);
 const DecisionInput = z.union([z.object({ choice: z.enum(["a", "b", "c", "d"]), request: z.string().regex(/^r-[0-9a-f]{10}$/).optional(), seen: SEEN }).strict(), z.object({ dismiss: z.literal(true), seen: SEEN }).strict()]);
+/**
+ * Switching behaviour probes on or off for the app. It carries no origin, and may not: the service
+ * binds consent to the origin of screens.json's current base itself (behaviour.ts).
+ */
+const BehaviourConsentInput = z.object({ allow: z.boolean() }).strict();
+/** A behaviour run: a route screens.json lists, and optionally which of its popups. Never a URL, a path or a file. */
+const BehaviourRunInput = z.object({ route: BehaviourRoute, target: BehaviourTargetFilter.optional() }).strict();
 /** The agents to connect to this project (Connect your agent). */
 const AgentsInput = z.object({ agents: z.array(z.enum(["claude", "codex", "cursor"])).min(1).max(3) });
 
@@ -194,10 +211,34 @@ async function api(req: IncomingMessage, res: ServerResponse, path: string, opti
     const { file, write, ...edit } = parse(LiveEditInput, await readJson(req));
     return send(res, 200, await (await workflow.live()).edit(file, { ...edit, column: edit.column ?? null, text: edit.text ?? null }, write ?? null));
   }
+  if (path === "/api/screens/behaviour" && method === "GET") return send(res, 200, behaviourConsentView((await workflow.live()).root));
+  // Starts a probe and answers at once (202); the hub asks GET /api/behaviour/run how it goes.
+  if (path === "/api/behaviour/run" && method === "POST") {
+    const input = parse(BehaviourRunInput, await readJson(req));
+    const { project, setup } = await workflow.behaviour();
+    const { run, done } = await runBehaviour(project, setup, { route: input.route, target: input.target ?? null, by: actor.kind });
+    // Its outcome is kept for GET /api/behaviour/run; nothing waits on it here.
+    done.catch(() => undefined);
+    return send(res, 202, { running: run });
+  }
+  if (path === "/api/behaviour/run" && method === "GET") {
+    const root = (await workflow.live()).root;
+    return send(res, 200, { running: behaviourRunning(root), last: lastBehaviourRun(root) });
+  }
+  if (path === "/api/behaviour" && method === "GET") {
+    const route = parse(BehaviourRoute, new URL(req.url ?? "/", "http://loopback").searchParams.get("route") ?? "");
+    const { project, setup } = await workflow.behaviour();
+    return send(res, 200, { ...(await behaviourRouteView(project, setup.tool, route)), consent: behaviourConsentView(project.root), running: behaviourRunning(project.root), last: lastBehaviourRun(project.root) });
+  }
+  if (path === "/api/screens/behaviour" && method === "POST") {
+    const { allow } = parse(BehaviourConsentInput, await readJson(req));
+    return send(res, 200, await setBehaviourConsent((await workflow.live()).root, allow));
+  }
   if (path === "/api/live/resolve" && method === "POST") return send(res, 200, { places: await (await workflow.live()).resolve(parse(LiveResolveInput, await readJson(req)).places) });
   if (path === "/api/requests" && method === "GET") return send(res, 200, await (await workflow.requests()).list());
   if (path === "/api/requests" && method === "POST") {
     const input = parse(RequestInput, await readJson(req));
+    if ("behaviour" in input) return send(res, 201, await (await workflow.requests()).createFromBehaviour(actor, input.behaviour, input.body));
     // An options request's task names what its options may set: the component's contract.
     return send(res, 201, await (await workflow.requests()).create(actor, input, input.kind === "options" ? await workflow.contractOf(input.target.element) : null));
   }

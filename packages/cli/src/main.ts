@@ -6,12 +6,13 @@ import { appendFile, readFile, rm, rmdir } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { parseArgs, promisify, type ParseArgsConfig } from "node:util";
 import { parse as parseYaml } from "yaml";
-import { DefinitionError, DESIGN_CONFIG_FILE, findUp, getSystem, loadDesignRepo, loadLibrary, MigrationSpec, OutputConfig, PACKAGE_NAME, renderJsonSchemas, safeId, writeFileAtomic, InventoryReport, type ScanReport } from "@youiyoux/core";
+import { DefinitionError, DESIGN_CONFIG_FILE, findUp, getSystem, loadDesignRepo, loadLibrary, MigrationSpec, normalizeProjectConfig, OutputConfig, PACKAGE_NAME, ProjectConfig, readDefinition, renderJsonSchemas, safeId, writeFileAtomic, InventoryReport, type ScanReport } from "@youiyoux/core";
 import { buildGaps, candidateSource, declaredPackages, expandAll, listRegistries, MissingIndexError, REGISTRY_SORTS, selectSources, discoverCacheDir, discoverIndexPath, ingestCatalog, readCatalog, searchCatalog, sharedStore, showFromCatalog, syncIndex, type Fetcher } from "@youiyoux/discover";
 import { indexHome, storeLocation } from "@youiyoux/store";
 import { buildTokens, compareParity } from "@youiyoux/tokens";
 import { adoptionRequest, buildInventory, captureScreens, captureText, chosenSession, openLoginBrowser, recordSession, sessionFile, type LoginBrowser, type LoginPage, within, RenderUnavailableError, renderShots, shotsNext, type ShotsOptions, checkCapabilities, componentCard, describeIdentity, designRootOf, evaluateRule, linkedDesign, linksFile, setLink, findContract, loadProject, planChange, PROJECT_FILE, type LoadProjectOptions, ProjectWatcher, ruleCapability, runMigration, scanProject, screenBom, searchLibrary, whereUsed, type CacheStats, type PlanInput, type Project, type WatchUpdate } from "@youiyoux/scanner";
 import { baselinePath, diffExitCodeOf, exitCodeOf, runCheck, writeBaseline, type CheckResult } from "./check.ts";
+import { behaveAnnotations, behaveExitCode, behaveSummary, behaveText, runBehave } from "./behave.ts";
 import { configured, loadCheckProject, runRepoCheck } from "./check-repo.ts";
 import { workingTreeChange, type ChangeProject } from "./check-diff.ts";
 import { actionable, diffJson, githubAnnotations, githubDiffAnnotations, githubDiffSummary, githubSummary, renderCheckText, renderDiffText } from "./check-render.ts";
@@ -41,7 +42,9 @@ import { renderAdoptionRequest, renderLibrarySearch } from "./library.ts";
 import { renderBom, renderMigration, renderPlan, renderRulePreview, renderRules, renderScan, renderShots as renderShotsText, renderShow, renderSync, renderWhere } from "./render.ts";
 import { syncProject } from "./sync.ts";
 import { COMMAND } from "./command.ts";
+import { addRulePack, RULE_PACKS, rulePack, type RulePackTarget } from "./rule-packs.ts";
 import { TOOL_ROOT } from "./tool.ts";
+import { behaviourTool } from "./version.ts";
 import { runReport, type ReportIo } from "./report/run.ts";
 import { ms, plural, style } from "./ui.ts";
 
@@ -176,6 +179,12 @@ ${style.bold("System")}  ${style.dim("approved elements: build only with these")
                            rule violations and lockfile drift; exits 1 on errors or an incomplete check.
                            --baseline fails only on violations the baseline does not accept;
                            --format github annotates PR lines and writes the job summary
+  behave [--route r] [--format text|json|github]
+                           probe the running app's menus, comboboxes, dialogs and popovers for the
+                           System's behaviour rules (youiyoux rules add behaviour), on every route in
+                           screens.json (or its behaviour.routes) or one; needs probing switched on for
+                           the app's address (a dev app with test data); runs are kept in
+                           .youi/behaviour/, which check reads. Exits 1 on an error or anything undecided
   check --diff [base] [--strict] [--json|--format github]
                            only what a change adds (the working tree against HEAD, or against the
                            merge-base with base): near-duplicate components, hardcoded colours, spacing
@@ -198,6 +207,9 @@ ${style.bold("System")}  ${style.dim("approved elements: build only with these")
                            (imports, re-exports, uses); a dry run that prints the diff and the sites
                            left for a person (file:line, why) unless --write; --diff shows it after --write too
   rules [--preview <rule.yaml>]   whether each rule is checked; preview a draft rule on the current scan
+  rules add [<pack>] [--dry-run]  the starter rules on offer, or add one pack's rule files to the System's
+                           rules folder, as warnings (behaviour: six popup checks for youiyoux behave);
+                           never over a rule already there, and never added by anything else
 
 ${style.bold("Library")}  ${style.dim("ingested references: browse and request adoption, never build with")}
   library search <query>   Library items (lib: ids) and the System elements each could swap in for
@@ -567,13 +579,40 @@ async function cmdCheck(values: Values, positionals: string[]): Promise<number> 
   const result = await runCheck(p, { ...checkScope(values, positionals), baseline: baselineFile(values, p) });
   if (format === "json") {
     const { report } = result.scan;
-    json({ errors: result.errors, incomplete: result.incomplete, identity: result.identity, unmatched: result.unmatched, notRun: result.notRun, violations: result.violations, baseline: result.baseline, lock: result.lock, suppressed: report.suppressed, coverage: report.coverage, status: report.status, checks: report.checks });
+    json({ errors: result.errors, incomplete: result.incomplete, identity: result.identity, unmatched: result.unmatched, notRun: result.notRun, violations: result.violations, behaviour: result.behaviour, baseline: result.baseline, lock: result.lock, suppressed: report.suppressed, coverage: report.coverage, status: report.status, checks: report.checks });
   } else if (format === "github") {
     for (const line of githubAnnotations(result, await repoPrefix(p.root))) print(line);
     print(renderCheckText(result));
     if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, githubSummary(result));
   } else print(renderCheckText(result));
   return exitCodeOf(result);
+}
+
+/** `youiyoux behave [--route r]`: probe the consented app for the behaviour rules, keep the runs, print them. */
+async function cmdBehave(values: Values, positionals: string[]): Promise<number> {
+  const format = values.json ? "json" : (values.format ?? "text");
+  if (!["text", "json", "github"].includes(format) || positionals.length > 0) throw new UsageError("youiyoux behave [--route <route>] [--format text|json|github]");
+  const p = await project(values);
+  let opened: Awaited<ReturnType<typeof import("@youiyoux/detect").launchBrowser>> | null = null;
+  try {
+    const result = await runBehave(p, {
+      ...(values.route !== undefined ? { route: values.route } : {}),
+      browser: async () => {
+        const { launchBrowser } = await import("@youiyoux/detect");
+        opened = await launchBrowser(process.env.YOUI_CHROMIUM, { purpose: { what: "youiyoux behave", command: "youiyoux behave" } });
+        return opened;
+      },
+    });
+    if (format === "json") json({ errors: result.errors, warnings: result.warnings, incomplete: result.incomplete, rules: result.rules.map((r) => r.id), routes: result.routes });
+    else if (format === "github") {
+      for (const line of behaveAnnotations(result, await repoPrefix(p.root))) print(line);
+      print(behaveText(result));
+      if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, behaveSummary(result));
+    } else print(behaveText(result));
+    return behaveExitCode(result);
+  } finally {
+    await (opened as { close(): Promise<void> } | null)?.close();
+  }
 }
 
 /** `youiyoux check --diff [base]`: what the change adds, with fixes. Never a pass it could not compute: without git it stops. */
@@ -630,7 +669,9 @@ async function cmdPlan(values: Values, positionals: string[]): Promise<number> {
   return 0;
 }
 
-async function cmdRules(values: Values): Promise<number> {
+async function cmdRules(values: Values, positionals: string[]): Promise<number> {
+  if (positionals[0] === "add") return cmdRulesAdd(values, positionals[1]);
+  if (positionals.length > 0) throw new UsageError("youiyoux rules [--preview <rule.yaml>]   or   youiyoux rules add [<pack>] [--dry-run]");
   const p = await project(values);
   if (values.preview) {
     const draft: unknown = parseYaml(await readFile(values.preview, "utf8"));
@@ -643,6 +684,72 @@ async function cmdRules(values: Values): Promise<number> {
   if (values.json) json({ capabilities: checkCapabilities(), rules: rules.map(({ rule, execution }) => ({ id: rule.id, severity: rule.severity, ...execution })) });
   else print(renderRules(rules));
   return rules.some(({ execution }) => execution.state === "unsupported") ? 1 : 0;
+}
+
+/**
+ * `youiyoux rules add [<pack>]`: the starter rules on offer, or one pack's rule files written into the
+ * System's rules folder (in a product, the System it follows from a folder or your linked checkout;
+ * in a design repo, its own). Never over a rule that is already there; nothing else adds them.
+ */
+async function cmdRulesAdd(values: Values, name: string | undefined): Promise<number> {
+  if (name === undefined) {
+    if (values.json) json({ packs: RULE_PACKS.map((p) => ({ name: p.name, summary: p.summary, rules: p.rules("system").map((r) => ({ file: r.file, title: r.spec.title, severity: r.spec.severity, check: r.spec.check })) })) });
+    else print(renderRulePacks());
+    return 0;
+  }
+  const pack = rulePack(name);
+  if (!pack) throw new UsageError(`youiyoux rules add <pack>: there is no pack called ${JSON.stringify(name)}; on offer: ${RULE_PACKS.map((p) => p.name).join(", ")}`);
+  const target = await rulesTarget(values);
+  const result = await addRulePack(target, pack, { dryRun: values["dry-run"] });
+  const where = relative(process.cwd(), result.dir) || ".";
+  const shown = where.startsWith("..") ? result.dir : where;
+  if (values.json) {
+    json({ ...result, dir: shown, dryRun: values["dry-run"] });
+    return 0;
+  }
+  const lines = [
+    result.added.length > 0
+      ? `${style.ok(values["dry-run"] ? "would add" : "added")} ${plural(result.added.length, `${pack.name} rule`)}, as warnings, to ${target.system.config.id} ${style.dim(`→ ${shown}`)}`
+      : `${style.dim("nothing to add:")} every ${pack.name} rule is already in ${target.system.config.id}`,
+    ...result.added.map((file) => `  ${file}`),
+    ...result.kept.map((k) => style.dim(`  kept ${k.file}: ${k.why}, left as it is`)),
+  ];
+  if (result.added.length > 0 && !values["dry-run"]) {
+    if (pack.name === "behaviour") lines.push("Until a probe has run, youiyoux check says these rules are incomplete.");
+    lines.push(`Next: ${pack.name === "behaviour" ? "switch probing on for your dev app (youiyoux ui, then Behaviour on any screen) and run youiyoux behave; " : ""}${target.product ? "youiyoux sync carries them to AGENTS.md, DESIGN.md and the skill" : "products following this System get them at their next youiyoux sync"}.`);
+  }
+  print(lines.join("\n"));
+  return 0;
+}
+
+/** The System `rules add` writes to, refused when it isn't edited here (an npm package, a git source). */
+async function rulesTarget(values: Values): Promise<RulePackTarget & { readonly product: boolean }> {
+  const product = values.project !== undefined || values.config !== undefined || values.root !== undefined || existsSync(join(process.cwd(), PROJECT_FILE));
+  if (product) {
+    // Where the System comes from is told from the config, the override and the link alone, before
+    // anything is resolved: a package or git source is refused without fetching or caching it.
+    const configFile = resolve(values.config ?? join(resolve(values.project ?? process.cwd()), PROJECT_FILE));
+    const config = normalizeProjectConfig(await readDefinition(configFile, ProjectConfig));
+    const productRoot = values.root !== undefined ? resolve(values.root || ".") : config.root ? resolve(dirname(configFile), config.root) : resolve(values.project ?? process.cwd());
+    if (!values.design && !("path" in config.source) && !(await linkedDesign(productRoot))) {
+      const from = "package" in config.source ? `the npm package ${config.source.package}` : `the git repository ${config.source.git}`;
+      throw new Error(`the System ${config.system} comes from ${from}, which isn't edited here: add the rules in its own repository (youiyoux rules add there), or link your checkout of it first (youiyoux link <dir>); nothing was fetched or written`);
+    }
+    const p = await project(values);
+    return { root: p.repo.root, system: p.system, product: true };
+  }
+  const design = values.design ?? findUp(process.cwd(), DESIGN_CONFIG_FILE);
+  if (design === null) throw new Error(`no ${PROJECT_FILE} or ${DESIGN_CONFIG_FILE} here: run this in a product or a design repo, or pass --project <dir> or --design <dir>`);
+  const root = resolve(design);
+  return { root, system: getSystem(await loadDesignRepo(root), values.system), product: false };
+}
+
+function renderRulePacks(): string {
+  return [
+    "Starter rules on offer (never added unless you ask):",
+    ...RULE_PACKS.flatMap((p) => [`  ${style.bold(p.name)}  ${p.summary}`, ...p.rules("system").map((r) => `    ${r.file.replace(/\.rule\.yaml$/, "").padEnd(26)} ${r.spec.title}`)]),
+    `Next: youiyoux rules add <pack> (e.g. youiyoux rules add ${RULE_PACKS[0]!.name}) writes its rule files into your System's rules folder, as warnings; --dry-run shows them first.`,
+  ].join("\n");
 }
 
 async function cmdMigrate(values: Values, positionals: string[]): Promise<number> {
@@ -1377,9 +1484,10 @@ async function cmdRequests(values: Values, positionals: string[]): Promise<numbe
   const usage = "youiyoux requests [--status open|addressed|closed|all] [--route r]   or   youiyoux requests show <id> | reply <id> --message <text> | addressed <id> --message <what you changed>";
   const [action, id, ...rest] = positionals;
   if (rest.length > 0) throw new UsageError(usage);
-  const { RequestStore, requestBrief } = await import("@youiyoux/workflow");
+  const { RequestStore, requestBrief, behaviourEvidence } = await import("@youiyoux/workflow");
   const { project, root } = await product(values);
-  const store = new RequestStore(root, project?.config.id ?? basename(root));
+  // A request filed from a behaviour result is marked addressed only once the check passes again, fresh (read as this youiyoux makes results).
+  const store = new RequestStore(root, project?.config.id ?? basename(root), project ? { behaviour: behaviourEvidence(() => loadProject(resolve(values.project ?? process.cwd()), loadOptions(values)), behaviourTool()) } : {});
   const agent = { kind: "agent", name: "youiyoux CLI" } as const;
   const one = (request: Parameters<typeof requestBrief>[0]): number => {
     const brief = requestBrief(request, root);
@@ -1479,7 +1587,7 @@ async function cmdReport(values: Values, positionals: string[], io: CliIo): Prom
 
 async function cmdMcp(values: Values): Promise<number> {
   const { startStdioServer } = await import("@youiyoux/mcp");
-  await startStdioServer({ projectRoot: values.project ?? process.cwd(), ...loadOptions(values), ...(values.cache ? { discoverCache: values.cache } : {}) });
+  await startStdioServer({ projectRoot: values.project ?? process.cwd(), ...loadOptions(values), ...(values.cache ? { discoverCache: values.cache } : {}), behaviourTool: behaviourTool() });
   return -1;
 }
 
@@ -1569,7 +1677,7 @@ async function cmdDiscover(values: Values, positionals: string[], io: CliIo): Pr
 type Command = (values: Values, positionals: string[], io: CliIo) => Promise<number>;
 
 const COMMANDS: Record<string, Command> = {
-  adopt: cmdAdopt, status: cmdStatus, system: cmdSystem, link: cmdLink, unlink: cmdUnlink, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, upgrade: cmdUpgrade, record: cmdRecord, hub: cmdHub, figma: cmdFigma, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, screens: cmdScreens, requests: cmdRequests, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
+  adopt: cmdAdopt, status: cmdStatus, system: cmdSystem, link: cmdLink, unlink: cmdUnlink, show: cmdShow, where: cmdWhere, bom: cmdBom, check: cmdCheck, behave: cmdBehave, baseline: cmdBaseline, rules: cmdRules, plan: cmdPlan, migrate: cmdMigrate, upgrade: cmdUpgrade, record: cmdRecord, hub: cmdHub, figma: cmdFigma, init: cmdInit, sync: cmdSync, scan: cmdScan, watch: cmdWatch, hooks: cmdHooks, agents: cmdAgents, mcp: cmdMcp, ui: cmdUi, library: cmdLibrary, discover: cmdDiscover, index: cmdIndex, report: cmdReport, render: cmdRender, screens: cmdScreens, requests: cmdRequests, detect: cmdDetect, build: cmdBuild, parity: cmdParity, schema: cmdSchema,
 };
 
 /** Every command name, for a front end that runs one by default (the youiyoux bin runs report). */
@@ -1601,7 +1709,7 @@ export async function main(argv: string[], io: CliIo = {}): Promise<number> {
 }
 
 /** Commands that work on a product, and on a design repo: each runs from anywhere inside one, as git does. */
-const IN_A_PRODUCT = new Set(["system", "link", "unlink", "show", "where", "bom", "check", "baseline", "rules", "plan", "migrate", "upgrade", "sync", "scan", "watch", "hooks", "agents", "mcp", "ui", "library", "render", "screens", "requests"]);
+const IN_A_PRODUCT = new Set(["system", "link", "unlink", "show", "where", "bom", "check", "behave", "baseline", "rules", "plan", "migrate", "upgrade", "sync", "scan", "watch", "hooks", "agents", "mcp", "ui", "library", "render", "screens", "requests"]);
 const IN_A_DESIGN_REPO = new Set(["build", "parity"]);
 
 /**

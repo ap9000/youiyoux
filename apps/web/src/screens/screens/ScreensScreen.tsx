@@ -39,7 +39,7 @@ export function ScreensScreen() {
 
 function Screens({ model, index }: { model: Model; index: UsageIndex }) {
   const params = useParams<{ "*"?: string }>();
-  const screens = screensOf(index, model.manifest);
+  const screens = screensOf(index, model.manifest, model.rules);
   const rest = params["*"];
   if (!rest) return <ScreenGrid model={model} index={index} screens={screens} />;
   const screen = screens.byHref.get(`/screens/${rest}`);

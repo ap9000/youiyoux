@@ -35,3 +35,5 @@ export * from "./screens/jsx-edit.ts";
 export * from "./screens/capture.ts";
 export * from "./screens/locate.ts";
 export * from "./screens/session.ts";
+export * from "./behaviour/index.ts";
+export * from "./screens/spec-file.ts";

@@ -9,9 +9,10 @@ import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { isAbsolute, join, posix } from "node:path";
 import { promisify } from "node:util";
-import { matchesAny, ruleSlug, type RuleSpec, type Violation } from "@youiyoux/core";
+import { matchesAny, pageText, ruleSlug, type RuleSpec, type Violation } from "@youiyoux/core";
 import { detectRepo, elementTypes, EXPORT_TYPES, LIBRARY_BY_ID, libraryOfPackage, packageOf } from "@youiyoux/detect";
-import { buildInventory, loadInventoryTarget, parseModule, hardcodedValues, importSpecifier, langOf, nearDuplicates, offLibraryImports, type ChosenLibrary, type DriftFinding, type DriftKind, type ImportClass, type Project, type ScanResult, type ModuleInfo } from "@youiyoux/scanner";
+import { buildInventory, loadInventoryTarget, parseModule, hardcodedValues, importSpecifier, langOf, nearDuplicates, offLibraryImports, POPUP_NOUN, type ChosenLibrary, type DriftFinding, type DriftKind, type ImportClass, type Project, type ScanResult, type ModuleInfo } from "@youiyoux/scanner";
+import type { BehaviourFailure } from "@youiyoux/workflow";
 
 import { aliasRoot } from "./init.ts";
 
@@ -180,7 +181,7 @@ export async function stagedChange(project: ChangeProject): Promise<ChangeSet> {
 
 /* ------------------------------------------------------------------ analysis */
 
-export interface DiffFinding {
+export interface CodeFinding {
   /** A drift kind, or `rule` for a rule violation on an added line. */
   readonly kind: DriftKind | "rule";
   readonly file: string;
@@ -193,6 +194,46 @@ export interface DiffFinding {
   /** The rule slug, when a rule (also) reports this line. */
   readonly rule?: string;
 }
+
+/**
+ * A behaviour rule's fresh failure (a stored `youiyoux behave` result made against this working
+ * tree): which popup, by its identity (route, pattern, component, accessible name, ordinal), never
+ * by file and line, which are display only and often unknown. Not filtered to added lines: a
+ * popup's behaviour comes from code the change may not touch.
+ */
+export interface BehaviourDiffFinding {
+  readonly kind: "behaviour";
+  readonly target: { readonly route: string; readonly pattern: string; readonly component: string | null; readonly accessibleName: string; readonly ordinal?: number };
+  /** Where locating found the trigger's JSX, when it did; null when it didn't. */
+  readonly file: string | null;
+  readonly line: number | null;
+  readonly check: string;
+  readonly message: string;
+  readonly fix: string;
+  readonly severity: Violation["severity"];
+  readonly rule: string;
+}
+
+export type DiffFinding = CodeFinding | BehaviourDiffFinding;
+
+/** A behaviour failure as a diff finding, keyed by its target's identity. */
+export function behaviourDiffFinding(f: BehaviourFailure): BehaviourDiffFinding {
+  const { target } = f.result;
+  return {
+    kind: "behaviour",
+    target: { route: target.route, pattern: target.pattern, component: target.component, accessibleName: target.accessibleName, ...(target.ordinal !== undefined ? { ordinal: target.ordinal } : {}) },
+    file: target.file ?? null,
+    line: target.line ?? null,
+    check: f.result.check,
+    message: `${f.result.check} on the ${POPUP_NOUN[target.pattern]} ${pageText(target.accessibleName)} on ${target.route}: ${f.result.why}`,
+    fix: f.result.fix,
+    severity: f.severity,
+    rule: ruleSlug(f.rule),
+  };
+}
+
+/** Same popup, same rule: what makes two behaviour findings one. */
+export const behaviourKey = (f: BehaviourDiffFinding): string => JSON.stringify([f.rule, f.target.route, f.target.pattern, f.target.component, f.target.accessibleName, f.target.ordinal ?? null]);
 
 export interface DiffReport {
   readonly base: string;
@@ -289,6 +330,8 @@ export async function chosenLibraries(project: ChangeProject, added: AddedLines,
 interface AnalyseOptions {
   /** Rule violations to report on added lines (already filtered by --rule and --quiet). */
   readonly violations: readonly Violation[];
+  /** Fresh behaviour failures (already filtered by --rule and --quiet): reported by popup, whatever lines the change adds. */
+  readonly behaviour?: readonly BehaviourFailure[];
 }
 
 /** The same place and the same text: one finding, keeping the fix that names the token or the component. */
@@ -317,7 +360,7 @@ export async function analyseChange(project: Project, scan: ScanResult, change: 
     for (const module of modules) drift.push(...offLibraryImports(module, { added, classify, chosen, exempt: scan.elements.isOwned }));
   }
   const rules = new Map<string, RuleSpec>(project.system.rules.map((r) => [r.id, r]));
-  const findings: DiffFinding[] = drift.map((d) => ({ kind: d.kind, file: d.file, line: d.line, column: d.column, message: d.message, fix: d.fix, severity: DRIFT_SEVERITY[d.kind] }));
+  const findings: CodeFinding[] = drift.map((d) => ({ kind: d.kind, file: d.file, line: d.line, column: d.column, message: d.message, fix: d.fix, severity: DRIFT_SEVERITY[d.kind] }));
   for (const violation of options.violations) {
     if (!added(violation.file, violation.line)) continue;
     const merged = findings.findIndex((f, i) => f.kind !== "rule" && samePlace(f, violation) && sameText(drift[i]?.text ?? "", violation.text));
@@ -330,5 +373,12 @@ export async function analyseChange(project: Project, scan: ScanResult, change: 
     findings.push({ kind: "rule", file: violation.file, line: violation.line, column: violation.column, message: violation.message, fix, severity: violation.severity, rule: ruleSlug(violation.rule) });
   }
   findings.sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.column - b.column);
-  return { base: change.base, commit: change.commit, files, findings, notes, incomplete };
+  // Behaviour findings after code findings, one per popup and rule (by identity, never merged by place).
+  const behaviour = new Map<string, BehaviourDiffFinding>();
+  for (const failure of options.behaviour ?? []) {
+    const finding = behaviourDiffFinding(failure);
+    if (!behaviour.has(behaviourKey(finding))) behaviour.set(behaviourKey(finding), finding);
+  }
+  const popups = [...behaviour.values()].sort((a, b) => a.target.route.localeCompare(b.target.route) || a.target.accessibleName.localeCompare(b.target.accessibleName) || a.rule.localeCompare(b.rule));
+  return { base: change.base, commit: change.commit, files, findings: [...findings, ...popups], notes, incomplete };
 }

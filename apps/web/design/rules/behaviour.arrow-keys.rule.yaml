@@ -1,0 +1,18 @@
+schema: youi.rule/v1
+id: youi:youiyoux/rule/behaviour.arrow-keys
+title: Arrow keys move through a menu or listbox
+severity: warn
+statement: In an open vertical menu or listbox, ArrowDown moves to the next item and ArrowUp to the previous one, in order (on a combobox, aria-activedescendant names the active option). At the ends, wrapping and stopping are both fine; disabled items may take focus or be skipped. Horizontal menus aren't checked yet.
+rationale: Arrow keys are how keyboard and screen reader users move through a list of choices. A menu that answers only to the mouse or to Tab can't be used without a pointer.
+agent: In a menu, move focus between items on ArrowDown and ArrowUp (items tabIndex={-1}; .focus() the next one); in a combobox, keep focus on the input and point aria-activedescendant at the active option's id. Verify with ui_behave (or `youiyoux behave --route <route>`).
+check:
+  engine: behaviour
+  id: arrow-keys
+  options: {}
+files:
+  - "**/*.{tsx,jsx}"
+examples:
+  bad:
+    - <div role="menu">{items.map((item) => <button role="menuitem" key={item}>{item}</button>)}</div> // arrows do nothing
+  good:
+    - onKeyDown={(e) => { if (e.key === "ArrowDown") focusItem(index + 1); if (e.key === "ArrowUp") focusItem(index - 1); }}

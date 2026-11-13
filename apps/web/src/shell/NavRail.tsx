@@ -60,9 +60,9 @@ function RailLink({ item, active }: { item: NavItem; active: boolean }) {
   );
 }
 
-function RailButton({ label, keys, onClick, children }: { label: string; keys?: readonly string[]; onClick: () => void; children: ReactNode }) {
+function RailButton({ label, keys, onClick, dialog, children }: { label: string; keys?: readonly string[]; onClick: () => void; /** It opens a modal dialog (so it says so, aria-haspopup="dialog"). */ dialog?: boolean; children: ReactNode }) {
   return (
-    <button type="button" aria-label={label} onClick={onClick} className={clsx(ITEM, IDLE)}>
+    <button type="button" aria-label={label} onClick={onClick} {...(dialog ? { "aria-haspopup": "dialog" as const } : {})} className={clsx(ITEM, IDLE)}>
       {children}
       <Tip label={label} keys={keys} inlineKeys />
     </button>
@@ -106,16 +106,16 @@ export function NavRail() {
       ))}
       <div className="mt-auto flex flex-col items-center gap-1 pt-3 xl:items-stretch xl:gap-px">
         <LiveStatus />
-        <RailButton label="Connect your agent" onClick={() => setOverlay("agents")}>
+        <RailButton dialog label="Connect your agent" onClick={() => setOverlay("agents")}>
           <Plug />
         </RailButton>
-        <RailButton label="Search" keys={["⌘", "K"]} onClick={() => setOverlay("palette")}>
+        <RailButton dialog label="Search" keys={["⌘", "K"]} onClick={() => setOverlay("palette")}>
           <Search />
         </RailButton>
         <RailButton label={THEME_LABEL[choice]} onClick={cycleTheme}>
           <ThemeIcon />
         </RailButton>
-        <RailButton label="Keyboard shortcuts" keys={["?"]} onClick={() => setOverlay("help")}>
+        <RailButton dialog label="Keyboard shortcuts" keys={["?"]} onClick={() => setOverlay("help")}>
           <Keyboard />
         </RailButton>
       </div>

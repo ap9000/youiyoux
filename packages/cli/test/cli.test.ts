@@ -4,7 +4,9 @@ import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { BEHAVIOUR_NOT_RUN, type ScanReport } from "@youiyoux/core";
 import { loadProject } from "@youiyoux/scanner";
+import { renderCheck } from "../src/render.ts";
 import { allowHosts, builtHubPlan, generatedPrefix, hubPlan, loadOptions, main, previewsPlan, runHub } from "../src/index.ts";
 
 const FIXTURE = join(import.meta.dirname, "../../scanner/test/fixtures/expo-app");
@@ -187,7 +189,7 @@ describe("youi", () => {
       expect(await main(["schema", "--check"])).toBe(0);
       out = "";
       expect(await main(["schema", "--check", "--design", dir, "--json"])).toBe(1);
-      expect((JSON.parse(out) as { stale: string[] }).stale).toHaveLength(20);
+      expect((JSON.parse(out) as { stale: string[] }).stale).toHaveLength(22);
       expect(await main(["schema", "--write", "--design", dir])).toBe(0);
       out = "";
       expect(await main(["schema", "--check", "--design", dir])).toBe(0);
@@ -364,6 +366,60 @@ describe("youi", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("behaviour rules before any probe run", () => {
+  test("check is incomplete (exit 1) and says why, rules lists it as a probe, never as enforced or clean", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "youi-behaviour-"));
+    try {
+      const design = join(dir, "design");
+      await cp(DEMO, design, { recursive: true });
+      const escape = ["schema: youi.rule/v1", "id: youi:demo/rule/popup.escape", "title: Esc closes popups", "severity: error", "statement: Esc closes every popup.", "agent: Close popups on Esc.", "check:", "  engine: behaviour", "  id: dismiss-escape", ""].join("\n");
+      await writeFile(join(design, "rules/popup.escape.rule.yaml"), escape);
+      expect(await main(["check", "--project", FIXTURE, "--design", design, "--json"])).toBe(1);
+      const check = JSON.parse(out) as { incomplete: boolean; notRun: Array<{ rule: string; state: string; reason: string }>; checks: Array<{ rule: string; state: string; findings?: number }> };
+      expect(check.incomplete).toBe(true);
+      // No screens captured here, so nothing could have been probed: incomplete, saying how to start.
+      expect(check.notRun).toEqual([{ rule: "youi:demo/rule/popup.escape", state: "incomplete", reason: expect.stringMatching(/^no screens are captured yet .*youiyoux behave$/) }]);
+      expect(check.checks.find((c) => c.rule === "youi:demo/rule/popup.escape")).not.toMatchObject({ state: "ran" });
+      out = "";
+      expect(await main(["check", "--project", FIXTURE, "--design", design, "--rule", "popup.escape"])).toBe(1);
+      expect(out).toContain("! Incomplete: 0 errors in what was checked · 0 warnings; not a pass");
+      expect(out).toContain("Next: run `youiyoux behave` to probe this app's menus, dialogs and popovers for popup.escape");
+      expect(out).not.toContain("✓");
+      expect(out).toContain("! rule popup.escape did not run: no screens are captured yet");
+      out = "";
+      expect(await main(["rules", "--project", FIXTURE, "--design", design, "--json"])).toBe(0);
+      const { rules } = JSON.parse(out) as { rules: Array<{ id: string; state: string }> };
+      expect(rules.find((r) => r.id === "youi:demo/rule/popup.escape")?.state).toBe("probe");
+      out = "";
+      expect(await main(["rules", "--project", FIXTURE, "--design", design, "--preview", join(design, "rules/popup.escape.rule.yaml")])).toBe(1);
+      expect(out).toContain("checked by a probe run in the running app");
+      expect(out).toContain("this is not a clean result");
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("check text with only an unprobed behaviour rule", () => {
+  const run = { rule: "youi:demo/rule/popup.escape", state: "incomplete" as const, reason: BEHAVIOUR_NOT_RUN };
+  const report = { schema: "youi.usage/v1", project: "app", system: "demo", commit: null, scanner: "test", configDigest: "x", generatedAt: "2026-11-12T00:00:00.000Z", durationMs: 1, status: "complete", coverage: { filesMatched: 1, filesScanned: 1, failed: [] }, usages: [], unknowns: [], suppressed: 0, lookalikes: [], violations: [], checks: [run] } satisfies ScanReport;
+  const plain = (text: string): string => text.replace(/\u001b\[[0-9;]*m/g, "");
+
+  test("leads with Incomplete and a keyboard Next, never a success mark", () => {
+    const text = plain(renderCheck([], [], report, { incomplete: true, notRun: [run] }));
+    expect(text).not.toContain("✓");
+    expect(text).toContain("! Incomplete: 0 errors in what was checked · 0 warnings; not a pass");
+    expect(text).toContain("Next: run `youiyoux behave` to probe this app's menus, dialogs and popovers for popup.escape");
+    expect(text).not.toContain("fix what could not be checked");
+    expect(text).toContain("code scan complete; 1 rule not run");
+  });
+
+  test("the same report with the rule run reads as a pass", () => {
+    const ran = { ...report, checks: [{ rule: run.rule, state: "ran" as const, findings: 0 }] };
+    expect(plain(renderCheck([], [], ran))).toContain("✓ 0 errors · 0 warnings");
   });
 });
 

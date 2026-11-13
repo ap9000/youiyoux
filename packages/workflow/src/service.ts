@@ -28,6 +28,7 @@ import { authorize, WorkflowError, type Action } from "./policy.ts";
 import { comparePreview, notRunReason } from "./preview.ts";
 import { LiveApp } from "./live.ts";
 import { RequestStore } from "./requests.ts";
+import { behaviourEvidence, type BehaviourSetup } from "./behaviour-service.ts";
 import { decisionsKey, decisionsKeyFile, ProposalStore, type ProposalCheck } from "./proposals.ts";
 import type { WorkflowStore } from "./store.ts";
 
@@ -60,6 +61,12 @@ interface WorkflowOptions extends LoadProjectOptions {
    * draft can start.
    */
   readonly ingest?: (link: string) => Promise<IngestReading>;
+  /**
+   * Behaviour probes from the hub (behaviour-service.ts): this youiyoux's version as results record
+   * it, and how to open a browser. Without it, nothing is probed from here, stored results can't be
+   * held to now, and a request filed from a behaviour result can't be filed or marked addressed.
+   */
+  readonly behaviour?: BehaviourSetup;
 }
 
 /** The design repository and project as they are right now. */
@@ -79,7 +86,7 @@ export type CreateInput = { kind?: "rule"; mode: "edit"; ruleId: string } | { ki
 
 /** A preview's headline, for history notes and commit messages. */
 function previewSummary(draft: Draft): string {
-  if (draft.kind === "rule") return draft.preview ? `flags ${draft.preview.flagged} place(s)` : "no preview";
+  if (draft.kind === "rule") return draft.preview ? (draft.preview.notOnSnapshot ? "a behaviour rule: checked by a probe run, not counted on code" : `flags ${draft.preview.flagged} place(s)`) : "no preview";
   if (draft.kind === "ingest") {
     const q = draft.preview;
     if (!q) return "no preview";
@@ -122,7 +129,15 @@ export class RuleWorkflow {
   /** The product's comments and change requests on its captured screens (requests.ts), in its `.youi/requests`. */
   async requests(): Promise<RequestStore> {
     const project = await this.project();
-    return new RequestStore(project.root, project.config.id, this.options.now ? { now: this.options.now } : {});
+    const behaviour = this.options.behaviour;
+    return new RequestStore(project.root, project.config.id, { ...(this.options.now ? { now: this.options.now } : {}), ...(behaviour ? { behaviour: behaviourEvidence(() => this.project(), behaviour.tool) } : {}) });
+  }
+
+  /** Behaviour probes for the product: its project, and how to run them (refused when this service wasn't given a browser). */
+  async behaviour(): Promise<{ project: Project; setup: BehaviourSetup }> {
+    const setup = this.options.behaviour;
+    if (!setup) throw new WorkflowError("not-found", "behaviour probes run from the hub youiyoux ui starts; this service wasn't started with a browser for them");
+    return { project: await this.project(), setup };
   }
 
   /** A System element's contract, or null (not one, or no System). */
@@ -623,7 +638,7 @@ export class RuleWorkflow {
         ...comparison,
         limits: [...comparison.limits, ...designLimits],
       };
-      const note = `Flags ${preview.flagged} place(s) in ${report.project}: ${preview.counts.new} new, ${preview.counts.kept} already flagged, ${preview.counts.resolved} no longer flagged.`;
+      const note = preview.notOnSnapshot ? `Not counted on ${report.project}'s code: ${preview.notOnSnapshot}` : `Flags ${preview.flagged} place(s) in ${report.project}: ${preview.counts.new} new, ${preview.counts.kept} already flagged, ${preview.counts.resolved} no longer flagged.`;
       const next: Draft = { ...draft, preview, updatedAt: this.now(), events: [...draft.events, this.event(actor, "previewed", note)] };
       await this.options.store.put(next);
       return this.refreshed(next, after);
@@ -836,7 +851,10 @@ export class RuleWorkflow {
       "",
       `Rule ${rule!.id}, draft ${draft.id} revision ${draft.revision}.`,
       `Approved by ${approval.by.name} at ${approval.at}.`,
-      `Impact on ${current.project.config.id}${current.snapshot.projectCommit ? ` @ ${current.snapshot.projectCommit.slice(0, 12)}` : ""}: flags ${preview.flagged} place(s), ${preview.counts.new} new, ${preview.counts.resolved} no longer flagged.`,
+      // A behaviour rule is not counted on code: the message says so, never "flags 0 place(s)".
+      preview.notOnSnapshot
+        ? `Impact on ${current.project.config.id}: not counted on its code. ${preview.notOnSnapshot}`
+        : `Impact on ${current.project.config.id}${current.snapshot.projectCommit ? ` @ ${current.snapshot.projectCommit.slice(0, 12)}` : ""}: flags ${preview.flagged} place(s), ${preview.counts.new} new, ${preview.counts.resolved} no longer flagged.`,
     ].join("\n");
     return { files, branch: `youi/rules/${parseId(rule!.id)?.name ?? "rule"}-${draft.id.slice(2, 8)}`, message };
   }

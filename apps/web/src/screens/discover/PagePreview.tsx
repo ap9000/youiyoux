@@ -121,7 +121,7 @@ export function PagePreview({ answer, html, scheme: hubScheme, onEscape }: { ans
           </Dialog.Trigger>
           <Dialog.Portal>
             <Dialog.Overlay className="fixed inset-0 z-50 bg-scrim" />
-            <Dialog.Content className="fixed inset-0 z-50 flex flex-col bg-surface outline-none" data-testid="page-fullscreen">
+            <Dialog.Content aria-modal="true" className="fixed inset-0 z-50 flex flex-col bg-surface outline-none" data-testid="page-fullscreen">
               <header className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-4 py-2">
                 <Dialog.Title className="mr-2 text-heading text-ink">{answer.entry.title ?? answer.name}</Dialog.Title>
                 <Dialog.Description className="sr-only">The block at full size in your theme</Dialog.Description>

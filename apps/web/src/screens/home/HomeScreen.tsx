@@ -5,8 +5,9 @@ import { Link } from "wouter";
 import { type Scheme, useTheme } from "../../app/theme.tsx";
 import { elementHref } from "../../data/ids.ts";
 import { countByKind, type Model } from "../../data/model.ts";
-import type { CatalogRule } from "../../data/types.ts";
+import type { CatalogRule, ScanReport } from "../../data/types.ts";
 import { retryModel, useModelState, useUsageState } from "../../data/store.ts";
+import { rulesNotRun } from "../../data/screens.ts";
 import { summarize, type UsageIndex } from "../../data/usage.ts";
 import { BUDGETS, percentile, useSamples } from "../../lib/perf.ts";
 import { shortSha } from "../../lib/format.ts";
@@ -17,6 +18,7 @@ import { Disclosure } from "../../ui/Disclosure.tsx";
 import { Num } from "../../ui/Num.tsx";
 import { ResourceState } from "../../ui/Pane.tsx";
 import { Section, Table } from "../../ui/Section.tsx";
+import { notCheckedRule } from "../element/RulesTab.tsx";
 import { MostUsed } from "./MostUsed.tsx";
 
 /** The headline (rule data.headline): one sentence that carries the numbers, never a row of equal boxes. */
@@ -85,6 +87,25 @@ export function SpeedNote({ samples }: { samples: ReturnType<typeof useSamples> 
   );
 }
 
+/** Rules with no violations that nothing checked: listed plainly, never counted as clean. */
+function NotCheckedRules({ rules }: { rules: readonly CatalogRule[] }) {
+  if (rules.length === 0) return null;
+  return (
+    <p className="mt-1 text-body text-muted">
+      {rules.length} {rules.length === 1 ? "rule" : "rules"} not checked:{" "}
+      {rules.map((rule, i) => (
+        <span key={rule.id}>
+          {i > 0 && ", "}
+          <Link href={elementHref(rule.id)} className="text-ink-2 hover:text-ink hover:underline">
+            {rule.title}
+          </Link>
+        </span>
+      ))}
+      .
+    </p>
+  );
+}
+
 /** Rules with nothing broken, folded under one line (rule lists.bounded); opened, each links to its rule. */
 function CleanRules({ rules }: { rules: readonly CatalogRule[] }) {
   if (rules.length === 0) return null;
@@ -115,7 +136,9 @@ function CleanRules({ rules }: { rules: readonly CatalogRule[] }) {
 export function Usage({ model, index, scheme }: { model: Model; index: UsageIndex; scheme: Scheme }) {
   const rules = [...model.rules.values()].map((rule) => ({ rule, count: index.violationsByRule.get(rule.id)?.length ?? 0 })).sort((a, b) => b.count - a.count);
   const broken = rules.filter((r) => r.count > 0);
-  const clean = rules.filter((r) => r.count === 0).map((r) => r.rule);
+  // 0 violations is clean only for a rule that ran: one that did not (a behaviour rule before any probe run) is not checked.
+  const notChecked = rules.filter((r) => r.count === 0 && notCheckedRule(r.rule, index)).map((r) => r.rule);
+  const clean = rules.filter((r) => r.count === 0 && !notCheckedRule(r.rule, index)).map((r) => r.rule);
   const maxViolations = broken[0]?.count ?? 0;
   return (
     <>
@@ -128,9 +151,7 @@ export function Usage({ model, index, scheme }: { model: Model; index: UsageInde
                 <td className="font-medium text-ink">{report.project}</td>
                 <td className="font-mono text-mono-sm text-muted">{report.commit != null ? shortSha(report.commit) : "–"}</td>
                 <td>
-                  <Badge tone={report.status === "complete" ? "success" : "warning"} title={report.scanner}>
-                    {report.status}
-                  </Badge>
+                  <ScanBadge report={report} />
                 </td>
                 <td className="tabular text-ink-2">{summary.sites}</td>
                 <td className="tabular text-ink-2">{summary.screens}</td>
@@ -151,6 +172,7 @@ export function Usage({ model, index, scheme }: { model: Model; index: UsageInde
             ))}
           </ul>
         )}
+        <NotCheckedRules rules={notChecked} />
         <CleanRules rules={clean} />
       </Section>
     </>
@@ -205,5 +227,33 @@ function Home({ model }: { model: Model }) {
         <SpeedNote samples={samples} />
       </div>
     </div>
+  );
+}
+
+/**
+ * A project's scan: complete in green only when every rule ran too. A complete scan with rules that
+ * did not run (behaviour rules wait for a probe run) is neutral, never green: its result is unknown.
+ */
+export function ScanBadge({ report }: { report: Pick<ScanReport, "status" | "scanner" | "checks"> }) {
+  const notRun = rulesNotRun(report);
+  if (report.status !== "complete") {
+    return (
+      <Badge tone="warning" title={report.scanner}>
+        {report.status}
+      </Badge>
+    );
+  }
+  if (notRun.length > 0) {
+    const behaviour = notRun.every((r) => r.state === "incomplete");
+    return (
+      <Badge tone="neutral" title={`${report.scanner} · not run: ${notRun.map((r) => `${r.rule} (${r.reason ?? r.state})`).join("; ")}`}>
+        {behaviour ? "behaviour not checked" : "rules not run"}
+      </Badge>
+    );
+  }
+  return (
+    <Badge tone="success" title={report.scanner}>
+      complete
+    </Badge>
   );
 }

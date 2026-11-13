@@ -16,8 +16,8 @@ export interface Actor {
 
 /** A rule check the editor may offer: only checks the executor can actually run. */
 export interface CheckCapability {
-  readonly engine: "youi" | "advisory";
-  /** The built-in check id, or null for advisory rules. */
+  readonly engine: "youi" | "behaviour" | "advisory";
+  /** The built-in or behaviour check id, or null for advisory rules. */
   readonly id: string | null;
   readonly label: string;
   readonly description: string;
@@ -89,6 +89,8 @@ export interface Preview {
   readonly scan: { readonly status: "complete" | "partial"; readonly files: number; readonly failed: ReadonlyArray<{ file: string; reason: string }> };
   /** Whether the check actually runs; advisory rules flag nothing by design. */
   readonly enforced: boolean;
+  /** Why this preview has no count at all: the check does not run on code (a behaviour rule). Absent when it does. */
+  readonly notOnSnapshot?: string;
   /** Places the draft flags (new + kept). */
   readonly flagged: number;
   readonly counts: { readonly new: number; readonly kept: number; readonly resolved: number; readonly suppressed: number };

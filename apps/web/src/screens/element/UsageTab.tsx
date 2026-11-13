@@ -126,7 +126,7 @@ function Usage({ model, contract, index }: { model: Model; contract: ComponentCo
   const distribution = useMemo(() => propDistribution(all, contract), [all, contract]);
   const sites = useMemo(() => filterSites(all, filters), [all, filters]);
   const issues = useMemo(() => elementIssues(index, contract), [index, contract]);
-  const onScreens = useMemo(() => screensOfElement(screensOf(index, model.manifest), contract.id), [index, model.manifest, contract.id]);
+  const onScreens = useMemo(() => screensOfElement(screensOf(index, model.manifest, model.rules), contract.id), [index, model.manifest, model.rules, contract.id]);
   const lookalikes = index.lookalikesByElement.get(contract.id) ?? [];
   const unresolved = index.unknownsByCandidate.get(contract.id) ?? [];
   const listRef = useRef<HTMLElement>(null);

@@ -1,0 +1,20 @@
+schema: youi.rule/v1
+id: youi:youiyoux/rule/behaviour.trigger-state
+title: A popup's button says when it is open
+severity: warn
+statement: The button that opens a popup says whether it is open. A menu button has aria-haspopup="menu" (or "true"), and aria-expanded="true" while the menu is open ("false" or left off while it is closed); aria-controls, if set, names the menu. A combobox has aria-expanded="false" while its listbox is closed and "true" while it is open, and aria-controls naming the listbox; aria-haspopup is left off or "listbox". Any other popover's button either uses popovertarget (the browser says whether it is open; a hand-set aria-expanded must agree) or has aria-controls naming the popover and aria-expanded="true" while it is open ("false" or left off while it is closed). A modal dialog's button isn't checked.
+rationale: A screen reader announces the button, not the popup. Without aria-expanded a person can't tell that pressing it opened anything, or that something is still open.
+agent: "Menu button: aria-haspopup=\"menu\" and aria-expanded={open}. Combobox: aria-expanded={open}, always set, and aria-controls={the listbox's id}; aria-haspopup off or \"listbox\". Other popovers: popovertarget, or aria-controls={the popover's id} with aria-expanded={open}; they need no aria-haspopup. Verify with ui_behave (or `youiyoux behave --route <route>`)."
+check:
+  engine: behaviour
+  id: trigger-state
+  options: {}
+files:
+  - "**/*.{tsx,jsx}"
+examples:
+  bad:
+    - <button aria-haspopup="menu" onClick={() => setOpen(!open)}>More</button> // never says it is open
+  good:
+    - <button aria-haspopup="menu" aria-expanded={open} aria-controls="more-menu" onClick={() => setOpen(!open)}>More</button>
+    - <input role="combobox" aria-expanded={open} aria-controls="city-options" />
+    - <button popovertarget="filters">Filters</button>

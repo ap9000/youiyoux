@@ -156,7 +156,7 @@ describe("commenting on a live screen", () => {
 });
 
 describe("live screens on the canvas", () => {
-  const scr = (project: string, route: string): Screen => ({ project, route, slug: route, sites: 0, elements: [], violations: [], lookalikes: [], unresolved: [], issues: NO_ISSUES, shot: { route, path: route, light: { full: "x.webp", thumb: "x.thumb.webp" } } }) as unknown as Screen;
+  const scr = (project: string, route: string): Screen => ({ project, route, slug: route, sites: 0, elements: [], violations: [], lookalikes: [], unresolved: [], notRun: [], issues: NO_ISSUES, shot: { route, path: route, light: { full: "x.webp", thumb: "x.thumb.webp" } } }) as unknown as Screen;
   const routes = ["/", "/a", "/b", "/c", "/d", "/uncaptured"];
   const index = { screens: [...routes.map((r) => scr("app", r)), scr("site", "/")] } as unknown as ScreenIndex;
   const live = { project: "app", base: APP, viewport: { width: 1440, height: 900 }, screens: routes.filter((r) => r !== "/uncaptured").map((route) => ({ route, path: route })) };

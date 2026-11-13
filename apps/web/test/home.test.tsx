@@ -48,6 +48,19 @@ describe("Home: rule health", () => {
     expect(text(health.querySelector("summary")!)).toMatch(new RegExp(`^${model.rules.size} rules clean`));
   });
 
+  test("a rule a scan did not run (a behaviour rule before any probe) is listed as not checked, never folded as clean", () => {
+    const rule = [...model.rules.values()].find((r) => r.severity !== "off")!;
+    const unprobed = indexUsage(reports.map((report) => ({ ...report, violations: [], checks: [...(report.checks ?? []).filter((c) => c.rule !== rule.id), { rule: rule.id, state: "incomplete" as const, reason: "behaviour rules are checked by a probe run" }] })));
+    render(<Usage model={model} index={unprobed} scheme="light" />);
+    const health = section("Rule health");
+    expect(text(health.querySelector("summary")!)).toMatch(new RegExp(`^${model.rules.size - 1} rules? clean`));
+    expect(text(health)).toContain(`1 rule not checked: ${rule.title}.`);
+    cleanup();
+    render(<SystemOverview model={model} index={unprobed} scheme="light" />);
+    const row = within(section("Rules")).getAllByRole("link").map(text).find((r) => r.includes(model.byId.get(rule.id)!.name))!;
+    expect(row.endsWith("Not checked")).toBe(true);
+  });
+
   test("speed is one line that says plainly when there are no samples", () => {
     const { container } = render(<SpeedNote samples={{ search: [], navigation: [] }} />);
     expect(text(container)).toBe("Speed in this tab: search no samples yet; navigation no samples yet.");

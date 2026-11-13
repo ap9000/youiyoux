@@ -2,11 +2,11 @@
  * How a check result reads: in a terminal, as GitHub Actions annotations on the
  * PR's lines, and as the job summary that states which rules version decided it.
  */
-import { ruleSlug, type Violation } from "@youiyoux/core";
+import { pageText, ruleSlug, type Violation } from "@youiyoux/core";
 import { describeIdentity } from "@youiyoux/scanner";
 import type { CheckResult, DiffCheckResult } from "./check.ts";
-import type { DiffFinding } from "./check-diff.ts";
-import { renderCheck } from "./render.ts";
+import type { BehaviourDiffFinding, DiffFinding } from "./check-diff.ts";
+import { behaviourFailureLine, renderCheck } from "./render.ts";
 import { plural, style } from "./ui.ts";
 
 
@@ -18,7 +18,7 @@ export function actionable(result: CheckResult): readonly Violation[] {
 }
 
 export function renderCheckText(result: CheckResult): string {
-  const lines = [renderCheck(actionable(result), result.lock, result.scan.report)];
+  const lines = [renderCheck(actionable(result), result.lock, result.scan.report, result)];
   if (result.baseline) {
     const { comparison, file, recorded } = result.baseline;
     const gone = comparison.fixed.reduce((n, f) => n + f.gone, 0);
@@ -62,6 +62,11 @@ export function githubAnnotations(result: CheckResult, prefix: string): string[]
   for (const issue of result.lock ?? []) lines.push(command(issue.severity === "error" ? "error" : "warning", issue.message, { file: `${prefix}${issue.file}`, title: "youi setup" }));
   for (const file of result.unmatched) lines.push(command("error", `${file} was not checked: not in this project's include globs`, { title: "youi incomplete" }));
   for (const failure of result.failed) lines.push(command("error", `could not be fully analysed (${failure.reason}); a clean result here is not a pass`, { file: `${prefix}${failure.file}`, title: "youi incomplete" }));
+  // A behaviour failure on its trigger's line when locating found it; else on the check as a whole.
+  for (const f of result.behaviour) {
+    const { target } = f.result;
+    lines.push(command(f.severity === "error" ? "error" : "warning", `${behaviourFailureLine(f)} → ${f.result.fix}`, { ...(target.file && target.line ? { file: `${prefix}${target.file}`, line: target.line } : {}), title: `youi ${ruleSlug(f.rule)}` }));
+  }
   for (const run of result.notRun) lines.push(command("error", `rule ${ruleSlug(run.rule)} did not run (${run.reason ?? run.state}); its findings are unknown`, { title: "youi incomplete" }));
   return lines;
 }
@@ -87,7 +92,11 @@ export function githubSummary(result: CheckResult): string {
 
 /* ------------------------------------------------------------ youiyoux check --diff */
 
-const KIND_LABEL: Record<DiffFinding["kind"], string> = { "near-duplicate": "near-duplicate", "hardcoded-value": "hardcoded value", "off-library": "off-library import", rule: "rule" };
+const KIND_LABEL: Record<DiffFinding["kind"], string> = { "near-duplicate": "near-duplicate", "hardcoded-value": "hardcoded value", "off-library": "off-library import", rule: "rule", behaviour: "behaviour" };
+
+/** Where a finding is: file:line:column for code; for behaviour, the route and popup (and file:line when locating found it). */
+const placeOf = (f: DiffFinding): string => (f.kind === "behaviour" ? popupPlace(f) : `${f.file}:${f.line}:${f.column}`);
+const popupPlace = (f: BehaviourDiffFinding): string => `${f.target.route} ${pageText(f.target.accessibleName)}${f.target.ordinal !== undefined ? ` #${f.target.ordinal + 1}` : ""}${f.file && f.line ? ` (${f.file}:${f.line})` : ""}`;
 
 /** Why a diff result is not a pass even with no findings: files or analyses that could not be checked. */
 export function diffGaps(result: DiffCheckResult): string[] {
@@ -100,21 +109,27 @@ export function diffGaps(result: DiffCheckResult): string[] {
 }
 
 /** One finding as a line an agent or a person acts on: where, what, and the fix. */
-export const diffFindingLine = (f: DiffFinding): string => `${f.file}:${f.line}:${f.column} ${kindOf(f)}: ${f.message} Fix: ${f.fix}`;
+export const diffFindingLine = (f: DiffFinding): string => `${placeOf(f)} ${kindOf(f)}: ${f.message} Fix: ${f.fix}`;
 
-/** `hardcoded value (also rule raw-color)`, or `rule raw-color` for a plain rule violation. */
-const kindOf = (f: DiffFinding): string => (f.kind === "rule" ? `rule ${f.rule}` : `${KIND_LABEL[f.kind]}${f.rule ? ` (also rule ${f.rule})` : ""}`);
+/** `hardcoded value (also rule raw-color)`, `rule raw-color` for a plain rule violation, `behaviour rule popup.escape` for a probed one. */
+const kindOf = (f: DiffFinding): string => (f.kind === "rule" ? `rule ${f.rule}` : f.kind === "behaviour" ? `behaviour rule ${f.rule}` : `${KIND_LABEL[f.kind]}${f.rule ? ` (also rule ${f.rule})` : ""}`);
 
 /** `youiyoux check --diff` in a terminal: each finding with its fix, then what to do next. */
 export function renderDiffText(result: DiffCheckResult): string {
   const diff = result.diff!;
   const lines: string[] = [style.dim(`youiyoux check --diff against ${diff.base}: ${plural(diff.files.length, "changed file")}`)];
-  for (const [file, list] of Map.groupBy(diff.findings, (f) => f.file)) {
+  for (const [file, list] of Map.groupBy(diff.findings.filter((f) => f.kind !== "behaviour"), (f) => f.file)) {
     lines.push(style.bold(file));
     for (const f of list) {
       const label = f.severity === "error" ? style.error(kindOf(f)) : style.warn(kindOf(f));
       lines.push(`  ${style.dim(`${f.line}:${f.column}`)}  ${label}  ${f.message}`, `      ${style.ok("→")} ${f.fix}`);
     }
+  }
+  const popups = diff.findings.filter((f): f is BehaviourDiffFinding => f.kind === "behaviour");
+  if (popups.length > 0) lines.push(style.bold("behaviour (from fresh youiyoux behave runs on this working tree)"));
+  for (const f of popups) {
+    const label = f.severity === "error" ? style.error(kindOf(f)) : style.warn(kindOf(f));
+    lines.push(`  ${style.dim(popupPlace(f))}  ${label}  ${f.message}`, `      ${style.ok("→")} ${f.fix}`);
   }
   const gaps = diffGaps(result);
   for (const gap of gaps) lines.push(style.warn(`! incomplete: ${gap}`));
@@ -149,7 +164,9 @@ export function diffJson(result: DiffCheckResult): Record<string, unknown> {
  */
 export function githubDiffAnnotations(result: DiffCheckResult, prefix: string, strict: boolean): string[] {
   const level = (severity: string) => (strict && severity === "error" ? "error" : "warning");
-  const lines = (result.diff?.findings ?? []).map((f) => command(level(f.severity), `${f.message} Fix: ${f.fix}`, { file: `${prefix}${f.file}`, line: f.line, col: f.column, title: `youi ${kindOf(f)}` }));
+  const lines = (result.diff?.findings ?? []).map((f) =>
+    command(level(f.severity), `${f.message} Fix: ${f.fix}`, { ...(f.kind !== "behaviour" ? { file: `${prefix}${f.file}`, line: f.line, col: f.column } : f.file && f.line ? { file: `${prefix}${f.file}`, line: f.line } : {}), title: `youi ${kindOf(f)}` }),
+  );
   for (const gap of diffGaps(result)) lines.push(command(level("error"), `${gap}; a clean result here is not a pass`, { title: "youi incomplete" }));
   return lines;
 }

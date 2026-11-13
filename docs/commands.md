@@ -107,6 +107,8 @@ In a product repo:
 | `youiyoux where <component>` / `youiyoux bom <route>` | Where a component lives, screen by screen; everything on one screen |
 | `youiyoux show <component>` | The contract: import, legal values, guidance |
 | `youiyoux check` | Rules plus lockfile drift; exits 1 on errors |
+| `youiyoux rules add [<pack>] [--dry-run]` | The starter rules on offer, or one pack's rule files added to the System's rules folder, as warnings: `behaviour`, six popup checks for `youiyoux behave` ([behaviour checks](#behaviour-checks)). Never over a rule already there; nothing else adds them |
+| `youiyoux behave [--route r] [--format text\|json\|github]` | Probe the running dev app's menus, comboboxes, modal dialogs and popovers for the behaviour rules, once probing is switched on for its address; keeps the runs `check` reads ([behaviour checks](#behaviour-checks)) |
 | `youiyoux check --diff [base] [--strict] [--json] [--format github]` | Only what a change adds: the working tree against HEAD, or against the merge-base with `base` (`--diff main`). Flags a new component that near-duplicates an existing one (same role, every shape dimension within the [inventory](#inventory)'s tolerance; fix: `use <Button variant="ghost"> from "@/components/ui"`), a hand-styled element that looks like a component the project renders outside that component's own file (at least three of height, side padding, corners and text size alike; a link only for a link component, a button only for a button), a hardcoded colour, spacing or radius a token holds (fix: `use rounded-control (radius.control, var(--demo-radius-control))`; a token named for a screen size, such as `spacing.phone-row`, only in code for that size: a media query, a selector or a variant like `phone:`, which the fix keeps), and an import that brings an element in from a library other than the project's choice (the System's component, else the library the rest of the code imports it from, read by [detect](#detect)), plus rule violations on added lines. Each finding has its fix, and the output says what to do next. Exits 0 (advisory) unless `--strict`, then 1 on any finding or an incomplete check; `--format github` marks findings as errors only with `--strict`, so an advisory check that passes shows warnings. Without git it stops and says why |
 | `youiyoux hooks install [--claude] [--git] [--ci [--diff]] [--strict]` | Wire the checks in, keeping existing config. Claude Code (PostToolUse): after each Edit/Write/MultiEdit of a checked file, only the findings on its added or changed lines go back to Claude, each with its fix; never blocks. git pre-commit: the staged files and the drift their staged lines add (`--strict` blocks on new findings or incomplete analysis). Codex has no documented post-edit hook, so no native post-edit hook is installed for it: it follows AGENTS.md (which tells agents to run `youiyoux check --diff`) and meets the pre-commit hook. `--ci` writes a pinned GitHub workflow; with `--diff`, pull requests also run `youiyoux check --diff origin/<base> --strict --format github`. `--record` writes `.github/workflows/youiyoux-record.yml`, which sends `youiyoux record` to the [hosted hub](#the-hosted-hub) on each push to the default branch |
 | `youiyoux plan` / `youiyoux migrate` | Classify a change and its impact; run a gated codemod: a dry run that prints the diff and the residual sites unless `--write` ([migrations](#migrations)) |
@@ -125,7 +127,7 @@ In a product repo:
 | `youiyoux discover previews [--port n] [--registry @shadcn\|all] [--role r] [--limit n] [--force]` | Photograph candidates in your project's theme, light and dark, for the hub's Discover gallery, from a hub running on your project (`youiyoux ui --project <dir>`; `--port` if not 5173). Each registry item (official ones by default) is opened as Preview in your theme opens it (a component from its registry's own demo when it has one) (only its source fetched, run only in the hub's sandboxed frame, headless, other hosts blocked) and kept as WebP under the Discover cache's `thumbs/`, once its drawing has stopped changing (a chart animating in). A block (a page, a chart card) is photographed as the top of its page, laid out at 1280 × 768. Current pictures are kept, a candidate that cannot be drawn on its own is recorded with why (a package nobody has, a part it needs, nothing visible alone) and not tried again until it changes; `--force` takes them all again. A package a candidate from the official registry or one of your sources needs that neither your project nor the hub has (`motion` for most of Aceternity and Magic UI, `@base-ui/react` for coss) is fetched from npm once into the Discover cache's `preview-packages/`, with install scripts off and only when every package in its tree comes from the npm registry, and the preview says so; nothing is installed in your project |
 | `youiyoux discover show <id\|ref> --source` | Fetch and cache just that registry item's files. The ordinary catalog contains metadata, file hashes and detected imports, with no inline source or raw response bodies |
 | `youiyoux agents install\|remove [--claude] [--codex] [--cursor]` | Tell coding agents to use what exists: a marked rule in AGENTS.md and CLAUDE.md ("call `ui_find_component` before creating a component") and the `youiyoux` MCP server registered for Claude Code (`.mcp.json`, the same entry `youiyoux sync` writes), Codex (a marked block in `.codex/config.toml`) and Cursor (`.cursor/mcp.json`, its paths under `${workspaceFolder}`); Claude Code and Codex unless any is named. Install then starts each server as its agent would and says whether it lists its tools. The hub's **Connect your agent** (the plug at the foot of the rail, or ⌘K) does the same for the agents a person ticks, with the hub's key, and shows each check. Idempotent; `remove` takes out only youi's block or key and deletes files youi created, so the files read as before. A `[mcp_servers.youiyoux]` table youi did not write is refused, with the `codex mcp add` line instead. Works with or without `youi.project.json` |
-| `youiyoux mcp` | stdio MCP server: `ui_find_component` (call it before creating a component: the project's existing components for a need in words, best first, each with its import line, props, a real usage snippet, where it is used and its library, from the System, shadcn, Radix or hand-rolled; class kits include their stylesheet and real class usages; call APIs lead with how to call toast() and where its provider is already mounted; library labels are per component, and a Lacks line explains how to add a requested missing capability; names and aliases count, so toast = snackbar and dialog = modal; or "nothing fits" with a primitive the project already uses or Discover candidates to start from; read live from the code, with or without `youi.project.json`), `system_*` tools (build with these, plus `system_plan`), `library_*` tools (browse, draft a request), read-only `discover_search` / `discover_show`, and read-only `index_where_used` (family), `index_swap_impact` (candidate, family) and `index_rule_covers` (rule), which answer from the local index in about ten lines, `ui_render` (target, base): what `youiyoux render` prints, with absolute image paths ([render](#render)); the request tools; and the canvas tools: `screens_list` and `screens_show` (route: its components, file:line, box and, for a System element, the choices its contract gives), `screens_offer` (two to four options for one component, each held to its contract, pinned on the Screens canvas for a person to preview and pick) and `screens_offers` (what was picked); no publish, approve, pick, merge or install tools |
+| `youiyoux mcp` | stdio MCP server: `ui_find_component` (call it before creating a component: the project's existing components for a need in words, best first, each with its import line, props, a real usage snippet, where it is used and its library, from the System, shadcn, Radix or hand-rolled; class kits include their stylesheet and real class usages; call APIs lead with how to call toast() and where its provider is already mounted; library labels are per component, and a Lacks line explains how to add a requested missing capability; names and aliases count, so toast = snackbar and dialog = modal; or "nothing fits" with a primitive the project already uses or Discover candidates to start from; read live from the code, with or without `youi.project.json`), `system_*` tools (build with these, plus `system_plan`), `library_*` tools (browse, draft a request), read-only `discover_search` / `discover_show`, and read-only `index_where_used` (family), `index_swap_impact` (candidate, family) and `index_rule_covers` (rule), which answer from the local index in about ten lines, `ui_render` (target, base): what `youiyoux render` prints, with absolute image paths ([render](#render)); `ui_behave` (route, target): what `youiyoux behave --route` checks, through the same consent and guards ([behaviour checks](#behaviour-checks)); the request tools; and the canvas tools: `screens_list` and `screens_show` (route: its components, file:line, box and, for a System element, the choices its contract gives), `screens_offer` (two to four options for one component, each held to its contract, pinned on the Screens canvas for a person to preview and pick) and `screens_offers` (what was picked); no publish, approve, pick, merge or install tools |
 | `youiyoux index path\|stats\|rebuild\|history [project]` | The local index ([store](#the-local-index)): where it is, rows per table, delete and rebuild it from its sources, and inventory trends per project |
 | `youiyoux ui` in a workspace | With a `youi.workspace.json` upward and nothing named: the hub on the first product that can be read, and Work > Workspace, which shows every product's status (as `youiyoux status`) and opens another in the same hub, which then reloads. Only the listed products open, by their place in the list, and only from the tab opened with the link `youiyoux ui` prints (it carries the run's key). The rule editor is per product, so Rules and Changes are read-only here |
 | `youiyoux ui --project <dir>` | The hub on that product, with the local rule and style editors: drafts, impact preview against the project, approval, and a review branch in the design repo ([guide](../packages/workflow/README.md)). Every change needs the key in the link it prints (`#key=…`). The key is kept per product, in its drafts folder (`session.key`, readable only by you), so the link stays the same when the hub restarts. A key file others could read, or one that is a link, is replaced and the terminal says so; `--new-key` replaces it on purpose, which cuts off every tab that had the old one |
@@ -315,6 +317,168 @@ Anywhere else, the same line in the head of the page the app serves in developme
 `<script src="http://localhost:5173/api/live/bridge.js"></script>`. The bridge does nothing
 unless the hub frames the page on this machine. Loaded later (the one-line way above), commenting
 works and Edit says why it can't.
+
+## Behaviour checks
+
+How popups behave with a keyboard: whether Esc closes a menu, whether focus goes back to the
+button that opened it, whether arrow keys move through the items. Behaviour rules
+(`check: { engine: behaviour, id: <check> }`) cover menus, comboboxes, modal dialogs and popovers,
+after the WAI-ARIA Authoring Practices. The code scan can't see any of this, so a probe checks them
+in your running dev app, in headless Chromium.
+
+```sh
+youiyoux rules add behaviour                       # the six rules, as warnings, into the System's rules folder
+youiyoux screens capture --base http://localhost:5173   # where the dev app runs, and its screens
+youiyoux ui                                        # Behaviour on a screen: switch probing on, Run on this screen
+youiyoux behave                                    # or from the terminal; youiyoux check reads the runs it keeps
+```
+
+### The rules: offered, never added for you
+
+`youiyoux rules add` lists the starter rules on offer; `youiyoux rules add behaviour [--dry-run]`
+writes six files, `behaviour.<check>.rule.yaml`, into the System's rules folder, as warnings, one per
+check below. Each has a statement, why it matters, an agent line (how to fix it, and to verify with
+`ui_behave` or `youiyoux behave --route <route>`) and good and bad examples; edit them as you would
+any rule. In a product it writes to the System it follows from a folder or your linked checkout; in
+a design repo, to its own. A System that comes from an npm package or a git repository is refused:
+add them in its own repository. A rule whose id or file is already there is kept as it is.
+Nothing else adds them: not `adopt`, `scan`, `sync` or `check`. Until a probe has run, `check` says
+these rules are incomplete, never clean.
+
+### Switching probing on
+
+A probe clicks buttons in a real running app, so it needs consent for exactly one address.
+`.youi/screens/screens.json` (from `youiyoux screens capture`) says where the app runs; probing is
+switched on for that origin only, on this machine and over http. In the hub (`youiyoux ui`),
+Behaviour on any screen shows the words and a switch, which binds consent to `base`'s origin; or add
+`"behaviour": { "allowedOrigin": "http://localhost:5173" }` (`base`'s origin) to screens.json by
+hand. Without it nothing probes, and `behave` refuses: "Probes click buttons that open menus and
+dialogs in your running app. Use a dev app with test data." Moving `base` elsewhere switches it off.
+No command and no step in these docs switches it on for you.
+
+### Running a probe
+
+- **`youiyoux behave [--route /x] [--format text|json|github]`** probes every route screens.json
+  lists (or those in `behaviour.routes`), or the one given.
+- **In the hub**, a screen's page has Behaviour with **Run on this screen**. On the Screens canvas, a
+  picked component's **Behaviour** tab has **Run on this component**, which tests only that
+  component's popups (the rest are listed as not tested, so the route stays incomplete for `check`).
+- **Agents** run the same probe with MCP `ui_behave` (route, and optionally a component), through
+  the same consent and guards ([agents](agents.md#checking-popups-ui_behave)).
+
+On each route it finds popup triggers by their ARIA markers (and contract bindings), and for each
+check opens a fresh page: it clicks the trigger only, identifies the popup and runs the check. It
+sends no writes, reaches no other address, opens no windows and, once the trigger is clicked, lets
+only the page's own static files load. Keys sent are only the check's own (Esc; Tab and Shift+Tab;
+arrows, Home and End), each after consent is read again; never Enter, Space or typing. A scenario has
+5 s (15 s for focus-trap and arrow-keys); a route has 300 s. One run of a route at a time, across the
+hub, MCP and `behave` (a claim file beside the route's run); a run started earlier never replaces one
+started later.
+
+From a small React app with an account menu that loses focus on Esc (abridged):
+
+```text
+/invoices
+  2 popup triggers found by ARIA markers. Popups without these markers were not assessed; opening is by mouse click only (keyboard opening isn't verified yet).
+  Note: while the screen loaded, the page tried to open a WebSocket or tunnel to 127.0.0.1:5292; it was blocked (a dev server's reload socket, often); every popup here was tested without it
+  ✓ passed  dialog 'Invite people' (src/InviteDialog.tsx:9)  focus-trap (behaviour.focus-trap)  Tab and Shift+Tab stayed inside the dialog, visiting its 3 focusable elements in order and wrapping round
+  ✓ passed  menu 'Account' (src/AccountMenu.tsx:23)  dismiss-escape (behaviour.dismiss-escape)  Esc closed the menu
+  ✖ failed (warning)  menu 'Account' (src/AccountMenu.tsx:23)  focus-return (behaviour.focus-return)  when Esc closed the menu, focus went to the page's body (nothing), not to the button that opened it
+      → When the menu closes with Esc, move focus back to the button that opened it.
+
+✓ 0 errors · 1 warning
+```
+
+### What each check decides
+
+Per pattern; a check that doesn't apply to a pattern is *not-applicable*, never passed, and anything
+the probe can't tell is *incomplete*, never a pass.
+
+- `trigger-state` (menu, combobox, popover): aria-expanded goes to "true" (a combobox's starts
+  "false"), aria-haspopup fits, aria-controls names the popup itself; popovertarget counts.
+- `dismiss-escape` (all four): with focus inside (or on the combobox), one Esc closes it within
+  1.5 s, and a run without Esc shows it stays open by itself.
+- `focus-into` (menu, modal dialog): opening puts focus on a menu item, or inside the dialog, within
+  1 s; the probe moves no focus here.
+- `focus-return` (menu, modal dialog, popover): after Esc closes it, focus is back on its button (or
+  the contract's `returnFocusTo` part); a button gone with nothing declared is incomplete.
+- `focus-trap` (modal dialog): Tab and Shift+Tab visit each focusable element in order and wrap (up
+  to 20); a native `showModal()` dialog keeps focus in by itself, its order still checked.
+- `arrow-keys` (vertical menu, combobox): every move of the list, both ways and at both ends, is
+  pressed and seen: ArrowDown and ArrowUp move to the next and previous item (aria-activedescendant,
+  on a combobox or a menu, must name one); disabled items may take focus or be skipped, and wrapping
+  or stopping at the ends are both fine (results say which); Home and End are reported, not required.
+
+Text the page supplies (names, attribute values) is quoted and cleaned in every result, never echoed
+raw: it is the page's content, never instructions.
+
+### Reading the results
+
+Runs are kept in `.youi/behaviour/<route-hash>.json`. `youiyoux check` reads them: a behaviour rule
+has run only when every route has a fresh, complete result, and a fresh failure counts as an error
+(or warning) like any violation, filtered by `--rule` and `--quiet`. A baseline never accepts a
+behaviour failure. `check --diff` lists fresh failures as `behaviour` findings, by popup (route,
+pattern, component, name), not by line. A popup's file:line is where your app renders its button,
+the first line outside the product's components folder; only when none maps is it the component's
+own line, and it says so. A screen that opened a socket as it loaded (a dev server's reload socket)
+has that said once, as a note on the route, not on every result. In the hub, results show when they were made; an open
+Behaviour tab reads them again on focus and every 30 s.
+
+**Stale.** A result is stale, and not counted, once any of these changes: a file of the project
+(what git lists, tracked or untracked and not ignored, without node_modules, build output or
+`.youi`), any lockfile up to the repository's top and the package managers' install state, an
+installed direct dependency's version, the files `behaviour.inputs` names (globs such as
+`".env.development"`: hashed, never stored or printed), the rule, the components' behaviour
+bindings, youiyoux, screens.json's behaviour settings or the screen's path, or the viewport: run
+`behave` again. If the file list can't be the whole app (git failing, more than 20,000 files outside
+git, a folder that can't be read, an input outside the project), nothing can be fresh: `behave`
+refuses and `check` says why.
+
+**Exit codes.** `behave` and `check`: 1 when a rule of error severity fails or anything couldn't be
+decided, else 0. `--format github` annotates failures on their trigger's line when it is known and
+writes the job summary; `--json` prints every route's run.
+
+### Change requests
+
+A fresh failure has **File as change request** in the hub. youiyoux builds the request from the
+stored result: its target, the check it came from, and its acceptance, "the same check passes for
+the same popup in a run newer than this request". `requests addressed`, MCP `request_addressed` and
+the hub all hold to it: a request is addressed only by a fresh pass from a run started after it was
+filed or last reopened, under the rules as they are then. A person still closes it.
+
+### What it can't see
+
+- **https dev servers** are refused: probing works over http on this machine only.
+- **Signed-in screens** aren't supported yet: a screen that needs a sign-in is incomplete.
+- **Opening from the keyboard** (Enter, Space, ArrowDown on the button) isn't verified: the probe
+  opens popups by mouse click only. Check it yourself.
+- **Popups without ARIA markers** aren't found: the button needs `aria-haspopup` (`"dialog"` for a
+  modal dialog), `aria-expanded` with `aria-controls`, or `popovertarget` (or a contract binding), and
+  a modal dialog needs `aria-modal="true"` or `showModal()`.
+- **Data after the click** is blocked: a popup that loads data when it opens is tested with its data
+  blocked, and its results say so.
+- **A GET for a static file that changes data** (an image or script URL that records something) is out
+  of reach of the guards. Use a dev app with test data.
+- **Environment variables set outside files, and hand edits inside node_modules,** don't make a result
+  stale.
+- **Unusual Tab orders** (positive tabindex, shadow roots holding something focusable, radio buttons,
+  frames) are reported incomplete, not checked.
+- **Late focus moves.** Focus that keeps moving and never settles is reported as can't tell; focus
+  that moves only later than the probe waits (about 400 ms after a key, plus a 250 ms grace moment)
+  may be missed.
+- **Horizontal menus, submenus and lists over 50 items** aren't checked yet; nor are disclosures (a
+  button with `aria-expanded` and `aria-controls` naming a panel of the page with no popup role): they
+  aren't clicked, and the screen's coverage counts them ("N buttons show and hide panels with no
+  popup role; they weren't assessed"), so a screen of them never reads as having no popups.
+- **A popup that mounts only when opened, with no `aria-haspopup`.** When a button's
+  `aria-controls` names an element that isn't on the page yet, youiyoux can't tell a popup from a
+  disclosure: the button is kept but never clicked, and each check it could have is *incomplete*,
+  so the screen is never clean. Give it `aria-haspopup` (`menu`, `listbox` or `dialog`) or a
+  contract binding, and it is tested.
+- **One run per screen at a time:** a second run of the same route is refused while one holds it;
+  different routes may run at once.
+- A forged `.youi/` written by another process on your account is out of scope: freshness proves
+  what a result was made from, not who wrote it.
 
 ## The local index
 

@@ -5,7 +5,7 @@ import { findFiles, readTextOrNull, sha256, shortHash, type CheckIdentity, type 
 import { buildTokens } from "@youiyoux/tokens";
 import type { ScanCache } from "./cache.ts";
 import { checkInputFor } from "./capabilities.ts";
-import { buildTokenIndex, failedChecks, runChecks, type TokenIndex } from "./checks.ts";
+import { buildTokenIndex, runChecks, scanFailures, type TokenIndex } from "./checks.ts";
 import { buildElementIndex, type ElementIndex } from "./elements.ts";
 import { ModuleGraph, type ModuleParser } from "./graph.ts";
 import { changedFiles, checkIdentity, definitionsDigest, gitState, SCANNER_VERSION } from "./identity.ts";
@@ -142,8 +142,9 @@ export async function scanProject(project: Project, options: ScanOptions = {}): 
     content: contentIdentity(files, contentDigest, overrides, changed, consumerGit.commit),
     generatedAt: new Date().toISOString(),
     durationMs: Math.round(performance.now() - started),
-    // Unparsed files and rules that should have run but could not both leave findings unknown.
-    status: failed.length > 0 || failedChecks(checks).length > 0 ? "partial" : "complete",
+    // Unparsed files and rules the scan should have run but could not both leave findings unknown.
+    // Behaviour rules are never the scan's to run: their `incomplete` is reported per rule, not here.
+    status: failed.length > 0 || scanFailures(checks).length > 0 ? "partial" : "complete",
     coverage: { filesMatched: files.length, filesScanned: scanned.size, failed: failed.sort((a, b) => a.file.localeCompare(b.file)) },
     usages: usages.sort(byPosition),
     fileRoutes: Object.fromEntries(files.map((file) => [file, routes.of(file)])),

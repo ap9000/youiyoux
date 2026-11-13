@@ -62,7 +62,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
     <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-scrim animate-fade" />
-        <Dialog.Content aria-describedby={undefined} className="fixed inset-x-0 top-[12vh] z-50 mx-auto w-[min(640px,calc(100vw-24px))] overflow-hidden rounded-xl border border-line bg-surface shadow-popover outline-none animate-pop">
+        <Dialog.Content aria-modal="true" aria-describedby={undefined} className="fixed inset-x-0 top-[12vh] z-50 mx-auto w-[min(640px,calc(100vw-24px))] overflow-hidden rounded-xl border border-line bg-surface shadow-popover outline-none animate-pop">
           <Dialog.Title className="sr-only">Command palette</Dialog.Title>
           <Command shouldFilter={false} loop label="Command palette" value={selected} onValueChange={setSelected}>
             <div className="flex items-center gap-2.5 border-b border-line px-4">

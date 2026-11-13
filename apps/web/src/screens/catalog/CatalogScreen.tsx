@@ -17,6 +17,7 @@ import { ResourceState, SplitView } from "../../ui/Pane.tsx";
 import { Section } from "../../ui/Section.tsx";
 import { Swatch } from "../../ui/Swatch.tsx";
 import { ElementPage } from "../element/ElementPage.tsx";
+import { notCheckedRule } from "../element/RulesTab.tsx";
 import { ElementList, type KindFilter } from "./ElementList.tsx";
 
 const KINDS: readonly ElementKind[] = ["token", "component", "rule", "migration"];
@@ -178,13 +179,15 @@ export function SystemOverview({ model, index, scheme }: { model: Model; index: 
           <ul className={PANEL}>
             {rules.map((rule) => {
               const broken = index ? (index.violationsByRule.get(rule.id)?.length ?? 0) : null;
+              const catalogRule = model.rules.get(rule.id);
+              const unchecked = broken === 0 && index !== null && catalogRule !== undefined && notCheckedRule(catalogRule, index);
               return (
                 <li key={rule.id}>
                   <Link href={elementHref(rule.id)} className={ROW}>
                     <KindIcon element={rule} scheme={scheme} />
                     <span className="min-w-0 flex-1 truncate text-ink">{rule.name}</span>
                     {rule.severity && <SeverityBadge severity={rule.severity} />}
-                    {broken === 0 ? <span className="shrink-0 text-small text-success">Clean</span> : <Count value={broken} unit={broken === 1 ? "violation" : "violations"} />}
+                    {unchecked ? <span className="shrink-0 text-small text-muted">Not checked</span> : broken === 0 ? <span className="shrink-0 text-small text-success">Clean</span> : <Count value={broken} unit={broken === 1 ? "violation" : "violations"} />}
                   </Link>
                 </li>
               );

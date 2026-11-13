@@ -83,7 +83,7 @@ function QueueOffline({ error, onRetry }: { error: WorkflowRequestError; onRetry
 export const draftHref = (draft: DraftView): string => (draft.kind === "rule" ? `/rules/draft/${draft.id}` : `/changes/${draft.id}`);
 
 function summary(draft: DraftView): string {
-  if (draft.kind === "rule") return `${draft.mode === "edit" ? "Edit" : "New rule"} · revision ${draft.revision}${draft.preview ? ` · flags ${draft.preview.flagged}` : ""}`;
+  if (draft.kind === "rule") return `${draft.mode === "edit" ? "Edit" : "New rule"} · revision ${draft.revision}${draft.preview ? (draft.preview.notOnSnapshot ? " · behaviour: not counted on code" : ` · flags ${draft.preview.flagged}`) : ""}`;
   if (draft.kind === "ingest") return `${ingestSummary(draft)} · revision ${draft.revision}${draft.preview ? ` · writes ${plural(draft.preview.files.length, "item")}` : ""}`;
   if (draft.kind === "library") return `${draft.content.request === "adopt" ? "Adoption request" : "Library reference"} · revision ${draft.revision}${draft.content.swapsWith.length ? ` · swaps with ${draft.content.swapsWith.join(", ")}` : ""}`;
   const p = draft.preview;

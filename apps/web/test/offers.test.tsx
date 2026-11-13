@@ -121,7 +121,7 @@ describe("options that answer an options request", () => {
 });
 
 describe("options on the canvas", () => {
-  const scr = (route: string): Screen => ({ project: "app", route, slug: route, sites: 0, elements: [], violations: [], lookalikes: [], unresolved: [], issues: NO_ISSUES, shot: { route, path: route, light: { full: "x.webp", thumb: "x.thumb.webp" } } }) as unknown as Screen;
+  const scr = (route: string): Screen => ({ project: "app", route, slug: route, sites: 0, elements: [], violations: [], lookalikes: [], unresolved: [], notRun: [], issues: NO_ISSUES, shot: { route, path: route, light: { full: "x.webp", thumb: "x.thumb.webp" } } }) as unknown as Screen;
   const index = { screens: [scr("/a"), scr("/b")] } as unknown as ScreenIndex;
 
   test("open ones are pinned where their component is; one decided isn't; a pin opens its options", () => {

@@ -1,7 +1,9 @@
+export * from "./behaviour.ts";
 export * from "./detect.ts";
 export * from "./detect-draft.ts";
 export * from "./diff.ts";
 export * from "./files.ts";
+export * from "./file-lock.ts";
 export * from "./gaps.ts";
 export * from "./hash.ts";
 export * from "./hierarchy.ts";
@@ -16,3 +18,4 @@ export * from "./rules.ts";
 export * from "./schemas.ts";
 export * from "./status.ts";
 export * from "./tokens.ts";
+export * from "./page-text.ts";

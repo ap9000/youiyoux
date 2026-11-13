@@ -97,14 +97,14 @@ describe("buildScreens", () => {
   });
 
   test("places issues on the screens their file reaches, including a shared file on each of its screens", () => {
-    expect(at("/work").issues).toEqual({ errors: 1, warnings: 1, lookalikes: 1, unresolved: 1, total: 4 });
-    expect(at("/review").issues).toEqual({ errors: 0, warnings: 1, lookalikes: 0, unresolved: 1, total: 2 });
+    expect(at("/work").issues).toEqual({ errors: 1, warnings: 1, lookalikes: 1, unresolved: 1, total: 4, notChecked: 0, behaviourNotChecked: 0 });
+    expect(at("/review").issues).toEqual({ errors: 0, warnings: 1, lookalikes: 0, unresolved: 1, total: 2, notChecked: 0, behaviourNotChecked: 0 });
     expect(at("/work").elements.find((e) => e.id === BUTTON)?.lookalikes).toHaveLength(1);
     expect(at("/review").elements.find((e) => e.id === BUTTON)?.unresolved).toHaveLength(1);
   });
 
   test("keeps unreachable files visible with their scanner reason", () => {
-    expect(screens.unattributed).toEqual({ errors: 0, warnings: 1, lookalikes: 0, unresolved: 0, total: 1 });
+    expect(screens.unattributed).toEqual({ errors: 0, warnings: 1, lookalikes: 0, unresolved: 0, total: 1, notChecked: 0, behaviourNotChecked: 0 });
     expect(screens.unattributedFiles).toEqual([
       { project: "demo-app", file: "src/orphan.tsx", sites: 1, reason: "No route reaches this file." },
       { project: "demo-app", file: "src/styles.css", sites: 0, reason: "No route reaches this file." },
@@ -209,7 +209,62 @@ describe("countIssues", () => {
       [1],
       [],
     );
-    expect(issues).toEqual({ errors: 1, warnings: 2, lookalikes: 1, unresolved: 0, total: 4 });
+    expect(issues).toEqual({ errors: 1, warnings: 2, lookalikes: 1, unresolved: 0, total: 4, notChecked: 0, behaviourNotChecked: 0 });
+  });
+
+  test("a rule the scan did not run reaches every screen of its project, so none reads clean", () => {
+    const behaviour = { rule: "youi:demo/rule/popup.escape", state: "incomplete" as const, reason: "behaviour rules are checked by a probe run" };
+    const unprobed: ScanReport = { ...report, violations: [], lookalikes: [], unknowns: [], checks: [{ rule: RAW_COLOR, state: "ran", findings: 0 }, behaviour] };
+    const screens = buildScreens(indexUsage([unprobed]), manifest).screens;
+    expect(screens.length).toBeGreaterThan(1);
+    for (const screen of screens) {
+      expect(screen.issues).toMatchObject({ total: 0, notChecked: 1, behaviourNotChecked: 1 });
+      expect(screen.notRun).toEqual([{ ...behaviour, project: "demo-app" }]);
+    }
+    // Without it, the same screens are clean.
+    const probed = buildScreens(indexUsage([{ ...unprobed, checks: [{ rule: RAW_COLOR, state: "ran", findings: 0 }] }]), manifest).screens;
+    expect(probed.every((s) => s.issues.total === 0 && s.issues.notChecked === 0 && s.notRun.length === 0)).toBe(true);
+  });
+});
+
+describe("rules that did not run, per screen", () => {
+  const ADMIN = "youi:demo/rule/admin.escape";
+  const ALL = "youi:demo/rule/popup.escape";
+  const run = (rule: string) => ({ rule, state: "incomplete" as const, reason: "behaviour rules are checked by a probe run" });
+  const scoped: ScanReport = {
+    ...report,
+    violations: [],
+    lookalikes: [],
+    unknowns: [],
+    usages: [
+      site({ file: "src/admin/page.tsx", routes: ["/admin"] }),
+      site({ file: "src/checkout/page.tsx", routes: ["/checkout"] }),
+      // A route whose file the map does not attribute: unknown, so it keeps every rule.
+      site({ file: "src/legacy/page.tsx", routes: ["/legacy"] }),
+    ],
+    fileRoutes: {
+      "src/admin/page.tsx": { routes: ["/admin"], routeSource: "route-file" },
+      "src/checkout/page.tsx": { routes: ["/checkout"], routeSource: "route-file" },
+    },
+    checks: [run(ADMIN), run(ALL)],
+  };
+  const rules = new Map([
+    [ADMIN, { files: ["src/admin/**"] }],
+    [ALL, { files: ["**/*.{ts,tsx,css}"] }],
+  ]);
+  const notRunOn = (r: ScanReport, ruleFiles?: Parameters<typeof buildScreens>[2]) => Object.fromEntries(buildScreens(indexUsage([r]), manifest, ruleFiles).screens.map((s) => [s.route, s.notRun.map((n) => n.rule).sort()]));
+
+  test("a rule scoped to src/admin/** taints /admin but not /checkout; an all-files rule reaches every screen; a route with unknown attribution keeps both", () => {
+    expect(notRunOn(scoped, rules)).toEqual({ "/admin": [ADMIN, ALL], "/checkout": [ALL], "/legacy": [ADMIN, ALL] });
+    const checkout = buildScreens(indexUsage([scoped]), manifest, rules).screens.find((s) => s.route === "/checkout")!;
+    expect(checkout.issues).toMatchObject({ notChecked: 1, behaviourNotChecked: 1 });
+  });
+
+  test("when it cannot tell, the rule stays: no rule definitions, no file attribution, or a glob only Node can match", () => {
+    const every = { "/admin": [ADMIN, ALL], "/checkout": [ADMIN, ALL], "/legacy": [ADMIN, ALL] };
+    expect(notRunOn(scoped)).toEqual(every);
+    expect(notRunOn({ ...scoped, fileRoutes: undefined }, rules)).toEqual(every);
+    expect(notRunOn(scoped, new Map([...rules, [ADMIN, { files: ["src/+(admin|ops)/**"] }]]))).toEqual(every);
   });
 });
 

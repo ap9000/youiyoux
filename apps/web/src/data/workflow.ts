@@ -51,6 +51,9 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   return data as T;
 }
 
+/** A call to the local service: reads as they are, writes with this tab's session key. */
+export const workflowCall = call;
+
 /** A proposal as the hub shows it, with the digest a decision on it names back (what the person saw). */
 export type ProposalView = ProposalDoc & { readonly digest: string };
 

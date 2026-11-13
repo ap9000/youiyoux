@@ -7,7 +7,7 @@ import { RuleSpec } from "@youiyoux/core";
 import { loadProject, scanProject } from "@youiyoux/scanner";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { createServer as createMcpServer } from "@youiyoux/mcp";
-import { scannerExecution, createReviewBranch, FileStore, renderRuleYaml, RuleWorkflow, toRuleSpec, type Actor, type DraftContent, type DraftView, type RuleDraftView } from "../src/index.ts";
+import { BEHAVIOUR_PREVIEW, notRunReason, scannerExecution, createReviewBranch, FileStore, renderRuleYaml, RuleWorkflow, toRuleSpec, type Actor, type DraftContent, type DraftView, type RuleDraftView } from "../src/index.ts";
 import { git, sandbox, type Sandbox } from "./helpers.ts";
 
 const PERSON: Actor = { kind: "person", name: "captain" };
@@ -82,7 +82,8 @@ describe("drafts", () => {
     await expect(workflow.preview(PERSON, draft.id)).rejects.toMatchObject({ code: "invalid" });
     const empty = withRule(draft, { ...rule, check: { engine: "youi", id: "native-element", options: { elements: {} } } });
     expect((await workflow.save(PERSON, draft.id, { revision: 2, content: empty })).problems).toEqual([expect.stringContaining("needs options.elements")]);
-    expect(scannerExecution.supportedChecks().map((c) => c.id)).toEqual(["raw-color", "arbitrary-value", "native-element", "prop-values", "lookalike-component", null]);
+    expect(scannerExecution.supportedChecks().map((c) => c.id)).toEqual(["raw-color", "arbitrary-value", "native-element", "prop-values", "lookalike-component", "trigger-state", "dismiss-escape", "focus-into", "focus-return", "focus-trap", "arrow-keys", null]);
+    expect(scannerExecution.supportedChecks().find((c) => c.engine === "behaviour" && c.id === "focus-trap")).toMatchObject({ label: "Behaviour: Tab stays inside a modal dialog", description: expect.stringContaining("not by the code scan"), options: "none" });
   });
 
   test("one execution model: an ast-grep rule that compiles previews exactly as youiyoux check runs it", async () => {
@@ -98,6 +99,67 @@ describe("drafts", () => {
     const draft = await workflow.create(PERSON, { mode: "create" });
     const saved = await workflow.save(PERSON, draft.id, { revision: 1, content: withRule(draft, { id: RAW_COLOR, title: "t", statement: "s", agent: "a", severity: "error" }) });
     expect(saved.problems).toEqual([`id: ${RAW_COLOR} already exists`, "severity: a planned tightening to error starts as a warning"]);
+  });
+});
+
+describe("behaviour rules (no probe run yet)", () => {
+  const ESCAPE = "youi:demo/rule/popup.escape";
+  const escapeYaml = ["schema: youi.rule/v1", `id: ${ESCAPE}`, "title: Esc closes popups", "severity: error", "statement: Esc closes every popup.", "agent: Close popups on Esc.", "check:", "  engine: behaviour", "  id: dismiss-escape", ""].join("\n");
+
+  test("a behaviour draft previews as not counted on code, never as flagging nothing, and can still be approved", async () => {
+    const draft = await workflow.create(PERSON, { mode: "create" });
+    const content = withRule(draft, { id: ESCAPE, title: "Esc closes popups", statement: "Esc closes every popup.", agent: "Close popups on Esc.", check: { engine: "behaviour", id: "dismiss-escape", options: {} } });
+    expect((await workflow.save(PERSON, draft.id, { revision: 1, content })).problems).toEqual([]);
+    const previewed = await previewRule(draft.id);
+    expect(previewed.preview).toMatchObject({ enforced: false, notOnSnapshot: BEHAVIOUR_PREVIEW, flagged: 0, findings: [] });
+    expect(previewed.preview!.limits).toContain(BEHAVIOUR_PREVIEW);
+    expect(previewed.events.at(-1)?.note).toMatch(/^Not counted on .*: Behaviour rules are checked by a probe run/);
+    expect(previewed).toMatchObject({ status: "previewed", canApprove: true });
+  });
+
+  test("approved and handed off, its review branch says it is not counted on code, never 'flags 0 place(s)'", async () => {
+    const draft = await workflow.create(PERSON, { mode: "create" });
+    const content = withRule(draft, { id: ESCAPE, title: "Esc closes popups", statement: "Esc closes every popup.", agent: "Close popups on Esc.", check: { engine: "behaviour", id: "dismiss-escape", options: {} } });
+    await workflow.save(PERSON, draft.id, { revision: 1, content });
+    expect(await approved(draft.id)).toMatchObject({ status: "approved" });
+    const done = await workflow.handoff(PERSON, draft.id);
+    expect(done).toMatchObject({ status: "handed-off", handoff: { files: ["rules/popup.escape.rule.yaml"] } });
+    const message = git(box.design, "log", "-1", "--format=%B", done.handoff!.branch);
+    expect(message).toContain(`Impact on ${(await loadProject(box.project, { designRoot: box.design })).config.id}: not counted on its code. ${BEHAVIOUR_PREVIEW}`);
+    expect(message).not.toMatch(/flags \d+ place/);
+    const published = RuleSpec.parse(parseYaml(git(box.design, "show", `${done.handoff!.branch}:rules/popup.escape.rule.yaml`)));
+    expect(published.check).toEqual({ engine: "behaviour", id: "dismiss-escape", options: {} });
+  });
+
+  test("an unknown behaviour check is refused by name, where a known one is accepted", async () => {
+    const draft = await workflow.create(PERSON, { mode: "create" });
+    const fields = { id: ESCAPE, title: "t", statement: "s", agent: "a" };
+    const valid = withRule(draft, { ...fields, check: { engine: "behaviour", id: "focus-trap", options: {} } });
+    expect((await workflow.save(PERSON, draft.id, { revision: 1, content: valid })).problems).toEqual([]);
+    const unknown = withRule(draft, { ...fields, check: { engine: "behaviour", id: "typeahead", options: {} } as unknown as DraftContent["rule"]["check"] });
+    const problems = (await workflow.save(PERSON, draft.id, { revision: 2, content: unknown })).problems;
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/^check\.id: /);
+    expect(problems[0]).toContain('"focus-trap"');
+    await expect(workflow.preview(PERSON, draft.id)).rejects.toMatchObject({ code: "invalid" });
+  });
+
+  test("a published behaviour rule did not run on the snapshot: the rule list says why, and an edit's preview says the published rule could not run", async () => {
+    await box.commitDesign("rules/popup.escape.rule.yaml", escapeYaml);
+    workflow = open();
+    const { rules } = await workflow.published(PERSON);
+    expect(rules.find((r) => r.rule.id === ESCAPE)).toMatchObject({ flagged: null, notRun: expect.stringContaining("checked by a probe run in the running app"), rule: { execution: { state: "probe" } } });
+    const draft = await workflow.create(PERSON, { mode: "edit", ruleId: ESCAPE });
+    await workflow.save(PERSON, draft.id, { revision: 1, content: withRule(draft, { check: { engine: "youi", id: "raw-color", options: {} } }) });
+    const { preview } = await previewRule(draft.id);
+    expect(preview!.limits).toContainEqual(expect.stringContaining("The published rule could not run on this snapshot (behaviour rules are checked by a probe run"));
+    expect(preview!.baseline).toBe(0);
+  });
+
+  test("notRunReason treats incomplete like unsupported and error", () => {
+    expect(notRunReason({ rule: ESCAPE, state: "incomplete", reason: "why" })).toBe("why");
+    expect(notRunReason({ rule: ESCAPE, state: "incomplete" })).toBe("incomplete");
+    expect(notRunReason({ rule: ESCAPE, state: "ran", findings: 0 })).toBeNull();
   });
 });
 

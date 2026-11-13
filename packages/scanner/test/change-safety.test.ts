@@ -3,10 +3,10 @@
  * enforced that never ran, a digest blind to rule bodies, and token plans that read "0 affected".
  */
 import { join } from "node:path";
-import { MigrationSpec, RuleSpec, ScanReport, type ComponentContract } from "@youiyoux/core";
+import { BEHAVIOUR_NOT_RUN, MigrationSpec, RuleSpec, ScanReport, type ComponentContract } from "@youiyoux/core";
 import type { ResolvedToken } from "@youiyoux/tokens";
 import { beforeAll, describe, expect, test } from "vitest";
-import { checkCapabilities, evaluateRule, loadProject, planChange, ruleCapability, ruleRows, scanProject, tokenClosure, type Project, type ScanResult } from "../src/index.ts";
+import { checkCapabilities, evaluateRule, failedChecks, loadProject, planChange, ruleCapability, ruleRows, scanFailures, scanProject, tokenClosure, type Project, type ScanResult } from "../src/index.ts";
 
 const FIXTURE = join(import.meta.dirname, "fixtures/expo-app");
 
@@ -163,6 +163,25 @@ describe("rule execution", () => {
     expect((await scanProject(withRules([empty]))).report.status).toBe("partial");
   });
 
+  test("a behaviour rule is never run by the scan: incomplete with why, never ran with zero findings; the usage map stays complete", async () => {
+    const escape = rule({ check: { engine: "behaviour", id: "dismiss-escape" } });
+    const custom = withRules([escape]);
+    const result = await scanProject(custom);
+    expect(ruleCapability(escape)).toEqual({ state: "probe", by: "behaviour:dismiss-escape" });
+    expect(result.report.checks).toEqual([{ rule: escape.id, state: "incomplete", reason: BEHAVIOUR_NOT_RUN }]);
+    expect(result.report.violations).toEqual([]);
+    expect(failedChecks(result.report.checks)).toHaveLength(1);
+    expect(scanFailures(result.report.checks)).toEqual([]);
+    expect(ScanReport.safeParse(result.report).success).toBe(true);
+    // With the fixture's one broken file fixed, the usage map is complete: a rule the scan never runs does not make it partial.
+    const fixed = await scanProject(custom, { overrides: { "app/broken.tsx": "export const Broken = () => null;\n" } });
+    expect(fixed.report.coverage.failed).toEqual([]);
+    expect(fixed.report.status).toBe("complete");
+    expect(fixed.report.checks[0]).toMatchObject({ state: "incomplete" });
+    expect(ruleRows(custom)[0]).toMatchObject({ enforced: false, execution: "probe", notChecked: expect.stringContaining("a probe run in the running app checks it") });
+    expect(evaluateRule(project, scan, escape)).toMatchObject({ ok: true, execution: { state: "probe" }, findings: null });
+  });
+
   test("off is off: not run, not listed for agents", async () => {
     const off = { ...audit, severity: "off" as const };
     const result = await scanProject(withRules([off]));
@@ -249,5 +268,8 @@ describe("rule editor capability API", () => {
     const capabilities = checkCapabilities();
     expect(capabilities.builtIn.map((c) => c.id).sort()).toEqual(["arbitrary-value", "lookalike-component", "native-element", "prop-values", "raw-color"]);
     expect(capabilities.astGrep.map((c) => c.language)).toEqual(["tsx", "typescript", "css"]);
+    expect(capabilities.behaviour.map((c) => c.id)).toEqual(["trigger-state", "dismiss-escape", "focus-into", "focus-return", "focus-trap", "arrow-keys"]);
+    expect(capabilities.behaviour.find((c) => c.id === "focus-trap")?.patterns).toEqual(["modal-dialog"]);
+    expect(capabilities.notes.join(" ")).toContain("`check.engine: behaviour` rules are checked by a probe run");
   });
 });

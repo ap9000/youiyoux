@@ -12,6 +12,7 @@ import { RequestDoc, RequestRun } from "./requests.ts";
 import { ProposalDoc } from "./proposals.ts";
 import { CiRecord, OrgView } from "./record.ts";
 import { StatusReport, WorkspaceConfig } from "./status.ts";
+import { BehaviourBinding, BehaviourCheckId, BehaviourOptions, BehaviourResult, BehaviourRouteRun } from "./behaviour.ts";
 import { TokenDocument } from "./tokens.ts";
 
 const SemVer = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/, "expected semver x.y.z");
@@ -214,7 +215,15 @@ export const ComponentContract = z.object({
    * each as `--<prefix>-<component>-<state>-<role>`, which the owned implementation reads.
    */
   states: z.partialRecord(z.enum(COMPONENT_STATES), z.record(SlotName, ElementId)).optional(),
-  a11y: z.object({ role: z.string().optional(), minTouchTarget: z.number().optional(), notes: z.array(z.string()).default([]) }).default({ notes: [] }),
+  a11y: z
+    .object({
+      role: z.string().optional(),
+      minTouchTarget: z.number().optional(),
+      notes: z.array(z.string()).default([]),
+      /** The popup pattern this component implements and where its parts are, for behaviour probes. */
+      behaviour: BehaviourBinding.optional(),
+    })
+    .default({ notes: [] }),
   rules: z.array(ElementId).default([]),
   guidance: z.object({ do: z.array(z.string()).default([]), dont: z.array(z.string()).default([]) }).default({ do: [], dont: [] }),
   examples: z.array(z.object({ title: z.string(), code: z.string() })).max(3).default([]),
@@ -232,6 +241,11 @@ export const RuleCheck = z.discriminatedUnion("engine", [
   z.object({ engine: z.literal("youi"), id: z.enum(["raw-color", "native-element", "lookalike-component", "arbitrary-value", "prop-values"]), options: z.record(z.string(), z.unknown()).default({}) }),
   /** A plain ast-grep rule body, emitted as-is to the project's youi-rules/ directory. */
   z.object({ engine: z.literal("ast-grep"), language: z.enum(["tsx", "typescript", "css"]), rule: z.record(z.string(), z.unknown()) }),
+  /**
+   * How a popup behaves (Esc closes it, focus returns, arrow keys move): checked by a probe run in
+   * the running app (`youiyoux behave`), never by the code scan. One check from a closed list.
+   */
+  z.object({ engine: z.literal("behaviour"), id: BehaviourCheckId, options: BehaviourOptions.default({}) }),
   /** Prose only: shown to people and agents, never claimed as enforced. */
   z.object({ engine: z.literal("advisory") }),
 ]);
@@ -357,8 +371,10 @@ export const RuleRun = z.object({
   /**
    * ran: checked every file its globs match. off / advisory: not checked, by design.
    * unsupported / error: it should have been checked but was not, so the scan is partial.
+   * incomplete: a behaviour rule without fresh probe results for every route it covers; the code
+   * scan never runs it, so its result is unknown (never clean), though the scan itself is complete.
    */
-  state: z.enum(["ran", "off", "advisory", "unsupported", "error"]),
+  state: z.enum(["ran", "off", "advisory", "unsupported", "error", "incomplete"]),
   reason: z.string().optional(),
   findings: z.number().int().optional(),
 });
@@ -711,6 +727,8 @@ export const PUBLISHED_SCHEMAS = {
   "youi.status.schema.json": StatusReport,
   "youi.record.schema.json": CiRecord,
   "youi.org.schema.json": OrgView,
+  "youi.behaviour-result.schema.json": BehaviourResult,
+  "youi.behaviour-route.schema.json": BehaviourRouteRun,
 } as const;
 
 /** Project config with every path normalized, so comparisons with scanned paths are exact. Loaders call this. */

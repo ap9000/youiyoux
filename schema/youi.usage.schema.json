@@ -432,7 +432,8 @@
               "off",
               "advisory",
               "unsupported",
-              "error"
+              "error",
+              "incomplete"
             ]
           },
           "reason": {

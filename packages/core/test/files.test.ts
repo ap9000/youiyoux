@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, matchesGlob } from "node:path";
 import { afterAll, describe, expect, test } from "vitest";
 import { globRegExp, matchesAny, walkGlob, writeFileAtomic } from "../src/files.ts";
+import { matchesSimply } from "../src/glob.ts";
 
 const PATTERNS = ["**/*.{tsx,jsx,ts,js,mjs,astro,css}", "**/node_modules/**", "**/.git/**", "**/*.d.ts", "**/*.test.*", "package.json", "**/package.json", "components/ui/**", "**/*.config.*", "apps/*", "**/build/**", "src/**/*.tsx", "a/[bc].ts", "a/?.ts"];
 const PATHS = ["a.tsx", "src/a.tsx", "src/x/y.css", "node_modules", "node_modules/", "node_modules/a/b.js", "x/node_modules/y.ts", ".git/HEAD", "a/b.d.ts", "a.test.tsx", "package.json", "apps/web/package.json", "components/ui/", "components/ui/button.tsx", "apps/web", "tailwind.config.ts", "src/build/a.js", ".hidden/a.tsx", "src/.hidden.tsx", "a/b.ts", "a/d.ts"];
@@ -20,6 +21,18 @@ test("matchesAny answers as path.matchesGlob does, plain paths and simple globs 
   const patterns = [...PATTERNS, "**/dist/**", "**/.youi/**", "src/{a,b}/*.ts", "apps/web/app/(ee)/page.tsx", "app/(dashboard)/**", "app/@(a|b)/x.ts", "!src/**", "a/**/b.ts", "a\\*.ts"];
   const paths = [...PATHS, "dist/x.js", "a/dist/b/c.js", ".youi/x", "src/a/x.ts", "src/c/x.ts", "apps/web/app/(ee)/page.tsx", "app/(dashboard)/x/page.tsx", "app/a/x.ts", "a/x/y/b.ts", "a/b.ts", "a*.ts"];
   for (const pattern of patterns) for (const path of paths) expect([pattern, path, matchesAny(path, [pattern])]).toEqual([pattern, path, path === pattern || matchesGlob(path, pattern)]);
+});
+
+test("matchesSimply (the hub's matcher) agrees with path.matchesGlob, and says it cannot tell rather than no for globs only Node matches", () => {
+  const patterns = [...PATTERNS, "src/{a,b}/*.ts", "a/**/b.ts", "apps/web/app/(ee)/page.tsx"];
+  const paths = [...PATHS, "src/a/x.ts", "a/x/y/b.ts", "apps/web/app/(ee)/page.tsx"];
+  for (const pattern of patterns) for (const path of paths) {
+    const answer = matchesSimply(path, [pattern]);
+    if (answer !== null) expect([pattern, path, answer]).toEqual([pattern, path, path === pattern || matchesGlob(path, pattern)]);
+  }
+  expect(matchesSimply("src/admin/x.tsx", ["app/@(a|b)/x.ts"])).toBeNull();
+  expect(matchesSimply("src/admin/x.tsx", ["app/@(a|b)/x.ts", "src/admin/**"])).toBe(true);
+  expect(matchesSimply("src/shop/x.tsx", ["src/admin/**"])).toBe(false);
 });
 
 const dir = mkdtempSync(join(tmpdir(), "youi-files-"));

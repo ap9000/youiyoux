@@ -21,7 +21,7 @@ import { PaneHeader, PaneSkeleton, ResourceState, SplitView } from "../../ui/Pan
 import { Facts, Section } from "../../ui/Section.tsx";
 import { DraftEditor, DraftStatusBadge } from "../changes/DraftEditor.tsx";
 import { ServiceDown, StartEditor } from "../changes/ServiceDown.tsx";
-import { executionLabel } from "@youiyoux/core/rules";
+import { BEHAVIOUR_NOT_RUN, executionLabel } from "@youiyoux/core/rules";
 import { notRunIn } from "../element/RuleDetail.tsx";
 import { checkLabel, executionOf } from "../element/RulesTab.tsx";
 
@@ -170,12 +170,26 @@ function RuleListItem({ row, active }: { row: RuleRow; active: boolean }) {
         <p className="mt-1 flex items-center gap-1.5 text-small text-muted">
           <SeverityBadge severity={row.rule.severity} />
           {row.rule.rollout && <span>→ error{row.rule.rollout.after ? ` ${row.rule.rollout.after}` : " later"}</span>}
-          <span className="truncate">{row.rule.check.engine === "advisory" ? "advisory" : row.rule.check.engine === "youi" ? row.rule.check.id : "custom check"}</span>
-          <span className="ml-auto tabular">{row.flagged === null ? "" : row.flagged === 0 ? "clean" : `${row.flagged} ${row.flagged === 1 ? "place" : "places"}`}</span>
+          <span className="truncate">{checkName(row.rule.check)}</span>
+          <span className="ml-auto tabular">{countText(row)}</span>
         </p>
       </Link>
     </li>
   );
+}
+
+function checkName(check: RuleSpec["check"]): string {
+  if (check.engine === "advisory") return "advisory";
+  if (check.engine === "youi") return check.id;
+  if (check.engine === "behaviour") return `behaviour: ${check.id}`;
+  return "custom check";
+}
+
+/** The list's count: "not run" when the rule did not run, never "clean" for a result nobody has. */
+export function countText(row: Pick<RuleRow, "flagged" | "notRun">): string {
+  if (row.notRun && !row.flagged) return "not run";
+  if (row.flagged === null) return "";
+  return row.flagged === 0 ? "clean" : `${row.flagged} ${row.flagged === 1 ? "place" : "places"}`;
 }
 
 function levelText(rule: RuleSpec): string {
@@ -186,7 +200,7 @@ function levelText(rule: RuleSpec): string {
 
 function RulePage({ row, live, onEdit }: { row: RuleRow; live: Live | null; onEdit: () => void }) {
   const { rule } = row;
-  const label = live?.info.checks.find((c) => (rule.check.engine === "youi" ? c.id === rule.check.id : c.engine === rule.check.engine))?.label;
+  const label = live?.info.checks.find((c) => c.engine === rule.check.engine && (!("id" in rule.check) || c.id === rule.check.id))?.label;
   return (
     <article className="min-h-0 flex-1 overflow-y-auto animate-enter">
       <header className="border-b border-line px-6 pt-5 pb-5">
@@ -267,8 +281,10 @@ function RulePage({ row, live, onEdit }: { row: RuleRow; live: Live | null; onEd
   );
 }
 
-function Places({ row }: { row: RuleRow }) {
+export function Places({ row }: { row: Pick<RuleRow, "rule" | "flagged" | "notRun" | "places"> }) {
   const execution = executionOf(row.rule);
+  // A behaviour rule never runs on code: until a probe run has, where it is broken is unknown.
+  if (execution.state === "probe") return <p className="text-body text-muted">Not run yet: {BEHAVIOUR_NOT_RUN}, so where it is broken is unknown.</p>;
   // "Nothing breaks this rule" only when it actually ran: a rule nothing checks says so instead.
   if (execution.state !== "enforced") return <p className="text-body text-muted">{executionLabel(execution)}.</p>;
   if (row.notRun) return <p className="text-body text-muted">It did not run on the latest scan ({row.notRun}), so where it is broken is unknown.</p>;
