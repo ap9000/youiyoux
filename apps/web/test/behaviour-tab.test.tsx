@@ -209,6 +209,47 @@ describe("a component's popups", () => {
   });
 });
 
+describe("an open tab", () => {
+  const states = (container: HTMLElement) => [...container.querySelectorAll<HTMLElement>("[data-behaviour-row]")].map((r) => r.dataset.state);
+  const views = () => vi.mocked(fetch).mock.calls.filter(([input]) => new URL(String(input), "http://localhost/").pathname === "/api/behaviour").length;
+  const nowStale = () => view({ results: RESULTS.map((r) => ({ ...r, stale: ["the code changed"], counts: false })) });
+
+  test("reads its results again every 30 s while visible, so a pass that went stale shows as stale", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { container } = render(<BehaviourPanel route="/flows" component={{ name: "UserMenu" }} />);
+    await screen.findByText(/Results from/);
+    expect(states(container)).toContain("passed");
+    answer.view = nowStale();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_100);
+    });
+    await waitFor(() => expect(states(container).every((st) => st === "stale")).toBe(true));
+    expect(screen.queryAllByText("Passed")).toHaveLength(0);
+  });
+
+  test("reads them again when the tab comes back into focus or view; not on a timer while hidden", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const { container } = render(<BehaviourPanel route="/flows" component={{ name: "UserMenu" }} />);
+    await screen.findByText(/Results from/);
+    const before = views();
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "hidden" });
+    try {
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(61_000);
+      });
+      expect(views()).toBe(before);
+    } finally {
+      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => "visible" });
+    }
+    answer.view = nowStale();
+    act(() => void document.dispatchEvent(new Event("visibilitychange")));
+    await waitFor(() => expect(states(container).every((st) => st === "stale")).toBe(true));
+    answer.view = view();
+    act(() => void window.dispatchEvent(new Event("focus")));
+    await waitFor(() => expect(states(container)).toContain("passed"));
+  });
+});
+
 describe("a screen's Behaviour section", () => {
   test("Run on this screen sends no target and shows every popup", async () => {
     const { container } = render(<BehaviourPanel route="/flows" />);

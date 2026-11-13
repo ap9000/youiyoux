@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { BehaviourCheckId, BehaviourPattern, BehaviourResult, BehaviourRouteRun, RequestDoc } from "@youiyoux/core";
+import { useLiveState } from "./store.ts";
 import { asRequestError, workflowCall, type WorkflowRequestError } from "./workflow.ts";
 
 /** Which of a route's popups a run tests: one component's (null: plain markup), narrowed when more is given. */
@@ -73,6 +74,8 @@ export const behaviourApi = {
 
 /** How often a running probe is asked how it goes. */
 export const POLL_MS = 1000;
+/** How often results shown in a visible tab are read again: code changes make them stale meanwhile. */
+export const REVALIDATE_MS = 30_000;
 
 export type BehaviourState = { status: "loading" } | { status: "ready"; view: BehaviourView } | { status: "error"; error: WorkflowRequestError };
 
@@ -116,6 +119,30 @@ export function useBehaviour(route: string): {
       generation.current++;
     };
   }, [load]);
+  // Results go stale while a tab sits open (the code changes, another process runs a probe): read
+  // them again when the tab comes back into view or focus, every REVALIDATE_MS while it is visible,
+  // and when the hub's snapshot changes (youiyoux ui --watch).
+  useEffect(() => {
+    const visible = (): boolean => document.visibilityState !== "hidden";
+    const again = (): void => {
+      if (visible()) load();
+    };
+    window.addEventListener("focus", again);
+    document.addEventListener("visibilitychange", again);
+    const timer = setInterval(again, REVALIDATE_MS);
+    return () => {
+      window.removeEventListener("focus", again);
+      document.removeEventListener("visibilitychange", again);
+      clearInterval(timer);
+    };
+  }, [load]);
+  const snapshot = useLiveState().manifest;
+  const seen = useRef(snapshot);
+  useEffect(() => {
+    if (seen.current === snapshot) return;
+    seen.current = snapshot;
+    load();
+  }, [snapshot, load]);
   // While a run is going, ask how it goes; when it ends, read the results again.
   const going = running ? `${running.route} ${running.startedAt}` : null;
   useEffect(() => {
