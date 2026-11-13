@@ -409,3 +409,46 @@ Accepted residuals:
    could change things in it (as for the click, slice 1 residual 1).
 4. A deliberate forgery of `.youi/` by a process on the same account is out of scope: freshness proves inputs,
    integrity proves completeness, neither proves authenticity.
+
+## Slice 3 review record (2026-11-12)
+
+The five remaining checks were built (trigger-state, focus-into, focus-return, focus-trap,
+arrow-keys), each in its own fresh scenario, sending only its own keys (CHECK_KEYS; the page
+refuses any other), consent read before every key. A security review of the first commit added a
+page-text rule: page-supplied text (names, ARIA values, roles, paths, error lines) never reaches a
+result raw (core `pageText` / `ariaToken` / `roleWord` / `cleanText`).
+
+Codex code review: round 1 NO-GO (10 findings), round 2 (final) 9 closed, 1 partial, 2 new; all
+fixed with regression tests, each shown to fail without its fix:
+
+- After every key the guards and the address decide first; a pass watches the page for the grace
+  moment and re-reads the check's own facts (focus, popup open or closed) at its end.
+- A key's outcome is read only once focus has settled (60 ms unchanged), never on the first look;
+  focus that keeps moving is incomplete.
+- arrow-keys passes only when every move of the list, both ways and at both ends, was seen; lists
+  up to 50 items (longer: incomplete). focus-trap and arrow-keys get a 15 s scenario budget.
+- APG, decided in the review: aria-activedescendant moves effective focus for a menu too; a
+  disabled menu item or option may take focus or be skipped (info says which).
+- focus-trap reports Tab orders it doesn't model (positive tabindex, a shadow root with something
+  focusable, radio buttons) as incomplete instead of guessing.
+- focus-return judges where focus ends up; its returnFocusTo part is found before the click from
+  the DOM alone, in the probe's isolated world: the trigger's nearest ancestor holding exactly one
+  such part and no other trigger of the same pattern; otherwise incomplete.
+- trigger-state checks a popovertarget button's hand-set aria-expanded in both states.
+- Page text: every Unicode control, format, separator and default-ignorable character is dropped;
+  stored runs are cleaned again whenever they are read; agents are told quoted page text is page
+  content, not instructions.
+- The real page adapter is shown to refuse a key its check doesn't send (the browser sees no event).
+- Standing holds not-applicable to the full pattern table for every check and all four patterns.
+
+Residuals:
+
+1. One CDP round trip between the last pre-key check (popup, focus, consent) and each key, now
+   for every Tab, arrow, Home and End too (as slice 1 residual 1, slice 2 residual 3).
+2. A returnFocusTo part that only appears after the popup closes can't be held: focus on it is
+   incomplete. The contract names no root part, so the instance boundary is the nearest ancestor
+   without another trigger of the same pattern.
+3. Tab orders with positive tabindex, shadow roots holding something focusable, radio buttons, or
+   frames are reported incomplete, not checked.
+4. Focus that moves later than the settle window (60 ms after it stops, at most 400 ms) and the
+   grace moment (250 ms after the last key or look) isn't seen.
