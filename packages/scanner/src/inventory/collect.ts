@@ -165,24 +165,46 @@ function recipeDynamic(props: Readonly<Record<string, PropValue>>): { dynamic?: 
   return dynamic.length ? { dynamic } : {};
 }
 
+/** Named character references common in JSX text; any other stays as written. */
+const ENTITIES: Readonly<Record<string, string>> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: "\u00a0", rsquo: "\u2019", lsquo: "\u2018", rdquo: "\u201d", ldquo: "\u201c", hellip: "\u2026", mdash: "\u2014", ndash: "\u2013", middot: "\u00b7", times: "\u00d7" };
+
+/** `&amp;` → `&`, `&#8217;` / `&#x2019;` → `’`, as JSX renders them. */
+function decodeReference(text: string): string {
+  const numeric = /^&#(x[0-9a-f]+|\d+);$/i.exec(text);
+  if (numeric) {
+    const code = numeric[1]![0]!.toLowerCase() === "x" ? parseInt(numeric[1]!.slice(1), 16) : parseInt(numeric[1]!, 10);
+    return code <= 0x10ffff ? String.fromCodePoint(code) : text;
+  }
+  return ENTITIES[text.slice(1, -1)] ?? text;
+}
+
 /**
  * The text a JSX element wraps (`<Button><Plus /> New run</Button>` → `New run`), and its only
  * child element's (`<Button asChild><a>Settings</a></Button>`); a container's children are not a label.
  */
-function jsxLabel(opening: SgNode, restore: (text: string) => string): string | null {
+function jsxLabel(opening: SgNode): string | null {
   const element = opening.parent();
   if (opening.kind() !== "jsx_opening_element" || element?.kind() !== "jsx_element") return null;
   const children = element.children();
   const nestedOk = children.filter((c) => c.kind() === "jsx_element" || c.kind() === "jsx_self_closing_element").length === 1;
   const parts: string[] = [];
+  let prose = false;
   for (const child of children) {
-    if (child.kind() === "jsx_text") parts.push(restore(child.text()));
-    else if (child.kind() === "jsx_expression") {
+    // Text and the character references inside it are one run: `app&rsquo;s` → `app’s`.
+    const text = child.kind() === "jsx_text" ? child.text() : child.kind() === "html_character_reference" ? decodeReference(child.text()) : null;
+    if (text !== null) {
+      if (prose) parts[parts.length - 1] += text;
+      else parts.push(text);
+      prose = true;
+      continue;
+    }
+    prose = false;
+    if (child.kind() === "jsx_expression") {
       const inner = child.children().find((c) => c.isNamed() && c.kind() !== "comment");
       if (inner?.kind() === "string") parts.push(unquote(inner.text()));
     } else if (child.kind() === "jsx_element" && nestedOk) {
       const nested = child.children().find((c) => c.kind() === "jsx_opening_element");
-      parts.push((nested && jsxLabel(nested, restore)) ?? "");
+      parts.push((nested && jsxLabel(nested)) ?? "");
     }
   }
   const text = parts.join(" ").replace(/\s+/g, " ").trim();
@@ -814,7 +836,7 @@ export class ProjectPass {
         if (this.definitionRoots) this.rootLook(module.file, at, owner);
         continue;
       }
-      const label = jsxLabel(element.node, module.restore);
+      const label = jsxLabel(element.node);
       if (label === null && element.node.kind() === "jsx_opening_element" && element.node.parent()?.children().some((c) => c.kind() === "jsx_expression" && c.children().some((n) => n.isNamed() && n.kind() !== "comment"))) {
         props.children = { dynamic: "expression children" };
       }

@@ -171,7 +171,7 @@ export function ComponentPage({ model, entry, tab }: { model: Model; entry: Comp
             Usage
             {issues > 0 && <span aria-label={`${issues} to look at`} className="size-1.5 rounded-full bg-warning" />}
           </TabsTrigger>
-          <TabsTrigger value="contract">Contract & tokens</TabsTrigger>
+          <TabsTrigger value="contract">Contract &amp; tokens</TabsTrigger>
           <TabsTrigger value="rules" count={contract.rules.length}>
             Rules
           </TabsTrigger>

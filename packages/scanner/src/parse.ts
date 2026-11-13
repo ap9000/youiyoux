@@ -45,12 +45,6 @@ export interface ModuleInfo {
   readonly declarations: ReadonlySet<string>;
   readonly jsx: readonly JsxElement[];
   readonly parseErrors: number;
-  /**
-   * Text read from `root` back to the source's own text. Identity unless the parse needed a
-   * stand-in (see `parseSource`); code that writes `root.commitEdits(…)` to disk or shows node text
-   * goes through it.
-   */
-  readonly restore: (text: string) => string;
 }
 
 export function langOf(file: string): ModuleInfo["lang"] | null {
@@ -76,7 +70,7 @@ function isTypeOnly(statement: SgNode): boolean {
   return /^import\s+type\b/.test(statement.text());
 }
 
-function importsOf(root: SgNode, restore: (text: string) => string): ImportBinding[] {
+function importsOf(root: SgNode): ImportBinding[] {
   const bindings: ImportBinding[] = [];
   for (const statement of root.findAll({ rule: { kind: "import_statement" } })) {
     const source = statement.field("source");
@@ -86,17 +80,17 @@ function importsOf(root: SgNode, restore: (text: string) => string): ImportBindi
     const clause = statement.find({ rule: { kind: "import_clause" } });
     if (!clause) continue;
     for (const child of clause.children()) {
-      if (child.kind() === "identifier") bindings.push({ local: restore(child.text()), imported: "default", specifier, typeOnly });
+      if (child.kind() === "identifier") bindings.push({ local: child.text(), imported: "default", specifier, typeOnly });
       if (child.kind() === "namespace_import") {
         const name = child.find({ rule: { kind: "identifier" } });
-        if (name) bindings.push({ local: restore(name.text()), imported: "*", specifier, typeOnly });
+        if (name) bindings.push({ local: name.text(), imported: "*", specifier, typeOnly });
       }
       if (child.kind() === "named_imports") {
         for (const spec of child.findAll({ rule: { kind: "import_specifier" } })) {
           const name = spec.field("name")?.text();
           if (!name) continue;
           const alias = spec.field("alias")?.text();
-          bindings.push({ local: restore(unquote(alias ?? name)), imported: restore(unquote(name)), specifier, typeOnly: typeOnly || /^type\s/.test(spec.text()) });
+          bindings.push({ local: unquote(alias ?? name), imported: unquote(name), specifier, typeOnly: typeOnly || /^type\s/.test(spec.text()) });
         }
       }
     }
@@ -144,11 +138,11 @@ function cssSpecifiersOf(source: string): string[] {
   return [...specifiers];
 }
 
-function declaredNames(node: SgNode, restore: (text: string) => string): string[] {
+function declaredNames(node: SgNode): string[] {
   const kind = node.kind();
   if (["function_declaration", "class_declaration", "generator_function_declaration", "type_alias_declaration", "interface_declaration", "enum_declaration"].includes(String(kind))) {
     const name = node.field("name")?.text();
-    return name ? [restore(name)] : [];
+    return name ? [name] : [];
   }
   if (kind === "lexical_declaration" || kind === "variable_declaration") {
     return node
@@ -156,12 +150,12 @@ function declaredNames(node: SgNode, restore: (text: string) => string): string[
       .filter((d) => d.parent()?.id() === node.id())
       .map((d) => d.field("name"))
       .filter((n): n is SgNode => n !== null && n.kind() === "identifier")
-      .map((n) => restore(n.text()));
+      .map((n) => n.text());
   }
   return [];
 }
 
-function exportsOf(root: SgNode, restore: (text: string) => string): { exports: ExportEntry[]; starExports: string[] } {
+function exportsOf(root: SgNode): { exports: ExportEntry[]; starExports: string[] } {
   const exports: ExportEntry[] = [];
   const starExports: string[] = [];
   for (const statement of root.children().filter((c) => c.kind() === "export_statement")) {
@@ -170,64 +164,76 @@ function exportsOf(root: SgNode, restore: (text: string) => string): { exports: 
     if (/^export\s+default\b/.test(statement.text())) {
       // `export default function X` exports X as "default"; the name stays local to the module.
       const value = statement.field("value") ?? declaration;
-      const named = value ? declaredNames(value, restore)[0] : undefined;
-      exports.push({ kind: "local", name: "default", local: value?.kind() === "identifier" ? restore(value.text()) : named ?? "default" });
+      const named = value ? declaredNames(value)[0] : undefined;
+      exports.push({ kind: "local", name: "default", local: value?.kind() === "identifier" ? value.text() : named ?? "default" });
       continue;
     }
     if (declaration) {
-      for (const name of declaredNames(declaration, restore)) exports.push({ kind: "local", name, local: name });
+      for (const name of declaredNames(declaration)) exports.push({ kind: "local", name, local: name });
       continue;
     }
     const clause = statement.find({ rule: { kind: "export_clause" } });
     if (!clause) {
       const namespace = statement.find({ rule: { kind: "namespace_export" } });
       const name = namespace?.children().find((c) => c.isNamed());
-      if (source && name) exports.push({ kind: "reexport", name: restore(unquote(name.text())), imported: "*", specifier: unquote(source.text()) });
+      if (source && name) exports.push({ kind: "reexport", name: unquote(name.text()), imported: "*", specifier: unquote(source.text()) });
       if (source && /^export\s+(?:type\s+)?\*\s+from/.test(statement.text())) starExports.push(unquote(source.text()));
       continue;
     }
     for (const spec of clause.findAll({ rule: { kind: "export_specifier" } })) {
-      const found = spec.field("name")?.text();
-      if (!found) continue;
-      const name = restore(found);
-      const alias = restore(spec.field("alias")?.text() ?? found);
+      const name = spec.field("name")?.text();
+      if (!name) continue;
+      const alias = spec.field("alias")?.text() ?? name;
       exports.push(source ? { kind: "reexport", name: unquote(alias), imported: unquote(name), specifier: unquote(source.text()) } : { kind: "local", name: unquote(alias), local: unquote(name) });
     }
   }
   return { exports, starExports };
 }
 
-function topLevelDeclarations(root: SgNode, restore: (text: string) => string): Set<string> {
+function topLevelDeclarations(root: SgNode): Set<string> {
   const names = new Set<string>();
   for (const child of root.children()) {
     const target = child.kind() === "export_statement" ? child.field("declaration") : child;
-    if (target) for (const name of declaredNames(target, restore)) names.add(name);
+    if (target) for (const name of declaredNames(target)) names.add(name);
   }
   return names;
 }
 
-function jsxOf(root: SgNode, restore: (text: string) => string): JsxElement[] {
+function jsxOf(root: SgNode): JsxElement[] {
   return root.findAll({ rule: { any: [{ kind: "jsx_opening_element" }, { kind: "jsx_self_closing_element" }] } }).flatMap((node) => {
     const name = node.field("name");
     if (!name) return [];
     const start = node.range().start;
-    return [{ node, tag: restore(name.text()), line: start.line + 1, column: start.column + 1 }];
+    return [{ node, tag: name.text(), line: start.line + 1, column: start.column + 1 }];
   });
 }
 
-const errorsOf = (root: SgRoot): number => root.root().findAll({ rule: { kind: "ERROR" } }).length;
-
-/** A real `using` declaration: `using x =` / `await using x =`, the binding on the same line. */
-const USING_DECLARATION = /^[ \t]+(?!(?:in|of|instanceof|as|satisfies)\b)[\p{ID_Start}$_\\]/u;
-
-/** Private-use characters absent from `source`, so a stand-in made of them can be mapped back exactly. */
-function unusedPrivateChars(source: string, count: number): string[] | null {
-  const chars: string[] = [];
-  for (let code = 0xe000; code <= 0xf8ff && chars.length < count; code++) {
-    const char = String.fromCharCode(code);
-    if (!source.includes(char)) chars.push(char);
+export async function parseModule(file: string, source: string): Promise<ModuleInfo | null> {
+  const lang = langOf(file);
+  if (!lang) return null;
+  const root = await parseAsync(LANG[lang], source);
+  const top = root.root();
+  if (lang === "css") {
+    // Stylesheets are read by youi's custom-property reader (tokens/css.ts); tree-sitter-css
+    // rejects Tailwind at-rules (@theme, @custom-variant), so its errors say nothing here.
+    return { file, lang, source, root, imports: [], runtimeSpecifiers: [], dynamicSpecifiers: cssSpecifiersOf(source), exports: [], starExports: [], declarations: new Set(), jsx: [], parseErrors: 0 };
   }
-  return chars.length === count ? chars : null;
+  const parseErrors = top.findAll({ rule: { kind: "ERROR" } }).length;
+  const { exports, starExports } = exportsOf(top);
+  return {
+    file,
+    lang,
+    source,
+    root,
+    imports: importsOf(top),
+    runtimeSpecifiers: runtimeSpecifiersOf(top),
+    dynamicSpecifiers: dynamicSpecifiersOf(top),
+    exports,
+    starExports,
+    declarations: topLevelDeclarations(top),
+    jsx: lang === "tsx" ? jsxOf(top) : [],
+    parseErrors,
+  };
 }
 
 /** Inside JSX children: an ERROR (or a run of them) whose first non-ERROR ancestor is a JSX element. */
@@ -238,84 +244,35 @@ function inJsxError(node: SgNode): boolean {
   return parent?.kind() === "jsx_element";
 }
 
-/**
- * One round of stand-ins on `text` from its tree: each bare `&` the grammar choked on in JSX text,
- * and each `using` keyword token that is not a `using` declaration (an ordinary name). Same length,
- * so every line, column and index is unchanged.
- */
-function withStandIns(top: SgNode, text: string, stand: { amp: string; using: string }): string {
-  const spans: Array<{ start: number; end: number; with: string }> = [];
-  for (const node of top.findAll({ rule: { regex: "^(?:&|using)$" } })) {
-    const { start, end } = node.range();
-    if (node.kind() === "&" && inJsxError(node)) spans.push({ start: start.index, end: end.index, with: stand.amp });
-    if (node.kind() === "using" && !USING_DECLARATION.test(text.slice(end.index))) spans.push({ start: start.index, end: end.index, with: stand.using });
-  }
-  let out = text;
-  for (const span of spans.sort((a, b) => b.start - a.start)) out = out.slice(0, span.start) + span.with + out.slice(span.end);
-  return out;
-}
+/** `using x` or `await using x`: a declaration, its binding on the same line. */
+const USING_DECLARATION = /^[ \t]+(?!(?:in|of|instanceof|as|satisfies)\b)[\p{ID_Start}$_\\]/u;
 
 /**
- * Parse `source`, working around syntax tsc accepts that the bundled tree-sitter grammar rejects:
- * a bare `&` in JSX text (`<Tab>Contract & tokens</Tab>`; the grammar reads only `&name;`), and
- * `using` as an ordinary name (`const [using, setUsing] = useState()`; the grammar takes it for a
- * `using` declaration, and the error can swallow the whole file). Each is swapped for same-length
- * private-use text absent from the source, and the swap is kept only when it leaves fewer errors;
- * `restore` maps text read from the tree back to the source exactly.
+ * Valid TypeScript the bundled tree-sitter grammar cannot read, found in the file's first unread
+ * region, as a Next step with its line: a bare `&` in JSX text, or `using` as an ordinary name
+ * (the grammar takes it for a `using` declaration). Read-only: the file stays partly read.
  */
-async function parseSource(lang: "tsx" | "ts", source: string): Promise<{ root: SgRoot; parseErrors: number; restore: (text: string) => string }> {
-  const root = await parseAsync(LANG[lang], source);
-  let best = { root, parseErrors: errorsOf(root), restore: (text: string) => text };
-  const chars = best.parseErrors > 0 ? unusedPrivateChars(source, 2) : null;
-  if (!chars) return best;
-  const stand = { amp: chars[0]!, using: `${chars[1]}sing` };
-  const restore = (text: string) => text.replaceAll(stand.amp, "&").replaceAll(stand.using, "using");
-  let text = source;
-  // A swap can let the grammar recover enough to expose the next one, so repeat while it helps.
-  for (let round = 0; round < 4 && best.parseErrors > 0; round++) {
-    const next = withStandIns(best.root.root(), text, stand);
-    if (next === text) break;
-    const reparsed = await parseAsync(LANG[lang], next);
-    const errors = errorsOf(reparsed);
-    if (errors >= best.parseErrors) break;
-    text = next;
-    best = { root: reparsed, parseErrors: errors, restore };
+function knownGap(module: ModuleInfo): string | null {
+  const first = module.root.root().find({ rule: { kind: "ERROR" } });
+  if (!first) return null;
+  for (const token of first.findAll({ rule: { regex: "^(?:&|using)$" } }).sort((a, b) => a.range().start.index - b.range().start.index)) {
+    const { start, end } = token.range();
+    const line = start.line + 1;
+    if (token.kind() === "&" && inJsxError(token)) return `line ${line}: the parser youiyoux uses can't read a bare & in JSX text; write &amp; or {"&"} there`;
+    if (token.kind() !== "using") continue;
+    const before = module.source.slice(0, start.index);
+    const after = module.source.slice(end.index);
+    // `await using …` is a declaration, broken or not; never call it a name.
+    if (/\bawait\s*$/.test(before) || USING_DECLARATION.test(after)) continue;
+    return `line ${line}: the parser youiyoux uses can't read \`using\` as a variable name; rename it`;
   }
-  return best;
-}
-
-export async function parseModule(file: string, source: string): Promise<ModuleInfo | null> {
-  const lang = langOf(file);
-  if (!lang) return null;
-  if (lang === "css") {
-    const root = await parseAsync(LANG.css, source);
-    // Stylesheets are read by youi's custom-property reader (tokens/css.ts); tree-sitter-css
-    // rejects Tailwind at-rules (@theme, @custom-variant), so its errors say nothing here.
-    return { file, lang, source, root, imports: [], runtimeSpecifiers: [], dynamicSpecifiers: cssSpecifiersOf(source), exports: [], starExports: [], declarations: new Set(), jsx: [], parseErrors: 0, restore: (text) => text };
-  }
-  const { root, parseErrors, restore } = await parseSource(lang, source);
-  const top = root.root();
-  const { exports, starExports } = exportsOf(top, restore);
-  return {
-    file,
-    lang,
-    source,
-    root,
-    imports: importsOf(top, restore),
-    runtimeSpecifiers: runtimeSpecifiersOf(top),
-    dynamicSpecifiers: dynamicSpecifiersOf(top),
-    exports,
-    starExports,
-    declarations: topLevelDeclarations(top, restore),
-    jsx: lang === "tsx" ? jsxOf(top, restore) : [],
-    parseErrors,
-    restore,
-  };
+  return null;
 }
 
 /**
  * Why a file with parse errors was only partly read: where the parser could not read it, that
- * `lost` (e.g. "UI sites there were not read") is unknown rather than zero, and what to do.
+ * `lost` (e.g. "UI sites there were not read") is unknown rather than zero, and what to do: the
+ * exact rewrite when the syntax is valid TypeScript the parser is known not to read.
  * Null when the file parsed.
  */
 export function parseProblem(module: ModuleInfo, lost: string): string | null {
@@ -332,13 +289,14 @@ export function parseProblem(module: ModuleInfo, lost: string): string | null {
   const span = ([start, end]: [number, number]) => (start === end ? `${start}` : `${start}-${end}`);
   const where =
     covered >= lines * 0.9 ? "most of the file" : `line${spans.length > 1 || spans[0]![0] !== spans[0]![1] ? "s" : ""} ${spans.slice(0, 3).map(span).join(", ")}${spans.length > 3 ? ` and ${spans.length - 3} more places` : ""}`;
-  return `the parser could not read ${where}, so ${lost}. Next: fix the syntax there; if TypeScript accepts it, youiyoux's parser does not support that syntax yet: report it, and write it another way meanwhile`;
+  const next = knownGap(module) ?? "fix the syntax there; if TypeScript accepts it, youiyoux's parser does not support that syntax yet: report it, and write it another way meanwhile";
+  return `the parser could not read ${where}, so ${lost}. Next: ${next}`;
 }
 
-/** Count of tree-sitter ERROR nodes, after the same workarounds as parseModule: the "no parse errors" invariant. */
+/** Count of tree-sitter ERROR nodes: the "no parse errors" invariant. */
 export async function countParseErrors(file: string, source: string): Promise<number> {
   const lang = langOf(file);
   if (!lang) return 0;
-  if (lang === "css") return errorsOf(await parseAsync(LANG.css, source));
-  return (await parseSource(lang, source)).parseErrors;
+  const root = await parseAsync(LANG[lang], source);
+  return root.root().findAll({ rule: { kind: "ERROR" } }).length;
 }

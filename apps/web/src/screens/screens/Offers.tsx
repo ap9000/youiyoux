@@ -62,7 +62,7 @@ interface Props {
 
 export function OfferPanel({ proposal, live, contract, onChange, onRequest, onDone }: Props) {
   const [previewing, setPreviewing] = useState<string | null>(null);
-  const [using, setUsing] = useState<string | null>(null);
+  const [choosing, setChoosing] = useState<string | null>(null);
   const [written, setWritten] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const [error, setError] = useState<WorkflowRequestError | null>(null);
@@ -141,19 +141,19 @@ export function OfferPanel({ proposal, live, contract, onChange, onRequest, onDo
               </p>
               <p className="text-small text-ink-2">{option.why}</p>
               <p className="font-mono text-mono-sm break-words text-muted">{changesOf(option)}</p>
-              {!decided && using !== option.id && (
+              {!decided && choosing !== option.id && (
                 <div className="flex flex-wrap justify-end gap-2">
                   {live && (
                     <Button size="sm" variant="ghost" onClick={() => preview(option)} aria-pressed={previewing === option.id}>
                       <Eye /> Preview
                     </Button>
                   )}
-                  <Button size="sm" variant="outline" onClick={() => (setUsing(option.id), live && preview(option))}>
+                  <Button size="sm" variant="outline" onClick={() => (setChoosing(option.id), live && preview(option))}>
                     Use this
                   </Button>
                 </div>
               )}
-              {!decided && using === option.id && (
+              {!decided && choosing === option.id && (
                 <WriteToCode
                   edit={editFor(option)}
                   name={proposal.target.name}
@@ -170,7 +170,7 @@ export function OfferPanel({ proposal, live, contract, onChange, onRequest, onDo
                     void decide({ choice: option.id, request: request.id });
                   }}
                   before={
-                    <Button size="sm" variant="ghost" onClick={() => setUsing(null)}>
+                    <Button size="sm" variant="ghost" onClick={() => setChoosing(null)}>
                       Back
                     </Button>
                   }

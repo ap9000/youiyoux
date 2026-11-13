@@ -66,23 +66,6 @@ describe("runMigration", () => {
     expect((await runMigration(project, migration)).status).toBe("noop");
   });
 
-  test("a file read through the parser's stand-ins (a bare & in JSX, using as a name) is rewritten with its own text", async () => {
-    const root = await copyOfFixture();
-    const file = join(root, "app/settings/index.tsx");
-    const source = (await readFile(file, "utf8"))
-      .replace("export default function Settings({ Comp }: { Comp: () => null }) {\n", "$&  const [using] = [true];\n")
-      .replace('<ui.Button variant="outline">Export</ui.Button>', '{using && <ui.Button variant="outline">Export & share</ui.Button>}');
-    await writeFile(file, source);
-    const result = await runMigration(await load(root), migration);
-    expect(result.gates.map((g) => [g.name, g.ok])).toEqual([["coverage", true], ["parse-errors", true], ["usage-count", true], ["unknowns", true], ["old-api", true], ["idempotent", true]]);
-    const after = result.changes.find((c) => c.file === "app/settings/index.tsx")!.after;
-    expect(after).toContain('{using && <ui.Button tone="secondary">Export & share</ui.Button>}');
-    expect(after).toContain("  const [using] = [true];\n");
-    expect(after).not.toMatch(/[-]/);
-    // Nothing else in the file changed: the same text with only the prop rewrites.
-    expect(after.replace(/ tone=/g, " variant=").replace('variant="secondary"', 'variant="outline"')).toBe(source);
-  });
-
   test("a broken codemod that reports success is caught by the gates and nothing is written", async () => {
     // The scout PoC's real bug: a replacement that drops the closing quote. ast-grep happily
     // applies it; the rewritten files no longer parse and Buttons vanish from the usage map.

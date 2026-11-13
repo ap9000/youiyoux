@@ -2,34 +2,29 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { buildInventory, countParseErrors, parseModule, parseProblem } from "../src/index.ts";
+import { buildInventory, escapeRegExp, parseModule, parseProblem } from "../src/index.ts";
 
 /** A bare `&` in JSX text: tsc accepts it; the bundled tree-sitter grammar reads only `&name;`. */
 const AMPERSAND = `export function Tabs() {
   return (
     <nav>
       <button className="px-3 py-1 rounded-md">Contract & tokens</button>
-      <button className="px-3 py-1 rounded-md">Rules</button>
     </nav>
   );
 }
 `;
 
-/** `using` as an ordinary name: the grammar takes it for a \`using\` declaration and loses the whole file. */
+/** `using` as an ordinary name: the grammar takes it for a \`using\` declaration. */
 const USING = `import { useState } from "react";
 
-export function OfferPanel({ onUse }: { onUse: (id: string) => void }) {
+export function OfferPanel() {
   const [using, setUsing] = useState<string | null>(null);
-  if (using === "x") setUsing(null);
-  const state = { using };
-  return (
-    <div>
-      {using && <span>{using}</span>}
-      <button className="px-3 py-1 rounded-md" onClick={() => onUse(state.using ?? "")}>Use this</button>
-    </div>
-  );
+  return <div>{using && <button className="px-3 py-1 rounded-md" onClick={() => setUsing(null)}>Use this</button>}</div>;
 }
 `;
+
+const GENERIC = "Next: fix the syntax there; if TypeScript accepts it, youiyoux's parser does not support that syntax yet: report it, and write it another way meanwhile";
+const problemOf = async (file: string, source: string) => parseProblem((await parseModule(file, source))!, "UI elements there were not read");
 
 const temps: string[] = [];
 afterEach(async () => {
@@ -48,80 +43,58 @@ async function project(files: Record<string, string>): Promise<string> {
   return dir;
 }
 
-describe("syntax tsc accepts that the grammar does not", () => {
-  test("a bare & in JSX text parses, and its text reads back as written", async () => {
-    const module = (await parseModule("src/Tabs.tsx", AMPERSAND))!;
-    expect(module.parseErrors).toBe(0);
-    expect(module.jsx.map((j) => j.tag)).toEqual(["nav", "button", "button"]);
-    // The tree was built from a stand-in; restore gives back the source exactly.
-    expect(module.restore(module.root.root().text())).toBe(AMPERSAND);
-    expect(await countParseErrors("src/Tabs.tsx", AMPERSAND)).toBe(0);
+describe("valid TypeScript the parser cannot read is named, with its line and the rewrite", () => {
+  test("a bare & in JSX text", async () => {
+    expect(await problemOf("src/Tabs.tsx", AMPERSAND)).toBe(
+      `the parser could not read line 4, so UI elements there were not read. Next: line 4: the parser youiyoux uses can't read a bare & in JSX text; write &amp; or {"&"} there`,
+    );
   });
 
-  test("using as a name parses: the component, its exports and its elements are all read", async () => {
-    const module = (await parseModule("src/Offers.tsx", USING))!;
-    expect(module.parseErrors).toBe(0);
-    expect(module.exports).toEqual([{ kind: "local", name: "OfferPanel", local: "OfferPanel" }]);
-    expect([...module.declarations]).toEqual(["OfferPanel"]);
-    expect(module.jsx.map((j) => j.tag)).toEqual(["div", "span", "button"]);
-    expect(module.restore(module.root.root().text())).toBe(USING);
+  test("using as a variable name", async () => {
+    expect(await problemOf("src/Offers.tsx", USING)).toMatch(/^the parser could not read lines? [\d, -]+, so UI elements there were not read\. Next: line 4: the parser youiyoux uses can't read `using` as a variable name; rename it$/);
   });
 
-  test("a real using declaration is left alone, and names come back as written", async () => {
-    const source = `export function read() {\n  using handle = open();\n  const [using, setUsing] = pair();\n  if (using) setUsing(handle);\n}\nexport const using = 1;\n`;
-    const module = (await parseModule("src/res.ts", source))!;
-    expect(module.parseErrors).toBe(0);
-    expect(module.exports.map((e) => e.name)).toEqual(["read", "using"]);
-    const tree = module.root.root().text();
-    // Only the names were stood in for; the declaration keeps its keyword.
-    expect(tree).toContain("  using handle = open();");
-    expect(tree).not.toContain("const [using,");
-    expect(module.restore(tree)).toBe(source);
+  test("a real using declaration parses and is never called a name", async () => {
+    expect(await problemOf("src/res.ts", "export function read() {\n  using handle = open();\n  return handle;\n}\n")).toBeNull();
+    // Beside an unrelated error, or as a broken `await using`, the Next stays generic.
+    expect(await problemOf("src/res.ts", "export function read() {\n  using handle = open();\n  return 1 +* 2;\n}\n")).toBe(`the parser could not read line 3, so UI elements there were not read. ${GENERIC}`);
+    expect(await problemOf("src/res.ts", "export async function read() {\n  await using = foo();\n}\n")).toMatch(new RegExp(`${escapeRegExp(GENERIC)}$`));
   });
 
-  test("an edit committed on a worked-around file writes the source's own text back", async () => {
-    const module = (await parseModule("src/Offers.tsx", `${USING}export const T = () => <b>Save & close</b>;\n`))!;
-    const button = module.jsx.find((j) => j.tag === "button")!.node;
-    const label = button.field("name")!;
-    const out = module.restore(module.root.root().commitEdits([label.replace("Button")]));
-    expect(out).toContain("<Button className=");
-    expect(out).toContain("const [using, setUsing]");
-    expect(out).toContain("<b>Save & close</b>");
-    expect(out).not.toMatch(/[-]/);
-  });
-
-  test("a real syntax error is still one, with where it is and what to do", async () => {
-    const source = `export const A = () => <span broken={;\n`;
-    const module = (await parseModule("src/broken.tsx", source))!;
-    expect(module.parseErrors).toBeGreaterThan(0);
-    expect(parseProblem(module, "UI elements there were not read")).toMatch(/^the parser could not read (?:line 1|most of the file), so UI elements there were not read\. Next: fix the syntax there; if TypeScript accepts it/);
-  });
-
-  test("the inventory reads both files fully: the component, its looks and the label with its &", async () => {
-    const dir = await project({ "src/Tabs.tsx": AMPERSAND, "src/Offers.tsx": USING });
-    const report = await buildInventory([dir], { cwd: dir });
-    expect(report.projects[0]!.failed).toEqual([]);
-    expect(report.projects[0]!.status).toBe("complete");
-    expect(report.definitions.map((d) => d.name).sort()).toEqual(["OfferPanel", "Tabs"]);
-    const labels = report.looks.filter((l) => l.tag === "button").map((l) => `${l.file}:${l.line} ${l.recipe?.label}`);
-    expect(labels).toEqual(expect.arrayContaining(["src/Tabs.tsx:4 Contract & tokens", "src/Tabs.tsx:5 Rules", "src/Offers.tsx:10 Use this"]));
-  });
-});
-
-describe("a file the parser cannot read is reported, never counted as clean", () => {
-  test("the inventory names the file, the lines it could not read, and the next step", async () => {
-    const broken = `export function Panel() {\n  return <div>\n    <button className="px-3">ok</button>\n  </div>;\n}\nexport const bad = 1 +* 2;\n${"export const B = () => <b>x</b>;\n".repeat(20)}`;
-    const dir = await project({ "src/Panel.tsx": broken, "src/Tabs.tsx": AMPERSAND });
-    const report = await buildInventory([dir], { cwd: dir });
-    expect(report.projects[0]!.status).toBe("partial");
-    expect(report.projects[0]!.failed).toEqual([{ file: "src/Panel.tsx", reason: expect.stringMatching(/^the parser could not read line 6, so UI elements there were not read\. Next: fix the syntax there; /) }]);
+  test("an unrelated syntax error gets the generic Next with its line; && and &amp; are not bare &", async () => {
+    const source = `export function Panel() {\n  return <div>{a && b}</div>;\n}\nexport const bad = 1 +* 2;\nexport const ok = <b>Tom &amp; Jerry</b>;\n`;
+    expect(await problemOf("src/Panel.tsx", source)).toBe(`the parser could not read line 4, so UI elements there were not read. ${GENERIC}`);
   });
 
   test("an error that swallows the file says so instead of naming a line", async () => {
     // An unclosed JSX element: nothing after it can be read.
     const source = `function A() { return <div>\n${"export const B = () => <b>x</b>;\n".repeat(20)}}\n`;
-    const module = (await parseModule("src/swallowed.tsx", source))!;
-    expect(module.parseErrors).toBeGreaterThan(0);
-    expect(parseProblem(module, "UI elements there were not read")).toMatch(/^the parser could not read most of the file, /);
+    expect(await problemOf("src/swallowed.tsx", source)).toMatch(/^the parser could not read most of the file, so UI elements there were not read\. Next: /);
+  });
+});
+
+describe("the inventory", () => {
+  test("keeps such a file partial with the named fix, and reads it fully once rewritten", async () => {
+    const broken = await project({ "src/Tabs.tsx": AMPERSAND, "src/Offers.tsx": USING });
+    const before = await buildInventory([broken], { cwd: broken });
+    expect(before.projects[0]!.status).toBe("partial");
+    expect(before.projects[0]!.failed.map((f) => `${f.file}: ${f.reason.replace(/^.*Next: /, "")}`).sort()).toEqual([
+      "src/Offers.tsx: line 4: the parser youiyoux uses can't read `using` as a variable name; rename it",
+      `src/Tabs.tsx: line 4: the parser youiyoux uses can't read a bare & in JSX text; write &amp; or {"&"} there`,
+    ]);
+
+    const fixed = await project({ "src/Tabs.tsx": AMPERSAND.replace(" & ", " &amp; "), "src/Offers.tsx": USING.replace(/\busing\b/g, "choosing").replace("setUsing", "setChoosing") });
+    const after = await buildInventory([fixed], { cwd: fixed });
+    expect(after.projects[0]!.failed).toEqual([]);
+    expect(after.projects[0]!.status).toBe("complete");
+    expect(after.definitions.map((d) => d.name).sort()).toEqual(["OfferPanel", "Tabs"]);
+    // The label is the rendered text: the reference decoded and joined to the words around it.
+    expect(after.looks.filter((l) => l.tag === "button").map((l) => `${l.file}:${l.line} ${l.recipe?.label}`).sort()).toEqual(["src/Offers.tsx:5 Use this", "src/Tabs.tsx:4 Contract & tokens"]);
+  });
+
+  test("a label with references reads as rendered", async () => {
+    const dir = await project({ "src/Note.tsx": `export function Note() {\n  return <button className="px-3">The app&rsquo;s &#8220;dev&#x201D; server</button>;\n}\n` });
+    const report = await buildInventory([dir], { cwd: dir });
+    expect(report.looks.find((l) => l.tag === "button")?.recipe?.label).toBe("The app’s “dev” server");
   });
 });
