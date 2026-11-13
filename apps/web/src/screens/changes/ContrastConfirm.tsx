@@ -5,17 +5,19 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { ShieldCheck, TriangleAlert, X } from "lucide-react";
 import type { StyleContrast } from "../../data/workflow.ts";
+import { useReturnFocus } from "../../lib/returnFocus.ts";
 import { Badge } from "../../ui/Badge.tsx";
 import { Button } from "../../ui/Button.tsx";
 
 const KIND = { text: "text", large: "large text", ui: "UI part" } as const;
 
 export function ContrastConfirm({ failing, revision, onConfirm, onClose }: { failing: readonly StyleContrast[]; revision: number; onConfirm: () => void; onClose: () => void }) {
+  const returnFocus = useReturnFocus();
   return (
     <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-scrim animate-fade" />
-        <Dialog.Content aria-modal="true" className="fixed inset-x-0 top-[10vh] z-50 mx-auto flex max-h-[80vh] w-[min(560px,calc(100vw-24px))] flex-col rounded-xl border border-line bg-surface shadow-popover outline-none animate-pop">
+        <Dialog.Content aria-modal="true" onCloseAutoFocus={returnFocus} className="fixed inset-x-0 top-[10vh] z-50 mx-auto flex max-h-[80vh] w-[min(560px,calc(100vw-24px))] flex-col rounded-xl border border-line bg-surface shadow-popover outline-none animate-pop">
           <header className="flex h-12 shrink-0 items-center gap-2 border-b border-line px-5">
             <TriangleAlert aria-hidden className="size-4 text-danger" />
             <Dialog.Title className="text-heading">Approve with {failing.length} contrast failure(s)?</Dialog.Title>

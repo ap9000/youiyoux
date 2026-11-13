@@ -5,15 +5,25 @@
 import { useEffect, useRef, useSyncExternalStore } from "react";
 import { NAV } from "../app/routes.tsx";
 import { markNavigation } from "../lib/perf.ts";
+import { focusedElement } from "../lib/returnFocus.ts";
 
 export type Overlay = "palette" | "help" | "agents" | null;
 
 let overlay: Overlay = null;
+let opener: HTMLElement | null = null;
 const listeners = new Set<() => void>();
 
 export function setOverlay(next: Overlay): void {
+  // What had focus when the first overlay opened; one replacing another (the palette's "Connect
+  // your agent") keeps it, so closing the last gives focus back there.
+  if (overlay === null && next !== null) opener = focusedElement();
   overlay = next;
   listeners.forEach((listener) => listener());
+}
+
+/** Where focus goes back to when the open overlay closes (null: leave it alone). */
+export function overlayOpener(): HTMLElement | null {
+  return opener;
 }
 
 export function useOverlay(): Overlay {

@@ -12,6 +12,7 @@ import { useState } from "react";
 import { dataUrl } from "../../data/load.ts";
 import { retryDetect, useDetectState } from "../../data/store.ts";
 import type { DetectElement, DetectEvidence, DetectLibrary, DetectReport } from "../../data/types.ts";
+import { useReturnFocus } from "../../lib/returnFocus.ts";
 import { Badge, type BadgeTone } from "../../ui/Badge.tsx";
 import { Button } from "../../ui/Button.tsx";
 import { CodeBlock } from "../../ui/CodeBlock.tsx";
@@ -95,11 +96,12 @@ export function DraftDialog({ report, element, onClose }: { report: DetectReport
   const text = `${JSON.stringify(draft, null, 2)}\n`;
   const [source, name] = draft.id.slice("lib:".length).split("/component/");
   const file = `library/${source}/${name}.library.json`;
+  const returnFocus = useReturnFocus();
   return (
     <Dialog.Root open onOpenChange={(open) => !open && onClose()}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-scrim animate-fade" />
-        <Dialog.Content aria-modal="true" className="fixed inset-x-0 top-[10vh] z-50 mx-auto w-[min(560px,calc(100vw-24px))] rounded-xl border border-line bg-surface shadow-popover outline-none animate-pop">
+        <Dialog.Content aria-modal="true" onCloseAutoFocus={returnFocus} className="fixed inset-x-0 top-[10vh] z-50 mx-auto w-[min(560px,calc(100vw-24px))] rounded-xl border border-line bg-surface shadow-popover outline-none animate-pop">
           <header className="flex h-12 items-center border-b border-line px-5">
             <Dialog.Title className="text-heading">Draft Library item</Dialog.Title>
             <Dialog.Close aria-label="Close" className="ml-auto grid size-7 place-items-center rounded-md text-muted hover:bg-raised hover:text-ink">

@@ -2,12 +2,14 @@
  * A dialog over the page, for the moments that need the person's whole attention: a secret typed
  * or shown once, a change to who can read something, a removal. Its title and one line on what it
  * is for at the top, its fields, its buttons at the foot. Esc, the close button or the scrim closes
- * it; with `onSubmit` it is a form, so Enter submits.
+ * it; with `onSubmit` it is a form, so Enter submits. However it closes, focus goes back to what had
+ * it when it opened (or to `returnFocusTo`).
  */
 import * as Dialog from "@radix-ui/react-dialog";
 import { clsx } from "clsx";
 import { X, type LucideIcon } from "lucide-react";
 import type { FormEvent, ReactNode } from "react";
+import { useReturnFocus } from "../lib/returnFocus.ts";
 
 interface ModalProps {
   title: string;
@@ -18,9 +20,12 @@ interface ModalProps {
   /** The buttons, right-aligned at the foot (on a phone, each as wide as it can be). */
   footer: ReactNode;
   children?: ReactNode;
+  /** Where focus goes back to on close, when it isn't what had focus as the dialog opened. */
+  returnFocusTo?: HTMLElement | null;
 }
 
-export function Modal({ title, description, icon: Icon, onClose, onSubmit, footer, children }: ModalProps) {
+export function Modal({ title, description, icon: Icon, onClose, onSubmit, footer, children, returnFocusTo }: ModalProps) {
+  const returnFocus = useReturnFocus(true, returnFocusTo);
   const body = (
     <>
       {children && <div className="min-h-0 space-y-4 overflow-y-auto px-5 pb-5">{children}</div>}
@@ -32,6 +37,7 @@ export function Modal({ title, description, icon: Icon, onClose, onSubmit, foote
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-50 bg-scrim animate-fade" />
         <Dialog.Content aria-modal="true"
+          onCloseAutoFocus={returnFocus}
           {...(description ? {} : { "aria-describedby": undefined })}
           className="fixed inset-x-0 top-[12vh] z-50 mx-auto flex max-h-[76vh] w-[min(440px,calc(100vw-24px))] flex-col overflow-hidden rounded-xl border border-line bg-surface shadow-popover outline-none animate-pop max-sm:top-[8vh]"
         >
